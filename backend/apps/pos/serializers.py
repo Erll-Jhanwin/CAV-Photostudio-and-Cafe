@@ -1,0 +1,29 @@
+from rest_framework import serializers
+from pos.models import Order, OrderItem, Payment
+from inventory.serializers import ProductSerializer
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    product_details = ProductSerializer(source='product', read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = ['id', 'product', 'product_details', 'quantity', 'price', 'subtotal']
+
+class PaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Payment
+        fields = ['id', 'amount', 'method', 'transaction_id', 'timestamp']
+
+class OrderSerializer(serializers.ModelSerializer):
+    items = OrderItemSerializer(many=True, read_only=True)
+    payments = PaymentSerializer(many=True, read_only=True)
+    staff_name = serializers.CharField(source='staff.username', read_only=True)
+    booking_customer_name = serializers.CharField(source='booking.customer.username', read_only=True, default='')
+
+    class Meta:
+        model = Order
+        fields = [
+            'id', 'staff', 'staff_name', 'booking', 'booking_customer_name', 
+            'total', 'payment_status', 'order_type', 'created_at', 'items', 'payments'
+        ]
+        read_only_fields = ['total', 'payment_status', 'created_at']
