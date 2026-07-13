@@ -952,15 +952,15 @@ export default function LandingPage() {
       </footer>
 
       {/* Chatbot */}
-      <div className="fixed bottom-6 right-6 z-50">
+      <div className="fixed bottom-4 right-4 md:bottom-5 md:right-5 z-50">
         {!chatOpen ? (
           <button
             onClick={() => setChatOpen(true)}
-            className="bg-espresso hover:bg-espresso-light text-gold p-4 rounded-full shadow-2xl hover:scale-105 transition-all border border-gold/20 group"
+            className="relative w-12 h-12 bg-espresso hover:bg-espresso-light text-gold rounded-full shadow-[0_16px_36px_rgba(28,15,10,0.28)] hover:scale-105 active:scale-95 transition-all border border-gold/25 flex items-center justify-center focus-visible:outline-gold"
             aria-label="Open chat"
           >
+            <span className="absolute inset-0 rounded-full bg-gold/20 animate-ping" />
             <MessageSquare className="w-5 h-5" />
-            <span className="max-w-0 overflow-hidden group-hover:max-w-xs group-hover:ml-2 transition-all duration-300 text-sm font-semibold whitespace-nowrap">Chat with CAV AI</span>
           </button>
         ) : (
           <div className="w-72 sm:w-96 h-[480px] bg-white rounded-3xl shadow-2xl border border-espresso/10 flex flex-col overflow-hidden animate-in-up">

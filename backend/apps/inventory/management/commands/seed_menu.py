@@ -14,6 +14,7 @@ Usage:
 
 from django.core.management.base import BaseCommand
 from inventory.models import Category, Product
+from inventory.recipe_defaults import ensure_default_ingredients_and_recipes
 
 
 MENU = {
@@ -182,8 +183,9 @@ class Command(BaseCommand):
                     )
 
         self.stdout.write("")
+        generated = ensure_default_ingredients_and_recipes()
         self.stdout.write(
             self.style.SUCCESS(
-                f"Seeding complete -- {created_products} created, {updated_products} updated."
+                f"Seeding complete -- {created_products} created, {updated_products} updated, {generated} recipe ingredient link(s) generated."
             )
         )

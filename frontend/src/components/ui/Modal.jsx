@@ -31,6 +31,7 @@ export function Modal({ open, onClose, title, children, className = '', size = '
     lg: 'max-w-lg',
     xl: 'max-w-xl',
     '2xl': 'max-w-2xl',
+    '3xl': 'max-w-3xl',
   };
 
   return (
@@ -55,7 +56,7 @@ export function Modal({ open, onClose, title, children, className = '', size = '
             </button>
           </div>
         )}
-        <div className="p-6 md:p-7">{children}</div>
+        <div className="p-6 md:p-7 max-h-[calc(100vh-11rem)] overflow-y-auto scrollbar-thin">{children}</div>
       </div>
     </div>
   );

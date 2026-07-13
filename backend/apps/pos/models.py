@@ -37,12 +37,11 @@ class Payment(models.Model):
     METHOD_CHOICES = (
         ('CASH', 'Cash'),
         ('GCASH', 'GCash'),
-        ('CARD', 'Card'),
     )
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='payments')
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     method = models.CharField(max_length=15, choices=METHOD_CHOICES, default='CASH')
-    transaction_id = models.CharField(max_length=100, blank=True, null=True, help_text="Reference ID for GCash or Card payments")
+    transaction_id = models.CharField(max_length=100, blank=True, null=True, help_text="Reference ID for GCash payments")
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

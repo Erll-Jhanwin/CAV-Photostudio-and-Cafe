@@ -30,6 +30,16 @@ def format_bookings(bookings):
         lines.append(f"  - {name} | {b.scheduled_date} @ {b.scheduled_time:%I:%M %p} | {pkg}{' (' + svc + ')' if svc else ''} | {b.status}")
     return "\n".join(lines)
 
+def get_chatbot_fallback_response(best_faq=None):
+    if best_faq:
+        return best_faq.answer
+    return (
+        "I couldn't find a direct answer to your question in our FAQ list. "
+        "CAV Photo Studio & Café is open daily from 9:00 AM to 8:00 PM. "
+        "For specific queries about packages or café menu items, "
+        "please contact our staff at +639171234567 or email us at staff@test.com."
+    )
+
 class ChatbotQueryView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]  # Customers can query chatbot without login
 
@@ -120,18 +130,11 @@ class ChatbotQueryView(generics.CreateAPIView):
                     resp_json = r.json()
                     response_text = resp_json['choices'][0]['message']['content'].strip()
                 else:
-                    response_text = f"API Error ({r.status_code}). Match fallback: {best_faq.answer}" if best_faq else "I'm having trouble connecting to my brain right now, but please visit us at 123 Capstone Drive!"
-            except Exception as e:
-                response_text = f"Connection error. Match fallback: {best_faq.answer}" if best_faq else "I'm having trouble connecting to my brain right now, but please visit us at 123 Capstone Drive!"
+                    response_text = get_chatbot_fallback_response(best_faq)
+            except requests.RequestException:
+                response_text = get_chatbot_fallback_response(best_faq)
         else:
-            # Local fallback response
-            if best_faq:
-                response_text = best_faq.answer
-            else:
-                response_text = "I couldn't find a direct answer to your question in our FAQ list. " \
-                                "CAV Photo Studio & Café is open daily from 9:00 AM to 8:00 PM. " \
-                                "For specific queries about packages or café menu items, " \
-                                "please contact our staff at +639171234567 or email us at staff@test.com."
+            response_text = get_chatbot_fallback_response(best_faq)
 
         # 3. Log query to ChatbotLog
         user = request.user if request.user.is_authenticated else None

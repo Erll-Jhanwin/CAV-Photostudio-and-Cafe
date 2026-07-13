@@ -8,7 +8,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
-import { Badge, StatusBadge } from '../components/ui/Badge';
+import { StatusBadge } from '../components/ui/Badge';
 import { Input, Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -38,6 +38,95 @@ function StaffSkeleton() {
   );
 }
 
+const inventoryStatuses = [
+  { key: 'ALL', label: 'All Items', className: 'bg-white text-espresso border-espresso/10' },
+  { key: 'IN_STOCK', label: 'In Stock', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  { key: 'LOW_STOCK', label: 'Low Stock', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  { key: 'NEAR_EXPIRY', label: 'Near Expiry', className: 'bg-orange-50 text-orange-700 border-orange-200' },
+  { key: 'EXPIRED', label: 'Expired', className: 'bg-red-50 text-red-700 border-red-200' },
+  { key: 'OVERSTOCKED', label: 'Overstocked', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+];
+
+const getInventoryStatusMeta = (status) => inventoryStatuses.find(item => item.key === status) || inventoryStatuses[0];
+
+const todayValue = () => new Date().toISOString().split('T')[0];
+
+const emptyProductForm = () => ({
+  name: '',
+  category: '',
+  supplier: '',
+  unit: 'ML',
+  stock_level: '',
+  reorder_point: '',
+  maximum_stock_level: '',
+  expiration_date: '',
+  purchase_date: todayValue(),
+  batch_number: '',
+  storage_location: '',
+});
+
+const getComputedInventoryInfo = (product) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiry = product.expiration_date ? new Date(product.expiration_date) : null;
+  if (expiry) expiry.setHours(0, 0, 0, 0);
+  const daysUntilExpiry = expiry ? Math.round((expiry - today) / 86400000) : null;
+  let status = 'IN_STOCK';
+  if (expiry && expiry < today) status = 'EXPIRED';
+  else if (expiry && daysUntilExpiry <= 7) status = 'NEAR_EXPIRY';
+  else if (Number(product.stock_level || 0) <= Number(product.reorder_point || 0)) status = 'LOW_STOCK';
+  else if (Number(product.maximum_stock_level || 0) && Number(product.stock_level || 0) > Number(product.maximum_stock_level || 0)) status = 'OVERSTOCKED';
+
+  const labels = {
+    IN_STOCK: 'In Stock (Good Condition)',
+    LOW_STOCK: 'Low Stock',
+    NEAR_EXPIRY: 'Near Expiry',
+    EXPIRED: 'Expired',
+    OVERSTOCKED: 'Overstocked',
+  };
+  const actions = {
+    IN_STOCK: 'Maintain Stock',
+    LOW_STOCK: 'Reorder',
+    NEAR_EXPIRY: 'Prioritize Usage',
+    EXPIRED: 'Remove from Sale',
+    OVERSTOCKED: 'Reduce Purchasing',
+  };
+  return {
+    inventory_status: status,
+    inventory_status_label: labels[status],
+    suggested_action: actions[status],
+    days_until_expiry: daysUntilExpiry,
+  };
+};
+
+const getProductAvailable = (product) => {
+  if (!product.recipe_items?.length) {
+    return Number(product.stock_level || 0);
+  }
+  const servings = product.recipe_items
+    .filter(item => Number(item.quantity) > 0)
+    .map(item => Math.floor(Number(item.ingredient_details?.stock_quantity || 0) / Number(item.quantity)));
+  return servings.length ? Math.min(...servings) : 0;
+};
+
+const updateProductRecipeStock = (product, quantitySold) => {
+  if (!product.recipe_items?.length) {
+    return { ...product, stock_level: Math.max(Number(product.stock_level || 0) - quantitySold, 0) };
+  }
+  const recipeItems = product.recipe_items.map(item => {
+    const usedQuantity = Number(item.quantity || 0) * quantitySold;
+    const ingredientDetails = item.ingredient_details
+      ? {
+          ...item.ingredient_details,
+          stock_quantity: Math.max(Number(item.ingredient_details.stock_quantity || 0) - usedQuantity, 0),
+        }
+      : item.ingredient_details;
+    return { ...item, ingredient_details: ingredientDetails };
+  });
+  const updatedProduct = { ...product, recipe_items: recipeItems };
+  return { ...updatedProduct, available_servings: getProductAvailable(updatedProduct) };
+};
+
 export default function StaffDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -45,6 +134,9 @@ export default function StaffDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [products, setProducts] = useState([]);
+  const [ingredients, setIngredients] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -53,15 +145,24 @@ export default function StaffDashboard() {
   const [cart, setCart] = useState([]);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [transactionId, setTransactionId] = useState('');
+  const [amountReceived, setAmountReceived] = useState('');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [showCheckoutLoading, setShowCheckoutLoading] = useState(false);
   const [orderType, setOrderType] = useState('WALK_IN');
   const [linkedBookingId, setLinkedBookingId] = useState('');
   const [receiptOrder, setReceiptOrder] = useState(null);
 
   const [posSearch, setPosSearch] = useState('');
   const [invSearch, setInvSearch] = useState('');
-  const [manualAdjProduct, setManualAdjProduct] = useState(null);
+  const [manualAdjIngredient, setManualAdjIngredient] = useState(null);
   const [adjQty, setAdjQty] = useState(0);
+  const [adjUnit, setAdjUnit] = useState('ML');
+  const [adjMovementType, setAdjMovementType] = useState('IN');
   const [bookingFilter, setBookingFilter] = useState('PENDING');
+  const [inventoryFilter, setInventoryFilter] = useState('ALL');
+  const [salesPaymentFilter, setSalesPaymentFilter] = useState('ALL');
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [productForm, setProductForm] = useState(emptyProductForm());
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) {
@@ -75,14 +176,23 @@ export default function StaffDashboard() {
     try {
       setLoading(true);
       setError('');
-      const [productsRes, bookingsRes, ordersRes] = await Promise.all([
+      try {
+        await client.post('/api/inventory/recipes/generate/');
+      } catch { /* keep loading dashboard even if recipe generation is already unavailable */ }
+      const [productsRes, ingredientsRes, bookingsRes, ordersRes, categoriesRes, suppliersRes] = await Promise.all([
         client.get('/api/inventory/products/'),
+        client.get('/api/inventory/ingredients/'),
         client.get('/api/bookings/'),
-        client.get('/api/pos/orders/')
+        client.get('/api/pos/orders/'),
+        client.get('/api/inventory/categories/'),
+        client.get('/api/inventory/suppliers/')
       ]);
       setProducts(productsRes.data);
+      setIngredients(ingredientsRes.data);
       setBookings(bookingsRes.data);
       setOrders(ordersRes.data);
+      setCategories(categoriesRes.data);
+      setSuppliers(suppliersRes.data);
     } catch {
       setError('Failed to load dashboard data. Make sure the server is running.');
     } finally {
@@ -91,12 +201,13 @@ export default function StaffDashboard() {
   };
 
   const addToCart = (product) => {
+    const availableServings = getProductAvailable(product);
     const existing = cart.find(item => item.id === product.id);
     if (existing) {
-      if (existing.quantity >= product.stock_level && product.is_cafe_item) { alert('Insufficient stock.'); return; }
+      if (existing.quantity >= availableServings && product.is_cafe_item) { alert('Insufficient ingredients for this drink.'); return; }
       setCart(cart.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item));
     } else {
-      if (product.stock_level <= 0 && product.is_cafe_item) { alert('Out of stock.'); return; }
+      if (availableServings <= 0 && product.is_cafe_item) { alert('Out of stock.'); return; }
       setCart([...cart, { ...product, quantity: 1 }]);
     }
   };
@@ -108,31 +219,75 @@ export default function StaffDashboard() {
       setCart(cart.filter(i => i.id !== id));
     } else {
       const prod = products.find(p => p.id === id);
-      if (delta > 0 && item.quantity >= prod?.stock_level && prod?.is_cafe_item) { alert('Insufficient stock.'); return; }
+      if (delta > 0 && item.quantity >= getProductAvailable(prod || {}) && prod?.is_cafe_item) { alert('Insufficient ingredients for this drink.'); return; }
       setCart(cart.map(i => i.id === id ? { ...i, quantity: i.quantity + delta } : i));
     }
   };
 
   const getCartTotal = () => cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
+  const getReceiptPayment = (order) => order?.payments?.[0] || null;
+  const getReceiptAmountReceived = (order) => Number(getReceiptPayment(order)?.amount || order?.amount_received || order?.total || 0);
+  const getReceiptChange = (order) => Math.max(getReceiptAmountReceived(order) - Number(order?.total || 0), 0);
 
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || checkoutLoading) return;
+    const total = getCartTotal();
+    const cashReceived = paymentMethod === 'CASH' ? Number(amountReceived) : total;
+
+    if (paymentMethod === 'CASH' && (!amountReceived || cashReceived < total)) {
+      alert('Amount received must be equal to or greater than the total.');
+      return;
+    }
+
+    let loadingTimer;
     try {
+      setCheckoutLoading(true);
+      loadingTimer = setTimeout(() => setShowCheckoutLoading(true), 450);
       const payload = {
         items: cart.map(item => ({ product_id: item.id, quantity: item.quantity })),
         order_type: orderType,
-        payment: { amount: getCartTotal(), method: paymentMethod, transaction_id: transactionId }
+        payment: { amount: cashReceived, method: paymentMethod, transaction_id: transactionId }
       };
       if (orderType === 'BOOKING_LINKED' && linkedBookingId) payload.booking_id = linkedBookingId;
       const res = await client.post('/api/pos/orders/', payload);
-      setReceiptOrder(res.data);
+      setReceiptOrder({
+        ...res.data,
+        amount_received: cashReceived,
+        change_amount: Math.max(cashReceived - total, 0),
+      });
+      setOrders(current => [res.data, ...current]);
+      setProducts(current => current.map(product => {
+        const cartItem = cart.find(item => item.id === product.id);
+        if (!cartItem) return product;
+        return updateProductRecipeStock(product, cartItem.quantity);
+      }));
+      setIngredients(current => current.map(ingredient => {
+        const usedQuantity = cart.reduce((total, cartItem) => {
+          const recipeItem = cartItem.recipe_items?.find(item => item.ingredient === ingredient.id);
+          return total + (recipeItem ? Number(recipeItem.quantity || 0) * cartItem.quantity : 0);
+        }, 0);
+        if (!usedQuantity) return ingredient;
+        const updatedIngredient = {
+          ...ingredient,
+          stock_quantity: Math.max(Number(ingredient.stock_quantity || 0) - usedQuantity, 0),
+        };
+        return { ...updatedIngredient, ...getComputedInventoryInfo({
+          ...updatedIngredient,
+          stock_level: updatedIngredient.stock_quantity,
+          reorder_point: updatedIngredient.minimum_stock_level,
+        }) };
+      }));
       setCart([]);
       setTransactionId('');
+      setAmountReceived('');
       setLinkedBookingId('');
       setOrderType('WALK_IN');
-      fetchData();
     } catch (err) {
       alert(err.response?.data?.detail || 'Checkout failed.');
+    } finally {
+      clearTimeout(loadingTimer);
+      setCheckoutLoading(false);
+      setShowCheckoutLoading(false);
     }
   };
 
@@ -146,13 +301,79 @@ export default function StaffDashboard() {
   };
 
   const handleAdjustInventory = async () => {
-    if (!manualAdjProduct) return;
+    if (!manualAdjIngredient) return;
     try {
-      await client.patch(`/api/inventory/products/${manualAdjProduct.id}/`, { stock_level: adjQty });
-      setManualAdjProduct(null);
-      fetchData();
+      await client.post('/api/inventory/ingredient-movements/', {
+        ingredient: manualAdjIngredient.id,
+        movement_type: adjMovementType,
+        quantity: adjQty,
+        unit: adjUnit,
+        reason: 'Manual ingredient adjustment',
+      });
+      const unitMultiplier = adjUnit === 'KG' || adjUnit === 'L' ? 1000 : 1;
+      const baseQuantity = Number(adjQty || 0) * unitMultiplier;
+      setIngredients(current => current.map(ingredient => {
+        if (ingredient.id !== manualAdjIngredient.id) return ingredient;
+        const nextQuantity = adjMovementType === 'IN'
+          ? Number(ingredient.stock_quantity || 0) + baseQuantity
+          : Math.max(Number(ingredient.stock_quantity || 0) - baseQuantity, 0);
+        const updatedIngredient = { ...ingredient, stock_quantity: nextQuantity };
+        return { ...updatedIngredient, ...getComputedInventoryInfo({
+          ...updatedIngredient,
+          stock_level: updatedIngredient.stock_quantity,
+          reorder_point: updatedIngredient.minimum_stock_level,
+        }) };
+      }));
+      setProducts(current => current.map(product => {
+        const recipeItems = product.recipe_items?.map(item => {
+          if (item.ingredient !== manualAdjIngredient.id || !item.ingredient_details) return item;
+          const nextQuantity = adjMovementType === 'IN'
+            ? Number(item.ingredient_details.stock_quantity || 0) + baseQuantity
+            : Math.max(Number(item.ingredient_details.stock_quantity || 0) - baseQuantity, 0);
+          return {
+            ...item,
+            ingredient_details: { ...item.ingredient_details, stock_quantity: nextQuantity },
+          };
+        });
+        const updatedProduct = { ...product, recipe_items: recipeItems };
+        return { ...updatedProduct, available_servings: getProductAvailable(updatedProduct) };
+      }));
+      setManualAdjIngredient(null);
     } catch {
       alert('Adjustment failed.');
+    }
+  };
+
+  const handleProductFieldChange = (field, value) => {
+    setProductForm(current => ({ ...current, [field]: value }));
+  };
+
+  const handleCreateProduct = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        name: productForm.name,
+        category: Number(productForm.category),
+        supplier: Number(productForm.supplier),
+        base_unit: productForm.unit,
+        stock_quantity: Number(productForm.stock_level),
+        minimum_stock_level: Number(productForm.reorder_point),
+        maximum_stock_level: Number(productForm.maximum_stock_level),
+        expiration_date: productForm.expiration_date || null,
+        purchase_date: productForm.purchase_date,
+        batch_number: productForm.batch_number,
+        storage_location: productForm.storage_location,
+      };
+      const res = await client.post('/api/inventory/ingredients/', payload);
+      setIngredients(current => [res.data, ...current]);
+      setProductForm(emptyProductForm());
+      setProductModalOpen(false);
+    } catch (err) {
+      const data = err.response?.data;
+      const message = data && typeof data === 'object'
+        ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
+        : 'Failed to create stock item.';
+      alert(message);
     }
   };
 
@@ -188,6 +409,25 @@ export default function StaffDashboard() {
   ];
 
   const pageTitles = { pos: 'POS Terminal', validator: 'Booking Validator', inventory: 'Live Inventory', sales: 'Daily Sales Logs' };
+  const visibleInventory = ingredients.filter(ingredient => {
+    const matchesSearch = ingredient.name.toLowerCase().includes(invSearch.toLowerCase());
+    const matchesStatus = inventoryFilter === 'ALL' || ingredient.inventory_status === inventoryFilter;
+    return matchesSearch && matchesStatus;
+  });
+  const inventoryCounts = inventoryStatuses.reduce((counts, status) => {
+    if (status.key === 'ALL') {
+      counts.ALL = ingredients.length;
+    } else {
+      counts[status.key] = ingredients.filter(ingredient => ingredient.inventory_status === status.key).length;
+    }
+    return counts;
+  }, {});
+  const inventoryAlerts = ingredients
+    .filter(ingredient => ['LOW_STOCK', 'NEAR_EXPIRY', 'EXPIRED', 'OVERSTOCKED'].includes(ingredient.inventory_status))
+    .slice(0, 4);
+  const filteredOrders = orders.filter(order => (
+    salesPaymentFilter === 'ALL' || order.payments?.some(payment => payment.method === salesPaymentFilter)
+  ));
 
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
@@ -259,11 +499,13 @@ export default function StaffDashboard() {
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
-                  {products.filter(p => p.name.toLowerCase().includes(posSearch.toLowerCase())).map((prod, i) => (
+                  {products.filter(p => p.name.toLowerCase().includes(posSearch.toLowerCase())).map((prod, i) => {
+                    const availableServings = getProductAvailable(prod);
+                    return (
                     <button
                       key={prod.id}
                       onClick={() => addToCart(prod)}
-                      className={`bg-white rounded-2xl border border-espresso/5 shadow-sm text-left flex flex-col overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group relative ${prod.stock_level <= 0 && prod.is_cafe_item ? 'opacity-50 cursor-not-allowed' : ''} animate-in-up`}
+                      className={`bg-white rounded-2xl border border-espresso/5 shadow-sm text-left flex flex-col overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group relative ${availableServings <= 0 && prod.is_cafe_item ? 'opacity-50 cursor-not-allowed' : ''} animate-in-up`}
                       style={{ animationDelay: `${i * 30}ms` }}
                     >
                       {/* Drink image */}
@@ -287,7 +529,7 @@ export default function StaffDashboard() {
                           {prod.category_details?.name || (prod.is_cafe_item ? 'Café' : 'Studio')}
                         </span>
                         {/* Out-of-stock overlay */}
-                        {prod.stock_level <= 0 && prod.is_cafe_item && (
+                        {availableServings <= 0 && prod.is_cafe_item && (
                           <div className="absolute inset-0 bg-espresso/60 flex items-center justify-center">
                             <span className="text-[10px] font-bold text-white bg-red-500 px-2 py-0.5 rounded-full">Out of Stock</span>
                           </div>
@@ -299,8 +541,11 @@ export default function StaffDashboard() {
                         <h4 className="font-bold text-xs text-espresso group-hover:text-gold transition-colors leading-snug">{prod.name}</h4>
                         <div className="flex items-center justify-between mt-auto pt-1">
                           <span className="text-xs text-gold font-bold">₱{prod.price}</span>
-                          {prod.stock_level <= prod.reorder_point && prod.is_cafe_item && prod.stock_level > 0 && (
-                            <span className="text-red-500 font-bold flex items-center gap-0.5 text-[9px]"><AlertTriangle className="w-2.5 h-2.5" />Low</span>
+                          {prod.is_cafe_item && (
+                            <span className={`font-bold flex items-center gap-0.5 text-[9px] ${availableServings <= 5 ? 'text-red-500' : 'text-espresso/40'}`}>
+                              {availableServings <= 5 && <AlertTriangle className="w-2.5 h-2.5" />}
+                              {availableServings} serving{availableServings === 1 ? '' : 's'}
+                            </span>
                           )}
                           {!prod.is_cafe_item && (
                             <span className="text-[9px] text-espresso/40">Unlimited</span>
@@ -308,7 +553,8 @@ export default function StaffDashboard() {
                         </div>
                       </div>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -341,8 +587,8 @@ export default function StaffDashboard() {
 
                         <div className="space-y-2">
                           <p className="text-[10px] uppercase font-bold text-espresso/50">Payment Method</p>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {['CASH', 'GCASH', 'CARD'].map(m => (
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {['CASH', 'GCASH'].map(m => (
                               <button key={m} onClick={() => setPaymentMethod(m)}
                                 className={`text-xs font-bold py-2 rounded-xl border transition-all ${paymentMethod === m ? 'bg-espresso text-cream border-espresso shadow-sm' : 'border-espresso/10 text-espresso/60 hover:border-espresso/30'}`}>
                                 {m}
@@ -362,8 +608,28 @@ export default function StaffDashboard() {
                           </div>
                         )}
 
-                        <Button variant="gold" size="lg" className="w-full" onClick={handleCheckout}>
-                          Pay PHP {getCartTotal()}
+                        {paymentMethod === 'CASH' && (
+                          <div className="grid grid-cols-2 gap-2 animate-in-up">
+                            <Input
+                              label="Amount Received"
+                              type="number"
+                              min={getCartTotal()}
+                              step="0.01"
+                              value={amountReceived}
+                              onChange={e => setAmountReceived(e.target.value)}
+                              placeholder="0.00"
+                            />
+                            <div className="rounded-xl bg-cream border border-espresso/5 px-3 py-2.5">
+                              <p className="text-[10px] uppercase font-bold text-espresso/45">Change</p>
+                              <p className="font-sans text-lg font-extrabold text-espresso">
+                                PHP {Math.max(Number(amountReceived || 0) - getCartTotal(), 0).toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        <Button variant="gold" size="lg" className="w-full" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading}>
+                          {showCheckoutLoading ? 'Generating Receipt...' : `Pay PHP ${getCartTotal()}`}
                         </Button>
                       </div>
                     </div>
@@ -444,21 +710,79 @@ export default function StaffDashboard() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Live Inventory</h1>
-                  <p className="text-xs text-espresso/50 mt-1">Track active stocks and trigger manual adjustments.</p>
+                  <p className="text-xs text-espresso/50 mt-1">Monitor stock levels, expiry risk, and purchasing actions.</p>
                 </div>
-                <div className="w-full sm:w-64">
-                  <label htmlFor="inv-search" className="block text-xs font-semibold text-espresso mb-1.5">Search inventory</label>
-                  <div className="relative">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-espresso/30" />
-                    <input
-                      id="inv-search"
-                      type="text"
-                      value={invSearch}
-                      onChange={e => setInvSearch(e.target.value)}
-                      placeholder="Search products..."
-                      className="w-full bg-white border border-espresso/10 rounded-xl py-2.5 pl-10 pr-4 text-xs focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/20 transition-all"
-                    />
-                  </div>
+                <Button variant="primary" size="sm" icon={Plus} onClick={() => setProductModalOpen(true)}>
+                  Add Ingredient
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                {inventoryStatuses.map(status => (
+                  <button
+                    key={status.key}
+                    type="button"
+                    onClick={() => setInventoryFilter(status.key)}
+                    className={`rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5 ${inventoryFilter === status.key ? 'bg-espresso text-cream border-espresso shadow-sm' : 'bg-white border-espresso/5 text-espresso hover:border-gold/40'}`}
+                  >
+                    <p className="text-[10px] uppercase font-black opacity-60">{status.label}</p>
+                    <p className="font-sans text-2xl font-extrabold mt-1">{inventoryCounts[status.key] || 0}</p>
+                  </button>
+                ))}
+              </div>
+
+              {inventoryAlerts.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {inventoryAlerts.map(ingredient => {
+                    const meta = getInventoryStatusMeta(ingredient.inventory_status);
+                    return (
+                      <div key={ingredient.id} className="bg-white border border-espresso/5 rounded-2xl p-4 flex items-start justify-between gap-4 shadow-sm">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-bold text-sm text-espresso truncate">{ingredient.name}</p>
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${meta.className}`}>
+                              {ingredient.inventory_status_label}
+                            </span>
+                          </div>
+                          <p className="text-xs text-espresso/55 mt-1">{ingredient.suggested_action}</p>
+                        </div>
+                        <AlertTriangle className="w-5 h-5 text-gold shrink-0" />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex flex-col lg:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-espresso/30" />
+                  <input
+                    id="inv-search"
+                    type="text"
+                    value={invSearch}
+                    onChange={e => setInvSearch(e.target.value)}
+                    placeholder="Search ingredients..."
+                    className="w-full bg-white border border-espresso/10 rounded-xl py-2.5 pl-10 pr-4 text-xs focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/20 transition-all"
+                  />
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {inventoryStatuses.slice(1).map(status => (
+                    <button
+                      key={status.key}
+                      type="button"
+                      onClick={() => setInventoryFilter(status.key)}
+                      className={`whitespace-nowrap rounded-xl border px-3 py-2 text-[10px] font-black transition-all ${inventoryFilter === status.key ? 'bg-espresso text-cream border-espresso' : status.className}`}
+                    >
+                      {status.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setInventoryFilter('ALL')}
+                    className={`whitespace-nowrap rounded-xl border px-3 py-2 text-[10px] font-black transition-all ${inventoryFilter === 'ALL' ? 'bg-espresso text-cream border-espresso' : 'bg-white text-espresso border-espresso/10'}`}
+                  >
+                    Clear
+                  </button>
                 </div>
               </div>
 
@@ -467,37 +791,60 @@ export default function StaffDashboard() {
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-cream border-b border-espresso/5 text-espresso/50 font-bold uppercase tracking-wider">
-                        <th className="p-4 text-left">SKU</th>
-                        <th className="p-4 text-left">Product</th>
+                        <th className="p-4 text-left">Ingredient</th>
                         <th className="p-4 text-left">Category</th>
-                        <th className="p-4 text-center">Stock</th>
-                        <th className="p-4 text-center">Reorder</th>
-                        <th className="p-4 text-left">Supplier</th>
-                        <th className="p-4 text-right">Action</th>
+                        <th className="p-4 text-center">Quantity</th>
+                        <th className="p-4 text-center">Min / Max</th>
+                        <th className="p-4 text-left">Status</th>
+                        <th className="p-4 text-left">Action</th>
+                        <th className="p-4 text-left">Expiry</th>
+                        <th className="p-4 text-left">Storage</th>
+                        <th className="p-4 text-right">Adjust</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {products.filter(p => p.name.toLowerCase().includes(invSearch.toLowerCase())).map((p, i) => (
-                        <tr key={p.id} className="border-b border-espresso/5 hover:bg-espresso/[0.02] transition-colors animate-in-up" style={{ animationDelay: `${i * 20}ms` }}>
-                          <td className="p-4 font-mono text-espresso/50">{p.sku || 'N/A'}</td>
-                          <td className="p-4 font-semibold text-espresso">{p.name}</td>
-                          <td className="p-4 text-espresso/60">{p.category_details?.name || '-'}</td>
-                          <td className="p-4 text-center">
-                            <span className={`font-bold ${p.stock_level <= p.reorder_point && p.is_cafe_item ? 'text-red-600' : ''}`}>
-                              {p.is_cafe_item ? p.stock_level : 'Unlimited'}
-                            </span>
-                          </td>
-                          <td className="p-4 text-center text-espresso/50">{p.is_cafe_item ? p.reorder_point : 'N/A'}</td>
-                          <td className="p-4 text-espresso/60">{p.supplier_details?.name || 'N/A'}</td>
-                          <td className="p-4 text-right">
-                            {p.is_cafe_item && (
-                              <Button variant="ghost" size="xs" onClick={() => { setManualAdjProduct(p); setAdjQty(p.stock_level); }}>Adjust</Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {visibleInventory.map((ingredient, i) => {
+                        const meta = getInventoryStatusMeta(ingredient.inventory_status);
+                        return (
+                          <tr key={ingredient.id} className="border-b border-espresso/5 hover:bg-espresso/[0.02] transition-colors animate-in-up" style={{ animationDelay: `${i * 20}ms` }}>
+                            <td className="p-4">
+                              <p className="font-bold text-espresso">{ingredient.name}</p>
+                              <p className="text-[10px] text-espresso/45">Batch {ingredient.batch_number || 'N/A'} · {ingredient.supplier_details?.name || 'No supplier'}</p>
+                            </td>
+                            <td className="p-4 text-espresso/60">{ingredient.category_details?.name || '-'}</td>
+                            <td className="p-4 text-center font-bold text-espresso">{Number(ingredient.stock_quantity).toLocaleString()} {ingredient.base_unit}</td>
+                            <td className="p-4 text-center text-espresso/55">{ingredient.minimum_stock_level} / {ingredient.maximum_stock_level}</td>
+                            <td className="p-4">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${meta.className}`}>
+                                {ingredient.inventory_status_label}
+                              </span>
+                            </td>
+                            <td className="p-4 font-bold text-espresso/70">{ingredient.suggested_action}</td>
+                            <td className="p-4 text-espresso/60">
+                              {ingredient.expiration_date || 'N/A'}
+                              {ingredient.days_until_expiry !== null && ingredient.days_until_expiry !== undefined && (
+                                <span className="block text-[10px] text-espresso/40">{ingredient.days_until_expiry} day(s)</span>
+                              )}
+                            </td>
+                            <td className="p-4 text-espresso/60">{ingredient.storage_location || 'N/A'}</td>
+                            <td className="p-4 text-right">
+                              <Button variant="ghost" size="xs" onClick={() => {
+                                setManualAdjIngredient(ingredient);
+                                setAdjQty(0);
+                                setAdjUnit(ingredient.base_unit);
+                                setAdjMovementType('IN');
+                              }}>Adjust</Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
+                  {visibleInventory.length === 0 && (
+                    <div className="p-8">
+                      <EmptyState icon={Package} title="No ingredients found" description="Try a different search or status filter." />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -506,14 +853,32 @@ export default function StaffDashboard() {
           {/* SALES LOGS */}
           {activeTab === 'sales' && (
             <div className="space-y-6 animate-in-up" key="sales">
-              <div>
-                <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Daily Sales Logs</h1>
-                <p className="text-xs text-espresso/50 mt-1">Review historical transactions and print receipt vouchers.</p>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Daily Sales Logs</h1>
+                  <p className="text-xs text-espresso/50 mt-1">Review historical transactions and print receipt vouchers.</p>
+                </div>
+                <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
+                  {[
+                    ['ALL', 'All'],
+                    ['CASH', 'Cash'],
+                    ['GCASH', 'GCash'],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setSalesPaymentFilter(value)}
+                      className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${salesPaymentFilter === value ? 'bg-espresso text-cream shadow-sm' : 'text-espresso/50 hover:text-espresso'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {orders.length > 0 ? (
+              {filteredOrders.length > 0 ? (
                 <div className="space-y-4">
-                  {orders.map((o, i) => (
+                  {filteredOrders.map((o, i) => (
                     <div key={o.id} className="bg-white p-5 rounded-2xl border border-espresso/5 shadow-sm flex justify-between items-center animate-in-up" style={{ animationDelay: `${i * 40}ms` }}>
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-3">
@@ -536,23 +901,85 @@ export default function StaffDashboard() {
                   ))}
                 </div>
               ) : (
-                <EmptyState icon={DollarSign} title="No transactions" description="Process your first POS transaction to see it here." />
+                <EmptyState icon={DollarSign} title="No transactions" description="No sales match the selected payment method." />
               )}
             </div>
           )}
         </main>
       </div>
 
+      {/* Add Ingredient Modal */}
+      <Modal open={productModalOpen} onClose={() => setProductModalOpen(false)} title="Add Ingredient Stock" size="3xl">
+        <form onSubmit={handleCreateProduct} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input label="Ingredient Name" required value={productForm.name} onChange={e => handleProductFieldChange('name', e.target.value)} />
+            <Input label="Batch Number" required value={productForm.batch_number} onChange={e => handleProductFieldChange('batch_number', e.target.value)} />
+            <Select
+              label="Category"
+              required
+              value={productForm.category}
+              onChange={e => handleProductFieldChange('category', e.target.value)}
+              options={[{ value: '', label: 'Select category' }, ...categories.map(category => ({ value: category.id, label: category.name }))]}
+            />
+            <Select
+              label="Supplier"
+              required
+              value={productForm.supplier}
+              onChange={e => handleProductFieldChange('supplier', e.target.value)}
+              options={[{ value: '', label: 'Select supplier' }, ...suppliers.map(supplier => ({ value: supplier.id, label: supplier.name }))]}
+            />
+            <Select
+              label="Base Unit"
+              required
+              value={productForm.unit}
+              onChange={e => handleProductFieldChange('unit', e.target.value)}
+              options={[
+                { value: 'ML', label: 'mL' },
+                { value: 'G', label: 'g' },
+              ]}
+            />
+            <Input label="Quantity" required type="number" min="0" value={productForm.stock_level} onChange={e => handleProductFieldChange('stock_level', e.target.value)} />
+            <Input label="Minimum Stock Level" required type="number" min="0" value={productForm.reorder_point} onChange={e => handleProductFieldChange('reorder_point', e.target.value)} />
+            <Input label="Maximum Stock Level" required type="number" min="0" value={productForm.maximum_stock_level} onChange={e => handleProductFieldChange('maximum_stock_level', e.target.value)} />
+            <Input label="Purchase Date" required type="date" value={productForm.purchase_date} onChange={e => handleProductFieldChange('purchase_date', e.target.value)} />
+            <Input label="Expiration Date" type="date" value={productForm.expiration_date} onChange={e => handleProductFieldChange('expiration_date', e.target.value)} />
+            <Input label="Storage Location" required value={productForm.storage_location} onChange={e => handleProductFieldChange('storage_location', e.target.value)} />
+          </div>
+          <div className="sticky bottom-0 bg-white/95 flex flex-col sm:flex-row gap-2 pt-4 pb-1 border-t border-espresso/[0.06]">
+            <Button type="submit" variant="primary" className="flex-1">Save Ingredient</Button>
+            <Button type="button" variant="outline" onClick={() => setProductModalOpen(false)}>Cancel</Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Adj Modal */}
-      <Modal open={!!manualAdjProduct} onClose={() => setManualAdjProduct(null)} title="Adjust Stock Level" size="sm">
+      <Modal open={!!manualAdjIngredient} onClose={() => setManualAdjIngredient(null)} title="Adjust Ingredient Stock" size="sm">
         <p className="text-xs text-espresso/60 mb-4">
-          Modify inventory count for <strong className="text-espresso">{manualAdjProduct?.name}</strong>.
+          Modify ingredient stock for <strong className="text-espresso">{manualAdjIngredient?.name}</strong>.
         </p>
         <div className="space-y-4">
-          <Input label="New Stock Count" type="number" value={adjQty} onChange={e => setAdjQty(parseInt(e.target.value) || 0)} />
+          <Select
+            label="Movement"
+            value={adjMovementType}
+            onChange={e => setAdjMovementType(e.target.value)}
+            options={[
+              { value: 'IN', label: 'Stock In' },
+              { value: 'OUT', label: 'Stock Out' },
+            ]}
+          />
+          <Input label="Quantity" type="number" min="0" step="0.01" value={adjQty} onChange={e => setAdjQty(e.target.value)} />
+          <Select
+            label="Unit"
+            value={adjUnit}
+            onChange={e => setAdjUnit(e.target.value)}
+            options={manualAdjIngredient?.base_unit === 'G'
+              ? [{ value: 'G', label: 'g' }, { value: 'KG', label: 'kg' }]
+              : [{ value: 'ML', label: 'mL' }, { value: 'L', label: 'L' }]
+            }
+          />
           <div className="flex gap-2">
             <Button variant="primary" className="flex-1" onClick={handleAdjustInventory}>Save</Button>
-            <Button variant="outline" onClick={() => setManualAdjProduct(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setManualAdjIngredient(null)}>Cancel</Button>
           </div>
         </div>
       </Modal>
@@ -585,6 +1012,8 @@ export default function StaffDashboard() {
           </div>
           <div className="border-t border-dashed border-espresso/20 pt-2 text-[10px] space-y-0.5">
             <p>Method: {receiptOrder?.payments?.[0]?.method || 'CASH'}</p>
+            <p>Amount Received: PHP {getReceiptAmountReceived(receiptOrder).toFixed(2)}</p>
+            <p>Change: PHP {getReceiptChange(receiptOrder).toFixed(2)}</p>
             {receiptOrder?.payments?.[0]?.transaction_id && <p>Ref: {receiptOrder.payments[0].transaction_id}</p>}
           </div>
           <div className="text-center text-[9px] pt-4 border-t border-dashed border-espresso/20">

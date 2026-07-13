@@ -69,10 +69,16 @@ class BookingListCreateView(generics.ListCreateAPIView):
 
         return Response(BookingSerializer(booking).data, status=status.HTTP_201_CREATED)
 
-class BookingDetailUpdateView(generics.RetrieveUpdateAPIView):
-    queryset = Booking.objects.all()
+class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = BookingSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('items')
+        user = self.request.user
+        if user.role in ['STAFF', 'ADMIN']:
+            return queryset
+        return queryset.filter(customer=user)
 
     def update(self, request, *args, **kwargs):
         booking = self.get_object()
@@ -107,3 +113,28 @@ class BookingDetailUpdateView(generics.RetrieveUpdateAPIView):
         serializer.save()
 
         return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role != 'ADMIN':
+            return Response({"detail": "Only admins can delete bookings."}, status=status.HTTP_403_FORBIDDEN)
+
+        booking = self.get_object()
+        booking_id = booking.id
+        package_name = booking.package.name if booking.package else "Unknown package"
+        customer = booking.customer
+        scheduled_date = booking.scheduled_date
+
+        booking.delete()
+
+        Notification.objects.create(
+            user=customer,
+            title="Booking Deleted",
+            message=f"Your booking for {package_name} on {scheduled_date} was deleted by an admin."
+        )
+        AuditLog.objects.create(
+            user=request.user,
+            action="BOOKING_DELETE",
+            description=f"Deleted booking #{booking_id} for {package_name}."
+        )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)

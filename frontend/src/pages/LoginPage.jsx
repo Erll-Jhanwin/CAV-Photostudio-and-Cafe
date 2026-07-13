@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Camera,
@@ -20,7 +20,7 @@ import client from '../api/client';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login, register } = useAuth();
+  const { login, loginWithGoogle, register } = useAuth();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get('redirect');
 
@@ -33,6 +33,8 @@ export default function LoginPage() {
   const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const googleButtonRef = useRef(null);
+  const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 
   const [form, setForm] = useState({
     username: '', password: '', email: '',
@@ -41,6 +43,70 @@ export default function LoginPage() {
 
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
+  const navigateAfterAuth = useCallback((authUser) => {
+    if (redirect === 'book') { navigate('/customer'); return; }
+    if (authUser.role === 'ADMIN') navigate('/admin');
+    else if (authUser.role === 'STAFF') navigate('/staff');
+    else navigate('/customer');
+  }, [navigate, redirect]);
+
+  useEffect(() => {
+    if (!googleClientId || !googleButtonRef.current) return undefined;
+
+    let cancelled = false;
+
+    const handleGoogleCredential = async (response) => {
+      if (!response?.credential) return;
+      setError('');
+      setSuccess('');
+      setLoading(true);
+      const res = await loginWithGoogle(response.credential);
+      setLoading(false);
+      if (res.success) {
+        navigateAfterAuth(res.user);
+      } else {
+        setError(res.error);
+      }
+    };
+
+    const renderGoogleButton = () => {
+      if (cancelled || !window.google || !googleButtonRef.current) return;
+      googleButtonRef.current.innerHTML = '';
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: handleGoogleCredential,
+      });
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        type: 'standard',
+        theme: 'outline',
+        size: 'large',
+        text: isRegister ? 'signup_with' : 'signin_with',
+        shape: 'pill',
+        width: googleButtonRef.current.offsetWidth || 360,
+      });
+    };
+
+    if (window.google?.accounts?.id) {
+      renderGoogleButton();
+    } else {
+      const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+      if (existingScript) {
+        existingScript.addEventListener('load', renderGoogleButton, { once: true });
+      } else {
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        script.onload = renderGoogleButton;
+        document.body.appendChild(script);
+      }
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [googleClientId, isRegister, loginWithGoogle, navigateAfterAuth]);
+
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -48,10 +114,7 @@ export default function LoginPage() {
     const res = await login(form.username, form.password);
     setLoading(false);
     if (res.success) {
-      if (redirect === 'book') { navigate('/customer'); return; }
-      if (res.user.role === 'ADMIN') navigate('/admin');
-      else if (res.user.role === 'STAFF') navigate('/staff');
-      else navigate('/customer');
+      navigateAfterAuth(res.user);
     } else {
       setError(res.error);
     }
@@ -103,9 +166,7 @@ export default function LoginPage() {
     const res = await login(user, pass);
     setLoading(false);
     if (res.success) {
-      if (res.user.role === 'ADMIN') navigate('/admin');
-      else if (res.user.role === 'STAFF') navigate('/staff');
-      else navigate('/customer');
+      navigateAfterAuth(res.user);
     } else {
       setError(res.error);
     }
@@ -234,6 +295,23 @@ export default function LoginPage() {
               {success && (
                 <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3.5 text-xs text-emerald-700" role="status">
                   {success}
+                </div>
+              )}
+
+              {!showForgotPassword && (
+                <div className="space-y-3">
+                  {googleClientId ? (
+                    <div ref={googleButtonRef} className="flex min-h-[44px] justify-center" />
+                  ) : (
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3.5 text-xs text-amber-700">
+                      Add REACT_APP_GOOGLE_CLIENT_ID to enable Google {isRegister ? 'registration' : 'login'}.
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <div className="h-px flex-1 bg-espresso/10" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-espresso/35">or</span>
+                    <div className="h-px flex-1 bg-espresso/10" />
+                  </div>
                 </div>
               )}
 

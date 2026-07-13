@@ -27,6 +27,14 @@ const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-P
   maximumFractionDigits: 2,
 })}`;
 
+const inventoryStatusMeta = {
+  IN_STOCK: { label: 'In Stock', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  LOW_STOCK: { label: 'Low Stock', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  NEAR_EXPIRY: { label: 'Near Expiry', className: 'bg-orange-50 text-orange-700 border-orange-200' },
+  EXPIRED: { label: 'Expired', className: 'bg-red-50 text-red-700 border-red-200' },
+  OVERSTOCKED: { label: 'Overstocked', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+};
+
 const formatDateValue = (date) => date.toISOString().split('T')[0];
 
 const getRangeDates = (preset, customStart, customEnd) => {
@@ -55,7 +63,7 @@ const getRangeDates = (preset, customStart, customEnd) => {
   return { start: formatDateValue(start), end: formatDateValue(end) };
 };
 
-function DashboardTable({ columns, rows, sort, onSort, renderCell }) {
+function DashboardTable({ columns, rows, sort, onSort, renderCell, renderActions }) {
   if (!rows?.length) {
     return <EmptyState icon={BarChart2} title="No records found" description="No data exists for the selected date range." />;
   }
@@ -84,10 +92,12 @@ function DashboardTable({ columns, rows, sort, onSort, renderCell }) {
                 </td>
               ))}
               <td className="px-5 py-3 text-right">
-                <button type="button" className="inline-flex items-center gap-1.5 rounded-xl bg-cream px-3 py-1.5 text-[10px] font-black text-espresso hover:bg-gold transition-all">
-                  <Eye className="w-3 h-3" />
-                  View
-                </button>
+                {renderActions ? renderActions(row) : (
+                  <button type="button" className="inline-flex items-center gap-1.5 rounded-xl bg-cream px-3 py-1.5 text-[10px] font-black text-espresso hover:bg-gold transition-all">
+                    <Eye className="w-3 h-3" />
+                    View
+                  </button>
+                )}
               </td>
             </tr>
           ))}
@@ -199,6 +209,7 @@ export default function AdminDashboard() {
   const [posPage, setPosPage] = useState(1);
   const [bookingSort, setBookingSort] = useState({ key: 'created_at', dir: 'desc' });
   const [posSort, setPosSort] = useState({ key: 'date', dir: 'desc' });
+  const [deletingBookingId, setDeletingBookingId] = useState(null);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') {
@@ -278,6 +289,36 @@ export default function AdminDashboard() {
     } catch { /* ignore */ }
   };
 
+  const handleDeleteBooking = async (booking) => {
+    if (!window.confirm(`Delete booking #${booking.id} for ${booking.customer_name}?`)) return;
+    try {
+      setDeletingBookingId(booking.id);
+      await client.delete(`/api/bookings/${booking.id}/`);
+      setAnalytics(current => {
+        if (!current) return current;
+        const statusKey = booking.status?.toLowerCase();
+        const metrics = { ...(current.metrics || {}) };
+        metrics.total_bookings = Math.max((metrics.total_bookings || 0) - 1, 0);
+        if (statusKey && metrics[statusKey] !== undefined) {
+          metrics[statusKey] = Math.max((metrics[statusKey] || 0) - 1, 0);
+        }
+        if (booking.status === 'COMPLETED') {
+          metrics.completed_bookings = Math.max((metrics.completed_bookings || 0) - 1, 0);
+        }
+        return {
+          ...current,
+          metrics,
+          recent_bookings: (current.recent_bookings || []).filter(row => row.id !== booking.id),
+        };
+      });
+      setBookingPage(page => Math.max(1, Math.min(page, Math.ceil((sortedBookings.length - 1) / tablePageSize) || 1)));
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete booking.');
+    } finally {
+      setDeletingBookingId(null);
+    }
+  };
+
   const handleLogout = useCallback(() => { logout(); navigate('/'); }, [logout, navigate]);
 
   if (loading) return <AdminSkeleton />;
@@ -313,6 +354,13 @@ export default function AdminDashboard() {
   const sortedPos = sortRows(analytics?.recent_pos_transactions, posSort);
   const bookingPageRows = sortedBookings.slice((bookingPage - 1) * tablePageSize, bookingPage * tablePageSize);
   const posPageRows = sortedPos.slice((posPage - 1) * tablePageSize, posPage * tablePageSize);
+  const inventoryCounts = analytics?.inventory_status_counts || {};
+  const inventorySummary = Object.entries(inventoryStatusMeta).map(([key, meta]) => ({
+    key,
+    ...meta,
+    value: inventoryCounts[key] || 0,
+  }));
+  const inventoryAlerts = analytics?.inventory_alerts || [];
 
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
@@ -419,8 +467,8 @@ export default function AdminDashboard() {
                               <p className="text-[10px] text-red-600 mt-0.5">Supplier: {alert.supplier_name}</p>
                             </div>
                             <div className="text-right">
-                              <p className="font-bold text-red-800">Stock: {alert.stock_level}</p>
-                              <p className="text-[10px] text-red-500">Min: {alert.reorder_point}</p>
+                              <p className="font-bold text-red-800">Stock: {alert.stock_quantity} {alert.base_unit}</p>
+                              <p className="text-[10px] text-red-500">Min: {alert.minimum_stock_level}</p>
                             </div>
                           </div>
                         ))}
@@ -519,6 +567,57 @@ export default function AdminDashboard() {
                     </div>
                   );
                 })}
+              </div>
+
+              <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)] gap-4 md:gap-5">
+                <Card padding={false}>
+                  <div className="p-5 md:p-6">
+                    <CardHeader title="Ingredient Stock Management" subtitle="Raw ingredient health monitored from staff inventory activity" className="mb-4" />
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                      {inventorySummary.map(status => (
+                        <div key={status.key} className="rounded-2xl bg-cream/60 border border-espresso/[0.05] p-3">
+                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${status.className}`}>
+                            {status.label}
+                          </span>
+                          <p className="font-sans text-2xl font-extrabold text-espresso mt-2">{status.value}</p>
+                          <p className="text-[10px] text-espresso/45 uppercase font-black">ingredient{status.value === 1 ? '' : 's'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </Card>
+
+                <Card padding={false}>
+                  <div className="p-5">
+                    <CardHeader title="Stock Action Alerts" className="mb-3" />
+                    {inventoryAlerts.length > 0 ? (
+                      <div className="space-y-2.5 max-h-72 overflow-y-auto scrollbar-thin pr-1">
+                        {inventoryAlerts.map(alert => {
+                          const meta = inventoryStatusMeta[alert.inventory_status] || inventoryStatusMeta.IN_STOCK;
+                          return (
+                            <div key={alert.id} className="rounded-2xl bg-white border border-espresso/[0.06] p-3 shadow-sm">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="font-black text-sm text-espresso truncate">{alert.name}</p>
+                                  <p className="text-[10px] text-espresso/45">{alert.stock_quantity} {alert.base_unit} · Min {alert.minimum_stock_level}</p>
+                                </div>
+                                <span className={`shrink-0 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${meta.className}`}>
+                                  {meta.label}
+                                </span>
+                              </div>
+                              <div className="mt-2 flex items-center justify-between gap-3 text-[11px]">
+                                <span className="font-bold text-gold-dark">{alert.suggested_action}</span>
+                                <span className="text-espresso/45">{alert.supplier_name}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <EmptyState icon={Package} title="Stock is healthy" description="No ingredient actions are needed right now." />
+                    )}
+                  </div>
+                </Card>
               </div>
 
               <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.75fr)_minmax(360px,0.8fr)] gap-4 md:gap-5 items-stretch">
@@ -640,6 +739,18 @@ export default function AdminDashboard() {
                     sort={bookingSort}
                     onSort={(key) => toggleSort(bookingSort, setBookingSort, key)}
                     renderCell={(row, key) => key === 'amount' ? formatCurrency(row[key]) : key === 'status' ? <StatusBadge status={row[key]} /> : row[key]}
+                    renderActions={(row) => (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBooking(row)}
+                        disabled={deletingBookingId === row.id}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-1.5 text-[10px] font-black text-red-600 hover:bg-red-600 hover:text-white transition-all"
+                        aria-label={`Delete booking #${row.id}`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        {deletingBookingId === row.id ? 'Deleting...' : 'Delete'}
+                      </button>
+                    )}
                   />
                   <TablePager page={bookingPage} setPage={setBookingPage} total={sortedBookings.length} pageSize={tablePageSize} />
                   </div>

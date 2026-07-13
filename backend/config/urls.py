@@ -6,12 +6,13 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
 # Import views directly from apps since apps are added to sys.path
-from users.views import CustomTokenObtainPairView, RegisterView, UserProfileView, StaffListView, ForgotPasswordView
+from users.views import CustomTokenObtainPairView, RegisterView, UserProfileView, StaffListView, ForgotPasswordView, GoogleAuthView
 from booking.views import ServiceListView, PackageListView, BookingListCreateView, BookingDetailUpdateView
 from inventory.views import (
     ProductListCreateView, ProductDetailUpdateView, StockMovementListView, 
     CategoryListCreateView, SupplierListCreateView, PurchaseOrderListCreateView, 
-    PurchaseOrderDetailUpdateView
+    PurchaseOrderDetailUpdateView, IngredientListCreateView, IngredientDetailUpdateView,
+    RecipeIngredientListCreateView, IngredientStockMovementListView, GenerateRecipeIngredientsView
 )
 from pos.views import OrderListCreateView, OrderDetailView, PaymentCreateView
 from chatbot.views import ChatbotQueryView, FAQListCreateView, FAQDetailUpdateView
@@ -25,6 +26,7 @@ urlpatterns = [
     path('api/auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/register/', RegisterView.as_view(), name='auth_register'),
+    path('api/auth/google/', GoogleAuthView.as_view(), name='auth_google'),
     path('api/auth/profile/', UserProfileView.as_view(), name='auth_profile'),
     path('api/auth/users/', StaffListView.as_view(), name='staff_list'),
     path('api/auth/forgot-password/', ForgotPasswordView.as_view(), name='auth_forgot_password'),
@@ -38,6 +40,11 @@ urlpatterns = [
     # Inventory endpoints
     path('api/inventory/products/', ProductListCreateView.as_view(), name='product_list_create'),
     path('api/inventory/products/<int:pk>/', ProductDetailUpdateView.as_view(), name='product_detail_update'),
+    path('api/inventory/ingredients/', IngredientListCreateView.as_view(), name='ingredient_list_create'),
+    path('api/inventory/ingredients/<int:pk>/', IngredientDetailUpdateView.as_view(), name='ingredient_detail_update'),
+    path('api/inventory/ingredient-movements/', IngredientStockMovementListView.as_view(), name='ingredient_movement_list'),
+    path('api/inventory/recipes/', RecipeIngredientListCreateView.as_view(), name='recipe_ingredient_list_create'),
+    path('api/inventory/recipes/generate/', GenerateRecipeIngredientsView.as_view(), name='recipe_generate'),
     path('api/inventory/movements/', StockMovementListView.as_view(), name='stock_movement_list'),
     path('api/inventory/categories/', CategoryListCreateView.as_view(), name='category_list'),
     path('api/inventory/suppliers/', SupplierListCreateView.as_view(), name='supplier_list'),

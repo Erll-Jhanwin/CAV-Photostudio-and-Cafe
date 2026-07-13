@@ -1,15 +1,20 @@
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 from django.db import transaction
-from inventory.models import Category, Supplier, Product, StockMovement, PurchaseOrder, PurchaseOrderItem
-from inventory.serializers import (
-    CategorySerializer, SupplierSerializer, ProductSerializer, 
-    StockMovementSerializer, PurchaseOrderSerializer
+from inventory.models import (
+    Category, Supplier, Product, StockMovement, PurchaseOrder, PurchaseOrderItem,
+    Ingredient, RecipeIngredient, IngredientStockMovement
 )
+from inventory.serializers import (
+    CategorySerializer, SupplierSerializer, ProductSerializer,
+    StockMovementSerializer, PurchaseOrderSerializer, IngredientSerializer,
+    RecipeIngredientSerializer, IngredientStockMovementSerializer
+)
+from inventory.recipe_defaults import ensure_default_ingredients_and_recipes
 from audit.models import AuditLog
 
 class ProductListCreateView(generics.ListCreateAPIView):
-    queryset = Product.objects.all().select_related('category', 'supplier')
+    queryset = Product.objects.all().select_related('category', 'supplier').prefetch_related('recipe_items__ingredient')
     serializer_class = ProductSerializer
 
     def get_permissions(self):
@@ -45,7 +50,7 @@ class ProductListCreateView(generics.ListCreateAPIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 class ProductDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Product.objects.all()
+    queryset = Product.objects.all().select_related('category', 'supplier').prefetch_related('recipe_items__ingredient')
     serializer_class = ProductSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -128,6 +133,110 @@ class StockMovementListView(generics.ListCreateAPIView):
             )
 
         return Response(StockMovementSerializer(movement).data, status=status.HTTP_201_CREATED)
+
+class IngredientListCreateView(generics.ListCreateAPIView):
+    queryset = Ingredient.objects.all().select_related('category', 'supplier').order_by('name')
+    serializer_class = IngredientSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        if request.user.role not in ['STAFF', 'ADMIN']:
+            return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+
+class IngredientDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Ingredient.objects.all().select_related('category', 'supplier')
+    serializer_class = IngredientSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def update(self, request, *args, **kwargs):
+        if request.user.role not in ['STAFF', 'ADMIN']:
+            return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
+class RecipeIngredientListCreateView(generics.ListCreateAPIView):
+    serializer_class = RecipeIngredientSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = RecipeIngredient.objects.all().select_related('product', 'ingredient')
+        product_id = self.request.query_params.get('product')
+        if product_id:
+            queryset = queryset.filter(product_id=product_id)
+        return queryset.order_by('product__name', 'ingredient__name')
+
+    def create(self, request, *args, **kwargs):
+        if request.user.role not in ['STAFF', 'ADMIN']:
+            return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
+        return super().create(request, *args, **kwargs)
+
+class IngredientStockMovementListView(generics.ListCreateAPIView):
+    queryset = IngredientStockMovement.objects.all().select_related('ingredient', 'user').order_by('-timestamp')
+    serializer_class = IngredientStockMovementSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        if request.user.role not in ['STAFF', 'ADMIN']:
+            return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
+
+        ingredient_id = request.data.get('ingredient')
+        movement_type = request.data.get('movement_type')
+        input_quantity = request.data.get('quantity', request.data.get('input_quantity', 0))
+        input_unit = request.data.get('unit', request.data.get('input_unit', '')).upper()
+        reason = request.data.get('reason', 'Manual ingredient adjustment')
+
+        if movement_type not in ('IN', 'OUT'):
+            return Response({"detail": "Invalid movement type."}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            try:
+                ingredient = Ingredient.objects.select_for_update().get(id=ingredient_id)
+                quantity = ingredient.convert_stock_quantity(input_quantity, input_unit)
+            except Ingredient.DoesNotExist:
+                return Response({"detail": "Ingredient not found."}, status=status.HTTP_404_NOT_FOUND)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+            if movement_type == 'IN':
+                ingredient.stock_quantity += quantity
+            else:
+                if ingredient.stock_quantity < quantity:
+                    return Response({"detail": f"Insufficient {ingredient.name}. Available: {ingredient.stock_quantity} {ingredient.get_base_unit_display()}."}, status=status.HTTP_400_BAD_REQUEST)
+                ingredient.stock_quantity -= quantity
+            ingredient.save()
+
+            movement = IngredientStockMovement.objects.create(
+                ingredient=ingredient,
+                movement_type=movement_type,
+                quantity=quantity,
+                input_quantity=input_quantity,
+                input_unit=input_unit,
+                reason=reason,
+                user=request.user
+            )
+
+            AuditLog.objects.create(
+                user=request.user,
+                action="INGREDIENT_STOCK_MOVEMENT",
+                description=f"Ingredient stock {movement_type}: {ingredient.name} {quantity} {ingredient.get_base_unit_display()} ({reason})."
+            )
+
+        return Response(IngredientStockMovementSerializer(movement).data, status=status.HTTP_201_CREATED)
+
+class GenerateRecipeIngredientsView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        if request.user.role not in ['STAFF', 'ADMIN']:
+            return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
+        generated = ensure_default_ingredients_and_recipes()
+        if generated:
+            AuditLog.objects.create(
+                user=request.user,
+                action="RECIPE_GENERATE",
+                description=f"Generated default ingredient recipes ({generated} new links)."
+            )
+        return Response({"message": "Raw ingredient list and drink recipes generated.", "created_recipe_items": generated})
 
 class CategoryListCreateView(generics.ListCreateAPIView):
     queryset = Category.objects.all()

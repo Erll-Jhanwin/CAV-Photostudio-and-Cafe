@@ -1,0 +1,3506 @@
+[
+{
+  "model": "users.customuser",
+  "pk": 1,
+  "fields": {
+    "password": "pbkdf2_sha256$1000000$3EneiPsy8p0vAlTzxNhMJ0$yrXcdPg2hy2MXAUaYqxm0ZQIylLqIbPCDqcJgtCeUfg=",
+    "last_login": null,
+    "is_superuser": true,
+    "username": "admin",
+    "first_name": "CAV",
+    "last_name": "Admin",
+    "email": "admin@test.com",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-07-02T17:24:23.700Z",
+    "role": "ADMIN",
+    "phone_number": null,
+    "address": null,
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.customuser",
+  "pk": 2,
+  "fields": {
+    "password": "pbkdf2_sha256$1000000$sK2x5R3NCueOQygrFWuzte$i90Z/Xv/TNPcIw0Sh20R8pfC2IaQ9vKj8nRoIre9e84=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "staff",
+    "first_name": "CAV",
+    "last_name": "Staff",
+    "email": "staff@test.com",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-07-02T17:24:24.579Z",
+    "role": "STAFF",
+    "phone_number": null,
+    "address": null,
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.customuser",
+  "pk": 3,
+  "fields": {
+    "password": "pbkdf2_sha256$1000000$7xgPc2IkrStnZq7NXbrOKK$hYtpmT9JPP+DMhJyBT14+ef8zytZ3PTLl1XH2lMXTaM=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "customer",
+    "first_name": "CAV",
+    "last_name": "Customer",
+    "email": "customer@test.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2026-07-02T17:24:25.294Z",
+    "role": "CUSTOMER",
+    "phone_number": null,
+    "address": null,
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.customuser",
+  "pk": 4,
+  "fields": {
+    "password": "pbkdf2_sha256$1000000$AeecUUZs1elGhmy9SAYgv5$gHBFOZIT55mk5xUj67mqwVpR5OqeLau/e7Ew5mIKgFQ=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "Erll",
+    "first_name": "Erll Jhanwin",
+    "last_name": "Catapang",
+    "email": "erll@gmail.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2026-07-03T05:15:04.595Z",
+    "role": "CUSTOMER",
+    "phone_number": "09766464273",
+    "address": "Dalipit West, Cuenca, Batangas",
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.customer",
+  "pk": 1,
+  "fields": {
+    "user": 3,
+    "points": 150,
+    "birthdate": null,
+    "loyalty_tier": "Bronze",
+    "notes": "Demo customer account."
+  }
+},
+{
+  "model": "users.customer",
+  "pk": 2,
+  "fields": {
+    "user": 4,
+    "points": 0,
+    "birthdate": null,
+    "loyalty_tier": "Bronze",
+    "notes": null
+  }
+},
+{
+  "model": "booking.service",
+  "pk": 5,
+  "fields": {
+    "name": "Studio Session",
+    "description": "Standard studio photo session packages. Good for solo, couple, family, birthdays, and quick studio shoots.",
+    "duration_minutes": 60,
+    "base_price": "1000.00",
+    "image_url": "https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=600"
+  }
+},
+{
+  "model": "booking.service",
+  "pk": 6,
+  "fields": {
+    "name": "Photo Service Booking",
+    "description": "Full-service booking process for events and extended photoshoots. Includes event/program, booking confirmation, availability, shoot layout, setup, printing, and final file record.",
+    "duration_minutes": 120,
+    "base_price": "2500.00",
+    "image_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=600"
+  }
+},
+{
+  "model": "booking.package",
+  "pk": 9,
+  "fields": {
+    "service": 5,
+    "name": "Solo Package",
+    "description": "1 person / 5 shots",
+    "price": "1000.00",
+    "inclusions": "1 person, 5 shots, studio lighting, backdrop selection, basic retouching, digital soft copies"
+  }
+},
+{
+  "model": "booking.package",
+  "pk": 10,
+  "fields": {
+    "service": 5,
+    "name": "Mr. & Ms. / Couple Package",
+    "description": "2 persons / 10 shots",
+    "price": "1000.00",
+    "inclusions": "2 persons, 10 shots, studio lighting, backdrop selection, basic retouching, digital soft copies"
+  }
+},
+{
+  "model": "booking.package",
+  "pk": 11,
+  "fields": {
+    "service": 5,
+    "name": "Mr. & Ms. Friends Package",
+    "description": "3-5 persons / 15 shots",
+    "price": "1000.00",
+    "inclusions": "3-5 persons, 15 shots, studio lighting, backdrop selection, basic retouching, digital soft copies"
+  }
+},
+{
+  "model": "booking.package",
+  "pk": 12,
+  "fields": {
+    "service": 5,
+    "name": "Family Package",
+    "description": "2-6 persons / 15 shots",
+    "price": "1500.00",
+    "inclusions": "2-6 persons, 15 shots, studio lighting, backdrop selection, basic retouching, digital soft copies"
+  }
+},
+{
+  "model": "booking.package",
+  "pk": 13,
+  "fields": {
+    "service": 5,
+    "name": "Birthday Package",
+    "description": "1-4 persons / 15 shots",
+    "price": "1500.00",
+    "inclusions": "1-4 persons, 15 shots, studio lighting, backdrop selection, basic retouching, digital soft copies, birthday props"
+  }
+},
+{
+  "model": "booking.package",
+  "pk": 14,
+  "fields": {
+    "service": 6,
+    "name": "Standard Event Package",
+    "description": "2 hours event/program photoshoot",
+    "price": "2500.00",
+    "inclusions": "2 hours coverage, availability validation, layout setup, printing coordination, final digital file record"
+  }
+},
+{
+  "model": "booking.booking",
+  "pk": 2,
+  "fields": {
+    "customer": 3,
+    "package": 9,
+    "scheduled_date": "2026-07-16",
+    "scheduled_time": "15:00:00",
+    "status": "COMPLETED",
+    "notes": "",
+    "created_at": "2026-07-04T05:50:01.999Z"
+  }
+},
+{
+  "model": "booking.booking",
+  "pk": 3,
+  "fields": {
+    "customer": 3,
+    "package": 9,
+    "scheduled_date": "2026-07-25",
+    "scheduled_time": "18:00:00",
+    "status": "CONFIRMED",
+    "notes": "",
+    "created_at": "2026-07-04T06:22:50.424Z"
+  }
+},
+{
+  "model": "booking.booking",
+  "pk": 4,
+  "fields": {
+    "customer": 3,
+    "package": 9,
+    "scheduled_date": "2026-07-18",
+    "scheduled_time": "13:00:00",
+    "status": "CANCELLED",
+    "notes": "",
+    "created_at": "2026-07-04T06:40:30.260Z"
+  }
+},
+{
+  "model": "booking.booking",
+  "pk": 5,
+  "fields": {
+    "customer": 3,
+    "package": 12,
+    "scheduled_date": "2026-07-22",
+    "scheduled_time": "09:00:00",
+    "status": "PENDING",
+    "notes": "Add backdrops",
+    "created_at": "2026-07-07T14:27:50.953Z"
+  }
+},
+{
+  "model": "booking.booking",
+  "pk": 6,
+  "fields": {
+    "customer": 3,
+    "package": 9,
+    "scheduled_date": "2026-07-23",
+    "scheduled_time": "17:00:00",
+    "status": "PENDING",
+    "notes": "cfbm,./,mjhgbfvd",
+    "created_at": "2026-07-07T14:32:14.844Z"
+  }
+},
+{
+  "model": "booking.booking",
+  "pk": 7,
+  "fields": {
+    "customer": 3,
+    "package": 9,
+    "scheduled_date": "2026-07-11",
+    "scheduled_time": "19:00:00",
+    "status": "PENDING",
+    "notes": "efe",
+    "created_at": "2026-07-07T14:35:56.016Z"
+  }
+},
+{
+  "model": "booking.booking",
+  "pk": 8,
+  "fields": {
+    "customer": 3,
+    "package": 14,
+    "scheduled_date": "2026-07-30",
+    "scheduled_time": "16:00:00",
+    "status": "CONFIRMED",
+    "notes": "tt",
+    "created_at": "2026-07-07T14:39:02.371Z"
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 2,
+  "fields": {
+    "booking": 2,
+    "name": "All Raw Soft Copies (USB)",
+    "price": "300.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 3,
+  "fields": {
+    "booking": 2,
+    "name": "Premium A4 Print & Frame",
+    "price": "250.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 4,
+  "fields": {
+    "booking": 2,
+    "name": "Extra Pax (1 Person)",
+    "price": "150.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 5,
+  "fields": {
+    "booking": 3,
+    "name": "Extra Pax (1 Person)",
+    "price": "150.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 6,
+  "fields": {
+    "booking": 3,
+    "name": "Premium A4 Print & Frame",
+    "price": "250.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 7,
+  "fields": {
+    "booking": 4,
+    "name": "All Raw Soft Copies (USB)",
+    "price": "300.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 8,
+  "fields": {
+    "booking": 5,
+    "name": "Premium A4 Print & Frame",
+    "price": "250.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 9,
+  "fields": {
+    "booking": 5,
+    "name": "All Raw Soft Copies (USB)",
+    "price": "300.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 10,
+  "fields": {
+    "booking": 5,
+    "name": "Professional Make-up Artist",
+    "price": "1200.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 11,
+  "fields": {
+    "booking": 6,
+    "name": "Extra Pax (1 Person)",
+    "price": "150.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 12,
+  "fields": {
+    "booking": 6,
+    "name": "Premium A4 Print & Frame",
+    "price": "250.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 13,
+  "fields": {
+    "booking": 6,
+    "name": "All Raw Soft Copies (USB)",
+    "price": "300.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 14,
+  "fields": {
+    "booking": 6,
+    "name": "Professional Make-up Artist",
+    "price": "1200.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 15,
+  "fields": {
+    "booking": 7,
+    "name": "Premium A4 Print & Frame",
+    "price": "250.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 16,
+  "fields": {
+    "booking": 7,
+    "name": "Extra Pax (1 Person)",
+    "price": "150.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 17,
+  "fields": {
+    "booking": 7,
+    "name": "All Raw Soft Copies (USB)",
+    "price": "300.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 18,
+  "fields": {
+    "booking": 7,
+    "name": "Professional Make-up Artist",
+    "price": "1200.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 19,
+  "fields": {
+    "booking": 8,
+    "name": "All Raw Soft Copies (USB)",
+    "price": "300.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "booking.bookingitem",
+  "pk": 20,
+  "fields": {
+    "booking": 8,
+    "name": "Professional Make-up Artist",
+    "price": "1200.00",
+    "quantity": 1
+  }
+},
+{
+  "model": "inventory.supplier",
+  "pk": 1,
+  "fields": {
+    "name": "Manila Coffee Roasters",
+    "contact_person": "Juan Dela Cruz",
+    "email": "juan@manilacoffee.com",
+    "phone": "+639171234567",
+    "address": "Quezon City, Metro Manila"
+  }
+},
+{
+  "model": "inventory.supplier",
+  "pk": 2,
+  "fields": {
+    "name": "Studio Paper Supplies Corp",
+    "contact_person": "Maria Santos",
+    "email": "maria@studiosupplies.com",
+    "phone": "+639187654321",
+    "address": "Pasig City, Metro Manila"
+  }
+},
+{
+  "model": "inventory.category",
+  "pk": 1,
+  "fields": {
+    "name": "Beverages",
+    "description": "Espresso-based coffees, teas, and refreshers"
+  }
+},
+{
+  "model": "inventory.category",
+  "pk": 2,
+  "fields": {
+    "name": "Snacks",
+    "description": "Freshly baked pastries and sandwiches"
+  }
+},
+{
+  "model": "inventory.category",
+  "pk": 3,
+  "fields": {
+    "name": "Photo Supplies",
+    "description": "Studio printing paper, frames, and print assets"
+  }
+},
+{
+  "model": "inventory.category",
+  "pk": 4,
+  "fields": {
+    "name": "Classics",
+    "description": "CAV Caf� � Classics drinks"
+  }
+},
+{
+  "model": "inventory.category",
+  "pk": 5,
+  "fields": {
+    "name": "Signatures",
+    "description": "CAV Caf� � Signatures drinks"
+  }
+},
+{
+  "model": "inventory.category",
+  "pk": 6,
+  "fields": {
+    "name": "Matcha",
+    "description": "CAV Caf� � Matcha drinks"
+  }
+},
+{
+  "model": "inventory.category",
+  "pk": 7,
+  "fields": {
+    "name": "Soda",
+    "description": "CAV Caf� � Soda drinks"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 1,
+  "fields": {
+    "name": "Espresso",
+    "sku": "CAFE-ESP",
+    "category": 1,
+    "supplier": 1,
+    "cost": "30.00",
+    "price": "90.00",
+    "stock_level": 118,
+    "reorder_point": 20,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1510707513156-476725f37722?q=80&w=400"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 2,
+  "fields": {
+    "name": "Iced Latte",
+    "sku": "CAFE-LAT",
+    "category": 1,
+    "supplier": 1,
+    "cost": "45.00",
+    "price": "130.00",
+    "stock_level": 97,
+    "reorder_point": 20,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1517701604599-bb29b565090c?q=80&w=400"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 3,
+  "fields": {
+    "name": "Chocolate Croissant",
+    "sku": "CAFE-CRO",
+    "category": 2,
+    "supplier": null,
+    "cost": "35.00",
+    "price": "85.00",
+    "stock_level": 30,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1555507036-ab1f4038808a?q=80&w=400"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 4,
+  "fields": {
+    "name": "Premium Glossy A4 Paper",
+    "sku": "STUDIO-PPA4",
+    "category": 3,
+    "supplier": 2,
+    "cost": "150.00",
+    "price": "350.00",
+    "stock_level": 3,
+    "reorder_point": 10,
+    "is_cafe_item": false,
+    "image_url": "https://images.unsplash.com/photo-1603481588273-2f908a9a7a1b?q=80&w=400"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 5,
+  "fields": {
+    "name": "Americano",
+    "sku": "CAF-CLS-001",
+    "category": 4,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "70.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1551030173-122aabc4489c?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 6,
+  "fields": {
+    "name": "Cappuccino",
+    "sku": "CAF-CLS-002",
+    "category": 4,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "110.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1572442388796-11668a67e53d?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 7,
+  "fields": {
+    "name": "Spanish Latte",
+    "sku": "CAF-CLS-003",
+    "category": 4,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "105.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1561882468-9110e03e0f78?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 8,
+  "fields": {
+    "name": "Caramel Macchiato",
+    "sku": "CAF-CLS-004",
+    "category": 4,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "105.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 9,
+  "fields": {
+    "name": "Chocnut Latte",
+    "sku": "CAF-SIG-001",
+    "category": 5,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "125.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1578314675249-a6910f80cc4e?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 10,
+  "fields": {
+    "name": "Triple Chocolate Latte",
+    "sku": "CAF-SIG-002",
+    "category": 5,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "140.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1610889556528-9a770e32642f?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 11,
+  "fields": {
+    "name": "Classic Matcha",
+    "sku": "CAF-MAT-001",
+    "category": 6,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "130.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1536256263959-770b48d82b0a?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 12,
+  "fields": {
+    "name": "Dirty Matcha",
+    "sku": "CAF-MAT-002",
+    "category": 6,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "145.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1564890369478-c89ca6d9cde9?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 13,
+  "fields": {
+    "name": "Chocnut Matcha",
+    "sku": "CAF-MAT-003",
+    "category": 6,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "155.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1545631757-2ee9cff5bb7c?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 14,
+  "fields": {
+    "name": "Strawberry Matcha",
+    "sku": "CAF-MAT-004",
+    "category": 6,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "145.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1546549095-77f48c851c8f?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 15,
+  "fields": {
+    "name": "Sparkling Mango",
+    "sku": "CAF-SOD-001",
+    "category": 7,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "75.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1541614101331-1a5a3a194e92?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 16,
+  "fields": {
+    "name": "Sparkling Strawberry",
+    "sku": "CAF-SOD-002",
+    "category": 7,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "75.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1497534446932-c925b458314e?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 17,
+  "fields": {
+    "name": "Sparkling Blueberry",
+    "sku": "CAF-SOD-003",
+    "category": 7,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "75.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.product",
+  "pk": 18,
+  "fields": {
+    "name": "Sparkling Green Apple",
+    "sku": "CAF-SOD-004",
+    "category": 7,
+    "supplier": null,
+    "cost": "0.00",
+    "price": "65.00",
+    "stock_level": 100,
+    "reorder_point": 10,
+    "is_cafe_item": true,
+    "image_url": "https://images.unsplash.com/photo-1596803244897-82e71b4a59e3?w=400&q=80"
+  }
+},
+{
+  "model": "inventory.stockmovement",
+  "pk": 1,
+  "fields": {
+    "product": 1,
+    "movement_type": "IN",
+    "quantity": 150,
+    "reason": "Initial stock seeding",
+    "timestamp": "2026-07-02T17:24:25.994Z",
+    "user": null
+  }
+},
+{
+  "model": "inventory.stockmovement",
+  "pk": 2,
+  "fields": {
+    "product": 2,
+    "movement_type": "IN",
+    "quantity": 100,
+    "reason": "Initial stock seeding",
+    "timestamp": "2026-07-02T17:24:26.005Z",
+    "user": null
+  }
+},
+{
+  "model": "inventory.stockmovement",
+  "pk": 3,
+  "fields": {
+    "product": 3,
+    "movement_type": "IN",
+    "quantity": 30,
+    "reason": "Initial stock seeding",
+    "timestamp": "2026-07-02T17:24:26.015Z",
+    "user": null
+  }
+},
+{
+  "model": "inventory.stockmovement",
+  "pk": 4,
+  "fields": {
+    "product": 4,
+    "movement_type": "IN",
+    "quantity": 3,
+    "reason": "Initial stock seeding",
+    "timestamp": "2026-07-02T17:24:26.025Z",
+    "user": null
+  }
+},
+{
+  "model": "inventory.stockmovement",
+  "pk": 5,
+  "fields": {
+    "product": 1,
+    "movement_type": "OUT",
+    "quantity": 4,
+    "reason": "POS Transaction Order #1",
+    "timestamp": "2026-07-02T18:26:50.578Z",
+    "user": 2
+  }
+},
+{
+  "model": "inventory.stockmovement",
+  "pk": 6,
+  "fields": {
+    "product": 1,
+    "movement_type": "OUT",
+    "quantity": 5,
+    "reason": "POS Transaction Order #2",
+    "timestamp": "2026-07-02T18:27:03.701Z",
+    "user": 2
+  }
+},
+{
+  "model": "inventory.stockmovement",
+  "pk": 7,
+  "fields": {
+    "product": 1,
+    "movement_type": "OUT",
+    "quantity": 16,
+    "reason": "POS Transaction Order #3",
+    "timestamp": "2026-07-02T18:27:26.167Z",
+    "user": 2
+  }
+},
+{
+  "model": "inventory.stockmovement",
+  "pk": 8,
+  "fields": {
+    "product": 1,
+    "movement_type": "OUT",
+    "quantity": 7,
+    "reason": "POS Transaction Order #4",
+    "timestamp": "2026-07-04T05:05:53.850Z",
+    "user": 2
+  }
+},
+{
+  "model": "inventory.stockmovement",
+  "pk": 9,
+  "fields": {
+    "product": 2,
+    "movement_type": "OUT",
+    "quantity": 2,
+    "reason": "POS Transaction Order #5",
+    "timestamp": "2026-07-04T09:28:48.971Z",
+    "user": 2
+  }
+},
+{
+  "model": "inventory.stockmovement",
+  "pk": 10,
+  "fields": {
+    "product": 2,
+    "movement_type": "OUT",
+    "quantity": 1,
+    "reason": "POS Transaction Order #6",
+    "timestamp": "2026-07-04T09:29:11.480Z",
+    "user": 2
+  }
+},
+{
+  "model": "pos.order",
+  "pk": 1,
+  "fields": {
+    "staff": 2,
+    "booking": null,
+    "total": "360.00",
+    "payment_status": "PAID",
+    "order_type": "WALK_IN",
+    "created_at": "2026-07-02T18:26:50.571Z"
+  }
+},
+{
+  "model": "pos.order",
+  "pk": 2,
+  "fields": {
+    "staff": 2,
+    "booking": null,
+    "total": "450.00",
+    "payment_status": "PAID",
+    "order_type": "WALK_IN",
+    "created_at": "2026-07-02T18:27:03.692Z"
+  }
+},
+{
+  "model": "pos.order",
+  "pk": 3,
+  "fields": {
+    "staff": 2,
+    "booking": null,
+    "total": "1440.00",
+    "payment_status": "PAID",
+    "order_type": "WALK_IN",
+    "created_at": "2026-07-02T18:27:26.161Z"
+  }
+},
+{
+  "model": "pos.order",
+  "pk": 4,
+  "fields": {
+    "staff": 2,
+    "booking": null,
+    "total": "630.00",
+    "payment_status": "PAID",
+    "order_type": "WALK_IN",
+    "created_at": "2026-07-04T05:05:53.844Z"
+  }
+},
+{
+  "model": "pos.order",
+  "pk": 5,
+  "fields": {
+    "staff": 2,
+    "booking": null,
+    "total": "260.00",
+    "payment_status": "PAID",
+    "order_type": "WALK_IN",
+    "created_at": "2026-07-04T09:28:48.965Z"
+  }
+},
+{
+  "model": "pos.order",
+  "pk": 6,
+  "fields": {
+    "staff": 2,
+    "booking": null,
+    "total": "130.00",
+    "payment_status": "PAID",
+    "order_type": "WALK_IN",
+    "created_at": "2026-07-04T09:29:11.466Z"
+  }
+},
+{
+  "model": "pos.orderitem",
+  "pk": 1,
+  "fields": {
+    "order": 1,
+    "product": 1,
+    "quantity": 4,
+    "price": "90.00",
+    "subtotal": "360.00"
+  }
+},
+{
+  "model": "pos.orderitem",
+  "pk": 2,
+  "fields": {
+    "order": 2,
+    "product": 1,
+    "quantity": 5,
+    "price": "90.00",
+    "subtotal": "450.00"
+  }
+},
+{
+  "model": "pos.orderitem",
+  "pk": 3,
+  "fields": {
+    "order": 3,
+    "product": 1,
+    "quantity": 16,
+    "price": "90.00",
+    "subtotal": "1440.00"
+  }
+},
+{
+  "model": "pos.orderitem",
+  "pk": 4,
+  "fields": {
+    "order": 4,
+    "product": 1,
+    "quantity": 7,
+    "price": "90.00",
+    "subtotal": "630.00"
+  }
+},
+{
+  "model": "pos.orderitem",
+  "pk": 5,
+  "fields": {
+    "order": 5,
+    "product": 2,
+    "quantity": 2,
+    "price": "130.00",
+    "subtotal": "260.00"
+  }
+},
+{
+  "model": "pos.orderitem",
+  "pk": 6,
+  "fields": {
+    "order": 6,
+    "product": 2,
+    "quantity": 1,
+    "price": "130.00",
+    "subtotal": "130.00"
+  }
+},
+{
+  "model": "pos.payment",
+  "pk": 1,
+  "fields": {
+    "order": 1,
+    "amount": "360.00",
+    "method": "CASH",
+    "transaction_id": "",
+    "timestamp": "2026-07-02T18:26:50.582Z"
+  }
+},
+{
+  "model": "pos.payment",
+  "pk": 2,
+  "fields": {
+    "order": 2,
+    "amount": "450.00",
+    "method": "CASH",
+    "transaction_id": "",
+    "timestamp": "2026-07-02T18:27:03.703Z"
+  }
+},
+{
+  "model": "pos.payment",
+  "pk": 3,
+  "fields": {
+    "order": 3,
+    "amount": "1440.00",
+    "method": "CASH",
+    "transaction_id": "",
+    "timestamp": "2026-07-02T18:27:26.169Z"
+  }
+},
+{
+  "model": "pos.payment",
+  "pk": 4,
+  "fields": {
+    "order": 4,
+    "amount": "630.00",
+    "method": "CASH",
+    "transaction_id": "",
+    "timestamp": "2026-07-04T05:05:53.857Z"
+  }
+},
+{
+  "model": "pos.payment",
+  "pk": 5,
+  "fields": {
+    "order": 5,
+    "amount": "260.00",
+    "method": "CASH",
+    "transaction_id": "",
+    "timestamp": "2026-07-04T09:28:48.978Z"
+  }
+},
+{
+  "model": "pos.payment",
+  "pk": 6,
+  "fields": {
+    "order": 6,
+    "amount": "130.00",
+    "method": "CASH",
+    "transaction_id": "",
+    "timestamp": "2026-07-04T09:29:11.493Z"
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 1,
+  "fields": {
+    "date": "2026-05-04",
+    "total_revenue": "3713.59",
+    "pos_revenue": "2122.05",
+    "booking_revenue": "1591.54",
+    "transaction_count": 14
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 2,
+  "fields": {
+    "date": "2026-05-05",
+    "total_revenue": "3662.35",
+    "pos_revenue": "2092.77",
+    "booking_revenue": "1569.58",
+    "transaction_count": 10
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 3,
+  "fields": {
+    "date": "2026-05-06",
+    "total_revenue": "3430.97",
+    "pos_revenue": "1960.56",
+    "booking_revenue": "1470.42",
+    "transaction_count": 12
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 4,
+  "fields": {
+    "date": "2026-05-07",
+    "total_revenue": "3776.34",
+    "pos_revenue": "2157.91",
+    "booking_revenue": "1618.43",
+    "transaction_count": 15
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 5,
+  "fields": {
+    "date": "2026-05-08",
+    "total_revenue": "3916.62",
+    "pos_revenue": "2238.07",
+    "booking_revenue": "1678.55",
+    "transaction_count": 12
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 6,
+  "fields": {
+    "date": "2026-05-09",
+    "total_revenue": "8461.44",
+    "pos_revenue": "4835.11",
+    "booking_revenue": "3626.33",
+    "transaction_count": 26
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 7,
+  "fields": {
+    "date": "2026-05-10",
+    "total_revenue": "7557.15",
+    "pos_revenue": "4318.37",
+    "booking_revenue": "3238.78",
+    "transaction_count": 17
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 8,
+  "fields": {
+    "date": "2026-05-11",
+    "total_revenue": "3163.38",
+    "pos_revenue": "1807.65",
+    "booking_revenue": "1355.74",
+    "transaction_count": 12
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 9,
+  "fields": {
+    "date": "2026-05-12",
+    "total_revenue": "3831.03",
+    "pos_revenue": "2189.16",
+    "booking_revenue": "1641.87",
+    "transaction_count": 12
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 10,
+  "fields": {
+    "date": "2026-05-13",
+    "total_revenue": "4004.67",
+    "pos_revenue": "2288.39",
+    "booking_revenue": "1716.29",
+    "transaction_count": 8
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 11,
+  "fields": {
+    "date": "2026-05-14",
+    "total_revenue": "4218.45",
+    "pos_revenue": "2410.54",
+    "booking_revenue": "1807.91",
+    "transaction_count": 15
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 12,
+  "fields": {
+    "date": "2026-05-15",
+    "total_revenue": "3970.27",
+    "pos_revenue": "2268.72",
+    "booking_revenue": "1701.54",
+    "transaction_count": 14
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 13,
+  "fields": {
+    "date": "2026-05-16",
+    "total_revenue": "8276.54",
+    "pos_revenue": "4729.45",
+    "booking_revenue": "3547.09",
+    "transaction_count": 16
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 14,
+  "fields": {
+    "date": "2026-05-17",
+    "total_revenue": "9640.59",
+    "pos_revenue": "5508.91",
+    "booking_revenue": "4131.68",
+    "transaction_count": 17
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 15,
+  "fields": {
+    "date": "2026-05-18",
+    "total_revenue": "4403.00",
+    "pos_revenue": "2516.00",
+    "booking_revenue": "1887.00",
+    "transaction_count": 15
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 16,
+  "fields": {
+    "date": "2026-05-19",
+    "total_revenue": "3757.37",
+    "pos_revenue": "2147.07",
+    "booking_revenue": "1610.30",
+    "transaction_count": 9
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 17,
+  "fields": {
+    "date": "2026-05-20",
+    "total_revenue": "4172.95",
+    "pos_revenue": "2384.55",
+    "booking_revenue": "1788.41",
+    "transaction_count": 14
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 18,
+  "fields": {
+    "date": "2026-05-21",
+    "total_revenue": "4495.98",
+    "pos_revenue": "2569.13",
+    "booking_revenue": "1926.85",
+    "transaction_count": 15
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 19,
+  "fields": {
+    "date": "2026-05-22",
+    "total_revenue": "4501.28",
+    "pos_revenue": "2572.16",
+    "booking_revenue": "1929.12",
+    "transaction_count": 9
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 20,
+  "fields": {
+    "date": "2026-05-23",
+    "total_revenue": "9476.48",
+    "pos_revenue": "5415.13",
+    "booking_revenue": "4061.35",
+    "transaction_count": 17
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 21,
+  "fields": {
+    "date": "2026-05-24",
+    "total_revenue": "7747.82",
+    "pos_revenue": "4427.32",
+    "booking_revenue": "3320.49",
+    "transaction_count": 28
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 22,
+  "fields": {
+    "date": "2026-05-25",
+    "total_revenue": "3586.82",
+    "pos_revenue": "2049.61",
+    "booking_revenue": "1537.21",
+    "transaction_count": 14
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 23,
+  "fields": {
+    "date": "2026-05-26",
+    "total_revenue": "4206.48",
+    "pos_revenue": "2403.70",
+    "booking_revenue": "1802.78",
+    "transaction_count": 9
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 24,
+  "fields": {
+    "date": "2026-05-27",
+    "total_revenue": "4091.25",
+    "pos_revenue": "2337.86",
+    "booking_revenue": "1753.39",
+    "transaction_count": 11
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 25,
+  "fields": {
+    "date": "2026-05-28",
+    "total_revenue": "4270.43",
+    "pos_revenue": "2440.25",
+    "booking_revenue": "1830.19",
+    "transaction_count": 13
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 26,
+  "fields": {
+    "date": "2026-05-29",
+    "total_revenue": "4746.35",
+    "pos_revenue": "2712.20",
+    "booking_revenue": "2034.15",
+    "transaction_count": 13
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 27,
+  "fields": {
+    "date": "2026-05-30",
+    "total_revenue": "9333.60",
+    "pos_revenue": "5333.48",
+    "booking_revenue": "4000.11",
+    "transaction_count": 25
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 28,
+  "fields": {
+    "date": "2026-05-31",
+    "total_revenue": "10542.46",
+    "pos_revenue": "6024.26",
+    "booking_revenue": "4518.20",
+    "transaction_count": 30
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 29,
+  "fields": {
+    "date": "2026-06-01",
+    "total_revenue": "4550.27",
+    "pos_revenue": "2600.16",
+    "booking_revenue": "1950.12",
+    "transaction_count": 13
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 30,
+  "fields": {
+    "date": "2026-06-02",
+    "total_revenue": "4075.77",
+    "pos_revenue": "2329.01",
+    "booking_revenue": "1746.76",
+    "transaction_count": 9
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 31,
+  "fields": {
+    "date": "2026-06-03",
+    "total_revenue": "4846.27",
+    "pos_revenue": "2769.30",
+    "booking_revenue": "2076.97",
+    "transaction_count": 15
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 32,
+  "fields": {
+    "date": "2026-06-04",
+    "total_revenue": "4533.00",
+    "pos_revenue": "2590.28",
+    "booking_revenue": "1942.71",
+    "transaction_count": 12
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 33,
+  "fields": {
+    "date": "2026-06-05",
+    "total_revenue": "4618.90",
+    "pos_revenue": "2639.37",
+    "booking_revenue": "1979.53",
+    "transaction_count": 10
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 34,
+  "fields": {
+    "date": "2026-06-06",
+    "total_revenue": "10120.04",
+    "pos_revenue": "5782.88",
+    "booking_revenue": "4337.16",
+    "transaction_count": 29
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 35,
+  "fields": {
+    "date": "2026-06-07",
+    "total_revenue": "9689.61",
+    "pos_revenue": "5536.92",
+    "booking_revenue": "4152.69",
+    "transaction_count": 17
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 36,
+  "fields": {
+    "date": "2026-06-08",
+    "total_revenue": "5044.89",
+    "pos_revenue": "2882.79",
+    "booking_revenue": "2162.10",
+    "transaction_count": 12
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 37,
+  "fields": {
+    "date": "2026-06-09",
+    "total_revenue": "4226.20",
+    "pos_revenue": "2414.97",
+    "booking_revenue": "1811.23",
+    "transaction_count": 9
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 38,
+  "fields": {
+    "date": "2026-06-10",
+    "total_revenue": "4811.73",
+    "pos_revenue": "2749.56",
+    "booking_revenue": "2062.17",
+    "transaction_count": 12
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 39,
+  "fields": {
+    "date": "2026-06-11",
+    "total_revenue": "4700.89",
+    "pos_revenue": "2686.22",
+    "booking_revenue": "2014.67",
+    "transaction_count": 8
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 40,
+  "fields": {
+    "date": "2026-06-12",
+    "total_revenue": "4113.34",
+    "pos_revenue": "2350.48",
+    "booking_revenue": "1762.86",
+    "transaction_count": 14
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 41,
+  "fields": {
+    "date": "2026-06-13",
+    "total_revenue": "9636.55",
+    "pos_revenue": "5506.60",
+    "booking_revenue": "4129.95",
+    "transaction_count": 16
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 42,
+  "fields": {
+    "date": "2026-06-14",
+    "total_revenue": "10699.23",
+    "pos_revenue": "6113.85",
+    "booking_revenue": "4585.39",
+    "transaction_count": 24
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 43,
+  "fields": {
+    "date": "2026-06-15",
+    "total_revenue": "4497.64",
+    "pos_revenue": "2570.08",
+    "booking_revenue": "1927.56",
+    "transaction_count": 12
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 44,
+  "fields": {
+    "date": "2026-06-16",
+    "total_revenue": "4588.74",
+    "pos_revenue": "2622.14",
+    "booking_revenue": "1966.60",
+    "transaction_count": 11
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 45,
+  "fields": {
+    "date": "2026-06-17",
+    "total_revenue": "5136.18",
+    "pos_revenue": "2934.96",
+    "booking_revenue": "2201.22",
+    "transaction_count": 12
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 46,
+  "fields": {
+    "date": "2026-06-18",
+    "total_revenue": "4838.41",
+    "pos_revenue": "2764.81",
+    "booking_revenue": "2073.60",
+    "transaction_count": 15
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 47,
+  "fields": {
+    "date": "2026-06-19",
+    "total_revenue": "4794.35",
+    "pos_revenue": "2739.63",
+    "booking_revenue": "2054.72",
+    "transaction_count": 15
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 48,
+  "fields": {
+    "date": "2026-06-20",
+    "total_revenue": "11282.02",
+    "pos_revenue": "6446.87",
+    "booking_revenue": "4835.15",
+    "transaction_count": 28
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 49,
+  "fields": {
+    "date": "2026-06-21",
+    "total_revenue": "9256.18",
+    "pos_revenue": "5289.24",
+    "booking_revenue": "3966.93",
+    "transaction_count": 26
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 50,
+  "fields": {
+    "date": "2026-06-22",
+    "total_revenue": "4832.73",
+    "pos_revenue": "2761.56",
+    "booking_revenue": "2071.17",
+    "transaction_count": 14
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 51,
+  "fields": {
+    "date": "2026-06-23",
+    "total_revenue": "4888.43",
+    "pos_revenue": "2793.39",
+    "booking_revenue": "2095.04",
+    "transaction_count": 8
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 52,
+  "fields": {
+    "date": "2026-06-24",
+    "total_revenue": "5489.62",
+    "pos_revenue": "3136.92",
+    "booking_revenue": "2352.69",
+    "transaction_count": 14
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 53,
+  "fields": {
+    "date": "2026-06-25",
+    "total_revenue": "4575.81",
+    "pos_revenue": "2614.75",
+    "booking_revenue": "1961.06",
+    "transaction_count": 8
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 54,
+  "fields": {
+    "date": "2026-06-26",
+    "total_revenue": "5040.56",
+    "pos_revenue": "2880.32",
+    "booking_revenue": "2160.24",
+    "transaction_count": 8
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 55,
+  "fields": {
+    "date": "2026-06-27",
+    "total_revenue": "11719.94",
+    "pos_revenue": "6697.11",
+    "booking_revenue": "5022.83",
+    "transaction_count": 15
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 56,
+  "fields": {
+    "date": "2026-06-28",
+    "total_revenue": "10643.09",
+    "pos_revenue": "6081.77",
+    "booking_revenue": "4561.32",
+    "transaction_count": 19
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 57,
+  "fields": {
+    "date": "2026-06-29",
+    "total_revenue": "5673.83",
+    "pos_revenue": "3242.19",
+    "booking_revenue": "2431.64",
+    "transaction_count": 11
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 58,
+  "fields": {
+    "date": "2026-06-30",
+    "total_revenue": "5533.17",
+    "pos_revenue": "3161.81",
+    "booking_revenue": "2371.36",
+    "transaction_count": 10
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 59,
+  "fields": {
+    "date": "2026-07-01",
+    "total_revenue": "4727.59",
+    "pos_revenue": "2701.48",
+    "booking_revenue": "2026.11",
+    "transaction_count": 15
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 60,
+  "fields": {
+    "date": "2026-07-02",
+    "total_revenue": "7802.10",
+    "pos_revenue": "5422.63",
+    "booking_revenue": "2379.47",
+    "transaction_count": 12
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 61,
+  "fields": {
+    "date": "2026-07-03",
+    "total_revenue": "5570.28",
+    "pos_revenue": "3183.02",
+    "booking_revenue": "2387.26",
+    "transaction_count": 15
+  }
+},
+{
+  "model": "sales.dailysalessummary",
+  "pk": 62,
+  "fields": {
+    "date": "2026-07-04",
+    "total_revenue": "1020.00",
+    "pos_revenue": "1020.00",
+    "booking_revenue": "0.00",
+    "transaction_count": 3
+  }
+},
+{
+  "model": "forecasting.salesprediction",
+  "pk": 1,
+  "fields": {
+    "target_date": "2026-07-04",
+    "predicted_sales": "9415.62",
+    "lower_bound": "9162.01",
+    "upper_bound": "9669.23",
+    "created_at": "2026-07-02T17:24:44.866Z"
+  }
+},
+{
+  "model": "forecasting.salesprediction",
+  "pk": 2,
+  "fields": {
+    "target_date": "2026-07-05",
+    "predicted_sales": "10537.94",
+    "lower_bound": "10284.33",
+    "upper_bound": "10791.55",
+    "created_at": "2026-07-02T17:24:44.872Z"
+  }
+},
+{
+  "model": "forecasting.salesprediction",
+  "pk": 3,
+  "fields": {
+    "target_date": "2026-07-06",
+    "predicted_sales": "5018.67",
+    "lower_bound": "4765.06",
+    "upper_bound": "5272.28",
+    "created_at": "2026-07-02T17:24:44.878Z"
+  }
+},
+{
+  "model": "forecasting.salesprediction",
+  "pk": 4,
+  "fields": {
+    "target_date": "2026-07-07",
+    "predicted_sales": "4576.83",
+    "lower_bound": "4323.22",
+    "upper_bound": "4830.44",
+    "created_at": "2026-07-02T17:24:44.885Z"
+  }
+},
+{
+  "model": "forecasting.salesprediction",
+  "pk": 5,
+  "fields": {
+    "target_date": "2026-07-08",
+    "predicted_sales": "4605.73",
+    "lower_bound": "4352.12",
+    "upper_bound": "4859.34",
+    "created_at": "2026-07-02T17:24:44.891Z"
+  }
+},
+{
+  "model": "forecasting.salesprediction",
+  "pk": 6,
+  "fields": {
+    "target_date": "2026-07-09",
+    "predicted_sales": "5584.98",
+    "lower_bound": "5331.37",
+    "upper_bound": "5838.59",
+    "created_at": "2026-07-02T17:24:44.898Z"
+  }
+},
+{
+  "model": "forecasting.salesprediction",
+  "pk": 7,
+  "fields": {
+    "target_date": "2026-07-10",
+    "predicted_sales": "4612.56",
+    "lower_bound": "4358.95",
+    "upper_bound": "4866.17",
+    "created_at": "2026-07-02T17:24:44.904Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 1,
+  "fields": {
+    "product": 1,
+    "target_date": "2026-07-04",
+    "predicted_quantity": 16,
+    "created_at": "2026-07-02T17:24:56.401Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 2,
+  "fields": {
+    "product": 1,
+    "target_date": "2026-07-05",
+    "predicted_quantity": 15,
+    "created_at": "2026-07-02T17:24:56.406Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 3,
+  "fields": {
+    "product": 1,
+    "target_date": "2026-07-06",
+    "predicted_quantity": 6,
+    "created_at": "2026-07-02T17:24:56.413Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 4,
+  "fields": {
+    "product": 1,
+    "target_date": "2026-07-07",
+    "predicted_quantity": 6,
+    "created_at": "2026-07-02T17:24:56.421Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 5,
+  "fields": {
+    "product": 1,
+    "target_date": "2026-07-08",
+    "predicted_quantity": 6,
+    "created_at": "2026-07-02T17:24:56.428Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 6,
+  "fields": {
+    "product": 1,
+    "target_date": "2026-07-09",
+    "predicted_quantity": 7,
+    "created_at": "2026-07-02T17:24:56.433Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 7,
+  "fields": {
+    "product": 1,
+    "target_date": "2026-07-10",
+    "predicted_quantity": 6,
+    "created_at": "2026-07-02T17:24:56.439Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 8,
+  "fields": {
+    "product": 2,
+    "target_date": "2026-07-04",
+    "predicted_quantity": 12,
+    "created_at": "2026-07-02T17:24:56.446Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 9,
+  "fields": {
+    "product": 2,
+    "target_date": "2026-07-05",
+    "predicted_quantity": 13,
+    "created_at": "2026-07-02T17:24:56.451Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 10,
+  "fields": {
+    "product": 2,
+    "target_date": "2026-07-06",
+    "predicted_quantity": 5,
+    "created_at": "2026-07-02T17:24:56.455Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 11,
+  "fields": {
+    "product": 2,
+    "target_date": "2026-07-07",
+    "predicted_quantity": 6,
+    "created_at": "2026-07-02T17:24:56.462Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 12,
+  "fields": {
+    "product": 2,
+    "target_date": "2026-07-08",
+    "predicted_quantity": 5,
+    "created_at": "2026-07-02T17:24:56.466Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 13,
+  "fields": {
+    "product": 2,
+    "target_date": "2026-07-09",
+    "predicted_quantity": 4,
+    "created_at": "2026-07-02T17:24:56.471Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 14,
+  "fields": {
+    "product": 2,
+    "target_date": "2026-07-10",
+    "predicted_quantity": 6,
+    "created_at": "2026-07-02T17:24:56.478Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 15,
+  "fields": {
+    "product": 3,
+    "target_date": "2026-07-04",
+    "predicted_quantity": 7,
+    "created_at": "2026-07-02T17:24:56.483Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 16,
+  "fields": {
+    "product": 3,
+    "target_date": "2026-07-05",
+    "predicted_quantity": 6,
+    "created_at": "2026-07-02T17:24:56.488Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 17,
+  "fields": {
+    "product": 3,
+    "target_date": "2026-07-06",
+    "predicted_quantity": 2,
+    "created_at": "2026-07-02T17:24:56.494Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 18,
+  "fields": {
+    "product": 3,
+    "target_date": "2026-07-07",
+    "predicted_quantity": 2,
+    "created_at": "2026-07-02T17:24:56.498Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 19,
+  "fields": {
+    "product": 3,
+    "target_date": "2026-07-08",
+    "predicted_quantity": 2,
+    "created_at": "2026-07-02T17:24:56.504Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 20,
+  "fields": {
+    "product": 3,
+    "target_date": "2026-07-09",
+    "predicted_quantity": 2,
+    "created_at": "2026-07-02T17:24:56.509Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 21,
+  "fields": {
+    "product": 3,
+    "target_date": "2026-07-10",
+    "predicted_quantity": 2,
+    "created_at": "2026-07-02T17:24:56.514Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 22,
+  "fields": {
+    "product": 4,
+    "target_date": "2026-07-04",
+    "predicted_quantity": 1,
+    "created_at": "2026-07-02T17:24:56.520Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 23,
+  "fields": {
+    "product": 4,
+    "target_date": "2026-07-05",
+    "predicted_quantity": 1,
+    "created_at": "2026-07-02T17:24:56.526Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 24,
+  "fields": {
+    "product": 4,
+    "target_date": "2026-07-06",
+    "predicted_quantity": 0,
+    "created_at": "2026-07-02T17:24:56.531Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 25,
+  "fields": {
+    "product": 4,
+    "target_date": "2026-07-07",
+    "predicted_quantity": 0,
+    "created_at": "2026-07-02T17:24:56.536Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 26,
+  "fields": {
+    "product": 4,
+    "target_date": "2026-07-08",
+    "predicted_quantity": 0,
+    "created_at": "2026-07-02T17:24:56.540Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 27,
+  "fields": {
+    "product": 4,
+    "target_date": "2026-07-09",
+    "predicted_quantity": 0,
+    "created_at": "2026-07-02T17:24:56.547Z"
+  }
+},
+{
+  "model": "forecasting.demandprediction",
+  "pk": 28,
+  "fields": {
+    "product": 4,
+    "target_date": "2026-07-10",
+    "predicted_quantity": 0,
+    "created_at": "2026-07-02T17:24:56.551Z"
+  }
+},
+{
+  "model": "chatbot.chatbotfaq",
+  "pk": 1,
+  "fields": {
+    "question": "What are your operating hours?",
+    "answer": "CAV Photo Studio and Caf� is open daily from 9:00 AM to 8:00 PM. The caf� accepts orders until 7:30 PM, and the last studio session booking is at 7:00 PM.",
+    "tags": "hours,schedule,open"
+  }
+},
+{
+  "model": "chatbot.chatbotfaq",
+  "pk": 2,
+  "fields": {
+    "question": "How do I book a studio session?",
+    "answer": "You can book directly from our website! Simply log in, navigate to 'Book Session' from your dashboard, choose your desired Service (Self-Shoot or Boutique Portrait) and Package, select an available date and time, and submit your booking.",
+    "tags": "book,booking,session,reserve"
+  }
+},
+{
+  "model": "chatbot.chatbotfaq",
+  "pk": 3,
+  "fields": {
+    "question": "What packages do you offer for photo studio?",
+    "answer": "We offer 'Self-Shoot Studio' starting at PHP 500 (Duo pack at PHP 800) and 'Boutique Portrait' starting at PHP 1,500. Each package includes specific session lengths, digital soft copies, and physical printouts. You can see full package details in our portal under Packages.",
+    "tags": "packages,price,studio,selfshoot,portrait"
+  }
+},
+{
+  "model": "chatbot.chatbotfaq",
+  "pk": 4,
+  "fields": {
+    "question": "Can we walk in for caf� or photo studio?",
+    "answer": "Yes! The caf� is open to walk-ins anytime during operating hours. For the photo studio, we accept walk-ins depending on room availability, but we highly recommend booking online in advance to secure your slot.",
+    "tags": "walkin,walk-in,caf�,studio"
+  }
+},
+{
+  "model": "chatbot.chatbotfaq",
+  "pk": 5,
+  "fields": {
+    "question": "Where is CAV located?",
+    "answer": "We are located at 123 Capstone Drive, Barangay Loyola, Quezon City, Metro Manila. We have free parking spaces in front of the shop!",
+    "tags": "location,address,where,directions"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 1,
+  "fields": {
+    "user": 3,
+    "session_id": null,
+    "question": "hi",
+    "response": "I couldn't find a direct answer to your question in our FAQ list. CAV Photo Studio & Caf� is open daily from 9:00 AM to 8:00 PM. For specific queries about packages or caf� menu items, please contact our staff at +639171234567 or email us at staff@test.com.",
+    "timestamp": "2026-07-02T18:10:36.559Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 2,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "how to book",
+    "response": "You can book directly from our website! Simply log in, navigate to 'Book Session' from your dashboard, choose your desired Service (Self-Shoot or Boutique Portrait) and Package, select an available date and time, and submit your booking.",
+    "timestamp": "2026-07-02T18:12:37.763Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 3,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "HI",
+    "response": "I'm having trouble connecting to my brain right now, but please visit us at 123 Capstone Drive!",
+    "timestamp": "2026-07-02T18:19:29.712Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 4,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "PACKAGES",
+    "response": "API Error (402). Match fallback: We offer 'Self-Shoot Studio' starting at PHP 500 (Duo pack at PHP 800) and 'Boutique Portrait' starting at PHP 1,500. Each package includes specific session lengths, digital soft copies, and physical printouts. You can see full package details in our portal under Packages.",
+    "timestamp": "2026-07-02T18:21:05.784Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 5,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "Packages",
+    "response": "API Error (402). Match fallback: We offer 'Self-Shoot Studio' starting at PHP 500 (Duo pack at PHP 800) and 'Boutique Portrait' starting at PHP 1,500. Each package includes specific session lengths, digital soft copies, and physical printouts. You can see full package details in our portal under Packages.",
+    "timestamp": "2026-07-02T18:23:43.285Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 6,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "how to book",
+    "response": "API Error (402). Match fallback: You can book directly from our website! Simply log in, navigate to 'Book Session' from your dashboard, choose your desired Service (Self-Shoot or Boutique Portrait) and Package, select an available date and time, and submit your booking.",
+    "timestamp": "2026-07-02T18:24:03.235Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 7,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "book me",
+    "response": "API Error (402). Match fallback: You can book directly from our website! Simply log in, navigate to 'Book Session' from your dashboard, choose your desired Service (Self-Shoot or Boutique Portrait) and Package, select an available date and time, and submit your booking.",
+    "timestamp": "2026-07-02T18:24:14.407Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 8,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "is the july 3 available to book?",
+    "response": "API Error (402). Match fallback: You can book directly from our website! Simply log in, navigate to 'Book Session' from your dashboard, choose your desired Service (Self-Shoot or Boutique Portrait) and Package, select an available date and time, and submit your booking.",
+    "timestamp": "2026-07-02T18:24:43.732Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 9,
+  "fields": {
+    "user": 3,
+    "session_id": null,
+    "question": "hi",
+    "response": "I'm having trouble connecting to my brain right now, but please visit us at 123 Capstone Drive!",
+    "timestamp": "2026-07-03T04:32:13.768Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 10,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "hello",
+    "response": "I'm having trouble connecting to my brain right now, but please visit us at 123 Capstone Drive!",
+    "timestamp": "2026-07-03T04:45:05.522Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 11,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "hello",
+    "response": "I'm having trouble connecting to my brain right now, but please visit us at 123 Capstone Drive!",
+    "timestamp": "2026-07-03T04:54:42.511Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 12,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "bookings",
+    "response": "I'm having trouble connecting to my brain right now, but please visit us at 123 Capstone Drive!",
+    "timestamp": "2026-07-03T04:54:57.056Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 13,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "hey",
+    "response": "I'm having trouble connecting to my brain right now, but please visit us at 123 Capstone Drive!",
+    "timestamp": "2026-07-03T04:55:45.185Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 14,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "packages",
+    "response": "We offer 'Self-Shoot Studio' starting at PHP 500 (Duo pack at PHP 800) and 'Boutique Portrait' starting at PHP 1,500. Each package includes specific session lengths, digital soft copies, and physical printouts. You can see full package details in our portal under Packages.",
+    "timestamp": "2026-07-03T04:57:07.984Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 15,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "tech stack use in this web",
+    "response": "Yes! The caf� is open to walk-ins anytime during operating hours. For the photo studio, we accept walk-ins depending on room availability, but we highly recommend booking online in advance to secure your slot.",
+    "timestamp": "2026-07-03T04:57:47.609Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 16,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "can i book",
+    "response": "You can book directly from our website! Simply log in, navigate to 'Book Session' from your dashboard, choose your desired Service (Self-Shoot or Boutique Portrait) and Package, select an available date and time, and submit your booking.",
+    "timestamp": "2026-07-03T04:58:02.092Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 17,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "show all bookings",
+    "response": "I couldn't find a direct answer to your question in our FAQ list. CAV Photo Studio & Caf� is open daily from 9:00 AM to 8:00 PM. For specific queries about packages or caf� menu items, please contact our staff at +639171234567 or email us at staff@test.com.",
+    "timestamp": "2026-07-03T04:58:24.217Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 18,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "show me all the bookings",
+    "response": "Please log in first so I can check the bookings for you.",
+    "timestamp": "2026-07-03T05:01:28.026Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 19,
+  "fields": {
+    "user": 3,
+    "session_id": null,
+    "question": "show all the bookings",
+    "response": "Found 1 booking(s):\n  - CAV Customer | 2026-07-15 @ 10:00 AM | Single Session (Self-Shoot Studio) | CONFIRMED",
+    "timestamp": "2026-07-03T05:01:49.284Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 20,
+  "fields": {
+    "user": 3,
+    "session_id": null,
+    "question": "can i book to this chat",
+    "response": "You can book directly from our website! Simply log in, navigate to 'Book Session' from your dashboard, choose your desired Service (Self-Shoot or Boutique Portrait) and Package, select an available date and time, and submit your booking.",
+    "timestamp": "2026-07-03T05:02:17.664Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 21,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "Ano mga packages",
+    "response": "We offer 'Self-Shoot Studio' starting at PHP 500 (Duo pack at PHP 800) and 'Boutique Portrait' starting at PHP 1,500. Each package includes specific session lengths, digital soft copies, and physical printouts. You can see full package details in our portal under Packages.",
+    "timestamp": "2026-07-03T05:15:54.667Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 22,
+  "fields": {
+    "user": 3,
+    "session_id": null,
+    "question": "are you available",
+    "response": "API Error (402). Match fallback: CAV Photo Studio and Caf� is open daily from 9:00 AM to 8:00 PM. The caf� accepts orders until 7:30 PM, and the last studio session booking is at 7:00 PM.",
+    "timestamp": "2026-07-04T05:06:47.702Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 23,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "hey",
+    "response": "I'm having trouble connecting to my brain right now, but please visit us at 123 Capstone Drive!",
+    "timestamp": "2026-07-04T06:28:59.557Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 24,
+  "fields": {
+    "user": 3,
+    "session_id": null,
+    "question": "pricing",
+    "response": "I'm having trouble connecting to my brain right now, but please visit us at 123 Capstone Drive!",
+    "timestamp": "2026-07-06T17:56:33.454Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 25,
+  "fields": {
+    "user": null,
+    "session_id": null,
+    "question": "What are your operating hours?",
+    "response": "API Error (402). Match fallback: CAV Photo Studio and Caf� is open daily from 9:00 AM to 8:00 PM. The caf� accepts orders until 7:30 PM, and the last studio session booking is at 7:00 PM.",
+    "timestamp": "2026-07-06T17:57:59.150Z"
+  }
+},
+{
+  "model": "chatbot.chatbotlog",
+  "pk": 26,
+  "fields": {
+    "user": 3,
+    "session_id": null,
+    "question": "are you guys open",
+    "response": "API Error (402). Match fallback: CAV Photo Studio and Caf� is open daily from 9:00 AM to 8:00 PM. The caf� accepts orders until 7:30 PM, and the last studio session booking is at 7:00 PM.",
+    "timestamp": "2026-07-07T14:29:40.718Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 1,
+  "fields": {
+    "user": 3,
+    "title": "Booking Submitted",
+    "message": "Your booking for Single Session on 2026-07-15 at 10:00:00 is pending confirmation.",
+    "is_read": false,
+    "created_at": "2026-07-02T18:28:47.624Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 2,
+  "fields": {
+    "user": 3,
+    "title": "Booking Status Updated: CONFIRMED",
+    "message": "Your booking for Single Session on 2026-07-15 is now CONFIRMED.",
+    "is_read": false,
+    "created_at": "2026-07-03T04:21:28.878Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 3,
+  "fields": {
+    "user": 3,
+    "title": "Booking Submitted",
+    "message": "Your booking for Solo Package on 2026-07-16 at 15:00:00 is pending confirmation.",
+    "is_read": false,
+    "created_at": "2026-07-04T05:50:02.030Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 4,
+  "fields": {
+    "user": 3,
+    "title": "Booking Submitted",
+    "message": "Your booking for Solo Package on 2026-07-25 at 18:00:00 is pending confirmation.",
+    "is_read": false,
+    "created_at": "2026-07-04T06:22:50.444Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 5,
+  "fields": {
+    "user": 3,
+    "title": "Booking Submitted",
+    "message": "Your booking for Solo Package on 2026-07-18 at 13:00:00 is pending confirmation.",
+    "is_read": false,
+    "created_at": "2026-07-04T06:40:30.271Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 6,
+  "fields": {
+    "user": 3,
+    "title": "Booking Status Updated: CONFIRMED",
+    "message": "Your booking for Solo Package on 2026-07-16 is now CONFIRMED.",
+    "is_read": false,
+    "created_at": "2026-07-04T06:40:55.958Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 7,
+  "fields": {
+    "user": 3,
+    "title": "Booking Status Updated: CANCELLED",
+    "message": "Your booking for Solo Package on 2026-07-18 is now CANCELLED.",
+    "is_read": false,
+    "created_at": "2026-07-04T06:41:03.101Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 8,
+  "fields": {
+    "user": 3,
+    "title": "Booking Status Updated: CONFIRMED",
+    "message": "Your booking for Solo Package on 2026-07-25 is now CONFIRMED.",
+    "is_read": false,
+    "created_at": "2026-07-04T06:41:10.516Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 9,
+  "fields": {
+    "user": 3,
+    "title": "Booking Status Updated: COMPLETED",
+    "message": "Your booking for Solo Package on 2026-07-16 is now COMPLETED.",
+    "is_read": false,
+    "created_at": "2026-07-04T06:41:12.999Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 10,
+  "fields": {
+    "user": 3,
+    "title": "Booking Submitted",
+    "message": "Your booking for Family Package on 2026-07-22 at 09:00:00 is pending confirmation.",
+    "is_read": false,
+    "created_at": "2026-07-07T14:27:50.977Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 11,
+  "fields": {
+    "user": 3,
+    "title": "Booking Submitted",
+    "message": "Your booking for Solo Package on 2026-07-23 at 17:00:00 is pending confirmation.",
+    "is_read": false,
+    "created_at": "2026-07-07T14:32:14.875Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 12,
+  "fields": {
+    "user": 3,
+    "title": "Booking Submitted",
+    "message": "Your booking for Solo Package on 2026-07-11 at 19:00:00 is pending confirmation.",
+    "is_read": false,
+    "created_at": "2026-07-07T14:35:56.049Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 13,
+  "fields": {
+    "user": 3,
+    "title": "Booking Submitted",
+    "message": "Your booking for Standard Event Package on 2026-07-30 at 16:00:00 is pending confirmation.",
+    "is_read": false,
+    "created_at": "2026-07-07T14:39:02.386Z"
+  }
+},
+{
+  "model": "notifications.notification",
+  "pk": 14,
+  "fields": {
+    "user": 3,
+    "title": "Booking Status Updated: CONFIRMED",
+    "message": "Your booking for Standard Event Package on 2026-07-30 is now CONFIRMED.",
+    "is_read": false,
+    "created_at": "2026-07-07T14:55:26.623Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 1,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T17:49:36.493Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 2,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T17:49:36.585Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 3,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T17:49:55.579Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 4,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T17:55:34.897Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 5,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:08:32.287Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 6,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:11:05.413Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 7,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:15:19.625Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 8,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:26:35.570Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 9,
+  "fields": {
+    "user": 2,
+    "action": "POS_ORDER",
+    "description": "Processed POS transaction #1 for PHP 360.0 (Status: PAID).",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:26:50.587Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 10,
+  "fields": {
+    "user": 2,
+    "action": "POS_ORDER",
+    "description": "Processed POS transaction #2 for PHP 450.0 (Status: PAID).",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:27:03.705Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 11,
+  "fields": {
+    "user": 2,
+    "action": "POS_ORDER",
+    "description": "Processed POS transaction #3 for PHP 1440.0 (Status: PAID).",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:27:26.172Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 12,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:28:06.182Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 13,
+  "fields": {
+    "user": 3,
+    "action": "BOOKING_CREATE",
+    "description": "Created booking #1 for Single Session.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:28:47.629Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 14,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:41:21.707Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 15,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-02T18:41:51.741Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 16,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T04:20:49.651Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 17,
+  "fields": {
+    "user": 2,
+    "action": "BOOKING_STATUS_CHANGE",
+    "description": "Updated booking #1 status to CONFIRMED.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T04:21:28.886Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 18,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T04:31:51.395Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 19,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T04:32:45.882Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 20,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T04:37:54.100Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 21,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T05:01:39.289Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 22,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T05:06:01.465Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 23,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T05:08:05.196Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 24,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T05:08:09.485Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 25,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T05:13:20.501Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 26,
+  "fields": {
+    "user": 4,
+    "action": "CUSTOMER_REGISTER",
+    "description": "New customer registered: Erll",
+    "ip_address": null,
+    "timestamp": "2026-07-03T05:15:06.005Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 27,
+  "fields": {
+    "user": 4,
+    "action": "USER_LOGIN",
+    "description": "User Erll logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T05:15:12.893Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 28,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T05:18:24.562Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 29,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-03T05:18:40.960Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 30,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:05:26.876Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 31,
+  "fields": {
+    "user": 2,
+    "action": "POS_ORDER",
+    "description": "Processed POS transaction #4 for PHP 630.0 (Status: PAID).",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:05:53.863Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 32,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:06:27.737Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 33,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:08:00.263Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 34,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:08:40.798Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 35,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:13:30.348Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 36,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:25:30.239Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 37,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:32:25.494Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 38,
+  "fields": {
+    "user": 3,
+    "action": "BOOKING_CREATE",
+    "description": "Created booking #2 for Solo Package.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:50:02.036Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 39,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:50:33.884Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 40,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:50:54.365Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 41,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T05:55:18.838Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 42,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:18:14.192Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 43,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:18:20.217Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 44,
+  "fields": {
+    "user": 3,
+    "action": "BOOKING_CREATE",
+    "description": "Created booking #3 for Solo Package.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:22:50.449Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 45,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:39:34.838Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 46,
+  "fields": {
+    "user": 3,
+    "action": "BOOKING_CREATE",
+    "description": "Created booking #4 for Solo Package.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:40:30.278Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 47,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:40:34.368Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 48,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:40:50.173Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 49,
+  "fields": {
+    "user": 2,
+    "action": "BOOKING_STATUS_CHANGE",
+    "description": "Updated booking #2 status to CONFIRMED.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:40:55.964Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 50,
+  "fields": {
+    "user": 2,
+    "action": "BOOKING_STATUS_CHANGE",
+    "description": "Updated booking #4 status to CANCELLED.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:41:03.108Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 51,
+  "fields": {
+    "user": 2,
+    "action": "BOOKING_STATUS_CHANGE",
+    "description": "Updated booking #3 status to CONFIRMED.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:41:10.521Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 52,
+  "fields": {
+    "user": 2,
+    "action": "BOOKING_STATUS_CHANGE",
+    "description": "Updated booking #2 status to COMPLETED.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:41:13.005Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 53,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T06:41:19.795Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 54,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-04T09:28:43.107Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 55,
+  "fields": {
+    "user": 2,
+    "action": "POS_ORDER",
+    "description": "Processed POS transaction #5 for PHP 260.0 (Status: PAID).",
+    "ip_address": null,
+    "timestamp": "2026-07-04T09:28:48.984Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 56,
+  "fields": {
+    "user": 2,
+    "action": "POS_ORDER",
+    "description": "Processed POS transaction #6 for PHP 130.0 (Status: PAID).",
+    "ip_address": null,
+    "timestamp": "2026-07-04T09:29:11.504Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 57,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-06T17:30:09.512Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 58,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-06T17:56:07.152Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 59,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-06T17:56:41.088Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 60,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-06T17:56:57.702Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 61,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-06T17:57:29.605Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 62,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T14:21:39.902Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 63,
+  "fields": {
+    "user": 3,
+    "action": "BOOKING_CREATE",
+    "description": "Created booking #5 for Family Package.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T14:27:50.983Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 64,
+  "fields": {
+    "user": 3,
+    "action": "BOOKING_CREATE",
+    "description": "Created booking #6 for Solo Package.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T14:32:14.881Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 65,
+  "fields": {
+    "user": 3,
+    "action": "BOOKING_CREATE",
+    "description": "Created booking #7 for Solo Package.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T14:35:56.054Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 66,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T14:38:14.671Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 67,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T14:38:47.566Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 68,
+  "fields": {
+    "user": 3,
+    "action": "BOOKING_CREATE",
+    "description": "Created booking #8 for Standard Event Package.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T14:39:02.391Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 69,
+  "fields": {
+    "user": 2,
+    "action": "USER_LOGIN",
+    "description": "User staff logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T14:55:19.718Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 70,
+  "fields": {
+    "user": 2,
+    "action": "BOOKING_STATUS_CHANGE",
+    "description": "Updated booking #8 status to CONFIRMED.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T14:55:26.629Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 71,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T14:55:40.319Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 72,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T15:09:49.417Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 73,
+  "fields": {
+    "user": 3,
+    "action": "USER_LOGIN",
+    "description": "User customer logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T16:22:37.031Z"
+  }
+},
+{
+  "model": "audit.auditlog",
+  "pk": 74,
+  "fields": {
+    "user": 1,
+    "action": "USER_LOGIN",
+    "description": "User admin logged in successfully.",
+    "ip_address": null,
+    "timestamp": "2026-07-07T16:22:49.617Z"
+  }
+}
+]
+

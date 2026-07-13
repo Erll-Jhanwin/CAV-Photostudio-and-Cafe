@@ -6,7 +6,7 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 from sales.models import DailySalesSummary
 from booking.models import Booking
-from inventory.models import Product
+from inventory.models import Ingredient, Product
 from pos.models import Order, OrderItem
 
 
@@ -87,18 +87,36 @@ class DashboardAnalyticsView(views.APIView):
             buckets[key]['total_revenue'] = buckets[key]['pos_revenue'] + buckets[key]['booking_revenue']
         chart_data = list(buckets.values())
 
-        # 3. Low stock warning list
-        # We find products where stock_level <= reorder_point
-        low_stock_list = []
-        for p in Product.objects.all().select_related('supplier'):
-            if p.stock_level <= p.reorder_point:
-                low_stock_list.append({
-                    'id': p.id,
-                    'name': p.name,
-                    'stock_level': p.stock_level,
-                    'reorder_point': p.reorder_point,
-                    'supplier_name': p.supplier.name if p.supplier else "N/A"
+        inventory_status_counts = {
+            'IN_STOCK': 0,
+            'LOW_STOCK': 0,
+            'NEAR_EXPIRY': 0,
+            'EXPIRED': 0,
+            'OVERSTOCKED': 0,
+        }
+        inventory_alerts = []
+        for ingredient in Ingredient.objects.all().select_related('supplier', 'category'):
+            status_key = ingredient.inventory_status
+            inventory_status_counts[status_key] = inventory_status_counts.get(status_key, 0) + 1
+            if status_key != 'IN_STOCK':
+                inventory_alerts.append({
+                    'id': ingredient.id,
+                    'name': ingredient.name,
+                    'category': ingredient.category.name if ingredient.category else 'N/A',
+                    'supplier_name': ingredient.supplier.name if ingredient.supplier else 'N/A',
+                    'stock_quantity': money(ingredient.stock_quantity),
+                    'base_unit': ingredient.base_unit,
+                    'minimum_stock_level': money(ingredient.minimum_stock_level),
+                    'maximum_stock_level': money(ingredient.maximum_stock_level),
+                    'expiration_date': ingredient.expiration_date.strftime('%Y-%m-%d') if ingredient.expiration_date else None,
+                    'days_until_expiry': ingredient.days_until_expiry,
+                    'inventory_status': status_key,
+                    'inventory_status_label': ingredient.inventory_status_label,
+                    'suggested_action': ingredient.suggested_action,
                 })
+
+        priority_order = {'EXPIRED': 0, 'NEAR_EXPIRY': 1, 'LOW_STOCK': 2, 'OVERSTOCKED': 3}
+        inventory_alerts.sort(key=lambda row: priority_order.get(row['inventory_status'], 99))
 
         # 4. Recent bookings list
         recent_bookings = bookings_in_range.select_related('customer', 'package').order_by('-created_at')[:10]
@@ -145,7 +163,9 @@ class DashboardAnalyticsView(views.APIView):
                 **booking_status_counts,
             },
             'sales_history_chart': chart_data,
-            'low_stock_alerts': low_stock_list,
+            'low_stock_alerts': [row for row in inventory_alerts if row['inventory_status'] == 'LOW_STOCK'],
+            'inventory_status_counts': inventory_status_counts,
+            'inventory_alerts': inventory_alerts[:8],
             'recent_bookings': bookings_list,
             'recent_pos_transactions': orders_list,
             'top_selling_products': [

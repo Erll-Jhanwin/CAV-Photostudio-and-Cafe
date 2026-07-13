@@ -1,12 +1,16 @@
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 from users.serializers import UserSerializer, RegisterSerializer
+from users.models import Customer
 from audit.models import AuditLog
 import secrets
 import string
+import requests
 
 User = get_user_model()
 
@@ -56,6 +60,105 @@ class RegisterView(generics.CreateAPIView):
             {"message": "Registration successful.", "user": UserSerializer(user).data},
             status=status.HTTP_201_CREATED
         )
+
+def build_auth_payload(user):
+    refresh = RefreshToken.for_user(user)
+    refresh['role'] = user.role
+    refresh['username'] = user.username
+
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+        'role': user.role,
+        'username': user.username,
+        'email': user.email,
+        'id': user.id,
+    }
+
+def unique_username_from_email(email):
+    base = email.split('@')[0].strip().lower() or 'google-user'
+    base = ''.join(ch if ch.isalnum() or ch in '._-' else '-' for ch in base)[:140]
+    username = base
+    suffix = 1
+    while User.objects.filter(username=username).exists():
+        suffix += 1
+        username = f"{base}-{suffix}"
+    return username
+
+def mask_client_id(client_id):
+    if not client_id:
+        return ''
+    if len(client_id) <= 16:
+        return client_id
+    return f"{client_id[:12]}...{client_id[-28:]}"
+
+class GoogleAuthView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        credential = request.data.get('credential', '').strip()
+        if not credential:
+            return Response({"detail": "Google credential is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not settings.GOOGLE_CLIENT_ID:
+            return Response({"detail": "Google authentication is not configured."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            verify_res = requests.get(
+                'https://oauth2.googleapis.com/tokeninfo',
+                params={'id_token': credential},
+                timeout=10,
+            )
+        except requests.RequestException:
+            return Response({"detail": "Could not verify Google credential."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        if verify_res.status_code != 200:
+            return Response({"detail": "Invalid Google credential."}, status=status.HTTP_400_BAD_REQUEST)
+
+        profile = verify_res.json()
+        if profile.get('aud') != settings.GOOGLE_CLIENT_ID:
+            return Response({
+                "detail": "Google credential audience mismatch.",
+                "expected": mask_client_id(settings.GOOGLE_CLIENT_ID),
+                "received": mask_client_id(profile.get('aud', '')),
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        email = profile.get('email', '').strip().lower()
+        if not email or profile.get('email_verified') not in (True, 'true', 'True', '1'):
+            return Response({"detail": "Google account email must be verified."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(email__iexact=email).first()
+        created = False
+        if not user:
+            user = User.objects.create_user(
+                username=unique_username_from_email(email),
+                email=email,
+                first_name=profile.get('given_name', ''),
+                last_name=profile.get('family_name', ''),
+                role='CUSTOMER',
+            )
+            user.set_unusable_password()
+            user.save()
+            Customer.objects.get_or_create(user=user)
+            created = True
+            AuditLog.objects.create(
+                user=user,
+                action="CUSTOMER_REGISTER_GOOGLE",
+                description=f"New customer registered with Google: {user.username}"
+            )
+
+        if user.role == 'CUSTOMER':
+            Customer.objects.get_or_create(user=user)
+
+        AuditLog.objects.create(
+            user=user,
+            action="USER_LOGIN_GOOGLE",
+            description=f"User {user.username} logged in with Google."
+        )
+
+        payload = build_auth_payload(user)
+        payload['created'] = created
+        return Response(payload, status=status.HTTP_200_OK)
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
