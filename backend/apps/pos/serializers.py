@@ -1,9 +1,14 @@
 from rest_framework import serializers
 from pos.models import Order, OrderItem, Payment
-from inventory.serializers import ProductSerializer
+
+class ProductOrderSummarySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    image_url = serializers.CharField(allow_blank=True, allow_null=True)
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    product_details = ProductSerializer(source='product', read_only=True)
+    product_details = ProductOrderSummarySerializer(source='product', read_only=True)
 
     class Meta:
         model = OrderItem

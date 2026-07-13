@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Camera,
   Key,
@@ -455,13 +455,20 @@ export default function LoginPage() {
               )}
 
               {!showForgotPassword && (
-                <div className="pt-1 text-center">
+                <div className="space-y-3 pt-1 text-center">
                   <button
                     onClick={() => { setIsRegister(!isRegister); clearModeMessages(); }}
                     className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
                   >
                     {isRegister ? 'Already have an account? Sign In' : "Don't have an account? Register"}
                   </button>
+                  <p className="text-[11px] leading-5 text-espresso/45">
+                    By continuing, you agree to CAV's transparent data practices.{' '}
+                    <Link to="/privacy-policy" className="font-bold text-gold-dark hover:text-gold">
+                      Read the Security & Privacy Policy
+                    </Link>
+                    .
+                  </p>
                 </div>
               )}
             </div>

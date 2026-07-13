@@ -2,12 +2,17 @@
 URL configuration for config project.
 """
 from django.contrib import admin
+from django.conf import settings
+from django.conf.urls.static import static
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
 # Import views directly from apps since apps are added to sys.path
 from users.views import CustomTokenObtainPairView, RegisterView, UserProfileView, StaffListView, ForgotPasswordView, GoogleAuthView
-from booking.views import ServiceListView, PackageListView, BookingListCreateView, BookingDetailUpdateView
+from booking.views import (
+    ServiceListView, PackageListView, BookingListCreateView, BookingDetailUpdateView,
+    BookingPaymentListCreateView, BookingPaymentVerifyView, BookingAvailabilityView
+)
 from inventory.views import (
     ProductListCreateView, ProductDetailUpdateView, StockMovementListView, 
     CategoryListCreateView, SupplierListCreateView, PurchaseOrderListCreateView, 
@@ -34,8 +39,11 @@ urlpatterns = [
     # Booking endpoints
     path('api/bookings/services/', ServiceListView.as_view(), name='service_list'),
     path('api/bookings/packages/', PackageListView.as_view(), name='package_list'),
+    path('api/bookings/availability/', BookingAvailabilityView.as_view(), name='booking_availability'),
     path('api/bookings/', BookingListCreateView.as_view(), name='booking_list_create'),
     path('api/bookings/<int:pk>/', BookingDetailUpdateView.as_view(), name='booking_detail_update'),
+    path('api/bookings/payments/', BookingPaymentListCreateView.as_view(), name='booking_payment_list_create'),
+    path('api/bookings/payments/<int:pk>/verify/', BookingPaymentVerifyView.as_view(), name='booking_payment_verify'),
     
     # Inventory endpoints
     path('api/inventory/products/', ProductListCreateView.as_view(), name='product_list_create'),
@@ -65,3 +73,6 @@ urlpatterns = [
     path('api/dashboard/analytics/', DashboardAnalyticsView.as_view(), name='dashboard_analytics'),
     path('api/forecasting/predictions/', ForecastingDataView.as_view(), name='forecasting_predictions'),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

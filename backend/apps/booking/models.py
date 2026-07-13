@@ -25,6 +25,7 @@ class Booking(models.Model):
     STATUS_CHOICES = (
         ('PENDING', 'Pending'),
         ('CONFIRMED', 'Confirmed'),
+        ('CONFIRMED_DP', 'Confirmed - Down Payment Received'),
         ('COMPLETED', 'Completed'),
         ('CANCELLED', 'Cancelled'),
     )
@@ -32,7 +33,7 @@ class Booking(models.Model):
     package = models.ForeignKey(Package, on_delete=models.CASCADE, related_name='bookings')
     scheduled_date = models.DateField()
     scheduled_time = models.TimeField()
-    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='PENDING')
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='PENDING')
     notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -47,3 +48,34 @@ class BookingItem(models.Model):
 
     def __str__(self):
         return f"{self.name} x {self.quantity} for Booking {self.booking.id}"
+
+class BookingPayment(models.Model):
+    STATUS_CHOICES = (
+        ('PENDING_VERIFICATION', 'Pending Verification'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    )
+
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='payments')
+    reference_number = models.CharField(max_length=100)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    paid_at = models.DateTimeField()
+    receipt = models.FileField(upload_to='booking_receipts/')
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default='PENDING_VERIFICATION')
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='verified_booking_payments'
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    admin_note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Payment {self.reference_number} for Booking {self.booking_id}"

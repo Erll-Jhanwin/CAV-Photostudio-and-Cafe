@@ -71,7 +71,8 @@ class DashboardAnalyticsView(views.APIView):
         bookings_in_range = Booking.objects.filter(created_at__range=(start_dt, end_dt))
         booking_status_counts = {
             'pending': bookings_in_range.filter(status='PENDING').count(),
-            'confirmed': bookings_in_range.filter(status='CONFIRMED').count(),
+            'confirmed': bookings_in_range.filter(status__in=['CONFIRMED', 'CONFIRMED_DP']).count(),
+            'confirmed_dp': bookings_in_range.filter(status='CONFIRMED_DP').count(),
             'completed': bookings_in_range.filter(status='COMPLETED').count(),
             'cancelled': bookings_in_range.filter(status='CANCELLED').count(),
         }

@@ -946,7 +946,7 @@ export default function LandingPage() {
           <p>&copy; 2026 CAV Capstone Project. All rights reserved.</p>
           <div className="flex gap-4 md:gap-6">
             <Link to="/login" className="hover:text-white transition-colors">Staff Login</Link>
-            <span className="cursor-default">Privacy Policy</span>
+            <Link to="/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link>
           </div>
         </div>
       </footer>

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
 import {
   ShoppingBag, ClipboardList, Package, DollarSign, LogOut, Search, Plus,
-  Minus, RefreshCw, Printer, AlertTriangle, Check, X, ShieldAlert
+  Minus, RefreshCw, Printer, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -38,6 +38,24 @@ function StaffSkeleton() {
   );
 }
 
+function PaginationControls({ page, setPage, total, pageSize }) {
+  const totalPages = Math.max(Math.ceil(total / pageSize), 1);
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-between gap-3 pt-3 text-xs text-espresso/55">
+      <span>Page {page} of {totalPages}</span>
+      <div className="flex gap-2">
+        <button type="button" disabled={page <= 1} onClick={() => setPage(current => Math.max(1, current - 1))} className="rounded-xl border border-espresso/10 bg-white px-3 py-1.5 font-bold disabled:opacity-40">
+          Previous
+        </button>
+        <button type="button" disabled={page >= totalPages} onClick={() => setPage(current => Math.min(totalPages, current + 1))} className="rounded-xl border border-espresso/10 bg-white px-3 py-1.5 font-bold disabled:opacity-40">
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const inventoryStatuses = [
   { key: 'ALL', label: 'All Items', className: 'bg-white text-espresso border-espresso/10' },
   { key: 'IN_STOCK', label: 'In Stock', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -50,6 +68,31 @@ const inventoryStatuses = [
 const getInventoryStatusMeta = (status) => inventoryStatuses.find(item => item.key === status) || inventoryStatuses[0];
 
 const todayValue = () => new Date().toISOString().split('T')[0];
+const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+})}`;
+const STAFF_CACHE_TTL_MS = 60 * 1000;
+const PRODUCT_PAGE_SIZE = 12;
+const TABLE_PAGE_SIZE = 10;
+
+const readStaffCache = (key) => {
+  try {
+    const cached = JSON.parse(localStorage.getItem(`staff:${key}`) || 'null');
+    if (!cached || Date.now() - cached.timestamp > STAFF_CACHE_TTL_MS) return null;
+    return cached.data;
+  } catch {
+    return null;
+  }
+};
+
+const writeStaffCache = (key, data) => {
+  try {
+    localStorage.setItem(`staff:${key}`, JSON.stringify({ timestamp: Date.now(), data }));
+  } catch {
+    /* ignore cache write failures */
+  }
+};
 
 const emptyProductForm = () => ({
   name: '',
@@ -132,14 +175,18 @@ export default function StaffDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('pos');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   const [products, setProducts] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [bookingPayments, setBookingPayments] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingResources, setLoadingResources] = useState({});
+  const [loadedTabs, setLoadedTabs] = useState({});
   const [error, setError] = useState('');
 
   const [cart, setCart] = useState([]);
@@ -159,46 +206,111 @@ export default function StaffDashboard() {
   const [adjUnit, setAdjUnit] = useState('ML');
   const [adjMovementType, setAdjMovementType] = useState('IN');
   const [bookingFilter, setBookingFilter] = useState('PENDING');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
+  const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
   const [inventoryFilter, setInventoryFilter] = useState('ALL');
   const [salesPaymentFilter, setSalesPaymentFilter] = useState('ALL');
+  const [productPage, setProductPage] = useState(1);
+  const [bookingPage, setBookingPage] = useState(1);
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const [salesPage, setSalesPage] = useState(1);
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [productForm, setProductForm] = useState(emptyProductForm());
+
+  const loadStaticInventoryOptions = async (force = false) => {
+    const cachedCategories = !force ? readStaffCache('categories') : null;
+    const cachedSuppliers = !force ? readStaffCache('suppliers') : null;
+    if (cachedCategories) setCategories(cachedCategories);
+    if (cachedSuppliers) setSuppliers(cachedSuppliers);
+    if (cachedCategories && cachedSuppliers && !force) return;
+
+    const [categoriesRes, suppliersRes] = await Promise.all([
+      client.get('/api/inventory/categories/'),
+      client.get('/api/inventory/suppliers/')
+    ]);
+    setCategories(categoriesRes.data);
+    setSuppliers(suppliersRes.data);
+    writeStaffCache('categories', categoriesRes.data);
+    writeStaffCache('suppliers', suppliersRes.data);
+  };
+
+  const refreshProducts = async () => {
+    const productsRes = await client.get('/api/inventory/products/', { params: { limit: 240 } });
+    setProducts(productsRes.data);
+    writeStaffCache('products', productsRes.data);
+  };
+
+  const ensureDefaultRecipesOnce = async () => {
+    if (sessionStorage.getItem('staff:recipesChecked')) return;
+    sessionStorage.setItem('staff:recipesChecked', 'true');
+    try {
+      const res = await client.post('/api/inventory/recipes/generate/');
+      if (Number(res.data?.created_recipe_items || 0) > 0) {
+        refreshProducts();
+      }
+    } catch {
+      /* default recipe generation is non-critical for first paint */
+    }
+  };
+
+  const loadTabData = async (tab = activeTab, force = false) => {
+    if (!force && loadedTabs[tab]) return;
+    try {
+      setError('');
+      setLoadingResources(current => ({ ...current, [tab]: true }));
+
+      if (tab === 'pos') {
+        const cachedProducts = !force ? readStaffCache('products') : null;
+        if (cachedProducts?.length) {
+          setProducts(cachedProducts);
+          setLoading(false);
+        }
+        const [productsRes, bookingsRes] = await Promise.all([
+          client.get('/api/inventory/products/', { params: { limit: 240 } }),
+          client.get('/api/bookings/', { params: { active: 'true', limit: 100 } })
+        ]);
+        setProducts(productsRes.data);
+        setBookings(bookingsRes.data);
+        writeStaffCache('products', productsRes.data);
+        ensureDefaultRecipesOnce();
+      } else if (tab === 'validator') {
+        const bookingsRes = await client.get('/api/bookings/', { params: { limit: 200 } });
+        setBookings(bookingsRes.data);
+      } else if (tab === 'payments') {
+        const paymentsRes = await client.get('/api/bookings/payments/', { params: { limit: 100 } });
+        setBookingPayments(paymentsRes.data);
+      } else if (tab === 'inventory') {
+        await loadStaticInventoryOptions(force);
+        const ingredientsRes = await client.get('/api/inventory/ingredients/', { params: { limit: 300 } });
+        setIngredients(ingredientsRes.data);
+      } else if (tab === 'sales') {
+        const ordersRes = await client.get('/api/pos/orders/', { params: { limit: 100 } });
+        setOrders(ordersRes.data);
+      }
+
+      setLoadedTabs(current => ({ ...current, [tab]: true }));
+    } catch {
+      setError('Failed to load dashboard data. Make sure the server is running.');
+    } finally {
+      setLoadingResources(current => ({ ...current, [tab]: false }));
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) {
       navigate('/login');
       return;
     }
-    fetchData();
-  }, [user, navigate]);
+    loadTabData(activeTab);
+  }, [user, navigate, activeTab]);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      try {
-        await client.post('/api/inventory/recipes/generate/');
-      } catch { /* keep loading dashboard even if recipe generation is already unavailable */ }
-      const [productsRes, ingredientsRes, bookingsRes, ordersRes, categoriesRes, suppliersRes] = await Promise.all([
-        client.get('/api/inventory/products/'),
-        client.get('/api/inventory/ingredients/'),
-        client.get('/api/bookings/'),
-        client.get('/api/pos/orders/'),
-        client.get('/api/inventory/categories/'),
-        client.get('/api/inventory/suppliers/')
-      ]);
-      setProducts(productsRes.data);
-      setIngredients(ingredientsRes.data);
-      setBookings(bookingsRes.data);
-      setOrders(ordersRes.data);
-      setCategories(categoriesRes.data);
-      setSuppliers(suppliersRes.data);
-    } catch {
-      setError('Failed to load dashboard data. Make sure the server is running.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => { setProductPage(1); }, [posSearch]);
+  useEffect(() => { setBookingPage(1); }, [bookingFilter]);
+  useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
+  useEffect(() => { setInventoryPage(1); }, [invSearch, inventoryFilter]);
+  useEffect(() => { setSalesPage(1); }, [salesPaymentFilter]);
 
   const addToCart = (product) => {
     const availableServings = getProductAvailable(product);
@@ -293,10 +405,29 @@ export default function StaffDashboard() {
 
   const handleBookingAction = async (bookingId, newStatus) => {
     try {
-      await client.patch(`/api/bookings/${bookingId}/`, { status: newStatus });
-      fetchData();
+      const res = await client.patch(`/api/bookings/${bookingId}/`, { status: newStatus });
+      setBookings(current => current.map(booking => booking.id === bookingId ? res.data : booking));
     } catch {
       alert('Failed to update booking.');
+    }
+  };
+
+  const handleVerifyBookingPayment = async (payment, newStatus) => {
+    const action = newStatus === 'APPROVED' ? 'approve' : 'reject';
+    if (!window.confirm(`Are you sure you want to ${action} payment ${payment.reference_number}?`)) return;
+    try {
+      setVerifyingPaymentId(payment.id);
+      const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
+      setBookingPayments(current => current.map(item => item.id === payment.id ? res.data : item));
+      setBookings(current => current.map(booking => (
+        booking.id === res.data.booking_details?.id
+          ? { ...booking, status: res.data.booking_details.status === 'CONFIRMED_DP' ? 'CONFIRMED_DP' : booking.status }
+          : booking
+      )));
+    } catch (err) {
+      alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
+    } finally {
+      setVerifyingPaymentId(null);
     }
   };
 
@@ -397,23 +528,30 @@ export default function StaffDashboard() {
     win.print();
   };
 
-  const handleLogout = useCallback(() => { logout(); navigate('/'); }, [logout, navigate]);
+  const handleLogout = useCallback(() => { logout(); navigate('/login', { replace: true }); }, [logout, navigate]);
 
   if (loading) return <StaffSkeleton />;
 
   const navItems = [
     { key: 'pos', label: 'POS Terminal', icon: ShoppingBag, active: activeTab === 'pos', onClick: () => setActiveTab('pos') },
     { key: 'validator', label: 'Booking Validator', icon: ClipboardList, active: activeTab === 'validator', onClick: () => setActiveTab('validator') },
+    { key: 'payments', label: 'Payment Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
     { key: 'sales', label: 'Daily Sales Logs', icon: DollarSign, active: activeTab === 'sales', onClick: () => setActiveTab('sales') },
   ];
 
-  const pageTitles = { pos: 'POS Terminal', validator: 'Booking Validator', inventory: 'Live Inventory', sales: 'Daily Sales Logs' };
+  const pageTitles = { pos: 'POS Terminal', validator: 'Booking Validator', payments: 'Payment Verification', inventory: 'Live Inventory', sales: 'Daily Sales Logs' };
+  const isCurrentTabLoading = !!loadingResources[activeTab];
+  const filteredProducts = products.filter(product => product.name.toLowerCase().includes(posSearch.toLowerCase()));
+  const pagedProducts = filteredProducts.slice((productPage - 1) * PRODUCT_PAGE_SIZE, productPage * PRODUCT_PAGE_SIZE);
+  const filteredBookings = bookings.filter(booking => booking.status === bookingFilter);
+  const pagedBookings = filteredBookings.slice((bookingPage - 1) * TABLE_PAGE_SIZE, bookingPage * TABLE_PAGE_SIZE);
   const visibleInventory = ingredients.filter(ingredient => {
     const matchesSearch = ingredient.name.toLowerCase().includes(invSearch.toLowerCase());
     const matchesStatus = inventoryFilter === 'ALL' || ingredient.inventory_status === inventoryFilter;
     return matchesSearch && matchesStatus;
   });
+  const pagedInventory = visibleInventory.slice((inventoryPage - 1) * TABLE_PAGE_SIZE, inventoryPage * TABLE_PAGE_SIZE);
   const inventoryCounts = inventoryStatuses.reduce((counts, status) => {
     if (status.key === 'ALL') {
       counts.ALL = ingredients.length;
@@ -428,6 +566,11 @@ export default function StaffDashboard() {
   const filteredOrders = orders.filter(order => (
     salesPaymentFilter === 'ALL' || order.payments?.some(payment => payment.method === salesPaymentFilter)
   ));
+  const pagedOrders = filteredOrders.slice((salesPage - 1) * TABLE_PAGE_SIZE, salesPage * TABLE_PAGE_SIZE);
+  const filteredBookingPayments = bookingPayments.filter(payment => (
+    paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
+  ));
+  const pagedBookingPayments = filteredBookingPayments.slice((paymentPage - 1) * TABLE_PAGE_SIZE, paymentPage * TABLE_PAGE_SIZE);
 
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
@@ -437,9 +580,12 @@ export default function StaffDashboard() {
         brandIcon={ShoppingBag}
         navItems={navItems}
         user={user}
-        onLogout={handleLogout}
+        onLogout={() => setSignOutOpen(true)}
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
+        signOutOpen={signOutOpen}
+        onSignOutCancel={() => setSignOutOpen(false)}
+        onSignOutConfirm={handleLogout}
       />
 
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
@@ -453,7 +599,13 @@ export default function StaffDashboard() {
                 <h4 className="font-bold text-sm">Connection Error</h4>
                 <p className="text-xs text-red-600/80 mt-1">{error}</p>
               </div>
-              <Button variant="outline" size="sm" icon={RefreshCw} onClick={fetchData}>Retry</Button>
+              <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData(activeTab, true)}>Retry</Button>
+            </div>
+          )}
+
+          {isCurrentTabLoading && !loading && (
+            <div className="mb-4 rounded-2xl border border-gold/20 bg-gold/10 px-4 py-2 text-xs font-bold text-espresso">
+              Refreshing {pageTitles[activeTab]}...
             </div>
           )}
 
@@ -480,7 +632,7 @@ export default function StaffDashboard() {
                     <span className="text-xs font-bold text-espresso/60 uppercase shrink-0">Link Booking:</span>
                     <select value={linkedBookingId} onChange={e => setLinkedBookingId(e.target.value)} className="w-full sm:w-auto bg-cream border border-espresso/10 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-gold">
                       <option value="">Select a booking</option>
-                      {bookings.filter(b => b.status === 'PENDING' || b.status === 'CONFIRMED').map(b => (
+                      {bookings.filter(b => ['PENDING', 'CONFIRMED', 'CONFIRMED_DP'].includes(b.status)).map(b => (
                         <option key={b.id} value={b.id}>#{b.id} - {b.customer?.username} ({b.package_details?.name})</option>
                       ))}
                     </select>
@@ -499,7 +651,7 @@ export default function StaffDashboard() {
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
-                  {products.filter(p => p.name.toLowerCase().includes(posSearch.toLowerCase())).map((prod, i) => {
+                  {pagedProducts.map((prod, i) => {
                     const availableServings = getProductAvailable(prod);
                     return (
                     <button
@@ -556,6 +708,7 @@ export default function StaffDashboard() {
                     );
                   })}
                 </div>
+                <PaginationControls page={productPage} setPage={setProductPage} total={filteredProducts.length} pageSize={PRODUCT_PAGE_SIZE} />
               </div>
 
               <div className="lg:col-span-4">
@@ -658,7 +811,7 @@ export default function StaffDashboard() {
                   <p className="text-xs text-espresso/50 mt-1">Verify scheduled client slots and update booking statuses.</p>
                 </div>
                 <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
-                  {['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'].map(st => (
+                  {['PENDING', 'CONFIRMED', 'CONFIRMED_DP', 'COMPLETED', 'CANCELLED'].map(st => (
                     <button key={st} onClick={() => setBookingFilter(st)}
                       className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${bookingFilter === st ? 'bg-espresso text-cream shadow-sm' : 'text-espresso/50 hover:text-espresso'}`}>
                       {st}
@@ -667,9 +820,9 @@ export default function StaffDashboard() {
                 </div>
               </div>
 
-              {bookings.filter(b => b.status === bookingFilter).length > 0 ? (
+              {filteredBookings.length > 0 ? (
                 <div className="space-y-4">
-                  {bookings.filter(b => b.status === bookingFilter).map((b, i) => (
+                  {pagedBookings.map((b, i) => (
                     <div key={b.id} className="bg-white p-5 md:p-6 rounded-2xl border border-espresso/5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-in-up" style={{ animationDelay: `${i * 50}ms` }}>
                       <div className="space-y-2 flex-1">
                         <div className="flex items-center gap-3 flex-wrap">
@@ -691,15 +844,127 @@ export default function StaffDashboard() {
                             <Button variant="outline" size="sm" icon={X} onClick={() => handleBookingAction(b.id, 'CANCELLED')} className="text-red-600 border-red-200 hover:bg-red-50">Cancel</Button>
                           </>
                         )}
-                        {b.status === 'CONFIRMED' && (
+                        {['CONFIRMED', 'CONFIRMED_DP'].includes(b.status) && (
                           <Button variant="success" size="sm" icon={Check} onClick={() => handleBookingAction(b.id, 'COMPLETED')}>Mark Completed</Button>
                         )}
                       </div>
                     </div>
                   ))}
+                  <PaginationControls page={bookingPage} setPage={setBookingPage} total={filteredBookings.length} pageSize={TABLE_PAGE_SIZE} />
                 </div>
               ) : (
                 <EmptyState icon={ClipboardList} title={`No ${bookingFilter.toLowerCase()} bookings`} description="No bookings match the selected status filter." />
+              )}
+            </div>
+          )}
+
+          {/* PAYMENT VERIFICATION */}
+          {activeTab === 'payments' && (
+            <div className="space-y-6 animate-in-up" key="payments">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Payment Verification</h1>
+                  <p className="text-xs text-espresso/50 mt-1">Check GCash merchant records before approving down payments.</p>
+                </div>
+                <div className="w-full sm:w-64">
+                  <Select
+                    label="Payment Status"
+                    value={paymentStatusFilter}
+                    onChange={e => setPaymentStatusFilter(e.target.value)}
+                    options={[
+                      { value: 'PENDING_VERIFICATION', label: 'Pending Verification' },
+                      { value: 'APPROVED', label: 'Approved' },
+                      { value: 'REJECTED', label: 'Rejected' },
+                      { value: 'ALL', label: 'All Payments' },
+                    ]}
+                  />
+                </div>
+              </div>
+
+              {filteredBookingPayments.length > 0 ? (
+                <div className="space-y-4">
+                  {pagedBookingPayments.map((payment, i) => {
+                    const details = payment.booking_details || {};
+                    const isPending = payment.status === 'PENDING_VERIFICATION';
+                    return (
+                      <div key={payment.id} className="bg-white p-5 md:p-6 rounded-2xl border border-espresso/5 shadow-sm hover:shadow-md transition-all duration-200 animate-in-up" style={{ animationDelay: `${i * 40}ms` }}>
+                        <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr_auto] gap-4 items-start">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-sans text-lg font-extrabold">Booking #{details.id}</span>
+                              <StatusBadge status={payment.status} />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-espresso/60">
+                              <span>Customer: <strong className="text-espresso">{details.customer_name || 'N/A'}</strong></span>
+                              <span>Package: <strong className="text-espresso">{details.package_name || 'N/A'}</strong></span>
+                              <span>Schedule: <strong className="text-espresso">{details.scheduled_date} {details.scheduled_time}</strong></span>
+                              <span>Reference: <strong className="text-espresso break-all">{payment.reference_number}</strong></span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="bg-cream p-3 rounded-xl border border-espresso/5">
+                              <p className="text-espresso/45 font-black uppercase tracking-wider">Amount</p>
+                              <p className="font-black text-gold-dark">{formatCurrency(payment.amount)}</p>
+                            </div>
+                            <div className="bg-cream p-3 rounded-xl border border-espresso/5">
+                              <p className="text-espresso/45 font-black uppercase tracking-wider">Required DP</p>
+                              <p className="font-black text-espresso">{formatCurrency(payment.required_down_payment)}</p>
+                            </div>
+                            <div className="bg-cream p-3 rounded-xl border border-espresso/5 col-span-2">
+                              <p className="text-espresso/45 font-black uppercase tracking-wider">Paid At</p>
+                              <p className="font-black text-espresso">{new Date(payment.paid_at).toLocaleString()}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row xl:flex-col gap-2">
+                            {payment.receipt_url && (
+                              <a
+                                href={payment.receipt_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center justify-center gap-2 rounded-[20px] bg-white border border-espresso/10 px-4 py-2 text-xs font-black text-espresso hover:bg-cream-dark transition-all"
+                              >
+                                <Eye className="w-4 h-4" />
+                                View Receipt
+                              </a>
+                            )}
+                            {isPending ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="success"
+                                  icon={Check}
+                                  loading={verifyingPaymentId === payment.id}
+                                  onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}
+                                >
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="danger"
+                                  icon={X}
+                                  disabled={verifyingPaymentId === payment.id}
+                                  onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}
+                                >
+                                  Reject
+                                </Button>
+                              </>
+                            ) : (
+                              <div className="rounded-xl bg-cream border border-espresso/5 p-3 text-xs text-espresso/60">
+                                <p className="font-black text-espresso">Verified by</p>
+                                <p>{payment.verified_by_details?.username || 'N/A'}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={TABLE_PAGE_SIZE} />
+                </div>
+              ) : (
+                <EmptyState icon={CreditCard} title="No payments found" description="GCash booking payments will appear here once customers submit proof." />
               )}
             </div>
           )}
@@ -803,7 +1068,7 @@ export default function StaffDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {visibleInventory.map((ingredient, i) => {
+                      {pagedInventory.map((ingredient, i) => {
                         const meta = getInventoryStatusMeta(ingredient.inventory_status);
                         return (
                           <tr key={ingredient.id} className="border-b border-espresso/5 hover:bg-espresso/[0.02] transition-colors animate-in-up" style={{ animationDelay: `${i * 20}ms` }}>
@@ -846,6 +1111,9 @@ export default function StaffDashboard() {
                     </div>
                   )}
                 </div>
+                <div className="px-4 pb-4">
+                  <PaginationControls page={inventoryPage} setPage={setInventoryPage} total={visibleInventory.length} pageSize={TABLE_PAGE_SIZE} />
+                </div>
               </div>
             </div>
           )}
@@ -878,7 +1146,7 @@ export default function StaffDashboard() {
 
               {filteredOrders.length > 0 ? (
                 <div className="space-y-4">
-                  {filteredOrders.map((o, i) => (
+                  {pagedOrders.map((o, i) => (
                     <div key={o.id} className="bg-white p-5 rounded-2xl border border-espresso/5 shadow-sm flex justify-between items-center animate-in-up" style={{ animationDelay: `${i * 40}ms` }}>
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-3">
@@ -899,6 +1167,7 @@ export default function StaffDashboard() {
                       </div>
                     </div>
                   ))}
+                  <PaginationControls page={salesPage} setPage={setSalesPage} total={filteredOrders.length} pageSize={TABLE_PAGE_SIZE} />
                 </div>
               ) : (
                 <EmptyState icon={DollarSign} title="No transactions" description="No sales match the selected payment method." />

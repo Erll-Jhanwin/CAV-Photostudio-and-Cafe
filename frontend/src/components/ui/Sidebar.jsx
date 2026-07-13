@@ -1,7 +1,25 @@
 import { LogOut } from 'lucide-react';
-import { Button, IconButton } from './Button';
+import { Button } from './Button';
+import { Modal } from './Modal';
 
-export function Sidebar({ brand, brandSubtitle, brandIcon: BrandIcon, navItems, user, onLogout, mobileOpen, onMobileClose }) {
+export function Sidebar({
+  brand,
+  brandSubtitle,
+  brandIcon: BrandIcon,
+  navItems,
+  user,
+  onLogout,
+  mobileOpen,
+  onMobileClose,
+  signOutOpen = false,
+  onSignOutCancel,
+  onSignOutConfirm,
+}) {
+  const handleConfirmSignOut = () => {
+    onMobileClose?.();
+    onSignOutConfirm?.();
+  };
+
   return (
     <>
       {mobileOpen && (
@@ -77,6 +95,42 @@ export function Sidebar({ brand, brandSubtitle, brandIcon: BrandIcon, navItems, 
           </Button>
         </div>
       </aside>
+
+      <Modal
+        open={signOutOpen}
+        onClose={onSignOutCancel}
+        title="Confirm Sign Out"
+        size="sm"
+      >
+        <div className="space-y-6 text-center">
+          <div className="mx-auto w-16 h-16 rounded-3xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100 shadow-[0_16px_36px_rgba(220,38,38,0.12)]">
+            <LogOut className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <p className="text-base font-black text-espresso">Are you sure you want to sign out?</p>
+            <p className="text-xs text-espresso/55 leading-relaxed">
+              This will clear your current session, saved tokens, cookies, and cached dashboard data from this browser.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              variant="outline"
+              onClick={onSignOutCancel}
+              className="rounded-2xl"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              icon={LogOut}
+              onClick={handleConfirmSignOut}
+              className="rounded-2xl"
+            >
+              Sign Out
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

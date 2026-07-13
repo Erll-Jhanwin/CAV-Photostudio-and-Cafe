@@ -129,7 +129,7 @@ function PerformanceList({ rows, primaryKey, midKey, midLabel }) {
     return <EmptyState icon={Package} title="No performance data" description="Completed transactions will appear here." />;
   }
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2.5 max-h-[300px] overflow-y-auto scrollbar-thin pr-1">
       {rows.map((row, i) => (
         <div key={row[primaryKey]} className="flex items-center justify-between gap-4 rounded-2xl bg-cream/60 border border-espresso/[0.04] p-3.5 animate-in-up" style={{ animationDelay: `${i * 40}ms` }}>
           <div className="min-w-0">
@@ -178,11 +178,13 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   const [analytics, setAnalytics] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [staffList, setStaffList] = useState([]);
   const [faqs, setFaqs] = useState([]);
+  const [bookingPayments, setBookingPayments] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [faqQuestion, setFaqQuestion] = useState('');
@@ -210,6 +212,8 @@ export default function AdminDashboard() {
   const [bookingSort, setBookingSort] = useState({ key: 'created_at', dir: 'desc' });
   const [posSort, setPosSort] = useState({ key: 'date', dir: 'desc' });
   const [deletingBookingId, setDeletingBookingId] = useState(null);
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
+  const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') {
@@ -223,16 +227,18 @@ export default function AdminDashboard() {
     try {
       setLoading(true);
       const range = getRangeDates(datePreset, customStart, customEnd);
-      const [analyticsRes, forecastRes, staffRes, faqRes] = await Promise.all([
+      const [analyticsRes, forecastRes, staffRes, faqRes, paymentsRes] = await Promise.all([
         client.get('/api/dashboard/analytics/', { params: { ...range, grain: chartGrain } }),
         client.get('/api/forecasting/predictions/'),
         client.get('/api/auth/users/'),
-        client.get('/api/chatbot/faqs/')
+        client.get('/api/chatbot/faqs/'),
+        client.get('/api/bookings/payments/')
       ]);
       setAnalytics(analyticsRes.data);
       setForecast(forecastRes.data);
       setStaffList(staffRes.data);
       setFaqs(faqRes.data);
+      setBookingPayments(paymentsRes.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -319,18 +325,33 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleLogout = useCallback(() => { logout(); navigate('/'); }, [logout, navigate]);
+  const handleVerifyBookingPayment = async (payment, newStatus) => {
+    const action = newStatus === 'APPROVED' ? 'approve' : 'reject';
+    if (!window.confirm(`Are you sure you want to ${action} payment ${payment.reference_number}?`)) return;
+    try {
+      setVerifyingPaymentId(payment.id);
+      const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
+      setBookingPayments(current => current.map(item => item.id === payment.id ? res.data : item));
+    } catch (err) {
+      alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
+    } finally {
+      setVerifyingPaymentId(null);
+    }
+  };
+
+  const handleLogout = useCallback(() => { logout(); navigate('/login', { replace: true }); }, [logout, navigate]);
 
   if (loading) return <AdminSkeleton />;
 
   const navItems = [
     { key: 'forecast', label: 'ML Forecast Center', icon: TrendingUp, active: activeTab === 'forecast', onClick: () => setActiveTab('forecast') },
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
+    { key: 'payments', label: 'Payment Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'staff', label: 'Staff Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
   ];
 
-  const pageTitles = { forecast: 'ML Forecast Center', analytics: 'InsightHub Dashboard', staff: 'Staff Accounts', faq: 'Chatbot Manager' };
+  const pageTitles = { forecast: 'ML Forecast Center', analytics: 'InsightHub Dashboard', payments: 'Payment Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager' };
   const metrics = analytics?.metrics || {};
   const statusData = [
     { label: 'Pending', value: metrics.pending || 0, color: '#F59E0B' },
@@ -361,6 +382,13 @@ export default function AdminDashboard() {
     value: inventoryCounts[key] || 0,
   }));
   const inventoryAlerts = analytics?.inventory_alerts || [];
+  const filteredBookingPayments = bookingPayments.filter(payment => (
+    paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
+  ));
+  const paymentStatusCounts = bookingPayments.reduce((acc, payment) => {
+    acc[payment.status] = (acc[payment.status] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
@@ -370,9 +398,12 @@ export default function AdminDashboard() {
         brandIcon={TrendingUp}
         navItems={navItems}
         user={user}
-        onLogout={handleLogout}
+        onLogout={() => setSignOutOpen(true)}
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
+        signOutOpen={signOutOpen}
+        onSignOutCancel={() => setSignOutOpen(false)}
+        onSignOutConfirm={handleLogout}
       />
 
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
@@ -724,9 +755,10 @@ export default function AdminDashboard() {
 
               <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 md:gap-5">
                 <div className="animate-in-up">
-                <Card padding={false}>
-                  <div className="p-5 md:p-6">
+                <Card padding={false} className="h-[430px]">
+                  <div className="p-5 md:p-6 h-full flex flex-col">
                   <CardHeader title="Recent Bookings" className="mb-3" />
+                  <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
                   <DashboardTable
                     columns={[
                       ['customer_name', 'Customer'],
@@ -752,14 +784,16 @@ export default function AdminDashboard() {
                       </button>
                     )}
                   />
+                  </div>
                   <TablePager page={bookingPage} setPage={setBookingPage} total={sortedBookings.length} pageSize={tablePageSize} />
                   </div>
                 </Card>
                 </div>
                 <div className="animate-in-up">
-                <Card padding={false}>
-                  <div className="p-5 md:p-6">
+                <Card padding={false} className="h-[430px]">
+                  <div className="p-5 md:p-6 h-full flex flex-col">
                   <CardHeader title="Recent POS Transactions" className="mb-3" />
+                  <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
                   <DashboardTable
                     columns={[
                       ['id', 'Transaction ID'],
@@ -773,6 +807,7 @@ export default function AdminDashboard() {
                     onSort={(key) => toggleSort(posSort, setPosSort, key)}
                     renderCell={(row, key) => key === 'id' ? `#${row[key]}` : key === 'total' ? formatCurrency(row[key]) : row[key]}
                   />
+                  </div>
                   <TablePager page={posPage} setPage={setPosPage} total={sortedPos.length} pageSize={tablePageSize} />
                   </div>
                 </Card>
@@ -781,22 +816,163 @@ export default function AdminDashboard() {
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-5">
                 <div className="animate-in-up">
-                <Card padding={false}>
-                  <div className="p-5 md:p-6">
+                <Card padding={false} className="h-[390px]">
+                  <div className="p-5 md:p-6 h-full flex flex-col">
                   <CardHeader title="Top Selling Products" className="mb-3" />
+                  <div className="min-h-0 flex-1 overflow-hidden">
                   <PerformanceList rows={analytics?.top_selling_products || []} primaryKey="product" midKey="quantity_sold" midLabel="sold" />
+                  </div>
                   </div>
                 </Card>
                 </div>
                 <div className="animate-in-up">
-                <Card padding={false}>
-                  <div className="p-5 md:p-6">
+                <Card padding={false} className="h-[390px]">
+                  <div className="p-5 md:p-6 h-full flex flex-col">
                   <CardHeader title="Top Booked Packages" className="mb-3" />
+                  <div className="min-h-0 flex-1 overflow-hidden">
                   <PerformanceList rows={analytics?.top_booked_packages || []} primaryKey="package" midKey="total_bookings" midLabel="bookings" />
+                  </div>
                   </div>
                 </Card>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* PAYMENT VERIFICATION */}
+          {activeTab === 'payments' && (
+            <div className="max-w-[1480px] mx-auto space-y-6 animate-in-up" key="payments">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {[
+                  ['Pending Verification', paymentStatusCounts.PENDING_VERIFICATION || 0, 'bg-amber-50 text-amber-700 border-amber-200'],
+                  ['Approved', paymentStatusCounts.APPROVED || 0, 'bg-emerald-50 text-emerald-700 border-emerald-200'],
+                  ['Rejected', paymentStatusCounts.REJECTED || 0, 'bg-red-50 text-red-700 border-red-200'],
+                ].map(([label, value, className]) => (
+                  <div key={label} className={`rounded-3xl border p-5 shadow-sm ${className}`}>
+                    <p className="text-[10px] uppercase tracking-[0.18em] font-black opacity-80">{label}</p>
+                    <p className="text-3xl font-black mt-2">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <Card>
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
+                  <CardHeader
+                    title="GCash Payment Verification"
+                    subtitle="Approve only after matching the reference, amount, date/time, and screenshot in the GCash merchant app."
+                    className="mb-0"
+                  />
+                  <div className="w-full md:w-64">
+                    <Select
+                      label="Filter Status"
+                      value={paymentStatusFilter}
+                      onChange={e => setPaymentStatusFilter(e.target.value)}
+                      options={[
+                        { value: 'PENDING_VERIFICATION', label: 'Pending Verification' },
+                        { value: 'APPROVED', label: 'Approved' },
+                        { value: 'REJECTED', label: 'Rejected' },
+                        { value: 'ALL', label: 'All Payments' },
+                      ]}
+                    />
+                  </div>
+                </div>
+
+                {filteredBookingPayments.length > 0 ? (
+                  <div className="space-y-3 max-h-[680px] overflow-y-auto pr-1 scrollbar-thin">
+                    {filteredBookingPayments.map((payment, i) => {
+                      const details = payment.booking_details || {};
+                      const isPending = payment.status === 'PENDING_VERIFICATION';
+                      return (
+                        <div key={payment.id} className="rounded-3xl border border-espresso/[0.06] bg-white/80 p-4 md:p-5 shadow-sm animate-in-up" style={{ animationDelay: `${i * 35}ms` }}>
+                          <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr_auto] gap-4 items-start">
+                            <div className="space-y-3 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-black text-espresso">Booking #{details.id}</p>
+                                <StatusBadge status={payment.status} />
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <p className="text-espresso/45 font-black uppercase tracking-wider">Customer</p>
+                                  <p className="font-bold text-espresso">{details.customer_name || 'N/A'}</p>
+                                  <p className="text-espresso/50">{details.customer_email || 'No email'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-espresso/45 font-black uppercase tracking-wider">Package</p>
+                                  <p className="font-bold text-espresso">{details.package_name || 'N/A'}</p>
+                                  <p className="text-espresso/50">{details.scheduled_date} at {details.scheduled_time}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div className="rounded-2xl bg-cream/70 border border-espresso/[0.04] p-3">
+                                <p className="text-espresso/45 font-black uppercase tracking-wider">Reference</p>
+                                <p className="font-black text-espresso break-all">{payment.reference_number}</p>
+                              </div>
+                              <div className="rounded-2xl bg-cream/70 border border-espresso/[0.04] p-3">
+                                <p className="text-espresso/45 font-black uppercase tracking-wider">Amount Paid</p>
+                                <p className="font-black text-gold-dark">{formatCurrency(payment.amount)}</p>
+                              </div>
+                              <div className="rounded-2xl bg-cream/70 border border-espresso/[0.04] p-3">
+                                <p className="text-espresso/45 font-black uppercase tracking-wider">Required DP</p>
+                                <p className="font-black text-espresso">{formatCurrency(payment.required_down_payment)}</p>
+                              </div>
+                              <div className="rounded-2xl bg-cream/70 border border-espresso/[0.04] p-3">
+                                <p className="text-espresso/45 font-black uppercase tracking-wider">Paid At</p>
+                                <p className="font-black text-espresso">{new Date(payment.paid_at).toLocaleString()}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col gap-2 min-w-44">
+                              {payment.receipt_url && (
+                                <a
+                                  href={payment.receipt_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center justify-center gap-2 rounded-[20px] bg-white/80 border border-espresso/10 px-4 py-2 text-xs font-black text-espresso hover:bg-cream-dark transition-all"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                  View Receipt
+                                </a>
+                              )}
+                              {isPending ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="success"
+                                    icon={Check}
+                                    loading={verifyingPaymentId === payment.id}
+                                    onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}
+                                  >
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="danger"
+                                    icon={X}
+                                    disabled={verifyingPaymentId === payment.id}
+                                    onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}
+                                  >
+                                    Reject
+                                  </Button>
+                                </>
+                              ) : (
+                                <div className="rounded-2xl bg-cream/70 border border-espresso/[0.04] p-3 text-xs text-espresso/60">
+                                  <p className="font-black text-espresso">Verified by</p>
+                                  <p>{payment.verified_by_details?.username || 'N/A'}</p>
+                                  <p>{payment.verified_at ? new Date(payment.verified_at).toLocaleString() : 'No timestamp'}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <EmptyState icon={CreditCard} title="No payments found" description="Submitted GCash booking payments will appear here for verification." />
+                )}
+              </Card>
             </div>
           )}
 

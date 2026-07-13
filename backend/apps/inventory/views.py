@@ -13,9 +13,22 @@ from inventory.serializers import (
 from inventory.recipe_defaults import ensure_default_ingredients_and_recipes
 from audit.models import AuditLog
 
+def apply_limit(queryset, request, default=None, maximum=300):
+    raw_limit = request.query_params.get('limit')
+    if raw_limit is None:
+        return queryset[:default] if default else queryset
+    try:
+        limit = min(max(int(raw_limit), 1), maximum)
+    except (TypeError, ValueError):
+        return queryset[:default] if default else queryset
+    return queryset[:limit]
+
 class ProductListCreateView(generics.ListCreateAPIView):
-    queryset = Product.objects.all().select_related('category', 'supplier').prefetch_related('recipe_items__ingredient')
     serializer_class = ProductSerializer
+
+    def get_queryset(self):
+        queryset = Product.objects.all().select_related('category', 'supplier').prefetch_related('recipe_items__ingredient').order_by('name')
+        return apply_limit(queryset, self.request)
 
     def get_permissions(self):
         if self.request.method == 'GET':
@@ -135,9 +148,12 @@ class StockMovementListView(generics.ListCreateAPIView):
         return Response(StockMovementSerializer(movement).data, status=status.HTTP_201_CREATED)
 
 class IngredientListCreateView(generics.ListCreateAPIView):
-    queryset = Ingredient.objects.all().select_related('category', 'supplier').order_by('name')
     serializer_class = IngredientSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = Ingredient.objects.all().select_related('category', 'supplier').order_by('name')
+        return apply_limit(queryset, self.request)
 
     def create(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -239,9 +255,11 @@ class GenerateRecipeIngredientsView(views.APIView):
         return Response({"message": "Raw ingredient list and drink recipes generated.", "created_recipe_items": generated})
 
 class CategoryListCreateView(generics.ListCreateAPIView):
-    queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Category.objects.all().order_by('name')
 
     def create(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -249,9 +267,11 @@ class CategoryListCreateView(generics.ListCreateAPIView):
         return super().create(request, *args, **kwargs)
 
 class SupplierListCreateView(generics.ListCreateAPIView):
-    queryset = Supplier.objects.all()
     serializer_class = SupplierSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Supplier.objects.all().order_by('name')
 
     def create(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:

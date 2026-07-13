@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
-import { Calendar, User, Clock, Bell, LogOut, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, CreditCard, XCircle, RotateCcw, Download, Star, Hourglass, BadgeCheck, Ban } from 'lucide-react';
+import { Calendar, User, Clock, Bell, LogOut, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, CreditCard, XCircle, RotateCcw, Download, Star, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -43,6 +43,7 @@ const bookingFlowSteps = ['Booked', 'Confirmed', 'Payment', 'Completed'];
 const getBookingStage = (status) => {
   switch (status) {
     case 'CONFIRMED': return 1;
+    case 'CONFIRMED_DP': return 2;
     case 'COMPLETED': return 3;
     case 'CANCELLED': return -1;
     case 'PENDING':
@@ -53,9 +54,10 @@ const getBookingStage = (status) => {
 const getStatusMeta = (status) => {
   switch (status) {
     case 'CONFIRMED':
+    case 'CONFIRMED_DP':
       return {
         icon: BadgeCheck,
-        className: 'bg-blue-50 text-blue-700 border-blue-200',
+        className: status === 'CONFIRMED_DP' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200',
       };
     case 'COMPLETED':
       return {
@@ -79,6 +81,7 @@ const getStatusMeta = (status) => {
 const getBookingActions = (status) => {
   switch (status) {
     case 'CONFIRMED':
+    case 'CONFIRMED_DP':
       return [
         { label: 'View Details', icon: Eye, primary: true },
         { label: 'Reschedule', icon: RotateCcw },
@@ -107,6 +110,56 @@ const formatPeso = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', 
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
 })}`;
+
+const DOWN_PAYMENT_RATE = 0.5;
+const calculateDownPayment = (price) => Number(price || 0) * DOWN_PAYMENT_RATE;
+const formatStatusLabel = (status) => ({
+  CONFIRMED_DP: 'Confirmed - Down Payment Received',
+  PENDING_VERIFICATION: 'Pending Verification',
+}[status] || status);
+
+const getDateInputValue = (date = new Date()) => {
+  const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+  return localDate.toISOString().slice(0, 10);
+};
+
+const getTimeInputValue = (date = new Date()) => {
+  const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+  return localDate.toISOString().slice(11, 16);
+};
+
+const getMonthValue = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+};
+
+const getMonthLabel = (monthValue) => {
+  const [year, month] = monthValue.split('-').map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+};
+
+const getCalendarDays = (monthValue) => {
+  const [year, month] = monthValue.split('-').map(Number);
+  const firstDay = new Date(year, month - 1, 1);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const blanks = Array.from({ length: firstDay.getDay() }, (_, index) => ({ key: `blank-${index}`, blank: true }));
+  const days = Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const date = new Date(year, month - 1, day);
+    return {
+      key: getDateInputValue(date),
+      day,
+      date: getDateInputValue(date),
+    };
+  });
+  return [...blanks, ...days];
+};
+
+const shiftMonth = (monthValue, offset) => {
+  const [year, month] = monthValue.split('-').map(Number);
+  return getMonthValue(new Date(year, month - 1 + offset, 1));
+};
 
 function CustomerSkeleton() {
   return (
@@ -152,6 +205,7 @@ export default function CustomerDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('book');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   const [services, setServices] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -175,6 +229,19 @@ export default function CustomerDashboard() {
   const [packageSlide, setPackageSlide] = useState(0);
   const [cardsPerSlide, setCardsPerSlide] = useState(2);
   const [bookingConfirmation, setBookingConfirmation] = useState(null);
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentDate, setPaymentDate] = useState(getDateInputValue());
+  const [paymentTime, setPaymentTime] = useState(getTimeInputValue());
+  const [paymentReceipt, setPaymentReceipt] = useState(null);
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [gcashQrMissing, setGcashQrMissing] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(getMonthValue());
+  const [monthAvailability, setMonthAvailability] = useState({});
+  const [dayAvailability, setDayAvailability] = useState(null);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [slotLoading, setSlotLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState('');
 
   useEffect(() => {
     const handleResize = () => setCardsPerSlide(window.innerWidth < 640 ? 1 : 2);
@@ -182,6 +249,13 @@ export default function CustomerDashboard() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (selectedPackage) {
+      setPaymentAmount(calculateDownPayment(selectedPackage.price).toFixed(2));
+      setGcashQrMissing(false);
+    }
+  }, [selectedPackage]);
 
   const availableAddons = [
     { name: 'Extra Pax (1 Person)', price: 150.00 },
@@ -266,7 +340,7 @@ export default function CustomerDashboard() {
         { id: 1, title: 'Welcome to CAV!', message: 'Enjoy 10% off on your first photo shoot session.', created_at: 'Just now', read: false }
       ];
       bookingsRes.data.forEach(b => {
-        if (b.status === 'CONFIRMED') {
+        if (['CONFIRMED', 'CONFIRMED_DP'].includes(b.status)) {
           mockNotifications.push({
             id: `b-${b.id}`, title: 'Booking Confirmed',
             message: `Your session for ${b.package_details?.name} on ${b.scheduled_date} is confirmed!`,
@@ -314,30 +388,139 @@ export default function CustomerDashboard() {
     }
   };
 
+  const handlePackageSelect = (pkg) => {
+    setSelectedPackage(pkg);
+    setSelectedDate('');
+    setSelectedTime('');
+    setDayAvailability(null);
+    setCalendarMonth(getMonthValue());
+  };
+
+  const fetchMonthAvailability = useCallback(async () => {
+    if (!selectedPackage) return;
+    try {
+      setAvailabilityLoading(true);
+      setAvailabilityError('');
+      const res = await client.get('/api/bookings/availability/', {
+        params: { package: selectedPackage.id, month: calendarMonth }
+      });
+      const availabilityMap = {};
+      res.data.dates?.forEach(day => {
+        availabilityMap[day.date] = day;
+      });
+      setMonthAvailability(availabilityMap);
+    } catch {
+      setAvailabilityError('Could not load calendar availability.');
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  }, [selectedPackage, calendarMonth]);
+
+  const fetchDayAvailability = useCallback(async (dateValue = selectedDate) => {
+    if (!selectedPackage || !dateValue) return null;
+    try {
+      setSlotLoading(true);
+      setAvailabilityError('');
+      const res = await client.get('/api/bookings/availability/', {
+        params: { package: selectedPackage.id, date: dateValue }
+      });
+      setDayAvailability(res.data);
+      setSelectedTime(current => (
+        current && !res.data.slots?.some(slot => slot.time === current && slot.available) ? '' : current
+      ));
+      return res.data;
+    } catch {
+      setAvailabilityError('Could not load time-slot availability.');
+      return null;
+    } finally {
+      setSlotLoading(false);
+    }
+  }, [selectedPackage, selectedDate]);
+
+  const handleDateSelect = (dateValue) => {
+    const dateStatus = monthAvailability[dateValue]?.status;
+    if (!selectedPackage || dateStatus !== 'AVAILABLE') return;
+    setSelectedDate(dateValue);
+    setSelectedTime('');
+  };
+
+  useEffect(() => {
+    fetchMonthAvailability();
+  }, [fetchMonthAvailability]);
+
+  useEffect(() => {
+    if (selectedDate) {
+      fetchDayAvailability(selectedDate);
+    }
+  }, [selectedDate, fetchDayAvailability]);
+
   const handleBookingSubmit = async () => {
     if (!selectedPackage || !selectedDate || !selectedTime) {
       alert('Please fill in all booking details.');
       return;
     }
+    const requiredDownPayment = calculateDownPayment(selectedPackage.price);
+    const paidAmount = Number(paymentAmount);
+    if (!paymentReference.trim() || !paymentDate || !paymentTime || !paymentReceipt) {
+      alert('Please complete the GCash payment proof fields and upload the receipt screenshot.');
+      return;
+    }
+    if (!Number.isFinite(paidAmount) || paidAmount < requiredDownPayment) {
+      alert(`Amount paid must be at least ${formatPeso(requiredDownPayment)}.`);
+      return;
+    }
     try {
+      setPaymentSubmitting(true);
+      const latestAvailability = await fetchDayAvailability(selectedDate);
+      const latestSlot = latestAvailability?.slots?.find(slot => slot.time === selectedTime);
+      if (!latestSlot?.available) {
+        alert('This schedule is no longer available. Please choose another date or time slot.');
+        setPaymentSubmitting(false);
+        return;
+      }
       const bookingRes = await client.post('/api/bookings/', {
         package: selectedPackage.id, scheduled_date: selectedDate,
         scheduled_time: selectedTime, notes,
         items: bookingAddons.map(a => ({ name: a.name, price: a.price, quantity: a.quantity }))
+      });
+      const paidAt = new Date(`${paymentDate}T${paymentTime}:00`);
+      const paymentData = new FormData();
+      paymentData.append('booking', bookingRes.data.id);
+      paymentData.append('reference_number', paymentReference.trim());
+      paymentData.append('amount', paidAmount.toFixed(2));
+      paymentData.append('paid_at', paidAt.toISOString());
+      paymentData.append('receipt', paymentReceipt);
+      const paymentRes = await client.post('/api/bookings/payments/', paymentData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
       setBookingConfirmation({
         id: bookingRes.data?.id,
         packageName: selectedPackage.name,
         date: selectedDate,
         time: selectedTime,
+        paymentReference: paymentRes.data?.reference_number,
+        amount: paymentRes.data?.amount,
+        paymentStatus: paymentRes.data?.status || 'PENDING_VERIFICATION',
       });
       setSelectedService(null); setSelectedPackage(null);
       setSelectedDate(''); setSelectedTime(''); setNotes(''); setBookingAddons([]);
+      setPaymentReference('');
+      setPaymentAmount('');
+      setPaymentDate(getDateInputValue());
+      setPaymentTime(getTimeInputValue());
+      setPaymentReceipt(null);
       setCurrentStep(1);
       fetchDashboardData();
       setActiveTab('history');
-    } catch {
-      alert('Failed to submit booking.');
+    } catch (err) {
+      const errorData = err.response?.data || {};
+      alert(errorData.scheduled_time || errorData.amount || errorData.detail || 'Failed to submit booking payment.');
+      if (err.response?.status === 409) {
+        fetchDayAvailability(selectedDate);
+        fetchMonthAvailability();
+      }
+    } finally {
+      setPaymentSubmitting(false);
     }
   };
 
@@ -362,13 +545,14 @@ export default function CustomerDashboard() {
     switch (status) {
       case 'PENDING': return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'CONFIRMED': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'CONFIRMED_DP': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'COMPLETED': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'CANCELLED': return 'bg-red-50 text-red-700 border-red-200';
       default: return 'bg-gray-50 text-gray-700 border-gray-200';
     }
   };
 
-  const handleLogout = useCallback(() => { logout(); navigate('/'); }, [logout, navigate]);
+  const handleLogout = useCallback(() => { logout(); navigate('/login', { replace: true }); }, [logout, navigate]);
 
   if (loading) return <CustomerSkeleton />;
 
@@ -385,6 +569,10 @@ export default function CustomerDashboard() {
   const totalCart = selectedPackage
     ? parseFloat(selectedPackage.price) + bookingAddons.reduce((acc, a) => acc + (a.price * a.quantity), 0)
     : 0;
+  const requiredDownPayment = selectedPackage ? calculateDownPayment(selectedPackage.price) : 0;
+  const calendarDays = getCalendarDays(calendarMonth);
+  const selectedDaySlots = dayAvailability?.date === selectedDate ? (dayAvailability.slots || []) : [];
+  const availableSlotsCount = selectedDaySlots.filter(slot => slot.available).length;
   const getBookingTotal = (booking) => (
     parseFloat(booking.package_details?.price || 0) +
     (booking.items?.reduce((acc, item) => acc + (parseFloat(item.price) * item.quantity), 0) || 0)
@@ -398,9 +586,12 @@ export default function CustomerDashboard() {
         brandIcon={Calendar}
         navItems={navItems}
         user={user}
-        onLogout={handleLogout}
+        onLogout={() => setSignOutOpen(true)}
         mobileOpen={sidebarOpen}
         onMobileClose={() => setSidebarOpen(false)}
+        signOutOpen={signOutOpen}
+        onSignOutCancel={() => setSignOutOpen(false)}
+        onSignOutConfirm={handleLogout}
       />
 
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
@@ -511,6 +702,9 @@ export default function CustomerDashboard() {
                                   onClick={() => { 
                                     setSelectedService(svc); 
                                     setSelectedPackage(null); 
+                                    setSelectedDate('');
+                                    setSelectedTime('');
+                                    setDayAvailability(null);
                                     setPackageSlide(0);
                                   }}
                                   className={`relative overflow-hidden rounded-2xl border-2 text-left flex flex-col transition-all duration-300 group ${
@@ -630,7 +824,7 @@ export default function CustomerDashboard() {
                                                   <div key={pkg.id} style={{ flex: `0 0 ${100 / cardsPerSlide}%` }} className="p-1.5">
                                                     <button
                                                       type="button"
-                                                      onClick={() => setSelectedPackage(pkg)}
+                                                      onClick={() => handlePackageSelect(pkg)}
                                                       className={`w-full rounded-2xl border-2 text-left flex flex-col transition-all duration-300 h-full group/card relative ${
                                                         isSelected 
                                                           ? 'border-gold bg-gold/[0.04] shadow-md scale-[1.01]' 
@@ -762,32 +956,124 @@ export default function CustomerDashboard() {
                           {/* Date and Time Section */}
                           <div className="border-t border-espresso/5 pt-4 space-y-3">
                             <h3 className="text-xs font-bold text-espresso/50 uppercase tracking-wider">Step 2b: Schedule Date &amp; Time</h3>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <Input
-                                label="Choose Date"
-                                type="date"
-                                value={selectedDate}
-                                onChange={e => setSelectedDate(e.target.value)}
-                                min={new Date().toISOString().split('T')[0]}
-                              />
-                              <Select
-                                label="Pick a Time Slot"
-                                value={selectedTime}
-                                onChange={e => setSelectedTime(e.target.value)}
-                                options={[
-                                  { value: '', label: 'Select slot' },
-                                  { value: '09:00:00', label: '09:00 AM' },
-                                  { value: '10:00:00', label: '10:00 AM' },
-                                  { value: '11:00:00', label: '11:00 AM' },
-                                  { value: '13:00:00', label: '01:00 PM' },
-                                  { value: '14:00:00', label: '02:00 PM' },
-                                  { value: '15:00:00', label: '03:00 PM' },
-                                  { value: '16:00:00', label: '04:00 PM' },
-                                  { value: '17:00:00', label: '05:00 PM' },
-                                  { value: '18:00:00', label: '06:00 PM' },
-                                  { value: '19:00:00', label: '07:00 PM' },
-                                ]}
-                              />
+                            <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-4">
+                              <div className="rounded-2xl bg-white border border-espresso/10 p-4 shadow-sm">
+                                <div className="flex items-center justify-between mb-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => setCalendarMonth(month => shiftMonth(month, -1))}
+                                    disabled={calendarMonth <= getMonthValue()}
+                                    className="p-2 rounded-xl border border-espresso/10 text-espresso hover:bg-cream disabled:opacity-35 disabled:cursor-not-allowed"
+                                    aria-label="Previous month"
+                                  >
+                                    <ChevronLeft className="w-4 h-4" />
+                                  </button>
+                                  <div className="text-center">
+                                    <p className="font-black text-sm text-espresso">{getMonthLabel(calendarMonth)}</p>
+                                    <p className="text-[10px] text-espresso/45">{availabilityLoading ? 'Checking available dates...' : 'Live availability'}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCalendarMonth(month => shiftMonth(month, 1))}
+                                    className="p-2 rounded-xl border border-espresso/10 text-espresso hover:bg-cream"
+                                    aria-label="Next month"
+                                  >
+                                    <ChevronRight className="w-4 h-4" />
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-7 gap-1.5 text-center text-[10px] font-black uppercase tracking-wider text-espresso/40 mb-2">
+                                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <span key={day}>{day}</span>)}
+                                </div>
+                                <div className="grid grid-cols-7 gap-1.5">
+                                  {calendarDays.map(day => {
+                                    if (day.blank) return <span key={day.key} />;
+                                    const meta = monthAvailability[day.date];
+                                    const isSelected = selectedDate === day.date;
+                                    const statusValue = meta?.status || 'UNAVAILABLE';
+                                    const disabled = !selectedPackage || statusValue !== 'AVAILABLE';
+                                    const statusClass = isSelected
+                                      ? 'bg-espresso text-gold border-gold shadow-[0_10px_22px_rgba(46,26,17,0.18)]'
+                                      : statusValue === 'AVAILABLE'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                      : statusValue === 'FULLY_BOOKED'
+                                      ? 'bg-red-50 text-red-500 border-red-100 cursor-not-allowed'
+                                      : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed';
+                                    return (
+                                      <button
+                                        key={day.date}
+                                        type="button"
+                                        disabled={disabled}
+                                        onClick={() => handleDateSelect(day.date)}
+                                        className={`min-h-12 rounded-2xl border text-xs font-black transition-all ${statusClass} disabled:hover:translate-y-0`}
+                                        title={`${day.date} - ${statusValue.replace('_', ' ')}`}
+                                      >
+                                        <span>{day.day}</span>
+                                        {statusValue === 'AVAILABLE' && <span className="block text-[8px] font-bold opacity-70">{meta?.available_count || 0} slots</span>}
+                                        {statusValue === 'FULLY_BOOKED' && <span className="block text-[8px] font-bold opacity-70">Full</span>}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="flex flex-wrap gap-2 mt-3 text-[10px] font-bold text-espresso/55">
+                                  <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400" /> Available</span>
+                                  <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-espresso" /> Selected</span>
+                                  <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-300" /> Fully booked</span>
+                                  <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-gray-300" /> Unavailable</span>
+                                </div>
+                              </div>
+
+                              <div className="rounded-2xl bg-cream/60 border border-espresso/10 p-4 space-y-3">
+                                <div>
+                                  <p className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Selected Date</p>
+                                  <p className="font-black text-espresso">{selectedDate || 'Choose an available date'}</p>
+                                  {selectedDate && (
+                                    <p className="text-[11px] text-espresso/50">{slotLoading ? 'Refreshing slots...' : `${availableSlotsCount} available time slot${availableSlotsCount === 1 ? '' : 's'}`}</p>
+                                  )}
+                                </div>
+
+                                <label className="block space-y-2">
+                                  <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70">Pick a Time Slot</span>
+                                  <select
+                                    value={selectedTime}
+                                    onChange={e => setSelectedTime(e.target.value)}
+                                    disabled={!selectedDate || slotLoading || availableSlotsCount === 0}
+                                    className="w-full bg-white/95 border border-espresso/10 rounded-[18px] px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)] focus:outline-none focus:border-gold focus:ring-4 focus:ring-gold/15 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <option value="">{selectedDate ? 'Select available slot' : 'Select a date first'}</option>
+                                    {selectedDaySlots.map(slot => (
+                                      <option key={slot.time} value={slot.time} disabled={!slot.available}>
+                                        {slot.label} {slot.available ? '' : slot.status === 'BOOKED' ? '- Booked' : '- Unavailable'}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                  {selectedDaySlots.map(slot => (
+                                    <button
+                                      key={slot.time}
+                                      type="button"
+                                      disabled={!slot.available}
+                                      onClick={() => setSelectedTime(slot.time)}
+                                      className={`rounded-2xl border px-3 py-2 text-[11px] font-black transition-all ${
+                                        selectedTime === slot.time
+                                          ? 'bg-espresso text-gold border-gold'
+                                          : slot.available
+                                          ? 'bg-white text-espresso border-espresso/10 hover:border-gold hover:bg-gold/10'
+                                          : 'bg-red-50 text-red-400 border-red-100 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      {slot.label}
+                                      {!slot.available && <span className="block text-[9px]">{slot.status === 'BOOKED' ? 'Booked' : 'Unavailable'}</span>}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {availabilityError && <p className="text-[11px] font-bold text-red-600">{availabilityError}</p>}
+                                {!selectedPackage && <p className="text-[11px] text-espresso/50">Select a package first to load live availability.</p>}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -890,6 +1176,91 @@ export default function CustomerDashboard() {
                               <span className="font-sans text-base font-black text-gold">PHP {totalCart}</span>
                             </div>
                           </div>
+
+                          <div className="grid grid-cols-1 lg:grid-cols-[190px_1fr] gap-4 bg-white rounded-2xl border border-espresso/10 p-4 shadow-sm">
+                            <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-3 flex flex-col items-center justify-center text-center min-h-44">
+                              {!gcashQrMissing ? (
+                                <img
+                                  src="/gcash-business-qr.png"
+                                  alt="Official CAV GCash for Business QR code"
+                                  className="w-36 h-36 object-contain rounded-xl bg-white border border-blue-100 p-2"
+                                  onError={() => setGcashQrMissing(true)}
+                                />
+                              ) : (
+                                <div className="w-36 h-36 rounded-xl bg-white border border-dashed border-blue-200 flex flex-col items-center justify-center text-blue-700 p-3">
+                                  <QrCode className="w-8 h-8 mb-2" />
+                                  <p className="text-[10px] font-black leading-tight">Upload official QR as public/gcash-business-qr.png</p>
+                                </div>
+                              )}
+                              <p className="text-[10px] font-black text-blue-700 uppercase tracking-wider mt-3">GCash for Business</p>
+                            </div>
+
+                            <div className="space-y-3">
+                              <div className="rounded-xl bg-cream/70 border border-espresso/5 p-3 text-xs space-y-1.5">
+                                <div className="flex justify-between gap-3">
+                                  <span className="font-bold text-espresso/60">Required down payment</span>
+                                  <span className="font-black text-gold-dark">{formatPeso(requiredDownPayment)}</span>
+                                </div>
+                                <p className="text-[11px] text-espresso/55 leading-relaxed">
+                                  Pay through the business GCash QR, then submit the exact reference and receipt screenshot. Staff will verify this in the merchant app before confirming the booking.
+                                </p>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <Input
+                                  label="GCash Reference No."
+                                  value={paymentReference}
+                                  onChange={e => setPaymentReference(e.target.value)}
+                                  placeholder="e.g. 1234567890123"
+                                  required
+                                />
+                                <Input
+                                  label="Amount Paid"
+                                  type="number"
+                                  min={requiredDownPayment}
+                                  step="0.01"
+                                  value={paymentAmount}
+                                  onChange={e => setPaymentAmount(e.target.value)}
+                                  required
+                                />
+                                <Input
+                                  label="Payment Date"
+                                  type="date"
+                                  value={paymentDate}
+                                  onChange={e => setPaymentDate(e.target.value)}
+                                  required
+                                />
+                                <Input
+                                  label="Payment Time"
+                                  type="time"
+                                  value={paymentTime}
+                                  onChange={e => setPaymentTime(e.target.value)}
+                                  required
+                                />
+                              </div>
+
+                              <label className="block">
+                                <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70 mb-2">Receipt Screenshot</span>
+                                <div className="rounded-2xl border border-dashed border-espresso/15 bg-cream/35 p-3 flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-white text-gold-dark flex items-center justify-center border border-espresso/5">
+                                    <Upload className="w-4 h-4" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={e => setPaymentReceipt(e.target.files?.[0] || null)}
+                                      className="block w-full text-xs text-espresso file:mr-3 file:rounded-xl file:border-0 file:bg-espresso file:px-3 file:py-2 file:text-xs file:font-bold file:text-gold"
+                                      required
+                                    />
+                                    <p className="text-[10px] text-espresso/45 mt-1 truncate">
+                                      {paymentReceipt ? paymentReceipt.name : 'Upload the GCash receipt screenshot.'}
+                                    </p>
+                                  </div>
+                                </div>
+                              </label>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -921,9 +1292,10 @@ export default function CustomerDashboard() {
                           variant="gold" 
                           size="sm" 
                           onClick={handleBookingSubmit}
+                          disabled={paymentSubmitting}
                           className="px-6 text-xs bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white"
                         >
-                          Submit Reservation
+                          {paymentSubmitting ? 'Submitting...' : 'Submit Reservation'}
                         </Button>
                       )}
                     </div>
@@ -980,9 +1352,17 @@ export default function CustomerDashboard() {
                           </div>
                         )}
 
-                        <div className="border-t border-espresso/10 pt-4 flex justify-between items-center font-bold text-sm">
-                          <span>Total:</span>
-                          <span className="font-sans text-base text-espresso">PHP {totalCart}</span>
+                        <div className="border-t border-espresso/10 pt-4 space-y-2">
+                          <div className="flex justify-between items-center font-bold text-sm">
+                            <span>Total:</span>
+                            <span className="font-sans text-base text-espresso">PHP {totalCart}</span>
+                          </div>
+                          {selectedPackage && (
+                            <div className="flex justify-between items-center rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[11px] font-black text-emerald-700">
+                              <span>Required Down Payment</span>
+                              <span>{formatPeso(requiredDownPayment)}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -1032,7 +1412,7 @@ export default function CustomerDashboard() {
                                     <h3 className="text-base md:text-lg font-black text-espresso leading-snug">{b.package_details?.name || 'Photography Package'}</h3>
                                     <span className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[10px] font-black border ${statusMeta.className}`}>
                                       <StatusIcon className="w-3.5 h-3.5" />
-                                      {b.status}
+                                      {formatStatusLabel(b.status)}
                                     </span>
                                   </div>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-espresso/65">
@@ -1248,7 +1628,7 @@ export default function CustomerDashboard() {
         <Modal
           open={!!bookingConfirmation}
           onClose={() => setBookingConfirmation(null)}
-          title="Booking Recorded"
+          title="Payment Submitted"
           size="sm"
         >
           <div className="space-y-5 text-center">
@@ -1256,9 +1636,9 @@ export default function CustomerDashboard() {
               <CheckCircle className="w-7 h-7" />
             </div>
             <div className="space-y-2">
-              <p className="text-sm font-bold text-espresso">Your reservation has been recorded.</p>
+              <p className="text-sm font-bold text-espresso">Your reservation and GCash proof were submitted.</p>
               <p className="text-xs text-espresso/60 leading-relaxed">
-                Please wait for the staff to review and confirm your booking request.
+                Your payment is pending verification. Staff will confirm the booking after checking the GCash merchant app.
               </p>
             </div>
             {bookingConfirmation && (
@@ -1276,6 +1656,18 @@ export default function CustomerDashboard() {
                 <div className="flex justify-between gap-3">
                   <span className="text-espresso/45 font-bold uppercase tracking-wider">Schedule</span>
                   <span className="font-semibold text-espresso text-right">{bookingConfirmation.date} at {bookingConfirmation.time}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-espresso/45 font-bold uppercase tracking-wider">GCash Ref</span>
+                  <span className="font-semibold text-espresso text-right">{bookingConfirmation.paymentReference}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-espresso/45 font-bold uppercase tracking-wider">Amount</span>
+                  <span className="font-semibold text-espresso text-right">{formatPeso(bookingConfirmation.amount)}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-espresso/45 font-bold uppercase tracking-wider">Payment Status</span>
+                  <span className="font-semibold text-amber-700 text-right">{formatStatusLabel(bookingConfirmation.paymentStatus)}</span>
                 </div>
               </div>
             )}

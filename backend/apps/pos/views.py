@@ -10,6 +10,16 @@ from inventory.models import Product, StockMovement, Ingredient, IngredientStock
 from sales.models import DailySalesSummary
 from audit.models import AuditLog
 
+def apply_limit(queryset, request, default=50, maximum=200):
+    raw_limit = request.query_params.get('limit')
+    if raw_limit is None:
+        return queryset[:default]
+    try:
+        limit = min(max(int(raw_limit), 1), maximum)
+    except (TypeError, ValueError):
+        return queryset[:default]
+    return queryset[:limit]
+
 def add_to_daily_sales(amount, is_booking=False):
     today = timezone.now().date()
     summary, _ = DailySalesSummary.objects.get_or_create(date=today)
@@ -84,9 +94,11 @@ class OrderListCreateView(generics.ListCreateAPIView):
         # Staff and Admins can see all orders
         user = self.request.user
         if user.role in ['STAFF', 'ADMIN']:
-            return Order.objects.all().prefetch_related('items', 'payments', 'items__product').order_by('-created_at')
+            queryset = Order.objects.all().select_related('staff', 'booking__customer').prefetch_related('items', 'payments', 'items__product').order_by('-created_at')
+            return apply_limit(queryset, self.request)
         # Customers can only see orders linked to their own bookings
-        return Order.objects.filter(booking__customer=user).prefetch_related('items', 'payments', 'items__product').order_by('-created_at')
+        queryset = Order.objects.filter(booking__customer=user).select_related('staff', 'booking__customer').prefetch_related('items', 'payments', 'items__product').order_by('-created_at')
+        return apply_limit(queryset, self.request)
 
     def create(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
