@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
-import { Calendar, User, Clock, Bell, LogOut, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, CreditCard, XCircle, RotateCcw, Download, Star, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText } from 'lucide-react';
+import { Calendar, User, Clock, Bell, LogOut, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Star, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -11,6 +11,7 @@ import { Skeleton, SkeletonProfileCard } from '../components/ui/Skeleton';
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { Modal } from '../components/ui/Modal';
+import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -37,6 +38,68 @@ const parseDescription = (description) => {
     isSplit: false
   };
 };
+
+const splitPackageText = (text) => (
+  String(text || '')
+    .split(/\r?\n|,|;/)
+    .map(item => item.trim())
+    .filter(Boolean)
+);
+
+const getPackagePeople = (pkg) => {
+  const parsed = parseDescription(pkg?.description || '');
+  if (parsed.persons) return parsed.persons;
+  const match = `${pkg?.description || ''} ${pkg?.inclusions || ''}`.match(/\b\d+(?:-\d+)?\s*(?:pax|person|persons|people)\b/i);
+  return match ? match[0] : 'See package inclusions';
+};
+
+const getPackagePhotoOutputs = (pkg) => {
+  const parsed = parseDescription(pkg?.description || '');
+  const outputs = splitPackageText(pkg?.inclusions).filter(item => (
+    /(shot|photo|soft cop|digital|print|retouch|layout|file)/i.test(item)
+  ));
+  if (parsed.shots && !outputs.some(item => item.toLowerCase().includes('shot'))) {
+    outputs.unshift(parsed.shots);
+  }
+  return outputs.length ? outputs : ['Final outputs confirmed with staff based on session type'];
+};
+
+const getPackageGalleryCategory = (pkg, service) => {
+  const text = `${pkg?.name || ''} ${pkg?.description || ''} ${service?.name || ''}`.toLowerCase();
+  if (text.includes('event') || text.includes('birthday')) return 'EVENTS';
+  return 'STUDIO';
+};
+
+const packageSampleFallbacks = [
+  {
+    id: 'sample-studio-portrait',
+    category: 'STUDIO',
+    title: 'Studio Portrait Sample',
+    image_url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=900',
+    alt_text: 'Studio portrait sample',
+  },
+  {
+    id: 'sample-studio-setup',
+    category: 'STUDIO',
+    title: 'Studio Lighting Setup',
+    image_url: 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=900',
+    alt_text: 'Studio lighting and camera setup',
+  },
+  {
+    id: 'sample-studio-family',
+    category: 'STUDIO',
+    title: 'Family Session Sample',
+    image_url: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?q=80&w=900',
+    alt_text: 'Family photo session sample',
+  },
+  {
+    id: 'sample-event',
+    category: 'EVENTS',
+    title: 'Event Session Sample',
+    image_url: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?q=80&w=900',
+    alt_text: 'Event photography sample',
+  },
+];
 
 const bookingFlowSteps = ['Booked', 'Confirmed', 'Payment', 'Completed'];
 
@@ -78,13 +141,15 @@ const getStatusMeta = (status) => {
   }
 };
 
-const getBookingActions = (status) => {
+const getBookingActions = (booking) => {
+  const status = booking?.status;
+  const editAction = booking?.can_edit ? [{ label: 'Edit Booking', icon: RotateCcw }] : [];
   switch (status) {
     case 'CONFIRMED':
     case 'CONFIRMED_DP':
       return [
         { label: 'View Details', icon: Eye, primary: true },
-        { label: 'Reschedule', icon: RotateCcw },
+        ...editAction,
       ];
     case 'COMPLETED':
       return [
@@ -100,7 +165,7 @@ const getBookingActions = (status) => {
     default:
       return [
         { label: 'View Details', icon: Eye, primary: true },
-        { label: 'Pay Now', icon: CreditCard },
+        ...editAction,
         { label: 'Cancel Booking', icon: XCircle, danger: true },
       ];
   }
@@ -113,6 +178,8 @@ const formatPeso = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', 
 
 const DOWN_PAYMENT_RATE = 0.5;
 const calculateDownPayment = (price) => Number(price || 0) * DOWN_PAYMENT_RATE;
+const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+const isValidPhone = (value) => String(value || '').replace(/[^\d+]/g, '').replace(/^\+/, '').length >= 7;
 const formatStatusLabel = (status) => ({
   CONFIRMED_DP: 'Confirmed - Down Payment Received',
   PENDING_VERIFICATION: 'Pending Verification',
@@ -214,6 +281,7 @@ export default function CustomerDashboard() {
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [bookingEmail, setBookingEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [points, setPoints] = useState(0);
@@ -224,11 +292,21 @@ export default function CustomerDashboard() {
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [notes, setNotes] = useState('');
-  const [bookingAddons, setBookingAddons] = useState([]);
+  const [packageDetails, setPackageDetails] = useState(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [packageSlide, setPackageSlide] = useState(0);
   const [cardsPerSlide, setCardsPerSlide] = useState(2);
   const [bookingConfirmation, setBookingConfirmation] = useState(null);
+  const [selectedBookingDetails, setSelectedBookingDetails] = useState(null);
+  const [cancellingBookingId, setCancellingBookingId] = useState(null);
+  const [editingBooking, setEditingBooking] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [editMonth, setEditMonth] = useState(getMonthValue());
+  const [editDayAvailability, setEditDayAvailability] = useState(null);
+  const [editSlotLoading, setEditSlotLoading] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [editConfirmOpen, setEditConfirmOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(getDateInputValue());
@@ -242,6 +320,7 @@ export default function CustomerDashboard() {
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [slotLoading, setSlotLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState('');
+  const [galleryImages, setGalleryImages] = useState([]);
 
   useEffect(() => {
     const handleResize = () => setCardsPerSlide(window.innerWidth < 640 ? 1 : 2);
@@ -257,16 +336,20 @@ export default function CustomerDashboard() {
     }
   }, [selectedPackage]);
 
-  const availableAddons = [
-    { name: 'Extra Pax (1 Person)', price: 150.00 },
-    { name: 'All Raw Soft Copies (USB)', price: 300.00 },
-    { name: 'Premium A4 Print & Frame', price: 250.00 },
-    { name: 'Professional Make-up Artist', price: 1200.00 }
-  ];
+  const allPackages = services.flatMap(service => (
+    (service.packages || []).map(pkg => ({
+      ...pkg,
+      serviceName: service.name,
+      serviceDescription: service.description,
+      serviceDuration: service.duration_minutes,
+      serviceImageUrl: service.image_url,
+    }))
+  ));
 
   const [chatMessages, setChatMessages] = useState([
     { role: 'assistant', content: 'Hello! I am your CAV AI assistant. How can I help you today? You can ask me about studio rooms, slots, packages, or coffee!' }
   ]);
+  const [chatFaqPrompts, setChatFaqPrompts] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -282,10 +365,13 @@ export default function CustomerDashboard() {
       }
       return !!selectedDate && !!selectedTime;
     }
-    if (currentStep === 3) return true;
+    if (currentStep === 3) {
+      const fullName = `${firstName} ${lastName}`.trim();
+      return fullName.length >= 2 && isValidEmail(bookingEmail) && isValidPhone(phone);
+    }
     if (currentStep === 4) return true;
     return false;
-  }, [currentStep, selectedService, selectedPackage, selectedDate, selectedTime]);
+  }, [currentStep, selectedService, selectedPackage, selectedDate, selectedTime, firstName, lastName, bookingEmail, phone]);
 
   useEffect(() => {
     if (chatOpen) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -317,19 +403,31 @@ export default function CustomerDashboard() {
     fetchDashboardData();
   }, [user, navigate]);
 
+  useEffect(() => {
+    client.get('/api/chatbot/faqs/')
+      .then(res => {
+        const prompts = res.data.map(faq => faq.question).filter(Boolean).slice(0, 6);
+        if (prompts.length) setChatFaqPrompts(prompts);
+      })
+      .catch(() => {});
+  }, []);
+
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const [servicesRes, bookingsRes, profileRes] = await Promise.all([
+      const [servicesRes, bookingsRes, profileRes, galleryRes] = await Promise.all([
         client.get('/api/bookings/services/'),
         client.get('/api/bookings/'),
-        client.get('/api/auth/profile/')
+        client.get('/api/auth/profile/'),
+        client.get('/api/gallery/images/').catch(() => ({ data: [] }))
       ]);
       setServices(servicesRes.data);
       setBookings(bookingsRes.data);
+      setGalleryImages(Array.isArray(galleryRes.data) ? galleryRes.data : []);
       const p = profileRes.data;
       setFirstName(p.first_name || '');
       setLastName(p.last_name || '');
+      setBookingEmail(p.email || user?.email || '');
       setPhone(p.phone_number || '');
       setAddress(p.address || '');
       if (p.customer_profile) {
@@ -369,27 +467,10 @@ export default function CustomerDashboard() {
     }
   };
 
-  const handleAddAddon = (addon) => {
-    const existing = bookingAddons.find(a => a.name === addon.name);
-    if (existing) {
-      setBookingAddons(bookingAddons.map(a => a.name === addon.name ? { ...a, quantity: a.quantity + 1 } : a));
-    } else {
-      setBookingAddons([...bookingAddons, { ...addon, quantity: 1 }]);
-    }
-  };
-
-  const handleRemoveAddon = (addonName) => {
-    const existing = bookingAddons.find(a => a.name === addonName);
-    if (!existing) return;
-    if (existing.quantity > 1) {
-      setBookingAddons(bookingAddons.map(a => a.name === addonName ? { ...a, quantity: a.quantity - 1 } : a));
-    } else {
-      setBookingAddons(bookingAddons.filter(a => a.name !== addonName));
-    }
-  };
-
   const handlePackageSelect = (pkg) => {
+    const isSamePackage = selectedPackage?.id === pkg.id;
     setSelectedPackage(pkg);
+    if (isSamePackage) return;
     setSelectedDate('');
     setSelectedTime('');
     setDayAvailability(null);
@@ -444,6 +525,139 @@ export default function CustomerDashboard() {
     setSelectedTime('');
   };
 
+  const getPackageById = useCallback((packageId) => (
+    allPackages.find(pkg => String(pkg.id) === String(packageId))
+  ), [allPackages]);
+
+  const openEditBooking = (booking) => {
+    if (!booking.can_edit) {
+      alert(booking.edit_locked_reason || 'This booking can no longer be edited.');
+      return;
+    }
+    const customer = booking.customer || {};
+    const month = booking.scheduled_date ? booking.scheduled_date.slice(0, 7) : getMonthValue();
+    setEditingBooking(booking);
+    setEditForm({
+      package: String(booking.package || booking.package_details?.id || ''),
+      scheduled_date: booking.scheduled_date || '',
+      scheduled_time: booking.scheduled_time || '',
+      notes: booking.notes || '',
+      first_name: customer.first_name || firstName || '',
+      last_name: customer.last_name || lastName || '',
+      email: customer.email || user?.email || '',
+      phone_number: customer.phone_number || phone || '',
+      address: customer.address || address || '',
+      change_reason: 'Customer updated booking details',
+    });
+    setEditMonth(month);
+    setEditDayAvailability(null);
+    setEditError('');
+  };
+
+  const closeEditBooking = (force = false) => {
+    if (editSaving && !force) return;
+    setEditingBooking(null);
+    setEditForm(null);
+    setEditDayAvailability(null);
+    setEditError('');
+    setEditConfirmOpen(false);
+  };
+
+  const fetchEditDayAvailability = useCallback(async (dateValue = editForm?.scheduled_date, packageId = editForm?.package) => {
+    if (!editingBooking || !packageId || !dateValue) return null;
+    try {
+      setEditSlotLoading(true);
+      setEditError('');
+      const res = await client.get('/api/bookings/availability/', {
+        params: { package: packageId, date: dateValue, exclude_booking: editingBooking.id }
+      });
+      setEditDayAvailability(res.data);
+      setEditForm(current => {
+        if (!current) return current;
+        const currentSlotAvailable = res.data.slots?.some(slot => slot.time === current.scheduled_time && slot.available);
+        return current.scheduled_time && !currentSlotAvailable ? { ...current, scheduled_time: '' } : current;
+      });
+      return res.data;
+    } catch {
+      setEditError('Could not load available time slots.');
+      return null;
+    } finally {
+      setEditSlotLoading(false);
+    }
+  }, [editForm?.package, editForm?.scheduled_date, editingBooking]);
+
+  useEffect(() => {
+    if (editingBooking && editForm?.package && editForm?.scheduled_date) {
+      fetchEditDayAvailability(editForm.scheduled_date, editForm.package);
+    }
+  }, [editingBooking, editForm?.package, editForm?.scheduled_date, fetchEditDayAvailability]);
+
+  const handleEditPackageChange = (packageId) => {
+    setEditForm(current => current ? {
+      ...current,
+      package: packageId,
+      scheduled_time: '',
+    } : current);
+    setEditDayAvailability(null);
+  };
+
+  const handleEditDateChange = (dateValue) => {
+    setEditMonth(dateValue ? dateValue.slice(0, 7) : getMonthValue());
+    setEditForm(current => current ? {
+      ...current,
+      scheduled_date: dateValue,
+      scheduled_time: '',
+    } : current);
+    setEditDayAvailability(null);
+  };
+
+  const submitEditBooking = async () => {
+    if (!editingBooking || !editForm) return;
+    if (!editForm.package || !editForm.scheduled_date || !editForm.scheduled_time) {
+      setEditError('Please select a package, date, and available time slot.');
+      return;
+    }
+
+    try {
+      setEditSaving(true);
+      setEditError('');
+      const latestAvailability = await fetchEditDayAvailability(editForm.scheduled_date, editForm.package);
+      const selectedSlot = latestAvailability?.slots?.find(slot => slot.time === editForm.scheduled_time);
+      if (!selectedSlot?.available) {
+        setEditError('This schedule is no longer available. Please choose another time slot.');
+        return;
+      }
+
+      const res = await client.patch(`/api/bookings/${editingBooking.id}/`, {
+        package: Number(editForm.package),
+        scheduled_date: editForm.scheduled_date,
+        scheduled_time: editForm.scheduled_time,
+        notes: editForm.notes,
+        first_name: editForm.first_name,
+        last_name: editForm.last_name,
+        email: editForm.email,
+        phone_number: editForm.phone_number,
+        address: editForm.address,
+        change_reason: editForm.change_reason,
+      });
+
+      setBookings(current => current.map(item => item.id === editingBooking.id ? res.data : item));
+      setSelectedBookingDetails(current => current?.id === editingBooking.id ? res.data : current);
+      setFirstName(editForm.first_name);
+      setLastName(editForm.last_name);
+      setBookingEmail(editForm.email);
+      setPhone(editForm.phone_number);
+      setAddress(editForm.address);
+      closeEditBooking(true);
+    } catch (err) {
+      const errorData = err.response?.data || {};
+      setEditError(errorData.scheduled_time || errorData.detail || 'Failed to update booking.');
+    } finally {
+      setEditSaving(false);
+      setEditConfirmOpen(false);
+    }
+  };
+
   useEffect(() => {
     fetchMonthAvailability();
   }, [fetchMonthAvailability]);
@@ -478,10 +692,20 @@ export default function CustomerDashboard() {
         setPaymentSubmitting(false);
         return;
       }
+      const fullName = `${firstName} ${lastName}`.trim();
+      if (fullName.length < 2 || !isValidEmail(bookingEmail) || !isValidPhone(phone)) {
+        alert('Please enter your full name, a valid email address, and a valid contact number.');
+        setPaymentSubmitting(false);
+        return;
+      }
       const bookingRes = await client.post('/api/bookings/', {
         package: selectedPackage.id, scheduled_date: selectedDate,
         scheduled_time: selectedTime, notes,
-        items: bookingAddons.map(a => ({ name: a.name, price: a.price, quantity: a.quantity }))
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        email: bookingEmail.trim(),
+        phone_number: phone.trim(),
+        address: address.trim(),
       });
       const paidAt = new Date(`${paymentDate}T${paymentTime}:00`);
       const paymentData = new FormData();
@@ -524,10 +748,35 @@ export default function CustomerDashboard() {
     }
   };
 
-  const handleChatSubmit = async (e) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-    const msg = chatInput.trim();
+  const handleBookingAction = async (booking, actionLabel) => {
+    if (actionLabel === 'View Details') {
+      setSelectedBookingDetails(booking);
+      return;
+    }
+
+    if (actionLabel === 'Edit Booking') {
+      openEditBooking(booking);
+      return;
+    }
+
+    if (actionLabel !== 'Cancel Booking') return;
+    if (!window.confirm(`Cancel booking for ${booking.package_details?.name || 'this package'}?`)) return;
+
+    try {
+      setCancellingBookingId(booking.id);
+      const res = await client.patch(`/api/bookings/${booking.id}/`, { status: 'CANCELLED' });
+      setBookings(current => current.map(item => item.id === booking.id ? res.data : item));
+      setSelectedBookingDetails(current => current?.id === booking.id ? res.data : current);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to cancel booking.');
+    } finally {
+      setCancellingBookingId(null);
+    }
+  };
+
+  const sendChatMessage = useCallback(async (message) => {
+    const msg = message.trim();
+    if (!msg || chatLoading) return;
     setChatMessages(p => [...p, { role: 'user', content: msg }]);
     setChatInput('');
     setChatLoading(true);
@@ -539,6 +788,11 @@ export default function CustomerDashboard() {
     } finally {
       setChatLoading(false);
     }
+  }, [chatLoading]);
+
+  const handleChatSubmit = async (e) => {
+    e.preventDefault();
+    await sendChatMessage(chatInput);
   };
 
   const getStatusColor = (status) => {
@@ -566,17 +820,53 @@ export default function CustomerDashboard() {
 
   const pageTitles = { book: 'Book a Session', history: 'Booking History', profile: 'My Profile', notifications: 'Notifications' };
 
-  const totalCart = selectedPackage
-    ? parseFloat(selectedPackage.price) + bookingAddons.reduce((acc, a) => acc + (a.price * a.quantity), 0)
-    : 0;
+  const customerFullName = `${firstName} ${lastName}`.trim();
+  const handleCustomerFullNameChange = (value) => {
+    const cleanValue = value.replace(/\s+/g, ' ').trimStart();
+    const parts = cleanValue.trim().split(' ').filter(Boolean);
+    setFirstName(parts[0] || '');
+    setLastName(parts.slice(1).join(' '));
+  };
+  const totalCart = selectedPackage ? parseFloat(selectedPackage.price) : 0;
   const requiredDownPayment = selectedPackage ? calculateDownPayment(selectedPackage.price) : 0;
   const calendarDays = getCalendarDays(calendarMonth);
   const selectedDaySlots = dayAvailability?.date === selectedDate ? (dayAvailability.slots || []) : [];
   const availableSlotsCount = selectedDaySlots.filter(slot => slot.available).length;
+  const editSelectedPackage = editForm ? getPackageById(editForm.package) : null;
+  const editAvailableSlots = editDayAvailability && editDayAvailability.date === editForm?.scheduled_date ? (editDayAvailability.slots || []) : [];
+  const editAddonsTotal = editingBooking?.items?.reduce((acc, item) => acc + (parseFloat(item.price) * item.quantity), 0) || 0;
+  const editTotal = editSelectedPackage ? parseFloat(editSelectedPackage.price || 0) + editAddonsTotal : editAddonsTotal;
+  const detailPackage = packageDetails?.package || null;
+  const detailService = packageDetails?.service || null;
+  const detailInclusions = splitPackageText(detailPackage?.inclusions);
+  const detailOutputs = getPackagePhotoOutputs(detailPackage);
+  const detailGalleryCategory = getPackageGalleryCategory(detailPackage, detailService);
+  const detailGallerySource = galleryImages.length ? galleryImages : packageSampleFallbacks;
+  const detailGalleryImages = detailGallerySource
+    .filter(item => item.image_url && item.category === detailGalleryCategory)
+    .slice(0, 6);
+  const visibleDetailGalleryImages = detailGalleryImages.length
+    ? detailGalleryImages
+    : packageSampleFallbacks.filter(item => item.category === detailGalleryCategory).slice(0, 6);
   const getBookingTotal = (booking) => (
     parseFloat(booking.package_details?.price || 0) +
     (booking.items?.reduce((acc, item) => acc + (parseFloat(item.price) * item.quantity), 0) || 0)
   );
+  const getBookingCustomerName = (booking) => {
+    const customer = booking?.customer || {};
+    return `${customer.first_name || firstName || ''} ${customer.last_name || lastName || ''}`.trim()
+      || customer.username
+      || user?.username
+      || 'Customer';
+  };
+  const getBookingContact = (booking) => {
+    const customer = booking?.customer || {};
+    return {
+      phone: customer.phone_number || phone || 'No phone provided',
+      email: customer.email || user?.email || 'No email provided',
+      address: customer.address || address || '',
+    };
+  };
 
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
@@ -619,7 +909,7 @@ export default function CustomerDashboard() {
                           <span className="text-gold uppercase tracking-wider">
                             {currentStep === 1 && 'Choose Service'}
                             {currentStep === 2 && 'Package & Schedule'}
-                            {currentStep === 3 && 'Add-ons & Notes'}
+                            {currentStep === 3 && 'Customer Info'}
                             {currentStep === 4 && 'Review & Submit'}
                           </span>
                         </div>
@@ -641,7 +931,7 @@ export default function CustomerDashboard() {
                         {[
                           { step: 1, label: 'Service' },
                           { step: 2, label: 'Package & Schedule' },
-                          { step: 3, label: 'Add-ons' },
+                          { step: 3, label: 'Customer Info' },
                           { step: 4, label: 'Review' }
                         ].map((s) => (
                           <button
@@ -822,16 +1112,12 @@ export default function CustomerDashboard() {
                                                 const isSelected = selectedPackage?.id === pkg.id;
                                                 return (
                                                   <div key={pkg.id} style={{ flex: `0 0 ${100 / cardsPerSlide}%` }} className="p-1.5">
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => handlePackageSelect(pkg)}
+                                                    <div
                                                       className={`w-full rounded-2xl border-2 text-left flex flex-col transition-all duration-300 h-full group/card relative ${
                                                         isSelected 
                                                           ? 'border-gold bg-gold/[0.04] shadow-md scale-[1.01]' 
                                                           : 'border-espresso/10 hover:border-espresso/30 bg-white hover:shadow-sm'
                                                       }`}
-                                                      aria-pressed={isSelected}
-                                                      aria-label={`Select ${pkg.name} package`}
                                                     >
                                                       <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                                                         {/* Top row: Icon and Title */}
@@ -871,19 +1157,44 @@ export default function CustomerDashboard() {
                                                           <strong>Inclusions:</strong> {pkg.inclusions}
                                                         </p>
 
-                                                        {/* Bottom row: Price and select button */}
-                                                        <div className="flex justify-between items-center pt-2 mt-auto border-t border-espresso/5 shrink-0">
-                                                          <span className="text-gold font-extrabold text-xs">₱{pkg.price}</span>
-                                                          <span className={`text-[9px] font-extrabold px-2.5 py-1 rounded-md uppercase tracking-wider transition-all duration-300 ${
-                                                            isSelected 
-                                                              ? 'bg-gold text-cream shadow-sm' 
-                                                              : 'bg-espresso/5 text-espresso/50 group-hover/card:bg-espresso/10'
-                                                          }`}>
-                                                            {isSelected ? 'Selected' : 'Select'}
-                                                          </span>
+                                                        {/* Bottom row: Price and actions */}
+                                                        <div className="space-y-2 pt-2 mt-auto border-t border-espresso/5 shrink-0">
+                                                          <div className="flex justify-between items-center">
+                                                            <span className="text-gold font-extrabold text-xs">₱{pkg.price}</span>
+                                                            <span className={`text-[9px] font-extrabold px-2.5 py-1 rounded-md uppercase tracking-wider transition-all duration-300 ${
+                                                              isSelected 
+                                                                ? 'bg-gold text-cream shadow-sm' 
+                                                                : 'bg-espresso/5 text-espresso/50 group-hover/card:bg-espresso/10'
+                                                            }`}>
+                                                              {isSelected ? 'Selected' : 'Available'}
+                                                            </span>
+                                                          </div>
+                                                          <div className="grid grid-cols-1 gap-2">
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => handlePackageSelect(pkg)}
+                                                              className={`w-full rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wider transition-all duration-300 ${
+                                                                isSelected
+                                                                  ? 'bg-gold text-cream shadow-sm'
+                                                                  : 'bg-espresso text-cream hover:bg-espresso-light'
+                                                              }`}
+                                                              aria-pressed={isSelected}
+                                                              aria-label={`Select ${pkg.name} package`}
+                                                            >
+                                                              {isSelected ? 'Selected' : 'Select Package'}
+                                                            </button>
+                                                            <button
+                                                              type="button"
+                                                              onClick={() => setPackageDetails({ package: pkg, service: selectedService })}
+                                                              className="w-full rounded-xl border border-espresso/10 bg-white px-3 py-2 text-[10px] font-black text-espresso/65 transition-all duration-300 hover:border-gold/40 hover:bg-gold/10 hover:text-espresso"
+                                                              aria-label={`View what is included in ${pkg.name}`}
+                                                            >
+                                                              What's in this package?
+                                                            </button>
+                                                          </div>
                                                         </div>
                                                       </div>
-                                                    </button>
+                                                    </div>
                                                   </div>
                                                 );
                                               })}
@@ -1078,28 +1389,58 @@ export default function CustomerDashboard() {
                           </div>
                         </div>
 
-                        {/* Step 3: Add-ons & Notes */}
+                        {/* Step 3: Customer Information & Notes */}
                         <div className="w-[25%] shrink-0 h-full overflow-y-auto pr-1 pb-4 flex flex-col gap-4">
                           <div>
-                            <h2 className="text-sm font-bold text-espresso mb-1">Customize Your Session</h2>
-                            <p className="text-[11px] text-espresso/50">Add details or optional extras to improve your experience.</p>
+                            <h2 className="text-sm font-bold text-espresso mb-1">Customer Information</h2>
+                            <p className="text-[11px] text-espresso/50">Confirm the details staff will use for this booking.</p>
                           </div>
-                          
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-bold text-espresso/50 uppercase tracking-wider">Add-ons (Optional)</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {availableAddons.map((addon, i) => (
-                                <div key={i} className="bg-cream p-3 rounded-xl border border-espresso/5 flex justify-between items-center text-xs">
-                                  <div>
-                                    <p className="font-semibold">{addon.name}</p>
-                                    <p className="text-gold font-bold">PHP {addon.price}</p>
-                                  </div>
-                                  <button onClick={() => handleAddAddon(addon)}
-                                    className="bg-espresso text-gold hover:bg-espresso-light p-1.5 rounded-lg transition-colors">
-                                    <Plus className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ))}
+
+                          <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm space-y-3">
+                            <Input
+                              label="Full Name"
+                              required
+                              value={customerFullName}
+                              onChange={(e) => handleCustomerFullNameChange(e.target.value)}
+                              placeholder="Juan Dela Cruz"
+                            />
+                            {customerFullName && customerFullName.length < 2 && (
+                              <p className="text-[11px] font-bold text-red-600">Please enter your full name.</p>
+                            )}
+
+                            <Input
+                              label="Email Address"
+                              type="email"
+                              required
+                              value={bookingEmail}
+                              onChange={(e) => setBookingEmail(e.target.value)}
+                              placeholder="customer@example.com"
+                            />
+                            {bookingEmail && !isValidEmail(bookingEmail) && (
+                              <p className="text-[11px] font-bold text-red-600">Enter a valid email address.</p>
+                            )}
+
+                            <Input
+                              label="Contact Number"
+                              type="tel"
+                              required
+                              value={phone}
+                              onChange={(e) => setPhone(e.target.value)}
+                              placeholder="09XXXXXXXXX"
+                            />
+                            {phone && !isValidPhone(phone) && (
+                              <p className="text-[11px] font-bold text-red-600">Enter a valid contact number.</p>
+                            )}
+
+                            <Input
+                              label="Address"
+                              value={address}
+                              onChange={(e) => setAddress(e.target.value)}
+                              placeholder="City, province, or full address"
+                            />
+
+                            <div className="rounded-xl bg-cream/70 border border-espresso/5 p-3 text-[11px] text-espresso/55 leading-relaxed">
+                              These details are pre-filled from your account when available. You can edit them here before submitting this booking.
                             </div>
                           </div>
 
@@ -1150,19 +1491,23 @@ export default function CustomerDashboard() {
                               </div>
                             </div>
 
-                            {bookingAddons.length > 0 && (
-                              <div className="border-b border-espresso/5 pb-2">
-                                <p className="text-[9px] uppercase tracking-wider text-espresso/40 mb-1">Custom Add-ons</p>
-                                <div className="space-y-1">
-                                  {bookingAddons.map((addon, idx) => (
-                                    <div key={idx} className="flex justify-between text-[11px]">
-                                      <span>{addon.name} (x{addon.quantity})</span>
-                                      <span className="font-bold">PHP {addon.price * addon.quantity}</span>
-                                    </div>
-                                  ))}
+                            <div className="border-b border-espresso/5 pb-2">
+                              <p className="text-[9px] uppercase tracking-wider text-espresso/40 mb-1">Customer Information</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                <div>
+                                  <span className="text-espresso/45">Name</span>
+                                  <p className="font-bold text-espresso">{customerFullName || 'Not provided'}</p>
+                                </div>
+                                <div>
+                                  <span className="text-espresso/45">Phone</span>
+                                  <p className="font-bold text-espresso">{phone || 'Not provided'}</p>
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <span className="text-espresso/45">Email</span>
+                                  <p className="font-bold text-espresso break-all">{bookingEmail || 'Not provided'}</p>
                                 </div>
                               </div>
-                            )}
+                            </div>
 
                             {notes && (
                               <div className="border-b border-espresso/5 pb-2">
@@ -1323,19 +1668,14 @@ export default function CustomerDashboard() {
                           </div>
                         )}
 
-                        {bookingAddons.length > 0 && (
+                        {customerFullName && (
                           <div className="space-y-2 pt-2 border-t border-espresso/5">
-                            <p className="text-[10px] uppercase text-espresso/50 font-bold">Add-ons</p>
-                            {bookingAddons.map((addon, i) => (
-                              <div key={i} className="flex justify-between items-center text-espresso/80">
-                                <span>{addon.name} x{addon.quantity}</span>
-                                <div className="flex items-center gap-1.5">
-                                  <span>PHP {addon.price * addon.quantity}</span>
-                                  <button onClick={() => handleRemoveAddon(addon.name)}
-                                    className="text-red-400 hover:text-red-600 font-bold text-sm leading-none">×</button>
-                                </div>
-                              </div>
-                            ))}
+                            <p className="text-[10px] uppercase text-espresso/50 font-bold">Customer</p>
+                            <div className="rounded-xl bg-cream/70 border border-espresso/5 p-3 text-[11px] text-espresso/70 space-y-1">
+                              <p className="font-bold text-espresso">{customerFullName}</p>
+                              <p>{phone || 'No contact number'}</p>
+                              <p className="break-all">{bookingEmail || 'No email address'}</p>
+                            </div>
                           </div>
                         )}
 
@@ -1400,7 +1740,8 @@ export default function CustomerDashboard() {
                           const statusMeta = getStatusMeta(b.status);
                           const StatusIcon = statusMeta.icon;
                           const stage = getBookingStage(b.status);
-                          const actions = getBookingActions(b.status);
+                          const actions = getBookingActions(b);
+                          const contact = getBookingContact(b);
                           return (
                             <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,1.1fr)_minmax(300px,1fr)_240px] gap-4 md:gap-5 items-stretch">
                               <div className="flex gap-4 min-w-0">
@@ -1428,6 +1769,20 @@ export default function CustomerDashboard() {
                                       <MapPin className="w-3.5 h-3.5 text-gold-dark" />
                                       <span>CAV Photo Studio &amp; Cafe</span>
                                     </span>
+                                  </div>
+                                  <div className="rounded-2xl bg-cream/55 border border-espresso/[0.05] p-3 text-xs space-y-1.5">
+                                    <p className="inline-flex items-center gap-1.5 font-black text-espresso">
+                                      <User className="w-3.5 h-3.5 text-gold-dark" />
+                                      {getBookingCustomerName(b)}
+                                    </p>
+                                    <p className="inline-flex items-center gap-1.5 text-espresso/60 break-all">
+                                      <Phone className="w-3.5 h-3.5 text-gold-dark shrink-0" />
+                                      {contact.phone}
+                                    </p>
+                                    <p className="inline-flex items-center gap-1.5 text-espresso/60 break-all">
+                                      <Mail className="w-3.5 h-3.5 text-gold-dark shrink-0" />
+                                      {contact.email}
+                                    </p>
                                   </div>
                                 </div>
                               </div>
@@ -1483,6 +1838,8 @@ export default function CustomerDashboard() {
                                       <button
                                         key={action.label}
                                         type="button"
+                                        onClick={() => handleBookingAction(b, action.label)}
+                                        disabled={action.label === 'Cancel Booking' && cancellingBookingId === b.id}
                                         aria-label={`${action.label} for ${b.package_details?.name || 'booking'}`}
                                         className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3.5 py-2 text-[11px] font-black border transition-all duration-200 active:scale-[0.98] focus-visible:outline-gold ${
                                           action.primary
@@ -1493,7 +1850,7 @@ export default function CustomerDashboard() {
                                         }`}
                                       >
                                         <ActionIcon className="w-3.5 h-3.5" />
-                                        {action.label}
+                                        {action.label === 'Cancel Booking' && cancellingBookingId === b.id ? 'Cancelling...' : action.label}
                                       </button>
                                     );
                                   })}
@@ -1626,6 +1983,131 @@ export default function CustomerDashboard() {
         </main>
 
         <Modal
+          open={!!packageDetails}
+          onClose={() => setPackageDetails(null)}
+          title={detailPackage ? detailPackage.name : 'Package Details'}
+          size="3xl"
+        >
+          {detailPackage && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-5">
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-espresso/5 bg-cream/60 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-espresso/40">
+                      {detailService?.name || detailPackage.serviceName || 'Photo Session'}
+                    </p>
+                    <p className="mt-2 text-sm leading-relaxed text-espresso/65">
+                      {detailPackage.description || detailService?.description || detailPackage.serviceDescription || 'A guided CAV photo session prepared by the studio team.'}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+                      <Clock className="w-4 h-4 text-gold mb-2" />
+                      <p className="text-[10px] font-black uppercase tracking-wider text-espresso/40">Duration</p>
+                      <p className="mt-1 font-black text-espresso">
+                        {detailService?.duration_minutes || detailPackage.serviceDuration || 30} min
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+                      <Users className="w-4 h-4 text-gold mb-2" />
+                      <p className="text-[10px] font-black uppercase tracking-wider text-espresso/40">People</p>
+                      <p className="mt-1 font-black text-espresso">{getPackagePeople(detailPackage)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+                      <Camera className="w-4 h-4 text-gold mb-2" />
+                      <p className="text-[10px] font-black uppercase tracking-wider text-espresso/40">Price</p>
+                      <p className="mt-1 font-black text-gold-dark">{formatPeso(detailPackage.price)}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/40 mb-3">What's Included</p>
+                    {detailInclusions.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {detailInclusions.map((item, idx) => (
+                          <div key={`${item}-${idx}`} className="flex items-start gap-2 rounded-xl bg-cream/55 px-3 py-2 text-xs text-espresso/70">
+                            <Check className="w-3.5 h-3.5 text-gold shrink-0 mt-0.5" />
+                            <span>{item}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-espresso/50">Package inclusions will be confirmed by staff.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/40 mb-3">Photo Outputs</p>
+                    <div className="space-y-2">
+                      {detailOutputs.map((item, idx) => (
+                        <div key={`${item}-${idx}`} className="flex items-center gap-2 text-xs font-semibold text-espresso/70">
+                          <Camera className="w-3.5 h-3.5 text-gold shrink-0" />
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-gold/20 bg-gold/10 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/45">Estimated Package Price</p>
+                    <p className="mt-1 text-2xl font-black text-espresso">{formatPeso(detailPackage.price)}</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-espresso/55">
+                      This is the package rate before staff confirms any special requests noted in your booking.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/40">Sample Shoot Gallery</p>
+                    <p className="text-xs text-espresso/50 mt-1">Images are matched from the current gallery category for this package.</p>
+                  </div>
+                  <span className="rounded-full bg-cream px-3 py-1 text-[10px] font-black text-espresso/55">
+                    {detailGalleryCategory === 'EVENTS' ? 'Events' : 'Studio'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {visibleDetailGalleryImages.map((image) => (
+                    <figure key={image.id} className="group relative aspect-[4/3] overflow-hidden rounded-2xl bg-cream">
+                      <img
+                        src={image.image_url}
+                        alt={image.alt_text || image.title || detailPackage.name}
+                        loading="lazy"
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                      <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-espresso-dark/80 to-transparent p-3 text-[10px] font-bold text-white opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                        {image.title || detailPackage.name}
+                      </figcaption>
+                    </figure>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  variant="gold"
+                  className="flex-1"
+                  onClick={() => {
+                    handlePackageSelect(detailPackage);
+                    setPackageDetails(null);
+                  }}
+                >
+                  Select This Package
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setPackageDetails(null)}>
+                  Continue Booking
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        <Modal
           open={!!bookingConfirmation}
           onClose={() => setBookingConfirmation(null)}
           title="Payment Submitted"
@@ -1643,12 +2125,6 @@ export default function CustomerDashboard() {
             </div>
             {bookingConfirmation && (
               <div className="bg-cream/60 rounded-2xl border border-espresso/5 p-4 text-left text-xs space-y-2">
-                {bookingConfirmation.id && (
-                  <div className="flex justify-between gap-3">
-                    <span className="text-espresso/45 font-bold uppercase tracking-wider">Booking ID</span>
-                    <span className="font-semibold text-espresso">#{bookingConfirmation.id}</span>
-                  </div>
-                )}
                 <div className="flex justify-between gap-3">
                   <span className="text-espresso/45 font-bold uppercase tracking-wider">Package</span>
                   <span className="font-semibold text-espresso text-right">{bookingConfirmation.packageName}</span>
@@ -1675,6 +2151,395 @@ export default function CustomerDashboard() {
               Got it
             </Button>
           </div>
+        </Modal>
+
+        <Modal
+          open={!!editingBooking}
+          onClose={closeEditBooking}
+          title="Edit Booking"
+          size="3xl"
+        >
+          {editingBooking && editForm && (
+            <div className="space-y-5">
+              {!editingBooking.can_edit && (
+                <div className="rounded-2xl bg-red-50 border border-red-100 p-4 text-sm font-semibold text-red-700">
+                  {editingBooking.edit_locked_reason || 'This booking is locked.'}
+                </div>
+              )}
+
+              <div className="rounded-2xl bg-cream/70 border border-espresso/5 p-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <p className="font-black uppercase tracking-wider text-espresso/45">Current Package</p>
+                  <p className="font-bold text-espresso mt-1">{editingBooking.package_details?.name}</p>
+                </div>
+                <div>
+                  <p className="font-black uppercase tracking-wider text-espresso/45">Current Schedule</p>
+                  <p className="font-bold text-espresso mt-1">{editingBooking.scheduled_date} at {editingBooking.scheduled_time}</p>
+                </div>
+                <div>
+                  <p className="font-black uppercase tracking-wider text-espresso/45">Updated Total</p>
+                  <p className="font-black text-gold-dark mt-1">{formatPeso(editTotal)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  <label className="block space-y-2">
+                    <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70">Selected Package</span>
+                    <select
+                      value={editForm.package}
+                      onChange={(e) => handleEditPackageChange(e.target.value)}
+                      disabled={editSaving}
+                      className="w-full bg-white/90 border border-espresso/10 rounded-[18px] px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)] focus:outline-none focus:border-gold focus:ring-4 focus:ring-gold/15 disabled:opacity-50"
+                    >
+                      <option value="">Select package</option>
+                      {allPackages.map(pkg => (
+                        <option key={pkg.id} value={pkg.id}>
+                          {pkg.serviceName} - {pkg.name} ({formatPeso(pkg.price)})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Input
+                      label="Booking Date"
+                      type="date"
+                      min={getDateInputValue()}
+                      value={editForm.scheduled_date}
+                      onChange={(e) => handleEditDateChange(e.target.value)}
+                      disabled={editSaving}
+                    />
+                    <label className="block space-y-2">
+                      <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70">Available Time Slot</span>
+                      <select
+                        value={editForm.scheduled_time}
+                        onChange={(e) => setEditForm(current => ({ ...current, scheduled_time: e.target.value }))}
+                        disabled={editSaving || editSlotLoading || !editForm.scheduled_date || editAvailableSlots.length === 0}
+                        className="w-full bg-white/90 border border-espresso/10 rounded-[18px] px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)] focus:outline-none focus:border-gold focus:ring-4 focus:ring-gold/15 disabled:opacity-50"
+                      >
+                        <option value="">{editSlotLoading ? 'Loading slots...' : 'Select available slot'}</option>
+                        {editAvailableSlots.map(slot => (
+                          <option key={slot.time} value={slot.time} disabled={!slot.available}>
+                            {slot.label} {slot.available ? '' : slot.status === 'BOOKED' ? '- Booked' : '- Unavailable'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {editAvailableSlots.map(slot => (
+                      <button
+                        key={slot.time}
+                        type="button"
+                        disabled={!slot.available || editSaving}
+                        onClick={() => setEditForm(current => ({ ...current, scheduled_time: slot.time }))}
+                        className={`rounded-2xl border px-3 py-2 text-[11px] font-black transition-all ${
+                          editForm.scheduled_time === slot.time
+                            ? 'bg-espresso text-gold border-gold'
+                            : slot.available
+                            ? 'bg-white text-espresso border-espresso/10 hover:border-gold hover:bg-gold/10'
+                            : 'bg-red-50 text-red-400 border-red-100 cursor-not-allowed'
+                        }`}
+                      >
+                        {slot.label}
+                        {!slot.available && <span className="block text-[9px]">{slot.status === 'BOOKED' ? 'Booked' : 'Unavailable'}</span>}
+                      </button>
+                    ))}
+                  </div>
+
+                  <Textarea
+                    label="Notes"
+                    rows={4}
+                    value={editForm.notes}
+                    onChange={(e) => setEditForm(current => ({ ...current, notes: e.target.value }))}
+                    disabled={editSaving}
+                    placeholder="Add requests, reminders, or shoot details..."
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Input
+                      label="First Name"
+                      value={editForm.first_name}
+                      onChange={(e) => setEditForm(current => ({ ...current, first_name: e.target.value }))}
+                      disabled={editSaving}
+                    />
+                    <Input
+                      label="Last Name"
+                      value={editForm.last_name}
+                      onChange={(e) => setEditForm(current => ({ ...current, last_name: e.target.value }))}
+                      disabled={editSaving}
+                    />
+                  </div>
+                  <Input
+                    label="Email"
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm(current => ({ ...current, email: e.target.value }))}
+                    disabled={editSaving}
+                  />
+                  <Input
+                    label="Phone Number"
+                    value={editForm.phone_number}
+                    onChange={(e) => setEditForm(current => ({ ...current, phone_number: e.target.value }))}
+                    disabled={editSaving}
+                  />
+                  <Textarea
+                    label="Address"
+                    rows={3}
+                    value={editForm.address}
+                    onChange={(e) => setEditForm(current => ({ ...current, address: e.target.value }))}
+                    disabled={editSaving}
+                  />
+                  <Input
+                    label="Reason"
+                    value={editForm.change_reason}
+                    onChange={(e) => setEditForm(current => ({ ...current, change_reason: e.target.value }))}
+                    disabled={editSaving}
+                  />
+                </div>
+              </div>
+
+              {editError && (
+                <div className="rounded-2xl bg-red-50 border border-red-100 px-4 py-3 text-xs font-bold text-red-700">
+                  {editError}
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3 justify-end">
+                <Button variant="outline" onClick={closeEditBooking} disabled={editSaving}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="gold"
+                  onClick={() => setEditConfirmOpen(true)}
+                  disabled={editSaving || !editForm.package || !editForm.scheduled_date || !editForm.scheduled_time || !editingBooking.can_edit}
+                >
+                  Review Changes
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        <Modal
+          open={editConfirmOpen}
+          onClose={() => !editSaving && setEditConfirmOpen(false)}
+          title="Confirm Booking Update"
+          size="sm"
+        >
+          {editForm && (
+            <div className="space-y-5">
+              <p className="text-sm text-espresso/70 leading-relaxed">
+                Save these changes to your booking? Staff will be notified and availability will be rechecked before saving.
+              </p>
+              <div className="rounded-2xl bg-cream/70 border border-espresso/5 p-4 text-xs space-y-2">
+                <div className="flex justify-between gap-3">
+                  <span className="font-black uppercase tracking-wider text-espresso/45">Package</span>
+                  <span className="font-bold text-espresso text-right">{editSelectedPackage?.name}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="font-black uppercase tracking-wider text-espresso/45">Schedule</span>
+                  <span className="font-bold text-espresso text-right">{editForm.scheduled_date} at {editForm.scheduled_time}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="font-black uppercase tracking-wider text-espresso/45">Total</span>
+                  <span className="font-black text-gold-dark text-right">{formatPeso(editTotal)}</span>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setEditConfirmOpen(false)} disabled={editSaving}>
+                  Back
+                </Button>
+                <Button variant="gold" className="flex-1" onClick={submitEditBooking} disabled={editSaving}>
+                  {editSaving ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        <Modal
+          open={!!selectedBookingDetails}
+          onClose={() => setSelectedBookingDetails(null)}
+          title="Booking Details"
+          size="lg"
+        >
+          {selectedBookingDetails && (
+            <div className="space-y-5">
+              {(() => {
+                const contact = getBookingContact(selectedBookingDetails);
+                return (
+                  <div className="rounded-2xl bg-white border border-espresso/5 p-4 text-xs">
+                    <p className="text-espresso/45 font-black uppercase tracking-wider mb-3">Customer Contact</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="rounded-xl bg-cream/60 border border-espresso/5 p-3">
+                        <p className="inline-flex items-center gap-1.5 text-espresso/45 font-black uppercase tracking-wider">
+                          <User className="w-3.5 h-3.5 text-gold-dark" />
+                          Name
+                        </p>
+                        <p className="font-bold text-espresso mt-1">{getBookingCustomerName(selectedBookingDetails)}</p>
+                      </div>
+                      <div className="rounded-xl bg-cream/60 border border-espresso/5 p-3">
+                        <p className="inline-flex items-center gap-1.5 text-espresso/45 font-black uppercase tracking-wider">
+                          <Phone className="w-3.5 h-3.5 text-gold-dark" />
+                          Phone
+                        </p>
+                        <p className="font-bold text-espresso mt-1 break-all">{contact.phone}</p>
+                      </div>
+                      <div className="rounded-xl bg-cream/60 border border-espresso/5 p-3 sm:col-span-2">
+                        <p className="inline-flex items-center gap-1.5 text-espresso/45 font-black uppercase tracking-wider">
+                          <Mail className="w-3.5 h-3.5 text-gold-dark" />
+                          Email
+                        </p>
+                        <p className="font-bold text-espresso mt-1 break-all">{contact.email}</p>
+                      </div>
+                      {contact.address && (
+                        <div className="rounded-xl bg-cream/60 border border-espresso/5 p-3 sm:col-span-2">
+                          <p className="inline-flex items-center gap-1.5 text-espresso/45 font-black uppercase tracking-wider">
+                            <MapPin className="w-3.5 h-3.5 text-gold-dark" />
+                            Address
+                          </p>
+                          <p className="font-bold text-espresso mt-1">{contact.address}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="rounded-2xl bg-cream/70 border border-espresso/5 p-4">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-black text-espresso mt-1">{selectedBookingDetails.package_details?.name || 'Photography Package'}</h3>
+                    <p className="text-xs text-espresso/55">{selectedBookingDetails.package_details?.service?.name || 'CAV Photo Studio & Cafe'}</p>
+                  </div>
+                  <span className={`inline-flex items-center self-start gap-1.5 rounded-full border px-3 py-1 text-[10px] font-black ${getStatusMeta(selectedBookingDetails.status).className}`}>
+                    {formatStatusLabel(selectedBookingDetails.status)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="rounded-2xl border border-espresso/5 bg-white p-4">
+                  <p className="text-espresso/45 font-black uppercase tracking-wider">Schedule</p>
+                  <p className="font-bold text-espresso mt-1">{selectedBookingDetails.scheduled_date} at {selectedBookingDetails.scheduled_time}</p>
+                </div>
+                <div className="rounded-2xl border border-espresso/5 bg-white p-4">
+                  <p className="text-espresso/45 font-black uppercase tracking-wider">Total</p>
+                  <p className="font-bold text-espresso mt-1">{formatPeso(getBookingTotal(selectedBookingDetails))}</p>
+                </div>
+                <div className="rounded-2xl border border-espresso/5 bg-white p-4">
+                  <p className="text-espresso/45 font-black uppercase tracking-wider">Required Down Payment</p>
+                  <p className="font-bold text-espresso mt-1">{formatPeso(selectedBookingDetails.required_down_payment)}</p>
+                </div>
+                <div className="rounded-2xl border border-espresso/5 bg-white p-4">
+                  <p className="text-espresso/45 font-black uppercase tracking-wider">Booked On</p>
+                  <p className="font-bold text-espresso mt-1">{new Date(selectedBookingDetails.created_at).toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-espresso/5 bg-white p-4 text-xs">
+                <p className="text-espresso/45 font-black uppercase tracking-wider mb-3">Add-ons</p>
+                {selectedBookingDetails.items?.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedBookingDetails.items.map((item) => (
+                      <div key={`${item.id}-${item.name}`} className="flex justify-between gap-3 text-espresso/70">
+                        <span>{item.name} x{item.quantity}</span>
+                        <span className="font-bold text-espresso">{formatPeso(Number(item.price) * Number(item.quantity || 1))}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-espresso/45 font-semibold">No add-ons selected.</p>
+                )}
+              </div>
+
+              {selectedBookingDetails.notes && (
+                <div className="rounded-2xl border border-espresso/5 bg-white p-4 text-xs">
+                  <p className="text-espresso/45 font-black uppercase tracking-wider mb-2">Notes</p>
+                  <p className="text-espresso/70 leading-relaxed">{selectedBookingDetails.notes}</p>
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-espresso/5 bg-white p-4 text-xs">
+                <p className="text-espresso/45 font-black uppercase tracking-wider mb-3">Payment</p>
+                {selectedBookingDetails.payments?.length > 0 ? (
+                  <div className="space-y-3">
+                    {selectedBookingDetails.payments.map((payment) => (
+                      <div key={payment.id} className="rounded-xl bg-cream/60 border border-espresso/5 p-3 space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <span className="font-bold text-espresso break-all">Ref: {payment.reference_number}</span>
+                          <span className="font-black text-gold-dark">{formatPeso(payment.amount)}</span>
+                        </div>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-espresso/55">
+                          <span>{new Date(payment.paid_at).toLocaleString()}</span>
+                          <span className="font-bold">{formatStatusLabel(payment.status)}</span>
+                        </div>
+                        {payment.receipt_url && (
+                          <a href={payment.receipt_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-[11px] font-black text-espresso hover:text-gold-dark">
+                            <ReceiptText className="w-3.5 h-3.5" />
+                            View Receipt
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-espresso/45 font-semibold">No payment proof submitted.</p>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-espresso/5 bg-white p-4 text-xs">
+                <p className="text-espresso/45 font-black uppercase tracking-wider mb-3">Modification History</p>
+                {selectedBookingDetails.change_history?.length > 0 ? (
+                  <div className="space-y-3">
+                    {selectedBookingDetails.change_history.map((change) => (
+                      <div key={change.id} className="rounded-xl bg-cream/60 border border-espresso/5 p-3 space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                          <span className="font-bold text-espresso">{change.reason || 'Booking updated'}</span>
+                          <span className="text-espresso/45">{new Date(change.created_at).toLocaleString()}</span>
+                        </div>
+                        <p className="text-espresso/55">By {change.changed_by_name}</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {Object.keys(change.new_values || {}).map((field) => (
+                            <div key={field} className="rounded-lg bg-white/70 border border-espresso/5 p-2">
+                              <p className="font-black uppercase tracking-wider text-espresso/40">{field.replace(/_/g, ' ')}</p>
+                              <p className="text-espresso/55 line-through">{change.old_values?.[field] || 'Blank'}</p>
+                              <p className="font-bold text-espresso">{change.new_values?.[field] || 'Blank'}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-espresso/45 font-semibold">No edits recorded yet.</p>
+                )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                {selectedBookingDetails.can_edit && (
+                  <Button
+                    variant="gold"
+                    className="flex-1"
+                    onClick={() => {
+                      setSelectedBookingDetails(null);
+                      openEditBooking(selectedBookingDetails);
+                    }}
+                  >
+                    Edit Booking
+                  </Button>
+                )}
+                <Button variant="outline" className="flex-1" onClick={() => setSelectedBookingDetails(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
         </Modal>
 
         {/* Floating Chatbot Widget */}
@@ -1713,7 +2578,7 @@ export default function CustomerDashboard() {
                         ? 'bg-espresso text-cream rounded-tr-md'
                         : 'bg-white text-espresso rounded-tl-md border border-espresso/5'
                     }`}>
-                      {msg.content}
+                      {msg.role === 'assistant' ? <ChatbotMessageContent content={msg.content} /> : msg.content}
                     </div>
                   </div>
                 ))}
@@ -1728,6 +2593,7 @@ export default function CustomerDashboard() {
                     </div>
                   </div>
                 )}
+                <ChatbotFaqPrompts onSelect={sendChatMessage} disabled={chatLoading} prompts={chatFaqPrompts.length ? chatFaqPrompts : undefined} />
                 <div ref={messagesEndRef} />
               </div>
 

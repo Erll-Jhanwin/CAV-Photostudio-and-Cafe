@@ -1,6 +1,7 @@
 from decimal import Decimal
+import re
 from rest_framework import serializers
-from booking.models import Service, Package, Booking, BookingItem, BookingPayment
+from booking.models import Service, Package, Booking, BookingItem, BookingPayment, BookingChangeLog
 from booking.availability import is_slot_available
 from users.serializers import UserSerializer
 
@@ -20,6 +21,18 @@ class BookingItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = BookingItem
         fields = ['id', 'name', 'price', 'quantity']
+
+class BookingChangeLogSerializer(serializers.ModelSerializer):
+    changed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BookingChangeLog
+        fields = ['id', 'changed_by', 'changed_by_name', 'old_values', 'new_values', 'reason', 'created_at']
+
+    def get_changed_by_name(self, obj):
+        if not obj.changed_by:
+            return 'System'
+        return obj.changed_by.get_full_name() or obj.changed_by.username
 
 class BookingPaymentSerializer(serializers.ModelSerializer):
     booking_details = serializers.SerializerMethodField()
@@ -85,14 +98,25 @@ class BookingSerializer(serializers.ModelSerializer):
     package_details = PackageSerializer(source='package', read_only=True)
     items = BookingItemSerializer(many=True, read_only=True)
     payments = BookingPaymentSerializer(many=True, read_only=True)
+    change_history = BookingChangeLogSerializer(many=True, read_only=True)
     required_down_payment = serializers.SerializerMethodField()
+    can_edit = serializers.BooleanField(source='is_customer_editable', read_only=True)
+    edit_locked_reason = serializers.CharField(source='customer_edit_lock_reason', read_only=True)
+    edit_deadline = serializers.DateTimeField(read_only=True)
+    first_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    last_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    email = serializers.EmailField(write_only=True, required=False, allow_blank=True)
+    phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    address = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Booking
         fields = [
             'id', 'customer', 'package', 'package_details', 'scheduled_date', 
             'scheduled_time', 'status', 'notes', 'created_at', 'items',
-            'payments', 'required_down_payment'
+            'payments', 'required_down_payment', 'change_history',
+            'can_edit', 'edit_locked_reason', 'edit_deadline',
+            'first_name', 'last_name', 'email', 'phone_number', 'address'
         ]
         read_only_fields = ['customer', 'status', 'created_at']
 
@@ -100,6 +124,23 @@ class BookingSerializer(serializers.ModelSerializer):
         return obj.package.price * Decimal('0.50')
 
     def validate(self, attrs):
+        if self.instance is None:
+            missing = {}
+            if not (attrs.get('first_name') or '').strip():
+                missing['first_name'] = 'Full name is required.'
+            if not (attrs.get('email') or '').strip():
+                missing['email'] = 'Email address is required.'
+            if not (attrs.get('phone_number') or '').strip():
+                missing['phone_number'] = 'Contact number is required.'
+            if missing:
+                raise serializers.ValidationError(missing)
+
+        phone_number = attrs.get('phone_number')
+        if phone_number is not None:
+            phone_digits = re.sub(r'\D', '', phone_number)
+            if len(phone_digits) < 7:
+                raise serializers.ValidationError({'phone_number': 'Enter a valid contact number.'})
+
         schedule_changed = self.instance is None or any(
             field in attrs for field in ['package', 'scheduled_date', 'scheduled_time']
         )
@@ -119,7 +160,29 @@ class BookingSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        # Obtain user from request context
+        customer_data = {
+            field: validated_data.pop(field)
+            for field in ['first_name', 'last_name', 'email', 'phone_number', 'address']
+            if field in validated_data
+        }
         user = self.context['request'].user
+        self._update_customer(user, customer_data)
         booking = Booking.objects.create(customer=user, **validated_data)
         return booking
+
+    def update(self, instance, validated_data):
+        customer_data = {
+            field: validated_data.pop(field)
+            for field in ['first_name', 'last_name', 'email', 'phone_number', 'address']
+            if field in validated_data
+        }
+        if customer_data:
+            self._update_customer(instance.customer, customer_data)
+        return super().update(instance, validated_data)
+
+    def _update_customer(self, user, customer_data):
+        if not customer_data:
+            return
+        for field, value in customer_data.items():
+            setattr(user, field, value)
+        user.save(update_fields=list(customer_data.keys()))

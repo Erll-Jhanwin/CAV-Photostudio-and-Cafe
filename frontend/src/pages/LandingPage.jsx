@@ -9,6 +9,7 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
+import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
 
 function LandingSkeleton() {
   return (
@@ -363,11 +364,262 @@ function CafeCarousel({ items = [] }) {
   );
 }
 
+const GALLERY_CATEGORIES = [
+  { label: 'All', value: 'ALL' },
+  { label: 'Studio', value: 'STUDIO' },
+  { label: 'Café', value: 'CAFE' },
+  { label: 'Events', value: 'EVENTS' },
+  { label: 'Behind the Scenes', value: 'BEHIND_THE_SCENES' },
+];
+
+const fallbackGalleryImages = [
+  {
+    id: 'fallback-studio',
+    title: 'Studio Portrait Setup',
+    category: 'STUDIO',
+    category_label: 'Studio',
+    image_url: 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=1200',
+    alt_text: 'Professional studio setup with camera and lighting equipment',
+    caption: 'Studio-ready lighting and backdrops for polished sessions.',
+  },
+  {
+    id: 'fallback-cafe',
+    title: 'Café Counter',
+    category: 'CAFE',
+    category_label: 'Café',
+    image_url: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?q=80&w=1200',
+    alt_text: 'Warm café counter with espresso service',
+    caption: 'Fresh coffee and pastries served alongside every shoot.',
+  },
+  {
+    id: 'fallback-events',
+    title: 'Completed Event Session',
+    category: 'EVENTS',
+    category_label: 'Events',
+    image_url: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?q=80&w=1200',
+    alt_text: 'Guests gathered during a celebration event',
+    caption: 'Event coverage for birthdays, milestones, and gatherings.',
+  },
+  {
+    id: 'fallback-behind-scenes',
+    title: 'Behind the Scenes',
+    category: 'BEHIND_THE_SCENES',
+    category_label: 'Behind the Scenes',
+    image_url: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=1200',
+    alt_text: 'Camera operator preparing a professional shoot',
+    caption: 'Careful setup before each client session.',
+  },
+  {
+    id: 'fallback-customers',
+    title: 'Customer Session',
+    category: 'STUDIO',
+    category_label: 'Studio',
+    image_url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=1200',
+    alt_text: 'Portrait client posing in a studio session',
+    caption: 'Guided sessions that keep customers comfortable on camera.',
+  },
+  {
+    id: 'fallback-menu',
+    title: 'Coffee Break',
+    category: 'CAFE',
+    category_label: 'Café',
+    image_url: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?q=80&w=1200',
+    alt_text: 'Iced latte served on a café table',
+    caption: 'Café favorites for before or after your shoot.',
+  },
+];
+
+function GallerySection({ images = [] }) {
+  const [activeCategory, setActiveCategory] = useState('ALL');
+  const [lightboxIndex, setLightboxIndex] = useState(null);
+  const touchStartRef = useRef(null);
+  const galleryImages = (images.length ? images : fallbackGalleryImages).filter(item => item.image_url);
+  const filteredImages = activeCategory === 'ALL'
+    ? galleryImages
+    : galleryImages.filter(item => item.category === activeCategory);
+  const activeImage = lightboxIndex !== null ? filteredImages[lightboxIndex] : null;
+
+  const closeLightbox = useCallback(() => setLightboxIndex(null), []);
+  const showPrevious = useCallback(() => {
+    setLightboxIndex(index => {
+      if (index === null || filteredImages.length === 0) return index;
+      return index === 0 ? filteredImages.length - 1 : index - 1;
+    });
+  }, [filteredImages.length]);
+  const showNext = useCallback(() => {
+    setLightboxIndex(index => {
+      if (index === null || filteredImages.length === 0) return index;
+      return index === filteredImages.length - 1 ? 0 : index + 1;
+    });
+  }, [filteredImages.length]);
+
+  useEffect(() => {
+    setLightboxIndex(null);
+  }, [activeCategory]);
+
+  useEffect(() => {
+    if (!activeImage) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') closeLightbox();
+      if (event.key === 'ArrowLeft') showPrevious();
+      if (event.key === 'ArrowRight') showNext();
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeImage, closeLightbox, showNext, showPrevious]);
+
+  const handleTouchStart = (event) => {
+    touchStartRef.current = event.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (event) => {
+    if (touchStartRef.current === null) return;
+    const diff = touchStartRef.current - event.changedTouches[0].clientX;
+    touchStartRef.current = null;
+    if (Math.abs(diff) < 48) return;
+    if (diff > 0) showNext();
+    else showPrevious();
+  };
+
+  return (
+    <section id="gallery" className="premium-section bg-cream-dark">
+      <div className="max-w-[1400px] mx-auto space-y-10 md:space-y-14">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+          <div className="space-y-5 max-w-3xl">
+            <span className="text-gold font-bold uppercase tracking-[0.18em] text-xs md:text-sm">Gallery</span>
+            <h2 className="font-sans text-4xl md:text-5xl lg:text-6xl font-extrabold leading-[1.04] text-espresso text-balance">
+              Studio moments, café details, and finished sessions
+            </h2>
+            <p className="text-espresso/70 text-base md:text-lg leading-relaxed">
+              Browse recent scenes from CAV, curated by category and updated from the admin gallery.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 lg:justify-end" aria-label="Gallery category filters">
+            {GALLERY_CATEGORIES.map(category => (
+              <button
+                key={category.value}
+                type="button"
+                onClick={() => setActiveCategory(category.value)}
+                className={`px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all duration-300 ${
+                  activeCategory === category.value
+                    ? 'bg-espresso text-gold shadow-[0_14px_34px_rgba(46,26,17,0.16)]'
+                    : 'bg-white/80 text-espresso/68 border border-espresso/[0.06] hover:bg-white hover:text-espresso'
+                }`}
+                aria-pressed={activeCategory === category.value}
+              >
+                {category.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {filteredImages.length > 0 ? (
+          <div className="gallery-grid">
+            {filteredImages.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setLightboxIndex(index)}
+                className="gallery-grid-item group relative w-full overflow-hidden rounded-[24px] bg-white text-left shadow-[0_18px_45px_rgba(46,26,17,0.08)] hover:shadow-[0_28px_70px_rgba(46,26,17,0.16)] transition-all duration-500 ease-out focus-visible:outline-gold"
+                aria-label={`Open ${item.title} in gallery lightbox`}
+              >
+                <img
+                  src={item.image_url}
+                  alt={item.alt_text || item.title}
+                  loading="lazy"
+                  className="w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.08]"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-espresso-dark/84 via-espresso-dark/18 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <div className="absolute inset-x-0 bottom-0 p-5 translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-500">
+                  <span className="inline-flex bg-gold text-espresso text-[10px] font-extrabold uppercase tracking-[0.16em] px-3 py-1 rounded-full mb-2">
+                    {item.category_label || item.category}
+                  </span>
+                  <h3 className="text-white text-lg font-extrabold leading-tight">{item.title}</h3>
+                  {item.caption && <p className="text-cream/78 text-xs mt-1 leading-relaxed">{item.caption}</p>}
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[24px] border border-espresso/[0.06] bg-white/80 p-8 text-center text-espresso/60">
+            Gallery images are being curated.
+          </div>
+        )}
+      </div>
+
+      {activeImage && (
+        <div
+          className="fixed inset-0 z-[80] bg-espresso-dark/96 backdrop-blur-sm flex items-center justify-center p-4 md:p-8 animate-in"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Gallery image viewer"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <button
+            type="button"
+            onClick={closeLightbox}
+            className="absolute right-4 top-4 md:right-6 md:top-6 w-11 h-11 rounded-full bg-white/10 text-cream hover:bg-white/18 transition-all flex items-center justify-center"
+            aria-label="Close gallery lightbox"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {filteredImages.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={showPrevious}
+                className="absolute left-3 md:left-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 text-cream hover:bg-white/18 transition-all flex items-center justify-center"
+                aria-label="Previous gallery image"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+              <button
+                type="button"
+                onClick={showNext}
+                className="absolute right-3 md:right-6 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 text-cream hover:bg-white/18 transition-all flex items-center justify-center"
+                aria-label="Next gallery image"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            </>
+          )}
+
+          <figure className="w-full max-w-6xl max-h-[86vh] flex flex-col items-center gap-4">
+            <img
+              src={activeImage.image_url}
+              alt={activeImage.alt_text || activeImage.title}
+              className="max-h-[76vh] w-auto max-w-full rounded-[24px] object-contain shadow-[0_28px_90px_rgba(0,0,0,0.42)]"
+            />
+            <figcaption className="text-center max-w-2xl">
+              <span className="text-gold text-[10px] font-extrabold uppercase tracking-[0.18em]">
+                {activeImage.category_label || activeImage.category}
+              </span>
+              <h3 className="text-white text-lg md:text-xl font-extrabold mt-1">{activeImage.title}</h3>
+              {activeImage.caption && <p className="text-cream/70 text-sm mt-1">{activeImage.caption}</p>}
+            </figcaption>
+          </figure>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function LandingPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [services, setServices] = useState([]);
   const [cafeItems, setCafeItems] = useState([]);
+  const [galleryImages, setGalleryImages] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [navCompact, setNavCompact] = useState(false);
@@ -410,6 +662,7 @@ export default function LandingPage() {
   const [chatMessages, setChatMessages] = useState([
     { role: 'assistant', content: 'Hi there! Welcome to CAV Photo Studio & Café. Ask me anything about our studio rooms, cafe menu, or packages!' }
   ]);
+  const [chatFaqPrompts, setChatFaqPrompts] = useState([]);
   const [chatLoading, setChatLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
@@ -456,6 +709,13 @@ export default function LandingPage() {
           { id: 2, name: 'Iced Latte', price: '130.00', image_url: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?q=80&w=400' },
           { id: 3, name: 'Chocolate Croissant', price: '85.00', image_url: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?q=80&w=400' },
         ]);
+      }
+
+      try {
+        const galleryRes = await axios.get('http://localhost:8000/api/gallery/images/');
+        setGalleryImages(galleryRes.data);
+      } catch {
+        setGalleryImages([]);
       } finally {
         setLoaded(true);
       }
@@ -464,13 +724,21 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
+    axios.get('http://localhost:8000/api/chatbot/faqs/')
+      .then(res => {
+        const prompts = res.data.map(faq => faq.question).filter(Boolean).slice(0, 6);
+        if (prompts.length) setChatFaqPrompts(prompts);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  const handleChatSubmit = async (e) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-    const msg = chatInput.trim();
+  const sendChatMessage = useCallback(async (message) => {
+    const msg = message.trim();
+    if (!msg || chatLoading) return;
     setChatMessages(p => [...p, { role: 'user', content: msg }]);
     setChatInput('');
     setChatLoading(true);
@@ -478,18 +746,21 @@ export default function LandingPage() {
       const res = await axios.post('http://localhost:8000/api/chatbot/query/', { question: msg });
       setChatMessages(p => [...p, { role: 'assistant', content: res.data.response }]);
     } catch {
-      setTimeout(() => {
-        let answer = 'Thanks for asking! We are open daily from 9:00 AM to 8:00 PM at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.';
-        const q = msg.toLowerCase();
-        if (q.includes('hour') || q.includes('time')) answer = 'CAV Photo Studio and Café is open daily from 9:00 AM to 8:00 PM.';
-        else if (q.includes('price') || q.includes('package')) answer = 'Our Studio Session packages start at PHP 1,000 (Solo, Couple, and Friends packages). Family and Birthday packages are PHP 1,500. We also offer full Photo Service Booking for events starting at PHP 2,500.';
-        else if (q.includes('location') || q.includes('where')) answer = 'We are located at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.';
-        else if (q.includes('email') || q.includes('contact')) answer = 'You can reach us at cav.photostudio.cafe@gmail.com or find us on Facebook and Instagram as CAV Photo Studio & Cafe.';
-        setChatMessages(p => [...p, { role: 'assistant', content: answer }]);
-      }, 500);
+      let answer = 'Thanks for asking!\n\nWe are open daily from 9:00 AM to 8:00 PM at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.';
+      const q = msg.toLowerCase();
+      if (q.includes('hour') || q.includes('time')) answer = 'CAV Photo Studio and Cafe is open daily from 9:00 AM to 8:00 PM.';
+      else if (q.includes('price') || q.includes('package')) answer = 'Our packages include:\n- Solo, Couple, and Friends packages: PHP 1,000\n- Family and Birthday packages: PHP 1,500\n- Standard Event Package: PHP 2,500';
+      else if (q.includes('location') || q.includes('where')) answer = 'We are located at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.';
+      else if (q.includes('email') || q.includes('contact')) answer = 'You can reach us at cav.photostudio.cafe@gmail.com or find us on Facebook and Instagram as CAV Photo Studio & Cafe.';
+      setChatMessages(p => [...p, { role: 'assistant', content: answer }]);
     } finally {
       setChatLoading(false);
     }
+  }, [chatLoading]);
+
+  const handleChatSubmit = async (e) => {
+    e.preventDefault();
+    await sendChatMessage(chatInput);
   };
 
   const handleBookNow = () => {
@@ -522,6 +793,7 @@ export default function LandingPage() {
                 { label: 'Home', href: '#hero' },
                 { label: 'Photo Studio', href: '#studio' },
                 { label: 'Café Menu', href: '#cafe' },
+                { label: 'Gallery', href: '#gallery' },
                 { label: 'Our Story', href: '#about' },
               ].map(item => (
                 <a key={item.href} href={item.href} className="px-4 py-2 rounded-full text-espresso/72 hover:text-espresso hover:bg-espresso/5 transition-all duration-300">
@@ -561,10 +833,10 @@ export default function LandingPage() {
         {mobileNavOpen && (
           <div className="md:hidden border-t border-espresso/[0.06] bg-cream/95 backdrop-blur-2xl animate-in">
             <div className="px-4 py-3 space-y-1">
-              {['Home', 'Photo Studio', 'Café Menu', 'Our Story'].map((label) => (
+              {['Home', 'Photo Studio', 'Café Menu', 'Gallery', 'Our Story'].map((label) => (
                 <a
                   key={label}
-                  href={`#${label === 'Home' ? 'hero' : label === 'Photo Studio' ? 'studio' : label === 'Café Menu' ? 'cafe' : 'about'}`}
+                  href={`#${label === 'Home' ? 'hero' : label === 'Photo Studio' ? 'studio' : label === 'Café Menu' ? 'cafe' : label === 'Gallery' ? 'gallery' : 'about'}`}
                   onClick={() => setMobileNavOpen(false)}
                   className="block px-4 py-3 rounded-[18px] text-sm font-semibold text-espresso/75 hover:bg-espresso/5 hover:text-espresso transition-colors"
                 >
@@ -882,6 +1154,8 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <GallerySection images={galleryImages} />
+
       {/* About Section */}
       <section id="about" className="premium-section bg-espresso-dark text-cream relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.05] bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-gold via-transparent to-transparent" />
@@ -987,7 +1261,7 @@ export default function LandingPage() {
                       ? 'bg-espresso text-cream rounded-tr-md'
                       : 'bg-white text-espresso rounded-tl-md border border-espresso/5'
                   }`}>
-                    {msg.content}
+                    {msg.role === 'assistant' ? <ChatbotMessageContent content={msg.content} /> : msg.content}
                   </div>
                 </div>
               ))}
@@ -1002,6 +1276,12 @@ export default function LandingPage() {
                   </div>
                 </div>
               )}
+              <ChatbotFaqPrompts
+                onSelect={sendChatMessage}
+                disabled={chatLoading}
+                prompts={chatFaqPrompts.length ? chatFaqPrompts : undefined}
+                shouldMinimize={chatInput.trim().length > 0}
+              />
               <div ref={messagesEndRef} />
             </div>
 

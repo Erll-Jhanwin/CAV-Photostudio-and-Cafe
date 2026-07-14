@@ -46,3 +46,34 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment #{self.id} for Order #{self.order.id} via {self.get_method_display()} (PHP {self.amount})"
+
+
+class EndOfDayReport(models.Model):
+    report_date = models.DateField()
+    opening_time = models.DateTimeField(null=True, blank=True)
+    closing_time = models.DateTimeField()
+    closed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='closed_pos_reports')
+    staff_name = models.CharField(max_length=150, blank=True)
+    total_transactions = models.PositiveIntegerField(default=0)
+    gross_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    discounts = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    refunds = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    cash_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    other_payment_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    booking_income = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    cafe_pos_income = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total_items_sold = models.PositiveIntegerField(default=0)
+    best_selling_items = models.JSONField(default=list, blank=True)
+    cancelled_or_voided_transactions = models.PositiveIntegerField(default=0)
+    expected_cash = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    actual_cash = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    cash_difference = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    printed_at = models.DateTimeField(null=True, blank=True)
+    print_status = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-report_date', '-created_at']
+
+    def __str__(self):
+        return f"End-of-Day Report {self.report_date} closed by {self.staff_name or self.closed_by_id}"

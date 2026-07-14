@@ -68,36 +68,42 @@ function DashboardTable({ columns, rows, sort, onSort, renderCell, renderActions
     return <EmptyState icon={BarChart2} title="No records found" description="No data exists for the selected date range." />;
   }
   return (
-    <div className="overflow-x-auto -mx-5 md:-mx-6">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="border-b border-espresso/[0.06] text-espresso/45 uppercase tracking-wider">
-            {columns.map(([key, label]) => (
-              <th key={key} className="px-5 py-2.5 text-left">
-                <button type="button" onClick={() => onSort(key)} className="inline-flex items-center gap-1 font-black hover:text-espresso focus-visible:outline-gold">
+    <div className="w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/70 scrollbar-thin">
+      <table className="min-w-[760px] w-full table-fixed text-xs">
+        <thead className="sticky top-0 z-10 bg-cream">
+          <tr className="border-b border-espresso/[0.08] text-espresso/55 uppercase tracking-wider">
+            {columns.map(([key, label], index) => (
+              <th key={key} className={`${index === 0 ? 'w-[26%]' : ''} px-4 py-3 text-left align-bottom`}>
+                <button type="button" onClick={() => onSort(key)} className="inline-flex max-w-full items-center gap-1 whitespace-normal break-words text-left font-black leading-snug hover:text-espresso focus-visible:outline-gold">
                   {label}
-                  {sort.key === key && <span>{sort.dir === 'asc' ? '↑' : '↓'}</span>}
+                  {sort.key === key && <span className="shrink-0">{sort.dir === 'asc' ? '↑' : '↓'}</span>}
                 </button>
               </th>
             ))}
-            <th className="px-5 py-2.5 text-right">Action</th>
+            <th className="w-[132px] px-4 py-3 text-right align-bottom">
+              <span className="font-black leading-snug">Action</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
             <tr key={row.id || i} className="border-b border-espresso/[0.04] hover:bg-cream/45 transition-colors">
-              {columns.map(([key]) => (
-                <td key={key} className="px-5 py-3 font-semibold text-espresso/75 whitespace-nowrap">
-                  {renderCell(row, key)}
+              {columns.map(([key], index) => (
+                <td key={key} className={`${index === 0 ? 'font-bold text-espresso' : 'font-semibold text-espresso/75'} px-4 py-3.5 align-middle leading-relaxed whitespace-normal break-words`}>
+                  <div className="min-w-0 max-w-full">
+                    {renderCell(row, key)}
+                  </div>
                 </td>
               ))}
-              <td className="px-5 py-3 text-right">
-                {renderActions ? renderActions(row) : (
-                  <button type="button" className="inline-flex items-center gap-1.5 rounded-xl bg-cream px-3 py-1.5 text-[10px] font-black text-espresso hover:bg-gold transition-all">
-                    <Eye className="w-3 h-3" />
-                    View
-                  </button>
-                )}
+              <td className="px-4 py-3.5 text-right align-middle">
+                <div className="flex justify-end">
+                  {renderActions ? renderActions(row) : (
+                    <button type="button" className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-cream px-3 py-2 text-[10px] font-black text-espresso hover:bg-gold transition-all">
+                      <Eye className="w-3 h-3 shrink-0" />
+                      <span>View</span>
+                    </button>
+                  )}
+                </div>
               </td>
             </tr>
           ))}
@@ -296,7 +302,7 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteBooking = async (booking) => {
-    if (!window.confirm(`Delete booking #${booking.id} for ${booking.customer_name}?`)) return;
+    if (!window.confirm(`Delete booking for ${booking.customer_name}?`)) return;
     try {
       setDeletingBookingId(booking.id);
       await client.delete(`/api/bookings/${booking.id}/`);
@@ -346,12 +352,12 @@ export default function AdminDashboard() {
   const navItems = [
     { key: 'forecast', label: 'ML Forecast Center', icon: TrendingUp, active: activeTab === 'forecast', onClick: () => setActiveTab('forecast') },
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
-    { key: 'payments', label: 'Payment Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
+    { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'staff', label: 'Staff Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
   ];
 
-  const pageTitles = { forecast: 'ML Forecast Center', analytics: 'InsightHub Dashboard', payments: 'Payment Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager' };
+  const pageTitles = { forecast: 'ML Forecast Center', analytics: 'InsightHub Dashboard', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager' };
   const metrics = analytics?.metrics || {};
   const statusData = [
     { label: 'Pending', value: metrics.pending || 0, color: '#F59E0B' },
@@ -445,33 +451,33 @@ export default function AdminDashboard() {
                 <div className="lg:col-span-8">
                   <Card>
                     <CardHeader title="Estimated Stock Depletions &amp; Reorders" subtitle="Based on 7-day demand forecast" />
-                    <div className="overflow-x-auto -mx-6">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b border-espresso/5 text-espresso/50 font-bold uppercase tracking-wider">
-                            <th className="p-4 text-left">Product</th>
-                            <th className="p-4 text-center">Stock</th>
-                            <th className="p-4 text-center">7-Day Demand</th>
-                            <th className="p-4 text-center">Balance</th>
-                            <th className="p-4 text-center">Order Qty</th>
-                            <th className="p-4 text-left">Supplier</th>
+                    <div className="w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/70 scrollbar-thin">
+                      <table className="min-w-[860px] w-full table-fixed text-xs">
+                        <thead className="sticky top-0 z-10 bg-cream">
+                          <tr className="border-b border-espresso/[0.08] text-espresso/55 font-black uppercase tracking-wider">
+                            <th className="w-[28%] px-4 py-3 text-left align-bottom leading-snug">Product</th>
+                            <th className="w-[12%] px-4 py-3 text-center align-bottom leading-snug">Stock</th>
+                            <th className="w-[15%] px-4 py-3 text-center align-bottom leading-snug">7-Day Demand</th>
+                            <th className="w-[12%] px-4 py-3 text-center align-bottom leading-snug">Balance</th>
+                            <th className="w-[13%] px-4 py-3 text-center align-bottom leading-snug">Order Qty</th>
+                            <th className="w-[20%] px-4 py-3 text-left align-bottom leading-snug">Supplier</th>
                           </tr>
                         </thead>
                         <tbody>
                           {forecast?.reorder_recommendations?.length > 0 ? forecast.reorder_recommendations.map((rec, i) => (
-                            <tr key={i} className="border-b border-espressor/5 hover:bg-espresso/[0.02] transition-colors">
-                              <td className="p-4 font-semibold text-espresso">{rec.product_name}</td>
-                              <td className="p-4 text-center font-bold">{rec.current_stock}</td>
-                              <td className="p-4 text-center font-bold text-gold-dark">{rec["7_day_forecasted_demand"]}</td>
-                              <td className={`p-4 text-center font-bold ${rec.projected_stock <= 0 ? 'text-red-600' : 'text-espresso/60'}`}>
+                            <tr key={i} className="border-b border-espresso/[0.04] hover:bg-cream/45 transition-colors">
+                              <td className="px-4 py-3.5 align-middle font-bold leading-relaxed text-espresso whitespace-normal break-words">{rec.product_name}</td>
+                              <td className="px-4 py-3.5 text-center align-middle font-bold leading-relaxed">{rec.current_stock}</td>
+                              <td className="px-4 py-3.5 text-center align-middle font-bold leading-relaxed text-gold-dark">{rec["7_day_forecasted_demand"]}</td>
+                              <td className={`px-4 py-3.5 text-center align-middle font-bold leading-relaxed ${rec.projected_stock <= 0 ? 'text-red-600' : 'text-espresso/60'}`}>
                                 {rec.projected_stock}
                               </td>
-                              <td className="p-4 text-center">
-                                <span className="bg-amber-50 text-amber-700 font-bold px-2.5 py-1 rounded-lg text-[10px]">
+                              <td className="px-4 py-3.5 text-center align-middle">
+                                <span className="inline-flex justify-center rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold leading-none text-amber-700">
                                   +{rec.recommended_order_quantity}
                                 </span>
                               </td>
-                              <td className="p-4 text-espresso/60">{rec.supplier_name}</td>
+                              <td className="px-4 py-3.5 align-middle font-semibold leading-relaxed text-espresso/65 whitespace-normal break-words">{rec.supplier_name}</td>
                             </tr>
                           )) : (
                             <tr>
@@ -777,7 +783,7 @@ export default function AdminDashboard() {
                         onClick={() => handleDeleteBooking(row)}
                         disabled={deletingBookingId === row.id}
                         className="inline-flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-1.5 text-[10px] font-black text-red-600 hover:bg-red-600 hover:text-white transition-all"
-                        aria-label={`Delete booking #${row.id}`}
+                        aria-label={`Delete booking for ${row.customer_name || 'customer'}`}
                       >
                         <Trash2 className="w-3 h-3" />
                         {deletingBookingId === row.id ? 'Deleting...' : 'Delete'}
@@ -796,7 +802,6 @@ export default function AdminDashboard() {
                   <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
                   <DashboardTable
                     columns={[
-                      ['id', 'Transaction ID'],
                       ['cashier', 'Cashier'],
                       ['date', 'Date'],
                       ['total', 'Total'],
@@ -805,7 +810,7 @@ export default function AdminDashboard() {
                     rows={posPageRows}
                     sort={posSort}
                     onSort={(key) => toggleSort(posSort, setPosSort, key)}
-                    renderCell={(row, key) => key === 'id' ? `#${row[key]}` : key === 'total' ? formatCurrency(row[key]) : row[key]}
+                    renderCell={(row, key) => key === 'total' ? formatCurrency(row[key]) : row[key]}
                   />
                   </div>
                   <TablePager page={posPage} setPage={setPosPage} total={sortedPos.length} pageSize={tablePageSize} />
@@ -839,7 +844,7 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* PAYMENT VERIFICATION */}
+          {/* PAYMENT BOOKING VERIFICATION */}
           {activeTab === 'payments' && (
             <div className="max-w-[1480px] mx-auto space-y-6 animate-in-up" key="payments">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -858,7 +863,7 @@ export default function AdminDashboard() {
               <Card>
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
                   <CardHeader
-                    title="GCash Payment Verification"
+                    title="GCash Payment Booking Verification"
                     subtitle="Approve only after matching the reference, amount, date/time, and screenshot in the GCash merchant app."
                     className="mb-0"
                   />
@@ -887,7 +892,7 @@ export default function AdminDashboard() {
                           <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr_auto] gap-4 items-start">
                             <div className="space-y-3 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-black text-espresso">Booking #{details.id}</p>
+                                <p className="font-black text-espresso">{details.package_details?.name || 'Booking'}</p>
                                 <StatusBadge status={payment.status} />
                               </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
@@ -1007,23 +1012,21 @@ export default function AdminDashboard() {
                 <Card>
                   <CardHeader title="Existing Accounts" />
                   {staffList.length > 0 ? (
-                    <div className="overflow-x-auto -mx-6">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b border-espresso/5 text-espresso/50 font-bold uppercase tracking-wider">
-                            <th className="p-4 text-left">ID</th>
-                            <th className="p-4 text-left">Username</th>
-                            <th className="p-4 text-left">Email</th>
-                            <th className="p-4 text-left">Role</th>
+                    <div className="w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/70 scrollbar-thin">
+                      <table className="min-w-[640px] w-full table-fixed text-xs">
+                        <thead className="sticky top-0 z-10 bg-cream">
+                          <tr className="border-b border-espresso/[0.08] text-espresso/55 font-black uppercase tracking-wider">
+                            <th className="w-[32%] px-4 py-3 text-left align-bottom leading-snug">Username</th>
+                            <th className="w-[44%] px-4 py-3 text-left align-bottom leading-snug">Email</th>
+                            <th className="w-[24%] px-4 py-3 text-left align-bottom leading-snug">Role</th>
                           </tr>
                         </thead>
                         <tbody>
                           {staffList.map((st, i) => (
                             <tr key={st.id} className="border-b border-espresso/5 hover:bg-espresso/[0.02] transition-colors animate-in-up" style={{ animationDelay: `${i * 30}ms` }}>
-                              <td className="p-4 font-mono text-espresso/50">#{st.id}</td>
-                              <td className="p-4 font-semibold text-espresso">{st.username}</td>
-                              <td className="p-4 text-espresso/60">{st.email || 'N/A'}</td>
-                              <td className="p-4"><StatusBadge status={st.role} /></td>
+                              <td className="px-4 py-3.5 align-middle font-bold leading-relaxed text-espresso whitespace-normal break-words">{st.username}</td>
+                              <td className="px-4 py-3.5 align-middle font-semibold leading-relaxed text-espresso/65 whitespace-normal break-words">{st.email || 'N/A'}</td>
+                              <td className="px-4 py-3.5 align-middle"><StatusBadge status={st.role} /></td>
                             </tr>
                           ))}
                         </tbody>

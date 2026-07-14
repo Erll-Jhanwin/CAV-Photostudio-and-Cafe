@@ -1,5 +1,10 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
+from datetime import datetime, timedelta
+
+
+BOOKING_CUSTOMER_EDIT_WINDOW_HOURS = 24
 
 class Service(models.Model):
     name = models.CharField(max_length=100)
@@ -37,8 +42,56 @@ class Booking(models.Model):
     notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    @property
+    def starts_at(self):
+        if not self.scheduled_date or not self.scheduled_time:
+            return None
+        return timezone.make_aware(
+            datetime.combine(self.scheduled_date, self.scheduled_time),
+            timezone.get_current_timezone()
+        )
+
+    @property
+    def edit_deadline(self):
+        starts_at = self.starts_at
+        return starts_at - timedelta(hours=BOOKING_CUSTOMER_EDIT_WINDOW_HOURS) if starts_at else None
+
+    @property
+    def is_customer_editable(self):
+        if self.status in ('COMPLETED', 'CANCELLED'):
+            return False
+        if self.status == 'PENDING':
+            return True
+        deadline = self.edit_deadline
+        return bool(deadline and timezone.now() < deadline)
+
+    @property
+    def customer_edit_lock_reason(self):
+        if self.status == 'COMPLETED':
+            return 'Completed bookings cannot be edited.'
+        if self.status == 'CANCELLED':
+            return 'Cancelled bookings cannot be edited.'
+        if self.status in ('CONFIRMED', 'CONFIRMED_DP') and not self.is_customer_editable:
+            return f'Editing is locked within {BOOKING_CUSTOMER_EDIT_WINDOW_HOURS} hours of the scheduled session.'
+        return ''
+
     def __str__(self):
         return f"Booking {self.id}: {self.customer.username} - {self.package.name} on {self.scheduled_date} at {self.scheduled_time}"
+
+
+class BookingChangeLog(models.Model):
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='change_history')
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='booking_changes')
+    old_values = models.JSONField(default=dict)
+    new_values = models.JSONField(default=dict)
+    reason = models.CharField(max_length=220, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Booking #{self.booking_id} updated on {self.created_at.date()}"
 
 class BookingItem(models.Model):
     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='items')

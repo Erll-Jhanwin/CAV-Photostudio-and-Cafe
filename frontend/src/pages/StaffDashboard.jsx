@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
 import {
-  ShoppingBag, ClipboardList, Package, DollarSign, LogOut, Search, Plus,
-  Minus, RefreshCw, Printer, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye
+  ShoppingBag, Package, DollarSign, LogOut, Search, Plus,
+  Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Printer
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -198,6 +198,15 @@ export default function StaffDashboard() {
   const [orderType, setOrderType] = useState('WALK_IN');
   const [linkedBookingId, setLinkedBookingId] = useState('');
   const [receiptOrder, setReceiptOrder] = useState(null);
+  const [receiptPrintError, setReceiptPrintError] = useState('');
+  const [endOfDayReports, setEndOfDayReports] = useState([]);
+  const [endOfDayModalOpen, setEndOfDayModalOpen] = useState(false);
+  const [endOfDayDate, setEndOfDayDate] = useState(todayValue());
+  const [endOfDayActualCash, setEndOfDayActualCash] = useState('');
+  const [endOfDayExpectedCash, setEndOfDayExpectedCash] = useState('');
+  const [endOfDayCashLoading, setEndOfDayCashLoading] = useState(false);
+  const [endOfDayPrinting, setEndOfDayPrinting] = useState(false);
+  const checkoutInFlightRef = useRef(false);
 
   const [posSearch, setPosSearch] = useState('');
   const [invSearch, setInvSearch] = useState('');
@@ -205,13 +214,13 @@ export default function StaffDashboard() {
   const [adjQty, setAdjQty] = useState(0);
   const [adjUnit, setAdjUnit] = useState('ML');
   const [adjMovementType, setAdjMovementType] = useState('IN');
-  const [bookingFilter, setBookingFilter] = useState('PENDING');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
   const [inventoryFilter, setInventoryFilter] = useState('ALL');
   const [salesPaymentFilter, setSalesPaymentFilter] = useState('ALL');
+  const [salesStartDate, setSalesStartDate] = useState('');
+  const [salesEndDate, setSalesEndDate] = useState('');
   const [productPage, setProductPage] = useState(1);
-  const [bookingPage, setBookingPage] = useState(1);
   const [paymentPage, setPaymentPage] = useState(1);
   const [inventoryPage, setInventoryPage] = useState(1);
   const [salesPage, setSalesPage] = useState(1);
@@ -274,9 +283,6 @@ export default function StaffDashboard() {
         setBookings(bookingsRes.data);
         writeStaffCache('products', productsRes.data);
         ensureDefaultRecipesOnce();
-      } else if (tab === 'validator') {
-        const bookingsRes = await client.get('/api/bookings/', { params: { limit: 200 } });
-        setBookings(bookingsRes.data);
       } else if (tab === 'payments') {
         const paymentsRes = await client.get('/api/bookings/payments/', { params: { limit: 100 } });
         setBookingPayments(paymentsRes.data);
@@ -285,8 +291,12 @@ export default function StaffDashboard() {
         const ingredientsRes = await client.get('/api/inventory/ingredients/', { params: { limit: 300 } });
         setIngredients(ingredientsRes.data);
       } else if (tab === 'sales') {
-        const ordersRes = await client.get('/api/pos/orders/', { params: { limit: 100 } });
+        const [ordersRes, reportsRes] = await Promise.all([
+          client.get('/api/pos/orders/', { params: { limit: 100 } }),
+          client.get('/api/pos/end-of-day-reports/')
+        ]);
         setOrders(ordersRes.data);
+        setEndOfDayReports(reportsRes.data);
       }
 
       setLoadedTabs(current => ({ ...current, [tab]: true }));
@@ -307,10 +317,9 @@ export default function StaffDashboard() {
   }, [user, navigate, activeTab]);
 
   useEffect(() => { setProductPage(1); }, [posSearch]);
-  useEffect(() => { setBookingPage(1); }, [bookingFilter]);
   useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
   useEffect(() => { setInventoryPage(1); }, [invSearch, inventoryFilter]);
-  useEffect(() => { setSalesPage(1); }, [salesPaymentFilter]);
+  useEffect(() => { setSalesPage(1); }, [salesPaymentFilter, salesStartDate, salesEndDate]);
 
   const addToCart = (product) => {
     const availableServings = getProductAvailable(product);
@@ -342,7 +351,7 @@ export default function StaffDashboard() {
   const getReceiptChange = (order) => Math.max(getReceiptAmountReceived(order) - Number(order?.total || 0), 0);
 
   const handleCheckout = async () => {
-    if (cart.length === 0 || checkoutLoading) return;
+    if (cart.length === 0 || checkoutInFlightRef.current) return;
     const total = getCartTotal();
     const cashReceived = paymentMethod === 'CASH' ? Number(amountReceived) : total;
 
@@ -353,7 +362,9 @@ export default function StaffDashboard() {
 
     let loadingTimer;
     try {
+      checkoutInFlightRef.current = true;
       setCheckoutLoading(true);
+      setReceiptPrintError('');
       loadingTimer = setTimeout(() => setShowCheckoutLoading(true), 450);
       const payload = {
         items: cart.map(item => ({ product_id: item.id, quantity: item.quantity })),
@@ -362,12 +373,15 @@ export default function StaffDashboard() {
       };
       if (orderType === 'BOOKING_LINKED' && linkedBookingId) payload.booking_id = linkedBookingId;
       const res = await client.post('/api/pos/orders/', payload);
-      setReceiptOrder({
+      const savedOrder = {
         ...res.data,
-        amount_received: cashReceived,
-        change_amount: Math.max(cashReceived - total, 0),
-      });
-      setOrders(current => [res.data, ...current]);
+        amount_received: res.data.amount_received || cashReceived,
+        change_amount: res.data.change_amount || Math.max(cashReceived - total, 0),
+      };
+      if (!res.data.receipt_print?.printed) {
+        setReceiptPrintError(res.data.receipt_print?.error || 'Payment saved, but the receipt could not be printed. Check the default receipt printer driver.');
+      }
+      setOrders(current => [savedOrder, ...current]);
       setProducts(current => current.map(product => {
         const cartItem = cart.find(item => item.id === product.id);
         if (!cartItem) return product;
@@ -397,18 +411,89 @@ export default function StaffDashboard() {
     } catch (err) {
       alert(err.response?.data?.detail || 'Checkout failed.');
     } finally {
+      checkoutInFlightRef.current = false;
       clearTimeout(loadingTimer);
       setCheckoutLoading(false);
       setShowCheckoutLoading(false);
     }
   };
 
-  const handleBookingAction = async (bookingId, newStatus) => {
+  const getExpectedCashForDate = async (dateValue) => {
+    setEndOfDayCashLoading(true);
     try {
-      const res = await client.patch(`/api/bookings/${bookingId}/`, { status: newStatus });
-      setBookings(current => current.map(booking => booking.id === bookingId ? res.data : booking));
+      const res = await client.get('/api/pos/orders/', { params: { limit: 200 } });
+      const cashTotal = res.data
+        .filter(order => {
+          const orderDate = order.created_at ? new Date(order.created_at).toISOString().slice(0, 10) : '';
+          const paidCash = order.payment_status === 'PAID' && order.payments?.some(payment => payment.method === 'CASH');
+          return orderDate === dateValue && paidCash;
+        })
+        .reduce((sum, order) => sum + Number(order.total || 0), 0);
+      const formatted = cashTotal.toFixed(2);
+      setEndOfDayExpectedCash(formatted);
+      setEndOfDayActualCash(formatted);
     } catch {
-      alert('Failed to update booking.');
+      setEndOfDayExpectedCash('');
+      setEndOfDayActualCash('');
+    } finally {
+      setEndOfDayCashLoading(false);
+    }
+  };
+
+  const openEndOfDayModal = async (dateValue = todayValue()) => {
+    setEndOfDayDate(dateValue);
+    setEndOfDayModalOpen(true);
+    await getExpectedCashForDate(dateValue);
+  };
+
+  const handleEndOfDayDateChange = async (dateValue) => {
+    setEndOfDayDate(dateValue);
+    await getExpectedCashForDate(dateValue);
+  };
+
+  const handlePrintEndOfDayReport = async () => {
+    const actualCash = Number(endOfDayActualCash);
+    if (!endOfDayActualCash || !Number.isFinite(actualCash) || actualCash < 0) {
+      alert('Enter the actual cash counted in the drawer.');
+      return;
+    }
+    if (!window.confirm(`Print and save the end-of-day report for ${endOfDayDate}?`)) return;
+
+    try {
+      setEndOfDayPrinting(true);
+      setReceiptPrintError('');
+      const res = await client.post('/api/pos/end-of-day-reports/', {
+        report_date: endOfDayDate,
+        actual_cash: actualCash.toFixed(2),
+      });
+      setEndOfDayReports(current => [res.data, ...current.filter(report => report.id !== res.data.id)]);
+      setEndOfDayModalOpen(false);
+      setEndOfDayActualCash('');
+      if (!res.data.receipt_print?.printed) {
+        setReceiptPrintError(res.data.receipt_print?.error || 'Report saved, but the end-of-day receipt could not be printed.');
+      }
+    } catch (err) {
+      const data = err.response?.data;
+      const message = data && typeof data === 'object'
+        ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
+        : 'Failed to print end-of-day report.';
+      alert(message);
+    } finally {
+      setEndOfDayPrinting(false);
+    }
+  };
+
+  const handleReprintEndOfDayReport = async (report) => {
+    if (!window.confirm(`Reprint end-of-day report for ${report.report_date}?`)) return;
+    try {
+      setReceiptPrintError('');
+      const res = await client.post(`/api/pos/end-of-day-reports/${report.id}/reprint/`);
+      setEndOfDayReports(current => current.map(item => item.id === report.id ? res.data : item));
+      if (!res.data.receipt_print?.printed) {
+        setReceiptPrintError(res.data.receipt_print?.error || 'Report found, but the receipt could not be printed.');
+      }
+    } catch {
+      alert('Failed to reprint report.');
     }
   };
 
@@ -508,44 +593,21 @@ export default function StaffDashboard() {
     }
   };
 
-  const triggerPrintReceipt = () => {
-    const printContent = document.getElementById('receipt-print-area')?.innerHTML;
-    if (!printContent) return;
-    const win = window.open('', '_blank');
-    if (!win) { alert('Please allow pop-ups to print the receipt.'); return; }
-    win.document.write(`
-      <html><head><title>CAV Receipt</title>
-      <style>
-        body { font-family: monospace; padding: 20px; width: 300px; margin: 0 auto; font-size: 12px; }
-        .center { text-align: center; } .bold { font-weight: bold; }
-        .item { display: flex; justify-content: space-between; margin-bottom: 5px; }
-        .total { border-top: 1px dashed #000; margin-top: 10px; padding-top: 5px; font-weight: bold; display: flex; justify-content: space-between; }
-        @media print { @page { margin: 0; } }
-      </style></head>
-      <body>${printContent}</body></html>`);
-    win.document.close();
-    win.focus();
-    win.print();
-  };
-
   const handleLogout = useCallback(() => { logout(); navigate('/login', { replace: true }); }, [logout, navigate]);
 
   if (loading) return <StaffSkeleton />;
 
   const navItems = [
     { key: 'pos', label: 'POS Terminal', icon: ShoppingBag, active: activeTab === 'pos', onClick: () => setActiveTab('pos') },
-    { key: 'validator', label: 'Booking Validator', icon: ClipboardList, active: activeTab === 'validator', onClick: () => setActiveTab('validator') },
-    { key: 'payments', label: 'Payment Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
+    { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
     { key: 'sales', label: 'Daily Sales Logs', icon: DollarSign, active: activeTab === 'sales', onClick: () => setActiveTab('sales') },
   ];
 
-  const pageTitles = { pos: 'POS Terminal', validator: 'Booking Validator', payments: 'Payment Verification', inventory: 'Live Inventory', sales: 'Daily Sales Logs' };
+  const pageTitles = { pos: 'POS Terminal', payments: 'Payment Booking Verification', inventory: 'Live Inventory', sales: 'Daily Sales Logs' };
   const isCurrentTabLoading = !!loadingResources[activeTab];
   const filteredProducts = products.filter(product => product.name.toLowerCase().includes(posSearch.toLowerCase()));
   const pagedProducts = filteredProducts.slice((productPage - 1) * PRODUCT_PAGE_SIZE, productPage * PRODUCT_PAGE_SIZE);
-  const filteredBookings = bookings.filter(booking => booking.status === bookingFilter);
-  const pagedBookings = filteredBookings.slice((bookingPage - 1) * TABLE_PAGE_SIZE, bookingPage * TABLE_PAGE_SIZE);
   const visibleInventory = ingredients.filter(ingredient => {
     const matchesSearch = ingredient.name.toLowerCase().includes(invSearch.toLowerCase());
     const matchesStatus = inventoryFilter === 'ALL' || ingredient.inventory_status === inventoryFilter;
@@ -563,9 +625,15 @@ export default function StaffDashboard() {
   const inventoryAlerts = ingredients
     .filter(ingredient => ['LOW_STOCK', 'NEAR_EXPIRY', 'EXPIRED', 'OVERSTOCKED'].includes(ingredient.inventory_status))
     .slice(0, 4);
-  const filteredOrders = orders.filter(order => (
-    salesPaymentFilter === 'ALL' || order.payments?.some(payment => payment.method === salesPaymentFilter)
-  ));
+  const salesStart = salesStartDate ? new Date(`${salesStartDate}T00:00:00`) : null;
+  const salesEnd = salesEndDate ? new Date(`${salesEndDate}T23:59:59.999`) : null;
+  const filteredOrders = orders.filter(order => {
+    const createdAt = new Date(order.created_at);
+    const matchesPayment = salesPaymentFilter === 'ALL' || order.payments?.some(payment => payment.method === salesPaymentFilter);
+    const matchesStart = !salesStart || createdAt >= salesStart;
+    const matchesEnd = !salesEnd || createdAt <= salesEnd;
+    return matchesPayment && matchesStart && matchesEnd;
+  });
   const pagedOrders = filteredOrders.slice((salesPage - 1) * TABLE_PAGE_SIZE, salesPage * TABLE_PAGE_SIZE);
   const filteredBookingPayments = bookingPayments.filter(payment => (
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
@@ -603,6 +671,19 @@ export default function StaffDashboard() {
             </div>
           )}
 
+          {receiptPrintError && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
+              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="font-bold text-sm">Receipt Not Printed</h4>
+                <p className="text-xs text-amber-700/90 mt-1">{receiptPrintError}</p>
+              </div>
+              <button type="button" onClick={() => setReceiptPrintError('')} className="text-amber-700/70 hover:text-amber-900">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {isCurrentTabLoading && !loading && (
             <div className="mb-4 rounded-2xl border border-gold/20 bg-gold/10 px-4 py-2 text-xs font-bold text-espresso">
               Refreshing {pageTitles[activeTab]}...
@@ -618,12 +699,22 @@ export default function StaffDashboard() {
                     <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">POS Terminal</h1>
                     <p className="text-xs text-espresso/50 mt-1">Build customer orders for walk-ins or cafe purchases.</p>
                   </div>
-                  <div className="flex items-center gap-2 bg-white border border-espresso/10 rounded-xl px-3 py-1.5 text-xs">
-                    <span className="font-semibold text-espresso/50">Cart Type:</span>
-                    <select value={orderType} onChange={e => setOrderType(e.target.value)} className="bg-transparent font-bold focus:outline-none text-espresso">
-                      <option value="WALK_IN">Walk-in Customer</option>
-                      <option value="BOOKING_LINKED">Link to Booking</option>
-                    </select>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={Printer}
+                      onClick={() => openEndOfDayModal()}
+                    >
+                      Print End-of-Day Report
+                    </Button>
+                    <div className="flex items-center gap-2 bg-white border border-espresso/10 rounded-xl px-3 py-1.5 text-xs">
+                      <span className="font-semibold text-espresso/50">Cart Type:</span>
+                      <select value={orderType} onChange={e => setOrderType(e.target.value)} className="bg-transparent font-bold focus:outline-none text-espresso">
+                        <option value="WALK_IN">Walk-in Customer</option>
+                        <option value="BOOKING_LINKED">Link to Booking</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
@@ -633,7 +724,7 @@ export default function StaffDashboard() {
                     <select value={linkedBookingId} onChange={e => setLinkedBookingId(e.target.value)} className="w-full sm:w-auto bg-cream border border-espresso/10 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-gold">
                       <option value="">Select a booking</option>
                       {bookings.filter(b => ['PENDING', 'CONFIRMED', 'CONFIRMED_DP'].includes(b.status)).map(b => (
-                        <option key={b.id} value={b.id}>#{b.id} - {b.customer?.username} ({b.package_details?.name})</option>
+                        <option key={b.id} value={b.id}>{b.customer?.username || 'Customer'} ({b.package_details?.name || 'Package'})</option>
                       ))}
                     </select>
                   </div>
@@ -782,7 +873,7 @@ export default function StaffDashboard() {
                         )}
 
                         <Button variant="gold" size="lg" className="w-full" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading}>
-                          {showCheckoutLoading ? 'Generating Receipt...' : `Pay PHP ${getCartTotal()}`}
+                          {showCheckoutLoading ? 'Saving & Printing...' : `Pay PHP ${getCartTotal()}`}
                         </Button>
                       </div>
                     </div>
@@ -802,68 +893,12 @@ export default function StaffDashboard() {
             </div>
           )}
 
-          {/* BOOKING VALIDATOR */}
-          {activeTab === 'validator' && (
-            <div className="space-y-6 animate-in-up" key="validator">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Booking Validator</h1>
-                  <p className="text-xs text-espresso/50 mt-1">Verify scheduled client slots and update booking statuses.</p>
-                </div>
-                <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
-                  {['PENDING', 'CONFIRMED', 'CONFIRMED_DP', 'COMPLETED', 'CANCELLED'].map(st => (
-                    <button key={st} onClick={() => setBookingFilter(st)}
-                      className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${bookingFilter === st ? 'bg-espresso text-cream shadow-sm' : 'text-espresso/50 hover:text-espresso'}`}>
-                      {st}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {filteredBookings.length > 0 ? (
-                <div className="space-y-4">
-                  {pagedBookings.map((b, i) => (
-                    <div key={b.id} className="bg-white p-5 md:p-6 rounded-2xl border border-espresso/5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-in-up" style={{ animationDelay: `${i * 50}ms` }}>
-                      <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className="font-sans text-lg font-extrabold">{b.package_details?.name}</span>
-                          <StatusBadge status={b.status} />
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs text-espresso/60">
-                          <span>Customer: <strong className="text-espresso">{b.customer?.username || 'Anonymous'}</strong></span>
-                          <span>Date: <strong className="text-espresso">{b.scheduled_date}</strong></span>
-                          <span>Time: <strong className="text-espresso">{b.scheduled_time}</strong></span>
-                          <span>ID: <strong className="text-espresso">#{b.id}</strong></span>
-                        </div>
-                        {b.notes && <p className="text-[10px] text-espresso/50 italic bg-cream p-2 rounded-lg">Notes: {b.notes}</p>}
-                      </div>
-                      <div className="flex gap-2 shrink-0 w-full md:w-auto">
-                        {b.status === 'PENDING' && (
-                          <>
-                            <Button variant="primary" size="sm" icon={Check} onClick={() => handleBookingAction(b.id, 'CONFIRMED')}>Approve</Button>
-                            <Button variant="outline" size="sm" icon={X} onClick={() => handleBookingAction(b.id, 'CANCELLED')} className="text-red-600 border-red-200 hover:bg-red-50">Cancel</Button>
-                          </>
-                        )}
-                        {['CONFIRMED', 'CONFIRMED_DP'].includes(b.status) && (
-                          <Button variant="success" size="sm" icon={Check} onClick={() => handleBookingAction(b.id, 'COMPLETED')}>Mark Completed</Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  <PaginationControls page={bookingPage} setPage={setBookingPage} total={filteredBookings.length} pageSize={TABLE_PAGE_SIZE} />
-                </div>
-              ) : (
-                <EmptyState icon={ClipboardList} title={`No ${bookingFilter.toLowerCase()} bookings`} description="No bookings match the selected status filter." />
-              )}
-            </div>
-          )}
-
-          {/* PAYMENT VERIFICATION */}
+          {/* PAYMENT BOOKING VERIFICATION */}
           {activeTab === 'payments' && (
             <div className="space-y-6 animate-in-up" key="payments">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Payment Verification</h1>
+                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Payment Booking Verification</h1>
                   <p className="text-xs text-espresso/50 mt-1">Check GCash merchant records before approving down payments.</p>
                 </div>
                 <div className="w-full sm:w-64">
@@ -891,7 +926,7 @@ export default function StaffDashboard() {
                         <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr_auto] gap-4 items-start">
                           <div className="space-y-2">
                             <div className="flex items-center gap-3 flex-wrap">
-                              <span className="font-sans text-lg font-extrabold">Booking #{details.id}</span>
+                              <span className="font-sans text-lg font-extrabold">{details.package_name || 'Booking'}</span>
                               <StatusBadge status={payment.status} />
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-espresso/60">
@@ -1124,23 +1159,49 @@ export default function StaffDashboard() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Daily Sales Logs</h1>
-                  <p className="text-xs text-espresso/50 mt-1">Review historical transactions and print receipt vouchers.</p>
+                  <p className="text-xs text-espresso/50 mt-1">Review historical transactions and receipt details.</p>
                 </div>
-                <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
-                  {[
-                    ['ALL', 'All'],
-                    ['CASH', 'Cash'],
-                    ['GCASH', 'GCash'],
-                  ].map(([value, label]) => (
+                <div className="w-full sm:w-auto flex flex-col lg:flex-row lg:items-end gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-[minmax(140px,1fr)_minmax(140px,1fr)_auto] gap-2">
+                    <Input
+                      label="From"
+                      type="date"
+                      value={salesStartDate}
+                      max={salesEndDate || undefined}
+                      onChange={e => setSalesStartDate(e.target.value)}
+                    />
+                    <Input
+                      label="To"
+                      type="date"
+                      value={salesEndDate}
+                      min={salesStartDate || undefined}
+                      onChange={e => setSalesEndDate(e.target.value)}
+                    />
                     <button
-                      key={value}
                       type="button"
-                      onClick={() => setSalesPaymentFilter(value)}
-                      className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${salesPaymentFilter === value ? 'bg-espresso text-cream shadow-sm' : 'text-espresso/50 hover:text-espresso'}`}
+                      onClick={() => { setSalesStartDate(''); setSalesEndDate(''); }}
+                      disabled={!salesStartDate && !salesEndDate}
+                      className="self-end rounded-[18px] border border-espresso/10 bg-white/90 px-4 py-3 text-xs font-black text-espresso/60 shadow-[0_10px_26px_rgba(46,26,17,0.04)] transition-all hover:text-espresso disabled:opacity-40"
                     >
-                      {label}
+                      Clear
                     </button>
-                  ))}
+                  </div>
+                  <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
+                    {[
+                      ['ALL', 'All'],
+                      ['CASH', 'Cash'],
+                      ['GCASH', 'GCash'],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setSalesPaymentFilter(value)}
+                        className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${salesPaymentFilter === value ? 'bg-espresso text-cream shadow-sm' : 'text-espresso/50 hover:text-espresso'}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1150,7 +1211,7 @@ export default function StaffDashboard() {
                     <div key={o.id} className="bg-white p-5 rounded-2xl border border-espresso/5 shadow-sm flex justify-between items-center animate-in-up" style={{ animationDelay: `${i * 40}ms` }}>
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-3">
-                          <span className="font-bold text-sm">Order #{o.id}</span>
+                          <span className="font-bold text-sm">{o.order_type || 'Order'}</span>
                           <StatusBadge status={o.payment_status} />
                         </div>
                         <p className="text-xs text-espresso/60">
@@ -1163,15 +1224,43 @@ export default function StaffDashboard() {
                           <p className="text-[10px] text-espresso/50">Amount</p>
                           <p className="font-bold text-espresso">PHP {o.total}</p>
                         </div>
-                        <Button variant="ghost" size="sm" icon={Printer} onClick={() => setReceiptOrder(o)} />
+                        <Button variant="ghost" size="sm" icon={Eye} onClick={() => setReceiptOrder(o)} />
                       </div>
                     </div>
                   ))}
                   <PaginationControls page={salesPage} setPage={setSalesPage} total={filteredOrders.length} pageSize={TABLE_PAGE_SIZE} />
                 </div>
               ) : (
-                <EmptyState icon={DollarSign} title="No transactions" description="No sales match the selected payment method." />
+                <EmptyState icon={DollarSign} title="No transactions" description="No sales match the selected payment method or date range." />
               )}
+
+              <Card>
+                <CardHeader title="End-of-Day Reports" subtitle="Saved shift closeout reports for viewing and reprinting." />
+                {endOfDayReports.length > 0 ? (
+                  <div className="space-y-3">
+                    {endOfDayReports.slice(0, 8).map(report => (
+                      <div key={report.id} className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-black text-espresso">{report.report_date}</p>
+                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${Number(report.cash_difference) === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                              Cash Diff {formatCurrency(report.cash_difference)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-espresso/55 mt-1">
+                            Closed by {report.staff_name || report.closed_by_name || 'Staff'} · {report.total_transactions} transactions · Gross {formatCurrency(report.gross_sales)}
+                          </p>
+                        </div>
+                        <Button variant="outline" size="sm" icon={Printer} onClick={() => handleReprintEndOfDayReport(report)}>
+                          Reprint
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState icon={Printer} title="No end-of-day reports" description="Close a shift from the POS page to save and print the first report." />
+                )}
+              </Card>
             </div>
           )}
         </main>
@@ -1253,45 +1342,129 @@ export default function StaffDashboard() {
         </div>
       </Modal>
 
+      {/* End-of-Day Report Modal */}
+      <Modal open={endOfDayModalOpen} onClose={() => !endOfDayPrinting && setEndOfDayModalOpen(false)} title="Print End-of-Day Report" size="sm">
+        <div className="space-y-4">
+          <p className="text-xs leading-relaxed text-espresso/60">
+            Enter the actual cash counted in the drawer. The system will save the report and send it to the 58mm receipt printer.
+          </p>
+          <Input
+            label="Report Date"
+            type="date"
+            value={endOfDayDate}
+            onChange={e => handleEndOfDayDateChange(e.target.value)}
+            disabled={endOfDayPrinting}
+          />
+          <Input
+            label="Actual Cash Count"
+            type="number"
+            min="0"
+            step="0.01"
+            value={endOfDayActualCash}
+            onChange={e => setEndOfDayActualCash(e.target.value)}
+            placeholder="0.00"
+            disabled={endOfDayPrinting || endOfDayCashLoading}
+          />
+          <div className="rounded-2xl border border-espresso/10 bg-cream/70 p-3 text-[11px] font-bold leading-relaxed text-espresso/65">
+            Auto-filled expected cash: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(endOfDayExpectedCash || 0)}. Edit the actual cash count if the drawer count is different.
+          </div>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-bold leading-relaxed text-amber-800">
+            Confirm before printing. This creates a permanent saved report for future viewing and reprinting.
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button variant="gold" className="flex-1" icon={Printer} onClick={handlePrintEndOfDayReport} loading={endOfDayPrinting}>
+              Print Report
+            </Button>
+            <Button variant="outline" onClick={() => setEndOfDayModalOpen(false)} disabled={endOfDayPrinting}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Receipt Modal */}
       <Modal open={!!receiptOrder} onClose={() => setReceiptOrder(null)} title="Receipt Preview" size="md">
-        <div id="receipt-print-area" className="bg-cream p-6 rounded-2xl border border-espresso/5 font-mono text-xs text-espresso space-y-4 max-w-sm mx-auto">
-          <div className="text-center space-y-1">
-            <p className="font-sans font-extrabold text-base">CAV PHOTO STUDIO &amp; CAFE</p>
-            <p className="text-[9px]">028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas</p>
-            <p className="text-[9px]">cav.photostudio.cafe@gmail.com</p>
+        <div id="receipt-print-area" className="mx-auto w-[58mm] max-w-full bg-white px-1.5 py-2 font-mono text-[11px] font-black leading-tight text-black">
+          <div className="text-center space-y-0.5">
+            <p className="text-[13px] font-black leading-tight">CAV PHOTO STUDIO &amp; CAFE</p>
+            <p className="text-[9px] font-black leading-tight">028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas</p>
           </div>
-          <div className="border-t border-dashed border-espresso/20 pt-2 space-y-1 text-[10px]">
-            <p>Order ID: #{receiptOrder?.id}</p>
-            <p>Date: {receiptOrder?.created_at ? new Date(receiptOrder.created_at).toLocaleString() : ''}</p>
-            <p>Server: {receiptOrder?.staff_name || user?.username}</p>
-            <p>Type: {receiptOrder?.order_type}</p>
+          <div className="flex justify-center py-1">
+            <div
+              aria-label="Receipt QR code preview"
+              className="grid h-[72px] w-[72px] grid-cols-7 grid-rows-7 gap-[2px] border-2 border-black bg-white p-1"
+            >
+              {Array.from({ length: 49 }).map((_, idx) => {
+                const row = Math.floor(idx / 7);
+                const col = idx % 7;
+                const finder = (row < 3 && col < 3) || (row < 3 && col > 3) || (row > 3 && col < 3);
+                const data = ((idx + Number(receiptOrder?.id || 0)) * 17) % 5 < 2;
+                return <span key={idx} className={finder || data ? 'bg-black' : 'bg-white'} />;
+              })}
+            </div>
           </div>
-          <div className="border-t border-dashed border-espresso/20 pt-2 space-y-1.5">
+          <div className="my-1 border-t border-dashed border-black" />
+          <div className="space-y-0.5 text-[10px] font-black">
+            <div className="flex justify-between gap-2">
+              <span>DATE</span>
+              <span className="text-right">{receiptOrder?.created_at ? new Date(receiptOrder.created_at).toLocaleString() : ''}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span>CASHIER</span>
+              <span className="text-right">{receiptOrder?.staff_name || user?.username}</span>
+            </div>
+          </div>
+          <div className="my-1 border-t border-dashed border-black" />
+          <div className="space-y-1">
+            <div className="grid grid-cols-[1fr_36px_70px] gap-1 text-[9px] font-black">
+              <span>ITEM</span>
+              <span className="text-right">QTY</span>
+              <span className="text-right">AMOUNT</span>
+            </div>
             {receiptOrder?.items?.map(item => (
-              <div key={item.id} className="flex justify-between text-[10px]">
-                <span>{item.product_details?.name || 'Item'} x {item.quantity}</span>
-                <span>PHP {item.subtotal}</span>
+              <div key={item.id} className="text-[10px] font-black">
+                <div className="break-words">{item.product_details?.name || 'Item'}</div>
+                <div className="grid grid-cols-[1fr_36px_70px] gap-1">
+                  <span>{formatCurrency(item.price)}</span>
+                  <span className="text-right">{item.quantity}</span>
+                  <span className="text-right">{formatCurrency(item.subtotal)}</span>
+                </div>
               </div>
             ))}
           </div>
-          <div className="border-t border-dashed border-espresso/20 pt-2 flex justify-between font-bold text-sm">
-            <span>TOTAL:</span>
-            <span>PHP {receiptOrder?.total}</span>
+          <div className="my-1 border-t border-dashed border-black" />
+          <div className="space-y-0.5 text-[11px] font-black">
+            <div className="flex justify-between gap-2 text-[13px]">
+              <span>TOTAL</span>
+              <span>{formatCurrency(receiptOrder?.total)}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span>PAID</span>
+              <span>{formatCurrency(getReceiptAmountReceived(receiptOrder))}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span>CHANGE</span>
+              <span>{formatCurrency(getReceiptChange(receiptOrder))}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span>PAYMENT</span>
+              <span>{receiptOrder?.payments?.[0]?.method || 'CASH'}</span>
+            </div>
+            {receiptOrder?.payments?.[0]?.transaction_id && (
+              <div className="flex justify-between gap-2 text-[9px]">
+                <span>REF</span>
+                <span className="break-all text-right">{receiptOrder.payments[0].transaction_id}</span>
+              </div>
+            )}
           </div>
-          <div className="border-t border-dashed border-espresso/20 pt-2 text-[10px] space-y-0.5">
-            <p>Method: {receiptOrder?.payments?.[0]?.method || 'CASH'}</p>
-            <p>Amount Received: PHP {getReceiptAmountReceived(receiptOrder).toFixed(2)}</p>
-            <p>Change: PHP {getReceiptChange(receiptOrder).toFixed(2)}</p>
-            {receiptOrder?.payments?.[0]?.transaction_id && <p>Ref: {receiptOrder.payments[0].transaction_id}</p>}
-          </div>
-          <div className="text-center text-[9px] pt-4 border-t border-dashed border-espresso/20">
+          <div className="my-1 border-t border-dashed border-black" />
+          <div className="text-center text-[9px] font-black leading-tight">
             Thank you for visiting CAV!<br />Savor the moment, cherish the photo.
           </div>
+          <div className="h-14" aria-hidden="true" />
         </div>
         <div className="flex gap-3 mt-4">
-          <Button variant="primary" className="flex-1" icon={Printer} onClick={triggerPrintReceipt}>Print</Button>
-          <Button variant="outline" onClick={() => setReceiptOrder(null)}>Close</Button>
+          <Button variant="outline" className="flex-1" onClick={() => setReceiptOrder(null)}>Close</Button>
         </div>
       </Modal>
     </div>

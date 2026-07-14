@@ -19,10 +19,11 @@ from inventory.views import (
     PurchaseOrderDetailUpdateView, IngredientListCreateView, IngredientDetailUpdateView,
     RecipeIngredientListCreateView, IngredientStockMovementListView, GenerateRecipeIngredientsView
 )
-from pos.views import OrderListCreateView, OrderDetailView, PaymentCreateView
+from pos.views import OrderListCreateView, OrderDetailView, PaymentCreateView, EndOfDayReportListCreateView, EndOfDayReportReprintView
 from chatbot.views import ChatbotQueryView, FAQListCreateView, FAQDetailUpdateView
 from dashboard.views import DashboardAnalyticsView
 from forecasting.views import ForecastingDataView
+from gallery.views import GalleryImageListView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -63,6 +64,8 @@ urlpatterns = [
     path('api/pos/orders/', OrderListCreateView.as_view(), name='pos_orders'),
     path('api/pos/orders/<int:pk>/', OrderDetailView.as_view(), name='pos_order_detail'),
     path('api/pos/payments/', PaymentCreateView.as_view(), name='pos_payments'),
+    path('api/pos/end-of-day-reports/', EndOfDayReportListCreateView.as_view(), name='pos_end_of_day_reports'),
+    path('api/pos/end-of-day-reports/<int:pk>/reprint/', EndOfDayReportReprintView.as_view(), name='pos_end_of_day_report_reprint'),
     
     # Chatbot endpoints
     path('api/chatbot/query/', ChatbotQueryView.as_view(), name='chatbot_query'),
@@ -72,6 +75,9 @@ urlpatterns = [
     # Analytics / Dashboard
     path('api/dashboard/analytics/', DashboardAnalyticsView.as_view(), name='dashboard_analytics'),
     path('api/forecasting/predictions/', ForecastingDataView.as_view(), name='forecasting_predictions'),
+
+    # Landing gallery
+    path('api/gallery/images/', GalleryImageListView.as_view(), name='gallery_image_list'),
 ]
 
 if settings.DEBUG:

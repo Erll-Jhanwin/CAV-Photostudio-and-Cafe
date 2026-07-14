@@ -17,6 +17,8 @@ BOOKING_SLOT_TIMES = [
     time(18, 0),
     time(19, 0),
 ]
+BUSINESS_OPEN_TIME = BOOKING_SLOT_TIMES[0]
+BUSINESS_CLOSE_TIME = time(20, 0)
 ACTIVE_BOOKING_STATUSES = ['PENDING', 'CONFIRMED', 'CONFIRMED_DP']
 
 
@@ -67,11 +69,12 @@ def get_available_slots(package_id, day, exclude_booking_id=None):
     slots = []
 
     for slot_time in BOOKING_SLOT_TIMES:
-        slot_start, _ = get_booking_window(day, slot_time, duration_minutes)
-        slot_start = timezone.make_aware(slot_start, timezone.get_current_timezone())
-        is_past = slot_start <= now
+        slot_start, slot_end = get_booking_window(day, slot_time, duration_minutes)
+        aware_slot_start = timezone.make_aware(slot_start, timezone.get_current_timezone())
+        is_past = aware_slot_start <= now
+        is_outside_hours = slot_start.time() < BUSINESS_OPEN_TIME or slot_end.time() > BUSINESS_CLOSE_TIME
         is_booked = any(slot_overlaps(day, slot_time, duration_minutes, booking) for booking in existing_bookings)
-        status = 'UNAVAILABLE' if is_past else 'BOOKED' if is_booked else 'AVAILABLE'
+        status = 'UNAVAILABLE' if is_past or is_outside_hours else 'BOOKED' if is_booked else 'AVAILABLE'
         slots.append({
             'time': slot_time.strftime('%H:%M:%S'),
             'label': slot_time.strftime('%I:%M %p'),

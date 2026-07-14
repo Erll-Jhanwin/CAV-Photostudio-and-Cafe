@@ -1,16 +1,19 @@
 import calendar
 from datetime import date
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import generics, permissions, status, filters, views
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from django.utils import timezone
-from booking.models import Service, Package, Booking, BookingItem, BookingPayment
+from booking.models import Service, Package, Booking, BookingItem, BookingPayment, BookingChangeLog
 from booking.serializers import ServiceSerializer, PackageSerializer, BookingSerializer, BookingPaymentSerializer
 from booking.availability import ACTIVE_BOOKING_STATUSES, get_available_slots, is_slot_available, parse_date_value
 from notifications.models import Notification
 from audit.models import AuditLog
+
+User = get_user_model()
 
 def apply_limit(queryset, request, default=None, maximum=200):
     raw_limit = request.query_params.get('limit')
@@ -39,6 +42,7 @@ class BookingAvailabilityView(views.APIView):
         package_id = request.query_params.get('package')
         month = request.query_params.get('month')
         day_param = request.query_params.get('date')
+        exclude_booking_id = request.query_params.get('exclude_booking')
 
         if not package_id:
             return Response({"package": "Package is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -48,12 +52,20 @@ class BookingAvailabilityView(views.APIView):
         except Package.DoesNotExist:
             return Response({"package": "Package not found."}, status=status.HTTP_404_NOT_FOUND)
 
+        if exclude_booking_id:
+            try:
+                booking = Booking.objects.get(id=exclude_booking_id)
+            except Booking.DoesNotExist:
+                return Response({"exclude_booking": "Booking not found."}, status=status.HTTP_404_NOT_FOUND)
+            if request.user.role not in ['STAFF', 'ADMIN'] and booking.customer_id != request.user.id:
+                return Response({"detail": "You cannot check availability for this booking."}, status=status.HTTP_403_FORBIDDEN)
+
         if day_param:
             try:
                 day = parse_date_value(day_param)
             except ValueError:
                 return Response({"date": "Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
-            slots = get_available_slots(package.id, day)
+            slots = get_available_slots(package.id, day, exclude_booking_id=exclude_booking_id)
             return Response({
                 "package": package.id,
                 "date": day.isoformat(),
@@ -74,7 +86,7 @@ class BookingAvailabilityView(views.APIView):
             if day < today:
                 dates.append({"date": day.isoformat(), "status": "UNAVAILABLE", "available_count": 0})
                 continue
-            slots = get_available_slots(package.id, day)
+            slots = get_available_slots(package.id, day, exclude_booking_id=exclude_booking_id)
             available_count = sum(1 for slot in slots if slot['available'])
             dates.append({
                 "date": day.isoformat(),
@@ -171,37 +183,146 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
     def update(self, request, *args, **kwargs):
         booking = self.get_object()
+        updated_booking = booking
         user = request.user
+        is_staff_user = user.role in ['STAFF', 'ADMIN']
+        editable_fields = {'package', 'scheduled_date', 'scheduled_time', 'notes'}
+        customer_fields = {'first_name', 'last_name', 'email', 'phone_number', 'address'}
+        requested_edit_fields = editable_fields.intersection(request.data.keys())
+        requested_customer_fields = customer_fields.intersection(request.data.keys())
         
-        # Check permissions: only Staff/Admin can edit status
+        # Check permissions: staff/admin can manage statuses; customers can only cancel their own pending booking.
         new_status = request.data.get('status')
+        if not is_staff_user and new_status and (requested_edit_fields or requested_customer_fields):
+            return Response({"detail": "Change booking status separately from booking edits."}, status=status.HTTP_400_BAD_REQUEST)
+
         if new_status and booking.status != new_status:
-            if user.role not in ['STAFF', 'ADMIN']:
+            customer_cancel = (
+                not is_staff_user and
+                booking.customer_id == user.id and
+                new_status == 'CANCELLED' and
+                booking.status == 'PENDING'
+            )
+            if not is_staff_user and not customer_cancel:
                 return Response({"detail": "Only staff members can update booking status."}, status=status.HTTP_403_FORBIDDEN)
             
             booking.status = new_status
-            booking.save()
+            booking.save(update_fields=['status'])
             
             # Send Notification to Customer
             Notification.objects.create(
                 user=booking.customer,
-                title=f"Booking Status Updated: {new_status}",
-                message=f"Your booking for {booking.package.name} on {booking.scheduled_date} is now {new_status}."
+                title="Booking Cancelled" if customer_cancel else f"Booking Status Updated: {new_status}",
+                message=(
+                    f"Your booking for {booking.package.name} on {booking.scheduled_date} was cancelled."
+                    if customer_cancel
+                    else f"Your booking for {booking.package.name} on {booking.scheduled_date} is now {new_status}."
+                )
             )
             
             # Log Audit
             AuditLog.objects.create(
                 user=user,
-                action="BOOKING_STATUS_CHANGE",
-                description=f"Updated booking #{booking.id} status to {new_status}."
+                action="BOOKING_CANCEL" if customer_cancel else "BOOKING_STATUS_CHANGE",
+                description=(
+                    f"Customer cancelled booking #{booking.id}."
+                    if customer_cancel
+                    else f"Updated booking #{booking.id} status to {new_status}."
+                )
             )
 
-        # Update other fields (notes, date, time) if allowed
-        serializer = self.get_serializer(booking, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        if not is_staff_user and (requested_edit_fields or requested_customer_fields):
+            if booking.customer_id != user.id:
+                return Response({"detail": "You can only edit your own bookings."}, status=status.HTTP_403_FORBIDDEN)
+            if not booking.is_customer_editable:
+                return Response(
+                    {"detail": booking.customer_edit_lock_reason or "This booking can no longer be edited."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if new_status and new_status != booking.status:
+                return Response({"detail": "Booking status cannot be changed with booking edits."}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(serializer.data)
+        old_values = {}
+        for field in requested_edit_fields:
+            value = getattr(booking, f"{field}_id", None) if field == 'package' else getattr(booking, field, None)
+            old_values[field] = str(value) if value is not None else ''
+        if requested_customer_fields:
+            for field in requested_customer_fields:
+                old_values[field] = getattr(booking.customer, field, '') or ''
+        if 'total_price' in requested_edit_fields or 'package' in requested_edit_fields:
+            old_values['total_price'] = str(booking.package.price)
+
+        with transaction.atomic():
+            if requested_edit_fields:
+                list(Booking.objects.select_for_update().filter(
+                    scheduled_date=request.data.get('scheduled_date', booking.scheduled_date),
+                    status__in=ACTIVE_BOOKING_STATUSES
+                ))
+
+            serializer = self.get_serializer(booking, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            updated_booking = serializer.save()
+
+            if requested_customer_fields:
+                customer = updated_booking.customer
+                for field in requested_customer_fields:
+                    setattr(customer, field, request.data.get(field, getattr(customer, field)))
+                customer.save(update_fields=list(requested_customer_fields))
+
+            updated_booking = Booking.objects.select_related('customer', 'package', 'package__service').prefetch_related(
+                'items', 'payments', 'change_history'
+            ).get(pk=updated_booking.pk)
+
+            new_values = {}
+            for field in requested_edit_fields:
+                value = getattr(updated_booking, f"{field}_id", None) if field == 'package' else getattr(updated_booking, field, None)
+                new_values[field] = str(value) if value is not None else ''
+            if requested_customer_fields:
+                for field in requested_customer_fields:
+                    new_values[field] = getattr(updated_booking.customer, field, '') or ''
+            if 'package' in requested_edit_fields:
+                new_values['total_price'] = str(updated_booking.package.price)
+
+            changed_values = {
+                key: {'from': old_values.get(key, ''), 'to': new_values.get(key, '')}
+                for key in set(old_values) | set(new_values)
+                if old_values.get(key, '') != new_values.get(key, '')
+            }
+
+            if changed_values:
+                BookingChangeLog.objects.create(
+                    booking=updated_booking,
+                    changed_by=user,
+                    old_values={key: value['from'] for key, value in changed_values.items()},
+                    new_values={key: value['to'] for key, value in changed_values.items()},
+                    reason=request.data.get('change_reason', 'Customer updated booking details')[:220],
+                )
+
+                AuditLog.objects.create(
+                    user=user,
+                    action="BOOKING_UPDATE",
+                    description=f"Updated booking #{updated_booking.id}: {', '.join(sorted(changed_values.keys()))}."
+                )
+
+                staff_users = User.objects.filter(role__in=['STAFF', 'ADMIN'])
+                notifications = [
+                    Notification(
+                        user=staff,
+                        title="Booking Updated",
+                        message=(
+                            f"Booking #{updated_booking.id} for "
+                            f"{updated_booking.customer.get_full_name() or updated_booking.customer.username} "
+                            f"was updated. New schedule: {updated_booking.scheduled_date} at {updated_booking.scheduled_time}."
+                        )
+                    )
+                    for staff in staff_users
+                ]
+                Notification.objects.bulk_create(notifications)
+
+        updated_booking = Booking.objects.select_related('customer', 'package', 'package__service').prefetch_related(
+            'items', 'payments', 'change_history'
+        ).get(pk=updated_booking.pk)
+        return Response(self.get_serializer(updated_booking).data)
 
     def destroy(self, request, *args, **kwargs):
         if request.user.role != 'ADMIN':

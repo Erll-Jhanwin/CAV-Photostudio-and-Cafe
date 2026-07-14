@@ -1,38 +1,22 @@
 import os
 import requests
-import json
-from datetime import date
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from django.conf import settings
 from chatbot.models import ChatbotFAQ, ChatbotLog
 from audit.models import AuditLog
-from booking.models import Booking
+from chatbot.booking_assistant import build_booking_chatbot_response, detect_language
 
-def is_booking_query(question):
-    q = question.lower()
-    booking_words = ['booking', 'bookings', 'booked', 'appointment', 'appointments',
-                     'reservation', 'reservations', 'schedule', 'scheduled']
-    action_words = ['show', 'list', 'all', 'view', 'display', 'get', 'find', 'search',
-                    'check', 'who', 'tell', 'give', 'what']
-    has_booking = any(w in q for w in booking_words)
-    has_action = any(w in q for w in action_words)
-    return has_booking and has_action
-
-def format_bookings(bookings):
-    if not bookings:
-        return "No bookings found."
-    lines = [f"Found {len(bookings)} booking(s):"]
-    for b in bookings:
-        name = f"{b.customer.first_name} {b.customer.last_name}".strip() or b.customer.username
-        svc = b.package.service.name if b.package and hasattr(b.package, 'service') and b.package.service else ""
-        pkg = b.package.name if b.package else "N/A"
-        lines.append(f"  - {name} | {b.scheduled_date} @ {b.scheduled_time:%I:%M %p} | {pkg}{' (' + svc + ')' if svc else ''} | {b.status}")
-    return "\n".join(lines)
-
-def get_chatbot_fallback_response(best_faq=None):
+def get_chatbot_fallback_response(best_faq=None, lang='en'):
     if best_faq:
         return best_faq.answer
+    if lang == 'tl':
+        return (
+            "Hindi ko makita ang eksaktong sagot sa FAQ list. "
+            "Open ang CAV Photo Studio & Café araw-araw mula 9:00 AM hanggang 8:00 PM. "
+            "Para sa specific na tanong tungkol sa packages o café menu, "
+            "puwede kang tumawag sa +639171234567 o mag-email sa staff@test.com."
+        )
     return (
         "I couldn't find a direct answer to your question in our FAQ list. "
         "CAV Photo Studio & Café is open daily from 9:00 AM to 8:00 PM. "
@@ -48,24 +32,14 @@ class ChatbotQueryView(generics.CreateAPIView):
         if not question:
             return Response({"detail": "Question is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 0. Intercept booking queries — query the database directly
-        if is_booking_query(question):
-            if not request.user.is_authenticated:
-                response_text = "Please log in first so I can check the bookings for you."
-            else:
-                qs = Booking.objects.select_related('customer', 'package__service').all().order_by('-created_at') \
-                    if request.user.role in ('ADMIN', 'STAFF') else \
-                    Booking.objects.select_related('customer', 'package__service').filter(customer=request.user).order_by('-created_at')
-                # Optional date filter if the question mentions a date
-                q_lower = question.lower()
-                for word in q_lower.split():
-                    try:
-                        d = date.fromisoformat(word)
-                        qs = qs.filter(scheduled_date=d)
-                        break
-                    except (ValueError, TypeError):
-                        pass
-                response_text = format_bookings(list(qs))
+        lang = detect_language(question)
+
+        # 0. Booking/schedule/package availability questions must use live database state.
+        response_text = build_booking_chatbot_response(
+            question,
+            request.user if request.user.is_authenticated else None
+        )
+        if response_text:
             ChatbotLog.objects.create(
                 user=request.user if request.user.is_authenticated else None,
                 question=question,
@@ -114,6 +88,7 @@ class ChatbotQueryView(generics.CreateAPIView):
                         "role": "system",
                         "content": f"You are a helpful AI assistant for CAV Photo Studio & Café. "
                                    f"Answer questions warmly and concisely. "
+                                   f"Automatically detect whether the user is using English or Tagalog and respond naturally in the same language. "
                                    f"Use this official shop knowledge base context to answer: {context_str}. "
                                    f"If the question cannot be answered by this context, answer politely that you don't know "
                                    f"the exact detail but recommend they call staff or email staff@test.com."
@@ -130,11 +105,11 @@ class ChatbotQueryView(generics.CreateAPIView):
                     resp_json = r.json()
                     response_text = resp_json['choices'][0]['message']['content'].strip()
                 else:
-                    response_text = get_chatbot_fallback_response(best_faq)
+                    response_text = get_chatbot_fallback_response(best_faq, lang)
             except requests.RequestException:
-                response_text = get_chatbot_fallback_response(best_faq)
+                response_text = get_chatbot_fallback_response(best_faq, lang)
         else:
-            response_text = get_chatbot_fallback_response(best_faq)
+            response_text = get_chatbot_fallback_response(best_faq, lang)
 
         # 3. Log query to ChatbotLog
         user = request.user if request.user.is_authenticated else None
@@ -152,7 +127,11 @@ class ChatbotQueryView(generics.CreateAPIView):
 
 class FAQListCreateView(generics.ListCreateAPIView):
     queryset = ChatbotFAQ.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
 
     def get_serializer_class(self):
         # We can write a quick serializer inline to save space
