@@ -15,13 +15,30 @@ class Order(models.Model):
     )
     staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_orders')
     booking = models.ForeignKey(Booking, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    discount_type = models.CharField(max_length=10, choices=(('FIXED', 'Fixed Amount'), ('PERCENT', 'Percentage')), default='FIXED')
+    discount_value = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    transaction_id = models.CharField(max_length=24, unique=True, blank=True, null=True, editable=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
     payment_status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='PENDING')
     order_type = models.CharField(max_length=20, choices=ORDER_TYPES, default='WALK_IN')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Order #{self.id} - Total: PHP {self.total} ({self.get_payment_status_display()})"
+
+
+class TransactionSequence(models.Model):
+    sequence_date = models.DateField(unique=True)
+    next_number = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ['-sequence_date']
+
+    def __str__(self):
+        return f"Transaction sequence {self.sequence_date}: next {self.next_number}"
 
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
@@ -58,13 +75,17 @@ class EndOfDayReport(models.Model):
     gross_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     discounts = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     refunds = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    opening_cash = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     cash_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    gcash_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    card_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     other_payment_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     booking_income = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     cafe_pos_income = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_items_sold = models.PositiveIntegerField(default=0)
     best_selling_items = models.JSONField(default=list, blank=True)
     cancelled_or_voided_transactions = models.PositiveIntegerField(default=0)
+    cash_in_out = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     expected_cash = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     actual_cash = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     cash_difference = models.DecimalField(max_digits=12, decimal_places=2, default=0)

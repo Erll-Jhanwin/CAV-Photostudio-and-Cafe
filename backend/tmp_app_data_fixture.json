@@ -613,6 +613,7 @@
     "stock_level": 3,
     "reorder_point": 10,
     "is_cafe_item": false,
+    "is_active": false,
     "image_url": "https://images.unsplash.com/photo-1603481588273-2f908a9a7a1b?q=80&w=400"
   }
 },

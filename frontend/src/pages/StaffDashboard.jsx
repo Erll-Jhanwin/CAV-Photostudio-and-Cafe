@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
 import {
   ShoppingBag, Package, DollarSign, LogOut, Search, Plus,
-  Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Printer
+  Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Printer, Pencil
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -75,6 +75,18 @@ const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-P
 const STAFF_CACHE_TTL_MS = 60 * 1000;
 const PRODUCT_PAGE_SIZE = 12;
 const TABLE_PAGE_SIZE = 10;
+const RECEIPT_BUSINESS = {
+  logoUrl: '/cavlogo.jpg',
+  logoText: 'CAV',
+  name: 'CAV PHOTO STUDIO & CAFE',
+  address: '028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas',
+  contactNumber: '+639171234567',
+};
+
+const formatReceiptCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})}`;
 
 const readStaffCache = (key) => {
   try {
@@ -181,7 +193,6 @@ export default function StaffDashboard() {
   const [ingredients, setIngredients] = useState([]);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
-  const [bookings, setBookings] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -193,15 +204,18 @@ export default function StaffDashboard() {
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [transactionId, setTransactionId] = useState('');
   const [amountReceived, setAmountReceived] = useState('');
+  const [discountType, setDiscountType] = useState('FIXED');
+  const [discountValue, setDiscountValue] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [showCheckoutLoading, setShowCheckoutLoading] = useState(false);
-  const [orderType, setOrderType] = useState('WALK_IN');
-  const [linkedBookingId, setLinkedBookingId] = useState('');
   const [receiptOrder, setReceiptOrder] = useState(null);
   const [receiptPrintError, setReceiptPrintError] = useState('');
   const [endOfDayReports, setEndOfDayReports] = useState([]);
   const [endOfDayModalOpen, setEndOfDayModalOpen] = useState(false);
   const [endOfDayDate, setEndOfDayDate] = useState(todayValue());
+  const [endOfDayOpeningCash, setEndOfDayOpeningCash] = useState('0.00');
+  const [endOfDayCashInOut, setEndOfDayCashInOut] = useState('0.00');
+  const [endOfDayCashSales, setEndOfDayCashSales] = useState('');
   const [endOfDayActualCash, setEndOfDayActualCash] = useState('');
   const [endOfDayExpectedCash, setEndOfDayExpectedCash] = useState('');
   const [endOfDayCashLoading, setEndOfDayCashLoading] = useState(false);
@@ -211,6 +225,9 @@ export default function StaffDashboard() {
   const [posSearch, setPosSearch] = useState('');
   const [invSearch, setInvSearch] = useState('');
   const [manualAdjIngredient, setManualAdjIngredient] = useState(null);
+  const [editingIngredient, setEditingIngredient] = useState(null);
+  const [editIngredientForm, setEditIngredientForm] = useState(emptyProductForm());
+  const [editIngredientSaving, setEditIngredientSaving] = useState(false);
   const [adjQty, setAdjQty] = useState(0);
   const [adjUnit, setAdjUnit] = useState('ML');
   const [adjMovementType, setAdjMovementType] = useState('IN');
@@ -275,12 +292,8 @@ export default function StaffDashboard() {
           setProducts(cachedProducts);
           setLoading(false);
         }
-        const [productsRes, bookingsRes] = await Promise.all([
-          client.get('/api/inventory/products/', { params: { limit: 240 } }),
-          client.get('/api/bookings/', { params: { active: 'true', limit: 100 } })
-        ]);
+        const productsRes = await client.get('/api/inventory/products/', { params: { limit: 240 } });
         setProducts(productsRes.data);
-        setBookings(bookingsRes.data);
         writeStaffCache('products', productsRes.data);
         ensureDefaultRecipesOnce();
       } else if (tab === 'payments') {
@@ -345,18 +358,65 @@ export default function StaffDashboard() {
     }
   };
 
-  const getCartTotal = () => cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
+  const getCartSubtotal = () => cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
+  const getCartDiscountAmount = () => {
+    const subtotal = getCartSubtotal();
+    const value = Number(discountValue || 0);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    if (discountType === 'PERCENT') return Math.min(subtotal * Math.min(value, 100) / 100, subtotal);
+    return Math.min(value, subtotal);
+  };
+  const getCartTotal = () => Math.max(getCartSubtotal() - getCartDiscountAmount(), 0);
   const getReceiptPayment = (order) => order?.payments?.[0] || null;
   const getReceiptAmountReceived = (order) => Number(getReceiptPayment(order)?.amount || order?.amount_received || order?.total || 0);
-  const getReceiptChange = (order) => Math.max(getReceiptAmountReceived(order) - Number(order?.total || 0), 0);
+  const getReceiptChange = (order) => Number(order?.change_amount ?? Math.max(getReceiptAmountReceived(order) - Number(order?.total || 0), 0));
+  const getReceiptSubtotal = (order) => Number(order?.subtotal || order?.total || 0);
+  const getReceiptDiscounts = (order) => Number(order?.discounts ?? order?.discount_amount ?? 0);
+  const getReceiptOrNumber = (order) => order?.or_number || order?.id || '';
+  const getReceiptTransactionNumber = (order) => (
+    order?.transaction_id
+    || order?.transaction_number
+    || getReceiptPayment(order)?.transaction_id
+    || (order?.id ? `POS-${order.id}` : '')
+  );
+  const getReceiptDateTime = (order) => {
+    if (order?.created_at_display) return order.created_at_display;
+    if (order?.completed_at) return new Date(order.completed_at).toLocaleString();
+    return order?.created_at ? new Date(order.created_at).toLocaleString() : '';
+  };
+  const getReceiptBusiness = (order) => ({
+    logoUrl: order?.business_logo_url || RECEIPT_BUSINESS.logoUrl,
+    logoText: order?.business_logo_text || RECEIPT_BUSINESS.logoText,
+    name: order?.business_name || RECEIPT_BUSINESS.name,
+    address: order?.business_address || RECEIPT_BUSINESS.address,
+    contactNumber: order?.business_contact_number || RECEIPT_BUSINESS.contactNumber,
+  });
+  const getEndOfDayExpectedCashValue = (
+    openingCash = endOfDayOpeningCash,
+    cashSales = endOfDayCashSales,
+    cashInOut = endOfDayCashInOut
+  ) => Number(openingCash || 0) + Number(cashSales || 0) + Number(cashInOut || 0);
 
   const handleCheckout = async () => {
     if (cart.length === 0 || checkoutInFlightRef.current) return;
     const total = getCartTotal();
     const cashReceived = paymentMethod === 'CASH' ? Number(amountReceived) : total;
+    const discountNumber = Number(discountValue || 0);
 
     if (paymentMethod === 'CASH' && (!amountReceived || cashReceived < total)) {
       alert('Amount received must be equal to or greater than the total.');
+      return;
+    }
+    if (!Number.isFinite(discountNumber) || discountNumber < 0) {
+      alert('Enter a valid discount.');
+      return;
+    }
+    if (discountType === 'PERCENT' && discountNumber > 100) {
+      alert('Percentage discount cannot exceed 100%.');
+      return;
+    }
+    if (discountType === 'FIXED' && discountNumber > getCartSubtotal()) {
+      alert('Discount amount cannot exceed the cart subtotal.');
       return;
     }
 
@@ -368,10 +428,10 @@ export default function StaffDashboard() {
       loadingTimer = setTimeout(() => setShowCheckoutLoading(true), 450);
       const payload = {
         items: cart.map(item => ({ product_id: item.id, quantity: item.quantity })),
-        order_type: orderType,
+        order_type: 'WALK_IN',
+        discount: { type: discountType, value: discountNumber },
         payment: { amount: cashReceived, method: paymentMethod, transaction_id: transactionId }
       };
-      if (orderType === 'BOOKING_LINKED' && linkedBookingId) payload.booking_id = linkedBookingId;
       const res = await client.post('/api/pos/orders/', payload);
       const savedOrder = {
         ...res.data,
@@ -406,8 +466,8 @@ export default function StaffDashboard() {
       setCart([]);
       setTransactionId('');
       setAmountReceived('');
-      setLinkedBookingId('');
-      setOrderType('WALK_IN');
+      setDiscountType('FIXED');
+      setDiscountValue('');
     } catch (err) {
       alert(err.response?.data?.detail || 'Checkout failed.');
     } finally {
@@ -429,10 +489,13 @@ export default function StaffDashboard() {
           return orderDate === dateValue && paidCash;
         })
         .reduce((sum, order) => sum + Number(order.total || 0), 0);
-      const formatted = cashTotal.toFixed(2);
-      setEndOfDayExpectedCash(formatted);
-      setEndOfDayActualCash(formatted);
+      const cashSales = cashTotal.toFixed(2);
+      const expectedCash = getEndOfDayExpectedCashValue(endOfDayOpeningCash, cashSales, endOfDayCashInOut).toFixed(2);
+      setEndOfDayCashSales(cashSales);
+      setEndOfDayExpectedCash(expectedCash);
+      setEndOfDayActualCash(expectedCash);
     } catch {
+      setEndOfDayCashSales('');
       setEndOfDayExpectedCash('');
       setEndOfDayActualCash('');
     } finally {
@@ -452,7 +515,17 @@ export default function StaffDashboard() {
   };
 
   const handlePrintEndOfDayReport = async () => {
+    const openingCash = Number(endOfDayOpeningCash || 0);
+    const cashInOut = Number(endOfDayCashInOut || 0);
     const actualCash = Number(endOfDayActualCash);
+    if (!Number.isFinite(openingCash) || openingCash < 0) {
+      alert('Enter a valid opening cash amount.');
+      return;
+    }
+    if (!Number.isFinite(cashInOut)) {
+      alert('Enter a valid cash in/out amount.');
+      return;
+    }
     if (!endOfDayActualCash || !Number.isFinite(actualCash) || actualCash < 0) {
       alert('Enter the actual cash counted in the drawer.');
       return;
@@ -464,11 +537,17 @@ export default function StaffDashboard() {
       setReceiptPrintError('');
       const res = await client.post('/api/pos/end-of-day-reports/', {
         report_date: endOfDayDate,
+        opening_cash: openingCash.toFixed(2),
+        cash_in_out: cashInOut.toFixed(2),
         actual_cash: actualCash.toFixed(2),
       });
       setEndOfDayReports(current => [res.data, ...current.filter(report => report.id !== res.data.id)]);
       setEndOfDayModalOpen(false);
       setEndOfDayActualCash('');
+      setEndOfDayOpeningCash('0.00');
+      setEndOfDayCashInOut('0.00');
+      setEndOfDayCashSales('');
+      setEndOfDayExpectedCash('');
       if (!res.data.receipt_print?.printed) {
         setReceiptPrintError(res.data.receipt_print?.error || 'Report saved, but the end-of-day receipt could not be printed.');
       }
@@ -504,11 +583,6 @@ export default function StaffDashboard() {
       setVerifyingPaymentId(payment.id);
       const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
       setBookingPayments(current => current.map(item => item.id === payment.id ? res.data : item));
-      setBookings(current => current.map(booking => (
-        booking.id === res.data.booking_details?.id
-          ? { ...booking, status: res.data.booking_details.status === 'CONFIRMED_DP' ? 'CONFIRMED_DP' : booking.status }
-          : booking
-      )));
     } catch (err) {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
     } finally {
@@ -562,6 +636,71 @@ export default function StaffDashboard() {
 
   const handleProductFieldChange = (field, value) => {
     setProductForm(current => ({ ...current, [field]: value }));
+  };
+
+  const ingredientToForm = (ingredient) => ({
+    name: ingredient?.name || '',
+    category: ingredient?.category || '',
+    supplier: ingredient?.supplier || '',
+    unit: ingredient?.base_unit || 'ML',
+    stock_level: ingredient?.stock_quantity ?? '',
+    reorder_point: ingredient?.minimum_stock_level ?? '',
+    maximum_stock_level: ingredient?.maximum_stock_level ?? '',
+    expiration_date: ingredient?.expiration_date || '',
+    purchase_date: ingredient?.purchase_date || todayValue(),
+    batch_number: ingredient?.batch_number || '',
+    storage_location: ingredient?.storage_location || '',
+  });
+
+  const openEditIngredientModal = (ingredient) => {
+    setEditingIngredient(ingredient);
+    setEditIngredientForm(ingredientToForm(ingredient));
+  };
+
+  const handleEditIngredientFieldChange = (field, value) => {
+    setEditIngredientForm(current => ({ ...current, [field]: value }));
+  };
+
+  const handleUpdateIngredient = async (e) => {
+    e.preventDefault();
+    if (!editingIngredient) return;
+    try {
+      setEditIngredientSaving(true);
+      const payload = {
+        name: editIngredientForm.name,
+        category: Number(editIngredientForm.category),
+        supplier: Number(editIngredientForm.supplier),
+        base_unit: editIngredientForm.unit,
+        stock_quantity: Number(editIngredientForm.stock_level),
+        minimum_stock_level: Number(editIngredientForm.reorder_point),
+        maximum_stock_level: Number(editIngredientForm.maximum_stock_level),
+        expiration_date: editIngredientForm.expiration_date || null,
+        purchase_date: editIngredientForm.purchase_date,
+        batch_number: editIngredientForm.batch_number,
+        storage_location: editIngredientForm.storage_location,
+      };
+      const res = await client.patch(`/api/inventory/ingredients/${editingIngredient.id}/`, payload);
+      setIngredients(current => current.map(ingredient => ingredient.id === res.data.id ? res.data : ingredient));
+      setProducts(current => current.map(product => {
+        const recipeItems = product.recipe_items?.map(item => (
+          item.ingredient === res.data.id
+            ? { ...item, ingredient_details: res.data, base_unit: res.data.base_unit, ingredient_name: res.data.name }
+            : item
+        ));
+        const updatedProduct = { ...product, recipe_items: recipeItems };
+        return { ...updatedProduct, available_servings: getProductAvailable(updatedProduct) };
+      }));
+      setEditingIngredient(null);
+      setEditIngredientForm(emptyProductForm());
+    } catch (err) {
+      const data = err.response?.data;
+      const message = data && typeof data === 'object'
+        ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
+        : 'Failed to update ingredient.';
+      alert(message);
+    } finally {
+      setEditIngredientSaving(false);
+    }
   };
 
   const handleCreateProduct = async (e) => {
@@ -628,17 +767,19 @@ export default function StaffDashboard() {
   const salesStart = salesStartDate ? new Date(`${salesStartDate}T00:00:00`) : null;
   const salesEnd = salesEndDate ? new Date(`${salesEndDate}T23:59:59.999`) : null;
   const filteredOrders = orders.filter(order => {
-    const createdAt = new Date(order.created_at);
+    const createdAt = new Date(order.completed_at || order.created_at);
+    const isCompletedSale = order.payment_status === 'PAID';
     const matchesPayment = salesPaymentFilter === 'ALL' || order.payments?.some(payment => payment.method === salesPaymentFilter);
     const matchesStart = !salesStart || createdAt >= salesStart;
     const matchesEnd = !salesEnd || createdAt <= salesEnd;
-    return matchesPayment && matchesStart && matchesEnd;
+    return isCompletedSale && matchesPayment && matchesStart && matchesEnd;
   });
   const pagedOrders = filteredOrders.slice((salesPage - 1) * TABLE_PAGE_SIZE, salesPage * TABLE_PAGE_SIZE);
   const filteredBookingPayments = bookingPayments.filter(payment => (
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
   ));
   const pagedBookingPayments = filteredBookingPayments.slice((paymentPage - 1) * TABLE_PAGE_SIZE, paymentPage * TABLE_PAGE_SIZE);
+  const displayedEndOfDayExpectedCash = endOfDayExpectedCash || getEndOfDayExpectedCashValue().toFixed(2);
 
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
@@ -708,27 +849,8 @@ export default function StaffDashboard() {
                     >
                       Print End-of-Day Report
                     </Button>
-                    <div className="flex items-center gap-2 bg-white border border-espresso/10 rounded-xl px-3 py-1.5 text-xs">
-                      <span className="font-semibold text-espresso/50">Cart Type:</span>
-                      <select value={orderType} onChange={e => setOrderType(e.target.value)} className="bg-transparent font-bold focus:outline-none text-espresso">
-                        <option value="WALK_IN">Walk-in Customer</option>
-                        <option value="BOOKING_LINKED">Link to Booking</option>
-                      </select>
-                    </div>
                   </div>
                 </div>
-
-                {orderType === 'BOOKING_LINKED' && (
-                  <div className="bg-white p-4 rounded-xl border border-espresso/5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-3 animate-in-up">
-                    <span className="text-xs font-bold text-espresso/60 uppercase shrink-0">Link Booking:</span>
-                    <select value={linkedBookingId} onChange={e => setLinkedBookingId(e.target.value)} className="w-full sm:w-auto bg-cream border border-espresso/10 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-gold">
-                      <option value="">Select a booking</option>
-                      {bookings.filter(b => ['PENDING', 'CONFIRMED', 'CONFIRMED_DP'].includes(b.status)).map(b => (
-                        <option key={b.id} value={b.id}>{b.customer?.username || 'Customer'} ({b.package_details?.name || 'Package'})</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
 
                 <div className="relative">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-espresso/30" />
@@ -826,7 +948,46 @@ export default function StaffDashboard() {
                       <div className="border-t border-espresso/5 pt-4 space-y-4">
                         <div className="flex justify-between font-bold text-sm">
                           <span className="text-espresso/70">Total:</span>
-                          <span className="font-sans text-lg text-espresso">PHP {getCartTotal()}</span>
+                          <span className="font-sans text-lg text-espresso">{formatReceiptCurrency(getCartTotal())}</span>
+                        </div>
+
+                        <div className="rounded-xl border border-espresso/5 bg-cream/70 p-3 space-y-2">
+                          <div className="flex justify-between text-xs font-bold text-espresso/60">
+                            <span>Subtotal</span>
+                            <span>{formatReceiptCurrency(getCartSubtotal())}</span>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-[10px] uppercase font-bold text-espresso/50">Discount</p>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {[
+                                ['FIXED', 'Amount'],
+                                ['PERCENT', 'Percent'],
+                              ].map(([value, label]) => (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  onClick={() => setDiscountType(value)}
+                                  className={`text-xs font-bold py-2 rounded-xl border transition-all ${discountType === value ? 'bg-espresso text-cream border-espresso shadow-sm' : 'border-espresso/10 text-espresso/60 hover:border-espresso/30'}`}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            <Input
+                              label={discountType === 'PERCENT' ? 'Discount Percent' : 'Discount Amount'}
+                              type="number"
+                              min="0"
+                              max={discountType === 'PERCENT' ? '100' : getCartSubtotal()}
+                              step="0.01"
+                              value={discountValue}
+                              onChange={e => setDiscountValue(e.target.value)}
+                              placeholder={discountType === 'PERCENT' ? '0%' : '0.00'}
+                            />
+                          </div>
+                          <div className="flex justify-between text-xs font-bold text-espresso/60">
+                            <span>Discount Applied</span>
+                            <span>-{formatReceiptCurrency(getCartDiscountAmount())}</span>
+                          </div>
                         </div>
 
                         <div className="space-y-2">
@@ -873,7 +1034,7 @@ export default function StaffDashboard() {
                         )}
 
                         <Button variant="gold" size="lg" className="w-full" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading}>
-                          {showCheckoutLoading ? 'Saving & Printing...' : `Pay PHP ${getCartTotal()}`}
+                          {showCheckoutLoading ? 'Saving & Printing...' : `Pay ${formatReceiptCurrency(getCartTotal())}`}
                         </Button>
                       </div>
                     </div>
@@ -926,11 +1087,10 @@ export default function StaffDashboard() {
                         <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr_auto] gap-4 items-start">
                           <div className="space-y-2">
                             <div className="flex items-center gap-3 flex-wrap">
-                              <span className="font-sans text-lg font-extrabold">{details.package_name || 'Booking'}</span>
+                              <span className="font-sans text-lg font-extrabold text-espresso">{details.customer_name || 'N/A'}</span>
                               <StatusBadge status={payment.status} />
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-espresso/60">
-                              <span>Customer: <strong className="text-espresso">{details.customer_name || 'N/A'}</strong></span>
                               <span>Package: <strong className="text-espresso">{details.package_name || 'N/A'}</strong></span>
                               <span>Schedule: <strong className="text-espresso">{details.scheduled_date} {details.scheduled_time}</strong></span>
                               <span>Reference: <strong className="text-espresso break-all">{payment.reference_number}</strong></span>
@@ -1099,7 +1259,7 @@ export default function StaffDashboard() {
                         <th className="p-4 text-left">Action</th>
                         <th className="p-4 text-left">Expiry</th>
                         <th className="p-4 text-left">Storage</th>
-                        <th className="p-4 text-right">Adjust</th>
+                        <th className="p-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1128,12 +1288,22 @@ export default function StaffDashboard() {
                             </td>
                             <td className="p-4 text-espresso/60">{ingredient.storage_location || 'N/A'}</td>
                             <td className="p-4 text-right">
-                              <Button variant="ghost" size="xs" onClick={() => {
-                                setManualAdjIngredient(ingredient);
-                                setAdjQty(0);
-                                setAdjUnit(ingredient.base_unit);
-                                setAdjMovementType('IN');
-                              }}>Adjust</Button>
+                              <div className="flex justify-end gap-1.5">
+                                <Button
+                                  variant="ghost"
+                                  size="xs"
+                                  icon={Pencil}
+                                  title={`Edit ${ingredient.name}`}
+                                  aria-label={`Edit ${ingredient.name}`}
+                                  onClick={() => openEditIngredientModal(ingredient)}
+                                />
+                                <Button variant="ghost" size="xs" onClick={() => {
+                                  setManualAdjIngredient(ingredient);
+                                  setAdjQty(0);
+                                  setAdjUnit(ingredient.base_unit);
+                                  setAdjMovementType('IN');
+                                }}>Adjust</Button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1206,29 +1376,47 @@ export default function StaffDashboard() {
               </div>
 
               {filteredOrders.length > 0 ? (
-                <div className="space-y-4">
-                  {pagedOrders.map((o, i) => (
-                    <div key={o.id} className="bg-white p-5 rounded-2xl border border-espresso/5 shadow-sm flex justify-between items-center animate-in-up" style={{ animationDelay: `${i * 40}ms` }}>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-3">
-                          <span className="font-bold text-sm">{o.order_type || 'Order'}</span>
-                          <StatusBadge status={o.payment_status} />
-                        </div>
-                        <p className="text-xs text-espresso/60">
-                          {o.items?.map(i => `${i.product_details?.name} (x${i.quantity})`).join(', ')}
-                        </p>
-                        <p className="text-[10px] text-espresso/40">{new Date(o.created_at).toLocaleString()}</p>
-                      </div>
-                      <div className="flex items-center gap-4 shrink-0">
-                        <div className="text-right">
-                          <p className="text-[10px] text-espresso/50">Amount</p>
-                          <p className="font-bold text-espresso">PHP {o.total}</p>
-                        </div>
-                        <Button variant="ghost" size="sm" icon={Eye} onClick={() => setReceiptOrder(o)} />
-                      </div>
-                    </div>
-                  ))}
-                  <PaginationControls page={salesPage} setPage={setSalesPage} total={filteredOrders.length} pageSize={TABLE_PAGE_SIZE} />
+                <div className="rounded-2xl border border-espresso/5 bg-white shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-cream border-b border-espresso/5 text-espresso/50 font-bold uppercase tracking-wider">
+                          <th className="p-4 text-left">Transaction ID</th>
+                          <th className="p-4 text-left">Date &amp; Time</th>
+                          <th className="p-4 text-right">Amount Paid</th>
+                          <th className="p-4 text-right">View</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagedOrders.map((order, index) => (
+                          <tr key={order.id} className="border-b border-espresso/5 hover:bg-espresso/[0.02] transition-colors animate-in-up" style={{ animationDelay: `${index * 20}ms` }}>
+                            <td className="p-4 font-black text-gold-dark whitespace-nowrap">
+                              {order.transaction_id || 'Transaction pending'}
+                            </td>
+                            <td className="p-4 font-bold text-espresso/70 whitespace-nowrap">
+                              {getReceiptDateTime(order)}
+                            </td>
+                            <td className="p-4 text-right font-black text-espresso whitespace-nowrap">
+                              {formatReceiptCurrency(getReceiptAmountReceived(order))}
+                            </td>
+                            <td className="p-4 text-right">
+                              <Button
+                                variant="ghost"
+                                size="xs"
+                                icon={Eye}
+                                title={`View receipt ${order.transaction_id || order.id}`}
+                                aria-label={`View receipt ${order.transaction_id || order.id}`}
+                                onClick={() => setReceiptOrder(order)}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="px-4 pb-4 pt-3">
+                    <PaginationControls page={salesPage} setPage={setSalesPage} total={filteredOrders.length} pageSize={TABLE_PAGE_SIZE} />
+                  </div>
                 </div>
               ) : (
                 <EmptyState icon={DollarSign} title="No transactions" description="No sales match the selected payment method or date range." />
@@ -1250,6 +1438,13 @@ export default function StaffDashboard() {
                           <p className="text-xs text-espresso/55 mt-1">
                             Closed by {report.staff_name || report.closed_by_name || 'Staff'} · {report.total_transactions} transactions · Gross {formatCurrency(report.gross_sales)}
                           </p>
+                          {(report.first_transaction_id || report.last_transaction_id) && (
+                            <p className="mt-1 text-[10px] font-black text-gold-dark">
+                              {report.first_transaction_id === report.last_transaction_id
+                                ? report.first_transaction_id
+                                : `${report.first_transaction_id} to ${report.last_transaction_id}`}
+                            </p>
+                          )}
                         </div>
                         <Button variant="outline" size="sm" icon={Printer} onClick={() => handleReprintEndOfDayReport(report)}>
                           Reprint
@@ -1310,6 +1505,115 @@ export default function StaffDashboard() {
         </form>
       </Modal>
 
+      {/* Edit Ingredient Modal */}
+      <Modal open={!!editingIngredient} onClose={() => !editIngredientSaving && setEditingIngredient(null)} title="Edit Raw Ingredient" size="3xl">
+        <form onSubmit={handleUpdateIngredient} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              label="Ingredient Name"
+              required
+              value={editIngredientForm.name}
+              onChange={e => handleEditIngredientFieldChange('name', e.target.value)}
+              disabled={editIngredientSaving}
+            />
+            <Input
+              label="Batch Number"
+              required
+              value={editIngredientForm.batch_number}
+              onChange={e => handleEditIngredientFieldChange('batch_number', e.target.value)}
+              disabled={editIngredientSaving}
+            />
+            <Select
+              label="Category"
+              required
+              value={editIngredientForm.category}
+              onChange={e => handleEditIngredientFieldChange('category', e.target.value)}
+              options={[{ value: '', label: 'Select category' }, ...categories.map(category => ({ value: category.id, label: category.name }))]}
+              disabled={editIngredientSaving}
+            />
+            <Select
+              label="Supplier"
+              required
+              value={editIngredientForm.supplier}
+              onChange={e => handleEditIngredientFieldChange('supplier', e.target.value)}
+              options={[{ value: '', label: 'Select supplier' }, ...suppliers.map(supplier => ({ value: supplier.id, label: supplier.name }))]}
+              disabled={editIngredientSaving}
+            />
+            <Select
+              label="Base Unit"
+              required
+              value={editIngredientForm.unit}
+              onChange={e => handleEditIngredientFieldChange('unit', e.target.value)}
+              options={[
+                { value: 'ML', label: 'mL' },
+                { value: 'G', label: 'g' },
+              ]}
+              disabled={editIngredientSaving}
+            />
+            <Input
+              label="Stock Quantity"
+              required
+              type="number"
+              min="0"
+              step="0.01"
+              value={editIngredientForm.stock_level}
+              onChange={e => handleEditIngredientFieldChange('stock_level', e.target.value)}
+              disabled={editIngredientSaving}
+            />
+            <Input
+              label="Minimum Stock Level"
+              required
+              type="number"
+              min="0"
+              step="0.01"
+              value={editIngredientForm.reorder_point}
+              onChange={e => handleEditIngredientFieldChange('reorder_point', e.target.value)}
+              disabled={editIngredientSaving}
+            />
+            <Input
+              label="Maximum Stock Level"
+              required
+              type="number"
+              min="0"
+              step="0.01"
+              value={editIngredientForm.maximum_stock_level}
+              onChange={e => handleEditIngredientFieldChange('maximum_stock_level', e.target.value)}
+              disabled={editIngredientSaving}
+            />
+            <Input
+              label="Purchase Date"
+              required
+              type="date"
+              value={editIngredientForm.purchase_date}
+              onChange={e => handleEditIngredientFieldChange('purchase_date', e.target.value)}
+              disabled={editIngredientSaving}
+            />
+            <Input
+              label="Expiry Date"
+              type="date"
+              value={editIngredientForm.expiration_date}
+              onChange={e => handleEditIngredientFieldChange('expiration_date', e.target.value)}
+              disabled={editIngredientSaving}
+            />
+            <Input
+              label="Stock Location / Position"
+              required
+              value={editIngredientForm.storage_location}
+              onChange={e => handleEditIngredientFieldChange('storage_location', e.target.value)}
+              disabled={editIngredientSaving}
+            />
+          </div>
+          <div className="sticky bottom-0 bg-white/95 flex flex-col sm:flex-row gap-2 pt-4 pb-1 border-t border-espresso/[0.06]">
+            <Button type="submit" variant="primary" className="flex-1" loading={editIngredientSaving}>
+              Save Changes
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setEditingIngredient(null)} disabled={editIngredientSaving}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Adj Modal */}
       <Modal open={!!manualAdjIngredient} onClose={() => setManualAdjIngredient(null)} title="Adjust Ingredient Stock" size="sm">
         <p className="text-xs text-espresso/60 mb-4">
@@ -1346,7 +1650,7 @@ export default function StaffDashboard() {
       <Modal open={endOfDayModalOpen} onClose={() => !endOfDayPrinting && setEndOfDayModalOpen(false)} title="Print End-of-Day Report" size="sm">
         <div className="space-y-4">
           <p className="text-xs leading-relaxed text-espresso/60">
-            Enter the actual cash counted in the drawer. The system will save the report and send it to the 58mm receipt printer.
+            Opening cash and cash movement update the closing cash automatically. The system will save the report and send it to the 58mm receipt printer.
           </p>
           <Input
             label="Report Date"
@@ -1356,7 +1660,38 @@ export default function StaffDashboard() {
             disabled={endOfDayPrinting}
           />
           <Input
-            label="Actual Cash Count"
+            label="Opening Cash"
+            type="number"
+            min="0"
+            step="0.01"
+            value={endOfDayOpeningCash}
+            onChange={e => {
+              const value = e.target.value;
+              const expectedCash = getEndOfDayExpectedCashValue(value, endOfDayCashSales, endOfDayCashInOut).toFixed(2);
+              setEndOfDayOpeningCash(value);
+              setEndOfDayExpectedCash(expectedCash);
+              setEndOfDayActualCash(expectedCash);
+            }}
+            placeholder="0.00"
+            disabled={endOfDayPrinting || endOfDayCashLoading}
+          />
+          <Input
+            label="Cash In/Out"
+            type="number"
+            step="0.01"
+            value={endOfDayCashInOut}
+            onChange={e => {
+              const value = e.target.value;
+              const expectedCash = getEndOfDayExpectedCashValue(endOfDayOpeningCash, endOfDayCashSales, value).toFixed(2);
+              setEndOfDayCashInOut(value);
+              setEndOfDayExpectedCash(expectedCash);
+              setEndOfDayActualCash(expectedCash);
+            }}
+            placeholder="0.00"
+            disabled={endOfDayPrinting || endOfDayCashLoading}
+          />
+          <Input
+            label="Closing Cash / Actual Cash"
             type="number"
             min="0"
             step="0.01"
@@ -1366,7 +1701,7 @@ export default function StaffDashboard() {
             disabled={endOfDayPrinting || endOfDayCashLoading}
           />
           <div className="rounded-2xl border border-espresso/10 bg-cream/70 p-3 text-[11px] font-bold leading-relaxed text-espresso/65">
-            Auto-filled expected cash: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(endOfDayExpectedCash || 0)}. Edit the actual cash count if the drawer count is different.
+            Auto-filled cash sales: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(endOfDayCashSales || 0)}. Expected cash: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(displayedEndOfDayExpectedCash || 0)}.
           </div>
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-bold leading-relaxed text-amber-800">
             Confirm before printing. This creates a permanent saved report for future viewing and reprinting.
@@ -1384,85 +1719,112 @@ export default function StaffDashboard() {
 
       {/* Receipt Modal */}
       <Modal open={!!receiptOrder} onClose={() => setReceiptOrder(null)} title="Receipt Preview" size="md">
-        <div id="receipt-print-area" className="mx-auto w-[58mm] max-w-full bg-white px-1.5 py-2 font-mono text-[11px] font-black leading-tight text-black">
-          <div className="text-center space-y-0.5">
-            <p className="text-[13px] font-black leading-tight">CAV PHOTO STUDIO &amp; CAFE</p>
-            <p className="text-[9px] font-black leading-tight">028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas</p>
-          </div>
-          <div className="flex justify-center py-1">
-            <div
-              aria-label="Receipt QR code preview"
-              className="grid h-[72px] w-[72px] grid-cols-7 grid-rows-7 gap-[2px] border-2 border-black bg-white p-1"
-            >
-              {Array.from({ length: 49 }).map((_, idx) => {
-                const row = Math.floor(idx / 7);
-                const col = idx % 7;
-                const finder = (row < 3 && col < 3) || (row < 3 && col > 3) || (row > 3 && col < 3);
-                const data = ((idx + Number(receiptOrder?.id || 0)) * 17) % 5 < 2;
-                return <span key={idx} className={finder || data ? 'bg-black' : 'bg-white'} />;
-              })}
-            </div>
-          </div>
-          <div className="my-1 border-t border-dashed border-black" />
-          <div className="space-y-0.5 text-[10px] font-black">
-            <div className="flex justify-between gap-2">
-              <span>DATE</span>
-              <span className="text-right">{receiptOrder?.created_at ? new Date(receiptOrder.created_at).toLocaleString() : ''}</span>
-            </div>
-            <div className="flex justify-between gap-2">
-              <span>CASHIER</span>
-              <span className="text-right">{receiptOrder?.staff_name || user?.username}</span>
-            </div>
-          </div>
-          <div className="my-1 border-t border-dashed border-black" />
-          <div className="space-y-1">
-            <div className="grid grid-cols-[1fr_36px_70px] gap-1 text-[9px] font-black">
-              <span>ITEM</span>
-              <span className="text-right">QTY</span>
-              <span className="text-right">AMOUNT</span>
-            </div>
-            {receiptOrder?.items?.map(item => (
-              <div key={item.id} className="text-[10px] font-black">
-                <div className="break-words">{item.product_details?.name || 'Item'}</div>
-                <div className="grid grid-cols-[1fr_36px_70px] gap-1">
-                  <span>{formatCurrency(item.price)}</span>
-                  <span className="text-right">{item.quantity}</span>
-                  <span className="text-right">{formatCurrency(item.subtotal)}</span>
+        {receiptOrder && (() => {
+          const business = getReceiptBusiness(receiptOrder);
+          return (
+            <div id="receipt-print-area" className="mx-auto w-[58mm] max-w-full bg-white px-[4mm] py-[3mm] font-sans text-[9.5px] font-semibold leading-tight text-black">
+              <div className="space-y-1 text-center">
+                <div className="flex justify-center">
+                  <div className="flex h-[17mm] w-[17mm] items-center justify-center overflow-hidden">
+                    {business.logoUrl ? (
+                      <img
+                        src={business.logoUrl}
+                        alt={`${business.name} logo`}
+                        className="h-full w-full object-contain grayscale contrast-125"
+                      />
+                    ) : (
+                      <div className="flex h-[14mm] min-w-[22mm] items-center justify-center border border-black px-2 text-[20px] font-black leading-none text-black">
+                        {business.logoText}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[11px] font-black uppercase leading-tight">{business.name}</p>
+                  <p className="text-[8.5px] font-semibold leading-snug">{business.address}</p>
+                  <p className="text-[8.5px] font-semibold leading-snug">Contact Number: {business.contactNumber}</p>
                 </div>
               </div>
-            ))}
-          </div>
-          <div className="my-1 border-t border-dashed border-black" />
-          <div className="space-y-0.5 text-[11px] font-black">
-            <div className="flex justify-between gap-2 text-[13px]">
-              <span>TOTAL</span>
-              <span>{formatCurrency(receiptOrder?.total)}</span>
-            </div>
-            <div className="flex justify-between gap-2">
-              <span>PAID</span>
-              <span>{formatCurrency(getReceiptAmountReceived(receiptOrder))}</span>
-            </div>
-            <div className="flex justify-between gap-2">
-              <span>CHANGE</span>
-              <span>{formatCurrency(getReceiptChange(receiptOrder))}</span>
-            </div>
-            <div className="flex justify-between gap-2">
-              <span>PAYMENT</span>
-              <span>{receiptOrder?.payments?.[0]?.method || 'CASH'}</span>
-            </div>
-            {receiptOrder?.payments?.[0]?.transaction_id && (
-              <div className="flex justify-between gap-2 text-[9px]">
-                <span>REF</span>
-                <span className="break-all text-right">{receiptOrder.payments[0].transaction_id}</span>
+
+              <div className="my-1.5 border-t border-black" />
+
+              <div className="space-y-0.5">
+                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                  <span className="font-black">OR No.</span>
+                  <span className="break-all text-right">{getReceiptOrNumber(receiptOrder)}</span>
+                </div>
+                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                  <span className="font-black">Transaction No.</span>
+                  <span className="break-all text-right">{getReceiptTransactionNumber(receiptOrder)}</span>
+                </div>
+                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                  <span className="font-black">Date &amp; Time</span>
+                  <span className="text-right">{getReceiptDateTime(receiptOrder)}</span>
+                </div>
+                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                  <span className="font-black">Cashier</span>
+                  <span className="break-all text-right">{receiptOrder?.staff_name || user?.username}</span>
+                </div>
               </div>
-            )}
-          </div>
-          <div className="my-1 border-t border-dashed border-black" />
-          <div className="text-center text-[9px] font-black leading-tight">
-            Thank you for visiting CAV!<br />Savor the moment, cherish the photo.
-          </div>
-          <div className="h-14" aria-hidden="true" />
-        </div>
+
+              <div className="my-1.5 border-t border-black" />
+
+              <div>
+                <div className="mb-1 text-center text-[9px] font-black uppercase">Itemized Products</div>
+                <div className="grid grid-cols-[1fr_6mm_13mm_15mm] gap-1 border-b border-black pb-0.5 text-[8px] font-black uppercase">
+                  <span>Product</span>
+                  <span className="text-right">Qty</span>
+                  <span className="text-right">Price</span>
+                  <span className="text-right">Amount</span>
+                </div>
+                <div className="space-y-1 pt-1">
+                  {receiptOrder?.items?.map((item, index) => (
+                    <div key={item.id || `${item.product}-${index}`} className="grid grid-cols-[1fr_6mm_13mm_15mm] gap-1 text-[8.5px] leading-tight">
+                      <span className="break-words pr-1 font-semibold">{item.product_details?.name || 'Item'}</span>
+                      <span className="text-right tabular-nums">{item.quantity}</span>
+                      <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(item.price)}</span>
+                      <span className="whitespace-nowrap text-right font-black tabular-nums">{formatReceiptCurrency(item.subtotal)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="my-1.5 border-t border-black" />
+
+              <div className="space-y-0.5">
+                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                  <span className="font-black">Subtotal</span>
+                  <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(getReceiptSubtotal(receiptOrder))}</span>
+                </div>
+                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                  <span className="font-black">Discounts</span>
+                  <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(getReceiptDiscounts(receiptOrder))}</span>
+                </div>
+                <div className="grid grid-cols-[23mm_1fr] gap-1 border-y border-black py-0.5 text-[11px] font-black">
+                  <span>Grand Total</span>
+                  <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(receiptOrder?.total)}</span>
+                </div>
+                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                  <span className="font-black">Payment Method</span>
+                  <span className="text-right">{getReceiptPayment(receiptOrder)?.method || 'CASH'}</span>
+                </div>
+                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                  <span className="font-black">Cash Received</span>
+                  <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(getReceiptAmountReceived(receiptOrder))}</span>
+                </div>
+                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                  <span className="font-black">Change</span>
+                  <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(getReceiptChange(receiptOrder))}</span>
+                </div>
+              </div>
+
+              <div className="mt-1.5 border-t border-black pt-1 text-center text-[10px] font-black">
+                Thank You
+              </div>
+              <div className="h-[5mm]" aria-hidden="true" />
+            </div>
+          );
+        })()}
         <div className="flex gap-3 mt-4">
           <Button variant="outline" className="flex-1" onClick={() => setReceiptOrder(null)}>Close</Button>
         </div>

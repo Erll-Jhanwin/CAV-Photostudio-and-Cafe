@@ -1750,7 +1750,7 @@ export default function CustomerDashboard() {
                                 </div>
                                 <div className="min-w-0 flex-1 space-y-2">
                                   <div className="flex items-start gap-2 flex-wrap">
-                                    <h3 className="text-base md:text-lg font-black text-espresso leading-snug">{b.package_details?.name || 'Photography Package'}</h3>
+                                    <h3 className="text-base md:text-lg font-black text-espresso leading-snug">{getBookingCustomerName(b)}</h3>
                                     <span className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[10px] font-black border ${statusMeta.className}`}>
                                       <StatusIcon className="w-3.5 h-3.5" />
                                       {formatStatusLabel(b.status)}
@@ -1772,8 +1772,8 @@ export default function CustomerDashboard() {
                                   </div>
                                   <div className="rounded-2xl bg-cream/55 border border-espresso/[0.05] p-3 text-xs space-y-1.5">
                                     <p className="inline-flex items-center gap-1.5 font-black text-espresso">
-                                      <User className="w-3.5 h-3.5 text-gold-dark" />
-                                      {getBookingCustomerName(b)}
+                                      <Sparkles className="w-3.5 h-3.5 text-gold-dark" />
+                                      {b.package_details?.name || 'Photography Package'}
                                     </p>
                                     <p className="inline-flex items-center gap-1.5 text-espresso/60 break-all">
                                       <Phone className="w-3.5 h-3.5 text-gold-dark shrink-0" />

@@ -9,8 +9,10 @@ from decimal import Decimal, InvalidOperation
 
 RECEIPT_WIDTH = 32
 POS58_PRINTABLE_DOTS = 384
+STORE_LOGO_TEXT = "CAV"
 STORE_NAME = "CAV PHOTO STUDIO & CAFE"
 STORE_ADDRESS = "028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas"
+STORE_CONTACT_NUMBER = "+639171234567"
 ESC_POS_MAX_DENSITY = (
     b"\x12#\xff"          # Common POS58 density command: maximum density/darkness.
     b"\x1b7\xff\xff\xff"  # Maximum heat dots, heat time, and heat interval supported by ESC/POS clones.
@@ -26,6 +28,11 @@ def _as_decimal(value):
 
 def _money(value):
     return f"PHP {_as_decimal(value):,.2f}"
+
+
+def _quantity(value):
+    qty = _as_decimal(value)
+    return str(qty.quantize(Decimal("1"))) if qty == qty.to_integral() else str(qty.normalize())
 
 
 def _center(text):
@@ -60,45 +67,52 @@ def _receipt_sections(receipt):
     change = receipt.get("change_amount")
     if change is None:
         change = max(_as_decimal(amount_received) - _as_decimal(receipt.get("total")), Decimal("0"))
+    receipt_id = receipt.get("or_number") or receipt.get("id") or ""
+    transaction_number = receipt.get("transaction_number") or payment.get("transaction_id") or f"POS-{receipt_id}"
+    discounts = receipt.get("discounts", "0.00")
 
     header = [
-        _center(STORE_NAME),
-        *_center_wrapped(STORE_ADDRESS),
+        _center(receipt.get("business_logo_text") or STORE_LOGO_TEXT),
+        _center(receipt.get("business_name") or STORE_NAME),
+        *_center_wrapped(receipt.get("business_address") or STORE_ADDRESS),
+        *_pair("CONTACT NUMBER", receipt.get("business_contact_number") or STORE_CONTACT_NUMBER),
     ]
     details = [
-        *_pair("DATE", receipt.get("created_at_display") or receipt.get("created_at", "")),
+        *_pair("OR NO.", receipt_id),
+        *_pair("TRANSACTION NO.", transaction_number),
+        *_pair("DATE & TIME", receipt.get("created_at_display") or receipt.get("created_at", "")),
         *_pair("CASHIER", receipt.get("staff_name") or ""),
     ]
     items = [
         "-" * RECEIPT_WIDTH,
-        "ITEM",
-        f"{'QTY':>3} {'PRICE':>12} {'AMOUNT':>14}"[:RECEIPT_WIDTH],
+        "ITEMIZED PRODUCTS",
+        f"{'QTY':<4}{'UNIT PRICE':>13}{'AMOUNT':>15}",
         "-" * RECEIPT_WIDTH,
     ]
 
     for item in receipt.get("items") or []:
         name = item.get("product_details", {}).get("name") or "Item"
-        quantity = _as_decimal(item.get("quantity"))
-        price = _money(item.get("price"))
-        subtotal = _money(item.get("subtotal"))
         items.extend(_wrap(name))
-        items.append(f"{str(quantity):>3} {price:>12} {subtotal:>14}"[:RECEIPT_WIDTH])
+        item_amounts = (
+            f"{_quantity(item.get('quantity')):<4}"
+            f"{_money(item.get('price')):>13}"
+            f"{_money(item.get('subtotal')):>15}"
+        )
+        items.append(item_amounts[:RECEIPT_WIDTH])
 
     items.append("-" * RECEIPT_WIDTH)
     totals = [
-        *_pair("TOTAL", _money(receipt.get("total"))),
-        *_pair("PAID", _money(amount_received)),
+        *_pair("SUBTOTAL", _money(receipt.get("subtotal") or receipt.get("total"))),
+        *_pair("DISCOUNTS", _money(discounts)),
+        *_pair("GRAND TOTAL", _money(receipt.get("total"))),
+        *_pair("PAYMENT METHOD", payment.get("method") or "CASH"),
+        *_pair("CASH RECEIVED", _money(amount_received)),
         *_pair("CHANGE", _money(change)),
-        *_pair("PAYMENT", payment.get("method") or "CASH"),
     ]
-    if payment.get("transaction_id"):
-        totals.extend(_pair("REF", payment.get("transaction_id")))
 
     footer = [
         "-" * RECEIPT_WIDTH,
-        _center("Thank you for visiting CAV!"),
-        _center("Savor the moment, cherish"),
-        _center("the photo."),
+        _center("Thank You"),
     ]
     return [header, details, items, totals, footer]
 
@@ -108,51 +122,51 @@ def _receipt_text(receipt):
 
 
 def _end_of_day_sections(report):
-    best_items = report.get("best_selling_items") or []
+    report_date = str(report.get("report_date") or "")
+    close_time = report.get("closing_time_display") or report.get("closing_time") or ""
+    date_time = f"{report_date} {close_time}".strip()
     header = [
         _center(STORE_NAME),
-        _center("END-OF-DAY REPORT"),
-        *_center_wrapped(str(report.get("report_date") or "")),
+        _center("Z REPORT"),
     ]
-    shift = [
-        *_pair("OPEN", report.get("opening_time_display") or "N/A"),
-        *_pair("CLOSE", report.get("closing_time_display") or ""),
-        *_pair("STAFF", report.get("staff_name") or ""),
+    details = [
+        *_pair("DATE & TIME", date_time),
+        *_pair("STAFF NAME", report.get("staff_name") or ""),
+    ]
+    drawer = [
+        "-" * RECEIPT_WIDTH,
+        "CASH DRAWER",
+        *_pair("OPENING CASH", _money(report.get("opening_cash"))),
+        *_pair("CASH SALES", _money(report.get("cash_sales"))),
+        *_pair("CASH IN/OUT", _money(report.get("cash_in_out"))),
+        *_pair("EXPECTED CASH", _money(report.get("expected_cash"))),
+        *_pair("ACTUAL CASH", _money(report.get("actual_cash"))),
+        *_pair("CASH DIFFERENCE", _money(report.get("cash_difference"))),
     ]
     sales = [
         "-" * RECEIPT_WIDTH,
-        *_pair("TXNS", report.get("total_transactions", 0)),
-        *_pair("GROSS", _money(report.get("gross_sales"))),
-        *_pair("DISCOUNTS", _money(report.get("discounts"))),
+        "SALES SUMMARY",
+        *_pair("GCASH SALES", _money(report.get("gcash_sales"))),
+        *_pair("CARD SALES", _money(report.get("card_sales"))),
         *_pair("REFUNDS", _money(report.get("refunds"))),
-        *_pair("CASH", _money(report.get("cash_sales"))),
-        *_pair("OTHER PMT", _money(report.get("other_payment_sales"))),
-        *_pair("BOOKING", _money(report.get("booking_income"))),
-        *_pair("CAFE/POS", _money(report.get("cafe_pos_income"))),
-        *_pair("ITEMS", report.get("total_items_sold", 0)),
+        *_pair("DISCOUNTS", _money(report.get("discounts"))),
+        *_pair("TOTAL TRANSACTIONS", report.get("total_transactions", 0)),
+    ]
+    totals = [
+        "-" * RECEIPT_WIDTH,
+        *_pair("GROSS SALES", _money(report.get("gross_sales"))),
+        *_pair("FIRST TXN", report.get("first_transaction_id") or "N/A"),
+        *_pair("LAST TXN", report.get("last_transaction_id") or "N/A"),
+        *_pair("BOOKING INCOME", _money(report.get("booking_income"))),
+        *_pair("CAFE/POS INCOME", _money(report.get("cafe_pos_income"))),
+        *_pair("ITEMS SOLD", report.get("total_items_sold", 0)),
         *_pair("VOID/CANCEL", report.get("cancelled_or_voided_transactions", 0)),
     ]
-    cash = [
-        "-" * RECEIPT_WIDTH,
-        *_pair("EXPECTED", _money(report.get("expected_cash"))),
-        *_pair("ACTUAL", _money(report.get("actual_cash"))),
-        *_pair("DIFFERENCE", _money(report.get("cash_difference"))),
-    ]
-    best = ["-" * RECEIPT_WIDTH, "BEST SELLERS"]
-    if best_items:
-        for item in best_items[:5]:
-            qty = item.get("quantity") or 0
-            total = _money(item.get("total"))
-            best.extend(_wrap(f"{item.get('name', 'Item')} x{qty}", RECEIPT_WIDTH))
-            best.extend(_pair("", total))
-    else:
-        best.append("No items sold")
-
     footer = [
         "-" * RECEIPT_WIDTH,
         _center("Report saved for records"),
     ]
-    return [header, shift, sales, cash, best, footer]
+    return [header, details, drawer, sales, totals, footer]
 
 
 def _end_of_day_text(report):
@@ -161,14 +175,6 @@ def _end_of_day_text(report):
 
 def _encode_receipt_line(line):
     return str(line).encode("cp437", errors="replace") + b"\n"
-
-
-def _receipt_qr_data(receipt):
-    return "|".join([
-        f"CAV RECEIPT #{receipt.get('id', '')}",
-        f"TOTAL {_money(receipt.get('total'))}",
-        str(receipt.get("created_at_display") or receipt.get("created_at") or ""),
-    ])
 
 
 def _end_of_day_qr_data(report):
@@ -217,14 +223,15 @@ def _escpos_receipt_bytes(receipt):
     for index, section in enumerate(sections):
         payload.extend(b"\x1ba\x01" if index in (0, 4) else b"\x1ba\x00")
         payload.extend(b"\x1d!\x00")
-        for line in section:
+        for line_index, line in enumerate(section):
             payload.extend(b"\x1bE\x01\x1bG\x01")
+            if index == 0 and line_index == 0:
+                payload.extend(b"\x1d!\x11")  # Double width and height for the CAV logo text.
+                payload.extend(_encode_receipt_line(line.strip()))
+                payload.extend(b"\x1d!\x00\n")
+                continue
             payload.extend(_encode_receipt_line(line))
         payload.extend(b"\x1d!\x00")
-        if index == 0:
-            payload.extend(b"\x1ba\x01")
-            payload.extend(_escpos_qr_bytes(_receipt_qr_data(receipt)))
-            payload.extend(b"\n")
         if index < len(sections) - 1:
             payload.extend(b"\n")
 

@@ -234,24 +234,6 @@ class Command(BaseCommand):
         if created:
             StockMovement.objects.create(product=croissant, movement_type='IN', quantity=30, reason='Initial stock seeding')
 
-        # Low stock item: Photo Paper A4
-        photo_paper, created = Product.objects.get_or_create(
-            name='Premium Glossy A4 Paper',
-            defaults={
-                'sku': 'STUDIO-PPA4',
-                'category': self.cat_supplies,
-                'supplier': self.paper_supplier,
-                'cost': 150.00,
-                'price': 350.00,
-                'stock_level': 3,  # BELOW REORDER POINT (5)!
-                'reorder_point': 10,
-                'is_cafe_item': False,
-                'image_url': 'https://images.unsplash.com/photo-1603481588273-2f908a9a7a1b?q=80&w=400'
-            }
-        )
-        if created:
-            StockMovement.objects.create(product=photo_paper, movement_type='IN', quantity=3, reason='Initial stock seeding')
-
     def seed_faqs(self):
         self.stdout.write('Creating chatbot FAQs...')
         

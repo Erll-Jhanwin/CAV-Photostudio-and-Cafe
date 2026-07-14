@@ -27,7 +27,7 @@ class ProductListCreateView(generics.ListCreateAPIView):
     serializer_class = ProductSerializer
 
     def get_queryset(self):
-        queryset = Product.objects.all().select_related('category', 'supplier').prefetch_related('recipe_items__ingredient').order_by('name')
+        queryset = Product.objects.filter(is_active=True).select_related('category', 'supplier').prefetch_related('recipe_items__ingredient').order_by('name')
         return apply_limit(queryset, self.request)
 
     def get_permissions(self):
@@ -114,7 +114,7 @@ class StockMovementListView(generics.ListCreateAPIView):
         reason = request.data.get('reason', 'Manual Update')
         
         try:
-            product = Product.objects.get(id=product_id)
+            product = Product.objects.get(id=product_id, is_active=True)
         except Product.DoesNotExist:
             return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -168,7 +168,33 @@ class IngredientDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     def update(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
             return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
-        return super().update(request, *args, **kwargs)
+
+        ingredient = self.get_object()
+        tracked_fields = [
+            'name', 'category_id', 'supplier_id', 'base_unit', 'stock_quantity',
+            'minimum_stock_level', 'maximum_stock_level', 'expiration_date',
+            'purchase_date', 'batch_number', 'storage_location'
+        ]
+        before = {field: getattr(ingredient, field) for field in tracked_fields}
+
+        response = super().update(request, *args, **kwargs)
+
+        ingredient.refresh_from_db()
+        changes = []
+        for field in tracked_fields:
+            old_value = before[field]
+            new_value = getattr(ingredient, field)
+            if old_value != new_value:
+                changes.append(f"{field}: {old_value or '-'} -> {new_value or '-'}")
+
+        if changes:
+            AuditLog.objects.create(
+                user=request.user,
+                action="INGREDIENT_UPDATE",
+                description=f"Updated ingredient {ingredient.name} (#{ingredient.id}): " + "; ".join(changes)
+            )
+
+        return response
 
 class RecipeIngredientListCreateView(generics.ListCreateAPIView):
     serializer_class = RecipeIngredientSerializer

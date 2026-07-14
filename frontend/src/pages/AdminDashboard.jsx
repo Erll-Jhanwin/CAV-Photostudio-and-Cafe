@@ -767,8 +767,8 @@ export default function AdminDashboard() {
                   <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
                   <DashboardTable
                     columns={[
-                      ['customer_name', 'Customer'],
                       ['package_name', 'Package'],
+                      ['customer_name', 'Customer'],
                       ['scheduled_date', 'Booking Date'],
                       ['status', 'Status'],
                       ['amount', 'Amount'],
@@ -776,7 +776,7 @@ export default function AdminDashboard() {
                     rows={bookingPageRows}
                     sort={bookingSort}
                     onSort={(key) => toggleSort(bookingSort, setBookingSort, key)}
-                    renderCell={(row, key) => key === 'amount' ? formatCurrency(row[key]) : key === 'status' ? <StatusBadge status={row[key]} /> : row[key]}
+                    renderCell={(row, key) => key === 'amount' ? formatCurrency(row[key]) : key === 'status' ? <StatusBadge status={row[key]} /> : key === 'customer_name' ? <span className="font-black text-espresso">{row[key]}</span> : row[key]}
                     renderActions={(row) => (
                       <button
                         type="button"
@@ -892,19 +892,18 @@ export default function AdminDashboard() {
                           <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr_auto] gap-4 items-start">
                             <div className="space-y-3 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-black text-espresso">{details.package_details?.name || 'Booking'}</p>
+                                <p className="font-black text-espresso">{details.customer_name || 'N/A'}</p>
                                 <StatusBadge status={payment.status} />
                               </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                                 <div>
-                                  <p className="text-espresso/45 font-black uppercase tracking-wider">Customer</p>
-                                  <p className="font-bold text-espresso">{details.customer_name || 'N/A'}</p>
-                                  <p className="text-espresso/50">{details.customer_email || 'No email'}</p>
+                                  <p className="text-espresso/45 font-black uppercase tracking-wider">Package</p>
+                                  <p className="font-bold text-espresso">{details.package_name || details.package_details?.name || 'N/A'}</p>
+                                  <p className="text-espresso/50">{details.scheduled_date} at {details.scheduled_time}</p>
                                 </div>
                                 <div>
-                                  <p className="text-espresso/45 font-black uppercase tracking-wider">Package</p>
-                                  <p className="font-bold text-espresso">{details.package_name || 'N/A'}</p>
-                                  <p className="text-espresso/50">{details.scheduled_date} at {details.scheduled_time}</p>
+                                  <p className="text-espresso/45 font-black uppercase tracking-wider">Customer Email</p>
+                                  <p className="font-bold text-espresso">{details.customer_email || 'No email'}</p>
                                 </div>
                               </div>
                             </div>

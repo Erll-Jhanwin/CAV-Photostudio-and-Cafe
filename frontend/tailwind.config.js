@@ -28,8 +28,9 @@ module.exports = {
         }
       },
       fontFamily: {
-        serif: ['Poppins', 'sans-serif'],
-        sans: ['Poppins', 'sans-serif'],
+        serif: ['DM Sans', 'sans-serif'],
+        sans: ['DM Sans', 'sans-serif'],
+        mono: ['DM Sans', 'sans-serif'],
       }
     },
   },

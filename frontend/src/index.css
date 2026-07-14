@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,6 +7,7 @@
 @layer base {
   * {
     @apply border-espresso/10;
+    font-family: 'DM Sans', sans-serif;
   }
 
   html {
@@ -15,11 +16,27 @@
 
   body {
     @apply m-0 font-sans bg-cream text-charcoal antialiased;
+    font-family: 'DM Sans', sans-serif;
     text-rendering: optimizeLegibility;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-sans;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  button,
+  input,
+  select,
+  textarea,
+  table,
+  th,
+  td,
+  dialog,
+  [role="dialog"],
+  #receipt-print-area,
+  #receipt-print-area * {
+    font-family: 'DM Sans', sans-serif;
   }
   h1 { @apply font-black tracking-tight; }
   h2 { @apply font-extrabold tracking-tight; }
@@ -221,6 +238,43 @@
   background: linear-gradient(90deg, rgba(46,26,17,0.04) 25%, rgba(46,26,17,0.09) 50%, rgba(46,26,17,0.04) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+@page {
+  size: 58mm 200mm;
+  margin: 0;
+}
+
+@media print {
+  body:has(#receipt-print-area) {
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  body:has(#receipt-print-area) * {
+    visibility: hidden !important;
+  }
+
+  body:has(#receipt-print-area) #receipt-print-area,
+  body:has(#receipt-print-area) #receipt-print-area * {
+    visibility: visible !important;
+  }
+
+  body:has(#receipt-print-area) #receipt-print-area {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 58mm !important;
+    max-width: 58mm !important;
+    margin: 0 !important;
+    padding: 3mm 4mm !important;
+    box-sizing: border-box !important;
+    box-shadow: none !important;
+    color: #000 !important;
+    background: #fff !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+    overflow: hidden !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

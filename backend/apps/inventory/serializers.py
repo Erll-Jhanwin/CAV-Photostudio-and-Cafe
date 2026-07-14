@@ -90,7 +90,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'minimum_stock_level', 'maximum_stock_level', 'expiration_date', 'purchase_date',
             'batch_number', 'storage_location', 'inventory_status', 'inventory_status_label',
             'suggested_action', 'days_until_expiry', 'recipe_items', 'available_servings',
-            'is_cafe_item', 'image_url'
+            'is_cafe_item', 'is_active', 'image_url'
         ]
 
     def get_available_servings(self, obj):

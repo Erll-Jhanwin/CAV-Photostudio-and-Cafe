@@ -40,6 +40,7 @@ class Product(models.Model):
     batch_number = models.CharField(max_length=80, blank=True)
     storage_location = models.CharField(max_length=120, blank=True)
     is_cafe_item = models.BooleanField(default=True, help_text="True if sold in café, False if studio prop or equipment")
+    is_active = models.BooleanField(default=True)
     image_url = models.CharField(max_length=500, blank=True, null=True)
 
     def __str__(self):

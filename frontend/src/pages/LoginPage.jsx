@@ -331,7 +331,7 @@ export default function LoginPage() {
                       {forgotResult.temp_password && (
                         <div className="rounded-lg bg-espresso/5 p-3 text-center">
                           <p className="mb-1 text-[10px] text-espresso/50">Temporary Password</p>
-                          <p className="font-mono text-sm font-bold tracking-wider text-gold">{forgotResult.temp_password}</p>
+                          <p className="font-sans text-sm font-bold tracking-wider text-gold">{forgotResult.temp_password}</p>
                         </div>
                       )}
                     </div>

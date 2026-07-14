@@ -4,10 +4,10 @@ from rest_framework.response import Response
 from django.db import transaction, close_old_connections
 from django.db.models import Sum, Count, Min, Q
 from django.utils import timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from threading import Thread
-from pos.models import Order, OrderItem, Payment, EndOfDayReport
+from pos.models import Order, OrderItem, Payment, EndOfDayReport, TransactionSequence
 from pos.serializers import OrderSerializer, EndOfDayReportSerializer
 from pos.receipt_printing import print_receipt, print_end_of_day_report
 from booking.models import BookingPayment
@@ -43,6 +43,62 @@ def validate_payment_method(method):
         return Response({"detail": "Payment method must be CASH or GCASH."}, status=status.HTTP_400_BAD_REQUEST)
     return None
 
+def money(value):
+    return Decimal(str(value or '0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+def calculate_discount(subtotal, discount_data):
+    discount_data = discount_data or {}
+    discount_type = str(discount_data.get('type') or 'FIXED').upper()
+    if discount_type not in {'FIXED', 'PERCENT'}:
+        return None, Response({"discount": "Discount type must be FIXED or PERCENT."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        discount_value = money(discount_data.get('value') or '0')
+    except Exception:
+        return None, Response({"discount": "Enter a valid discount value."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if discount_value < 0:
+        return None, Response({"discount": "Discount cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if discount_type == 'PERCENT':
+        if discount_value > 100:
+            return None, Response({"discount": "Percentage discount cannot exceed 100%."}, status=status.HTTP_400_BAD_REQUEST)
+        discount_amount = (subtotal * discount_value / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    else:
+        if discount_value > subtotal:
+            return None, Response({"discount": "Fixed discount cannot exceed the cart subtotal."}, status=status.HTTP_400_BAD_REQUEST)
+        discount_amount = discount_value
+
+    total = max(subtotal - discount_amount, Decimal('0.00'))
+    return {
+        "type": discount_type,
+        "value": discount_value,
+        "amount": discount_amount,
+        "total": total,
+    }, None
+
+def generate_transaction_id(sequence_date, sequence_number):
+    return f"TXN-{sequence_date.strftime('%Y%m%d')}-{sequence_number:06d}"
+
+def assign_order_transaction_id(order, completed_at=None):
+    if order.transaction_id:
+        return order.transaction_id
+
+    completed_at = completed_at or timezone.now()
+    sequence_date = timezone.localtime(completed_at).date()
+    sequence, _ = TransactionSequence.objects.select_for_update().get_or_create(
+        sequence_date=sequence_date,
+        defaults={'next_number': 1},
+    )
+    transaction_id = generate_transaction_id(sequence_date, sequence.next_number)
+    sequence.next_number += 1
+    sequence.save(update_fields=['next_number'])
+
+    order.transaction_id = transaction_id
+    order.completed_at = completed_at
+    order.save(update_fields=['transaction_id', 'completed_at'])
+    return transaction_id
+
 def run_async_db_task(task):
     def runner():
         close_old_connections()
@@ -56,20 +112,33 @@ def run_async_db_task(task):
 def build_receipt_payload(order, order_items, payment, staff_username, amount_received=None):
     paid_amount = amount_received if amount_received is not None else (payment.amount if payment else order.total)
     change_amount = max(Decimal(str(paid_amount)) - order.total, Decimal('0.00'))
-    system_now = datetime.now().astimezone()
+    created_at_display = timezone.localtime(order.created_at).strftime("%Y-%m-%d %I:%M %p")
+    transaction_number = order.transaction_id or f"POS-{order.id}"
     return {
         "id": order.id,
+        "or_number": order.id,
+        "transaction_id": order.transaction_id,
+        "transaction_number": transaction_number,
+        "business_logo_text": "CAV",
+        "business_name": "CAV PHOTO STUDIO & CAFE",
+        "business_address": "028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas",
+        "business_contact_number": "+639171234567",
         "staff": order.staff_id,
         "staff_name": staff_username,
         "booking": order.booking_id,
         "booking_customer_name": "",
+        "subtotal": str(order.subtotal or order.total),
         "total": str(order.total),
+        "discount_type": order.discount_type,
+        "discount_value": str(order.discount_value),
+        "discounts": str(order.discount_amount),
         "amount_received": str(paid_amount),
         "change_amount": str(change_amount),
         "payment_status": order.payment_status,
         "order_type": order.order_type,
+        "completed_at": order.completed_at.isoformat() if order.completed_at else None,
         "created_at": order.created_at.isoformat(),
-        "created_at_display": system_now.strftime("%Y-%m-%d %I:%M %p"),
+        "created_at_display": created_at_display,
         "items": [
             {
                 "id": item.id,
@@ -106,6 +175,16 @@ def report_time_display(value):
     return timezone.localtime(value).strftime("%I:%M %p")
 
 def build_end_of_day_payload(report):
+    tz = timezone.get_current_timezone()
+    start = timezone.make_aware(datetime.combine(report.report_date, datetime.min.time()), tz)
+    end = timezone.make_aware(datetime.combine(report.report_date, datetime.max.time()), tz)
+    transaction_ids = list(
+        Order.objects
+        .filter(payment_status='PAID', created_at__range=(start, end), transaction_id__isnull=False)
+        .exclude(transaction_id='')
+        .order_by('completed_at', 'id')
+        .values_list('transaction_id', flat=True)
+    )
     return {
         "id": report.id,
         "report_date": report.report_date.isoformat(),
@@ -118,19 +197,25 @@ def build_end_of_day_payload(report):
         "gross_sales": str(report.gross_sales),
         "discounts": str(report.discounts),
         "refunds": str(report.refunds),
+        "opening_cash": str(report.opening_cash),
         "cash_sales": str(report.cash_sales),
+        "gcash_sales": str(report.gcash_sales),
+        "card_sales": str(report.card_sales),
         "other_payment_sales": str(report.other_payment_sales),
         "booking_income": str(report.booking_income),
         "cafe_pos_income": str(report.cafe_pos_income),
         "total_items_sold": report.total_items_sold,
         "best_selling_items": report.best_selling_items,
         "cancelled_or_voided_transactions": report.cancelled_or_voided_transactions,
+        "first_transaction_id": transaction_ids[0] if transaction_ids else "",
+        "last_transaction_id": transaction_ids[-1] if transaction_ids else "",
+        "cash_in_out": str(report.cash_in_out),
         "expected_cash": str(report.expected_cash),
         "actual_cash": str(report.actual_cash),
         "cash_difference": str(report.cash_difference),
     }
 
-def create_end_of_day_report(user, report_date, actual_cash):
+def create_end_of_day_report(user, report_date, actual_cash, opening_cash=Decimal('0.00'), cash_in_out=Decimal('0.00')):
     tz = timezone.get_current_timezone()
     start = timezone.make_aware(datetime.combine(report_date, datetime.min.time()), tz)
     end = timezone.make_aware(datetime.combine(report_date, datetime.max.time()), tz)
@@ -144,13 +229,18 @@ def create_end_of_day_report(user, report_date, actual_cash):
     opening_time = min([value for value in [first_pos_time, first_booking_time] if value], default=None)
     closing_time = timezone.now()
 
+    discounts = decimal_sum(paid_orders.aggregate(value=Sum('discount_amount'))['value'])
+    subtotal_sales = decimal_sum(paid_orders.aggregate(value=Sum('subtotal'))['value'])
     cash_sales = decimal_sum(payments.filter(method='CASH').aggregate(value=Sum('order__total'))['value'])
-    other_pos_sales = decimal_sum(payments.exclude(method='CASH').aggregate(value=Sum('order__total'))['value'])
+    gcash_pos_sales = decimal_sum(payments.filter(method='GCASH').aggregate(value=Sum('order__total'))['value'])
+    card_sales = decimal_sum(payments.filter(method='CARD').aggregate(value=Sum('order__total'))['value'])
     booking_payment_income = decimal_sum(booking_payments.aggregate(value=Sum('amount'))['value'])
+    gcash_sales = gcash_pos_sales + booking_payment_income
+    other_pos_sales = gcash_pos_sales + card_sales
     booking_linked_income = decimal_sum(paid_orders.filter(order_type='BOOKING_LINKED').aggregate(value=Sum('total'))['value'])
     cafe_pos_income = decimal_sum(paid_orders.filter(order_type='WALK_IN').aggregate(value=Sum('total'))['value'])
     booking_income = booking_linked_income + booking_payment_income
-    gross_sales = cash_sales + other_pos_sales + booking_payment_income
+    gross_sales = subtotal_sales + booking_payment_income
     total_transactions = paid_orders.count() + booking_payments.count()
     total_items_sold = OrderItem.objects.filter(order__in=paid_orders).aggregate(value=Sum('quantity'))['value'] or 0
     cancelled_count = Order.objects.filter(created_at__range=(start, end), payment_status='CANCELLED').count()
@@ -172,7 +262,9 @@ def create_end_of_day_report(user, report_date, actual_cash):
     ]
 
     actual_cash = Decimal(str(actual_cash or '0'))
-    expected_cash = cash_sales
+    opening_cash = Decimal(str(opening_cash or '0'))
+    cash_in_out = Decimal(str(cash_in_out or '0'))
+    expected_cash = opening_cash + cash_sales + cash_in_out
     cash_difference = actual_cash - expected_cash
     staff_name = user.get_full_name() or user.username
 
@@ -184,15 +276,19 @@ def create_end_of_day_report(user, report_date, actual_cash):
         staff_name=staff_name,
         total_transactions=total_transactions,
         gross_sales=gross_sales,
-        discounts=Decimal('0.00'),
+        discounts=discounts,
         refunds=Decimal('0.00'),
+        opening_cash=opening_cash,
         cash_sales=cash_sales,
-        other_payment_sales=other_pos_sales + booking_payment_income,
+        gcash_sales=gcash_sales,
+        card_sales=card_sales,
+        other_payment_sales=gcash_sales + card_sales,
         booking_income=booking_income,
         cafe_pos_income=cafe_pos_income,
         total_items_sold=total_items_sold,
         best_selling_items=best_items,
         cancelled_or_voided_transactions=cancelled_count,
+        cash_in_out=cash_in_out,
         expected_cash=expected_cash,
         actual_cash=actual_cash,
         cash_difference=cash_difference,
@@ -218,6 +314,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
 
         items_data = request.data.get('items', [])
         payment_data = request.data.get('payment')  # Optional immediate payment details
+        discount_data = request.data.get('discount') or {}
         booking_id = request.data.get('booking_id')
         order_type = request.data.get('order_type', 'WALK_IN')
 
@@ -239,7 +336,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
         created_order_items = []
 
         with transaction.atomic():
-            products = list(Product.objects.select_for_update().select_related('category').filter(id__in=item_quantities.keys()))
+            products = list(Product.objects.select_for_update().select_related('category').filter(id__in=item_quantities.keys(), is_active=True))
             products_by_id = {product.id: product for product in products}
             missing_ids = set(item_quantities.keys()) - set(products_by_id.keys())
             if missing_ids:
@@ -293,22 +390,32 @@ class OrderListCreateView(generics.ListCreateAPIView):
                             "detail": f"Insufficient {ingredient.name}. Required: {required_quantity} {ingredient.get_base_unit_display()}, available: {ingredient.stock_quantity} {ingredient.get_base_unit_display()}."
                         }, status=status.HTTP_400_BAD_REQUEST)
 
+            subtotal_amount = money(total_amount)
+            discount, discount_error = calculate_discount(subtotal_amount, discount_data)
+            if discount_error:
+                return discount_error
+            final_total = discount["total"]
+
             amount_paid = None
             method = None
             tx_id = ''
             if payment_data:
-                amount_paid = Decimal(str(payment_data.get('amount', total_amount)))
+                amount_paid = money(payment_data.get('amount', final_total))
                 method = payment_data.get('method', 'CASH')
                 method_error = validate_payment_method(method)
                 if method_error:
                     return method_error
                 tx_id = payment_data.get('transaction_id', '')
 
-            payment_status_value = 'PAID' if amount_paid is not None and amount_paid >= total_amount else 'PENDING'
+            payment_status_value = 'PAID' if amount_paid is not None and amount_paid >= final_total else 'PENDING'
             order = Order.objects.create(
                 staff=request.user,
                 booking_id=booking_id,
-                total=total_amount,
+                subtotal=subtotal_amount,
+                discount_type=discount["type"],
+                discount_value=discount["value"],
+                discount_amount=discount["amount"],
+                total=final_total,
                 order_type=order_type,
                 payment_status=payment_status_value
             )
@@ -358,9 +465,12 @@ class OrderListCreateView(generics.ListCreateAPIView):
                     method=method,
                     transaction_id=tx_id
                 )
+                if payment.amount >= order.total:
+                    assign_order_transaction_id(order)
 
             user_id = request.user.id
             order_id = order.id
+            order_transaction_id = order.transaction_id
             order_total = order.total
             order_status = order.payment_status
             should_record_sales = payment is not None and payment.amount >= order.total
@@ -371,7 +481,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
                 AuditLog.objects.create(
                     user_id=user_id,
                     action="POS_ORDER",
-                    description=f"Processed POS transaction #{order_id} for PHP {order_total} (Status: {order_status})."
+                    description=f"Processed POS transaction {order_transaction_id or '#' + str(order_id)} for PHP {order_total} (Status: {order_status})."
                 )
             )))
 
@@ -397,7 +507,7 @@ class PaymentCreateView(generics.CreateAPIView):
             return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
             
         order_id = request.data.get('order')
-        amount = float(request.data.get('amount'))
+        amount = money(request.data.get('amount'))
         method = request.data.get('method', 'CASH')
         method_error = validate_payment_method(method)
         if method_error:
@@ -422,16 +532,19 @@ class PaymentCreateView(generics.CreateAPIView):
             if total_paid >= float(order.total):
                 if order.payment_status != 'PAID':
                     order.payment_status = 'PAID'
-                    order.save()
+                    order.save(update_fields=['payment_status'])
+                    assign_order_transaction_id(order)
                     add_to_daily_sales(order.total, is_booking=(order.order_type == 'BOOKING_LINKED'))
+                elif not order.transaction_id:
+                    assign_order_transaction_id(order)
 
             AuditLog.objects.create(
                 user=request.user,
                 action="POS_PAYMENT",
-                description=f"Received payment of PHP {amount} for Order #{order.id} via {method}."
+                description=f"Received payment of PHP {amount} for {order.transaction_id or 'Order #' + str(order.id)} via {method}."
             )
 
-        return Response({"message": "Payment logged successfully."})
+        return Response({"message": "Payment logged successfully.", "transaction_id": order.transaction_id})
 
 
 class EndOfDayReportListCreateView(APIView):
@@ -455,6 +568,12 @@ class EndOfDayReportListCreateView(APIView):
         except Exception:
             return Response({"actual_cash": "Enter a valid cash amount."}, status=status.HTTP_400_BAD_REQUEST)
 
+        try:
+            opening_cash = Decimal(str(request.data.get('opening_cash') or '0'))
+            cash_in_out = Decimal(str(request.data.get('cash_in_out') or '0'))
+        except Exception:
+            return Response({"detail": "Opening cash and cash in/out must be valid amounts."}, status=status.HTTP_400_BAD_REQUEST)
+
         report_date_raw = request.data.get('report_date') or timezone.localdate().isoformat()
         try:
             report_date = datetime.strptime(report_date_raw, "%Y-%m-%d").date()
@@ -462,7 +581,7 @@ class EndOfDayReportListCreateView(APIView):
             return Response({"report_date": "Use YYYY-MM-DD format."}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            report = create_end_of_day_report(request.user, report_date, actual_cash)
+            report = create_end_of_day_report(request.user, report_date, actual_cash, opening_cash, cash_in_out)
             print_status = print_end_of_day_report(build_end_of_day_payload(report))
             report.print_status = print_status
             report.printed_at = timezone.now() if print_status.get("printed") else None
