@@ -727,7 +727,7 @@ export default function CustomerDashboard() {
         paymentStatus: paymentRes.data?.status || 'PENDING_VERIFICATION',
       });
       setSelectedService(null); setSelectedPackage(null);
-      setSelectedDate(''); setSelectedTime(''); setNotes(''); setBookingAddons([]);
+      setSelectedDate(''); setSelectedTime(''); setNotes('');
       setPaymentReference('');
       setPaymentAmount('');
       setPaymentDate(getDateInputValue());
