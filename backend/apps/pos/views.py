@@ -551,14 +551,14 @@ class EndOfDayReportListCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if request.user.role not in ['STAFF', 'ADMIN']:
-            return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
+        if request.user.role != 'ADMIN':
+            return Response({"detail": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
         reports = EndOfDayReport.objects.select_related('closed_by').all()[:100]
         return Response(EndOfDayReportSerializer(reports, many=True).data)
 
     def post(self, request):
-        if request.user.role not in ['STAFF', 'ADMIN']:
-            return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
+        if request.user.role != 'ADMIN':
+            return Response({"detail": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
 
         actual_cash_raw = request.data.get('actual_cash')
         if actual_cash_raw in (None, ''):
@@ -596,8 +596,8 @@ class EndOfDayReportReprintView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        if request.user.role not in ['STAFF', 'ADMIN']:
-            return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
+        if request.user.role != 'ADMIN':
+            return Response({"detail": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
         try:
             report = EndOfDayReport.objects.get(pk=pk)
         except EndOfDayReport.DoesNotExist:

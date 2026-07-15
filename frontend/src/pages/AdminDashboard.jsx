@@ -5,7 +5,7 @@ import {
   TrendingUp, BarChart2, Users, MessageSquare, Play, Package,
   AlertTriangle, DollarSign, LogOut, Check, Plus, Trash2, Edit,
   Menu, X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
-  ArrowDownRight, Eye, ChevronLeft, ChevronRight, Coffee, Camera
+  ArrowDownRight, Eye, ChevronLeft, ChevronRight, Coffee, Camera, Printer
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -36,6 +36,7 @@ const inventoryStatusMeta = {
 };
 
 const formatDateValue = (date) => date.toISOString().split('T')[0];
+const todayValue = () => new Date().toISOString().split('T')[0];
 
 const getRangeDates = (preset, customStart, customEnd) => {
   const now = new Date();
@@ -191,6 +192,7 @@ export default function AdminDashboard() {
   const [staffList, setStaffList] = useState([]);
   const [faqs, setFaqs] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
+  const [endOfDayReports, setEndOfDayReports] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [faqQuestion, setFaqQuestion] = useState('');
@@ -220,6 +222,16 @@ export default function AdminDashboard() {
   const [deletingBookingId, setDeletingBookingId] = useState(null);
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
+  const [receiptPrintError, setReceiptPrintError] = useState('');
+  const [endOfDayModalOpen, setEndOfDayModalOpen] = useState(false);
+  const [endOfDayDate, setEndOfDayDate] = useState(todayValue());
+  const [endOfDayOpeningCash, setEndOfDayOpeningCash] = useState('0.00');
+  const [endOfDayCashInOut, setEndOfDayCashInOut] = useState('0.00');
+  const [endOfDayCashSales, setEndOfDayCashSales] = useState('');
+  const [endOfDayActualCash, setEndOfDayActualCash] = useState('');
+  const [endOfDayExpectedCash, setEndOfDayExpectedCash] = useState('');
+  const [endOfDayCashLoading, setEndOfDayCashLoading] = useState(false);
+  const [endOfDayPrinting, setEndOfDayPrinting] = useState(false);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') {
@@ -233,18 +245,20 @@ export default function AdminDashboard() {
     try {
       setLoading(true);
       const range = getRangeDates(datePreset, customStart, customEnd);
-      const [analyticsRes, forecastRes, staffRes, faqRes, paymentsRes] = await Promise.all([
+      const [analyticsRes, forecastRes, staffRes, faqRes, paymentsRes, endOfDayRes] = await Promise.all([
         client.get('/api/dashboard/analytics/', { params: { ...range, grain: chartGrain } }),
         client.get('/api/forecasting/predictions/'),
         client.get('/api/auth/users/'),
         client.get('/api/chatbot/faqs/'),
-        client.get('/api/bookings/payments/')
+        client.get('/api/bookings/payments/'),
+        client.get('/api/pos/end-of-day-reports/')
       ]);
       setAnalytics(analyticsRes.data);
       setForecast(forecastRes.data);
       setStaffList(staffRes.data);
       setFaqs(faqRes.data);
       setBookingPayments(paymentsRes.data);
+      setEndOfDayReports(endOfDayRes.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -345,6 +359,110 @@ export default function AdminDashboard() {
     }
   };
 
+  const getEndOfDayExpectedCashValue = (
+    openingCash = endOfDayOpeningCash,
+    cashSales = endOfDayCashSales,
+    cashInOut = endOfDayCashInOut
+  ) => Number(openingCash || 0) + Number(cashSales || 0) + Number(cashInOut || 0);
+
+  const getExpectedCashForDate = async (dateValue) => {
+    setEndOfDayCashLoading(true);
+    try {
+      const res = await client.get('/api/pos/orders/', { params: { limit: 200 } });
+      const cashTotal = res.data
+        .filter(order => {
+          const orderDate = order.created_at ? new Date(order.created_at).toISOString().slice(0, 10) : '';
+          const paidCash = order.payment_status === 'PAID' && order.payments?.some(payment => payment.method === 'CASH');
+          return orderDate === dateValue && paidCash;
+        })
+        .reduce((sum, order) => sum + Number(order.total || 0), 0);
+      const cashSales = cashTotal.toFixed(2);
+      const expectedCash = getEndOfDayExpectedCashValue(endOfDayOpeningCash, cashSales, endOfDayCashInOut).toFixed(2);
+      setEndOfDayCashSales(cashSales);
+      setEndOfDayExpectedCash(expectedCash);
+      setEndOfDayActualCash(expectedCash);
+    } catch {
+      setEndOfDayCashSales('');
+      setEndOfDayExpectedCash('');
+      setEndOfDayActualCash('');
+    } finally {
+      setEndOfDayCashLoading(false);
+    }
+  };
+
+  const openEndOfDayModal = async (dateValue = todayValue()) => {
+    setEndOfDayDate(dateValue);
+    setEndOfDayModalOpen(true);
+    await getExpectedCashForDate(dateValue);
+  };
+
+  const handleEndOfDayDateChange = async (dateValue) => {
+    setEndOfDayDate(dateValue);
+    await getExpectedCashForDate(dateValue);
+  };
+
+  const handlePrintEndOfDayReport = async () => {
+    const openingCash = Number(endOfDayOpeningCash || 0);
+    const cashInOut = Number(endOfDayCashInOut || 0);
+    const actualCash = Number(endOfDayActualCash);
+    if (!Number.isFinite(openingCash) || openingCash < 0) {
+      alert('Enter a valid opening cash amount.');
+      return;
+    }
+    if (!Number.isFinite(cashInOut)) {
+      alert('Enter a valid cash in/out amount.');
+      return;
+    }
+    if (!endOfDayActualCash || !Number.isFinite(actualCash) || actualCash < 0) {
+      alert('Enter the actual cash counted in the drawer.');
+      return;
+    }
+    if (!window.confirm(`Print and save the end-of-day report for ${endOfDayDate}?`)) return;
+
+    try {
+      setEndOfDayPrinting(true);
+      setReceiptPrintError('');
+      const res = await client.post('/api/pos/end-of-day-reports/', {
+        report_date: endOfDayDate,
+        opening_cash: openingCash.toFixed(2),
+        cash_in_out: cashInOut.toFixed(2),
+        actual_cash: actualCash.toFixed(2),
+      });
+      setEndOfDayReports(current => [res.data, ...current.filter(report => report.id !== res.data.id)]);
+      setEndOfDayModalOpen(false);
+      setEndOfDayActualCash('');
+      setEndOfDayOpeningCash('0.00');
+      setEndOfDayCashInOut('0.00');
+      setEndOfDayCashSales('');
+      setEndOfDayExpectedCash('');
+      if (!res.data.receipt_print?.printed) {
+        setReceiptPrintError(res.data.receipt_print?.error || 'Report saved, but the end-of-day receipt could not be printed.');
+      }
+    } catch (err) {
+      const data = err.response?.data;
+      const message = data && typeof data === 'object'
+        ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
+        : 'Failed to print end-of-day report.';
+      alert(message);
+    } finally {
+      setEndOfDayPrinting(false);
+    }
+  };
+
+  const handleReprintEndOfDayReport = async (report) => {
+    if (!window.confirm(`Reprint end-of-day report for ${report.report_date}?`)) return;
+    try {
+      setReceiptPrintError('');
+      const res = await client.post(`/api/pos/end-of-day-reports/${report.id}/reprint/`);
+      setEndOfDayReports(current => current.map(item => item.id === report.id ? res.data : item));
+      if (!res.data.receipt_print?.printed) {
+        setReceiptPrintError(res.data.receipt_print?.error || 'Report found, but the receipt could not be printed.');
+      }
+    } catch {
+      alert('Failed to reprint report.');
+    }
+  };
+
   const handleLogout = useCallback(() => { logout(); navigate('/login', { replace: true }); }, [logout, navigate]);
 
   if (loading) return <AdminSkeleton />;
@@ -352,12 +470,13 @@ export default function AdminDashboard() {
   const navItems = [
     { key: 'forecast', label: 'ML Forecast Center', icon: TrendingUp, active: activeTab === 'forecast', onClick: () => setActiveTab('forecast') },
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
+    { key: 'reports', label: 'End-of-Day Reports', icon: Printer, active: activeTab === 'reports', onClick: () => setActiveTab('reports') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'staff', label: 'Staff Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
   ];
 
-  const pageTitles = { forecast: 'ML Forecast Center', analytics: 'InsightHub Dashboard', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager' };
+  const pageTitles = { forecast: 'ML Forecast Center', analytics: 'InsightHub Dashboard', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager' };
   const metrics = analytics?.metrics || {};
   const statusData = [
     { label: 'Pending', value: metrics.pending || 0, color: '#F59E0B' },
@@ -395,6 +514,7 @@ export default function AdminDashboard() {
     acc[payment.status] = (acc[payment.status] || 0) + 1;
     return acc;
   }, {});
+  const displayedEndOfDayExpectedCash = endOfDayExpectedCash || getEndOfDayExpectedCashValue().toFixed(2);
 
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
@@ -416,6 +536,19 @@ export default function AdminDashboard() {
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} />
 
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
+          {receiptPrintError && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
+              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="font-bold text-sm">Receipt Not Printed</h4>
+                <p className="text-xs text-amber-700/90 mt-1">{receiptPrintError}</p>
+              </div>
+              <button type="button" onClick={() => setReceiptPrintError('')} className="text-amber-700/70 hover:text-amber-900">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {/* FORECAST CENTER */}
           {activeTab === 'forecast' && (
             <div className="space-y-6 animate-in-up" key="forecast">
@@ -844,6 +977,80 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {/* END-OF-DAY REPORTS */}
+          {activeTab === 'reports' && (
+            <div className="max-w-[1280px] mx-auto space-y-6 animate-in-up" key="reports">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">End-of-Day Reports</h1>
+                  <p className="text-xs text-espresso/50 mt-1">Print shift closeout reports and reprint saved records.</p>
+                </div>
+                <Button variant="gold" size="sm" icon={Printer} onClick={() => openEndOfDayModal()}>
+                  Print End-of-Day Report
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {[
+                  ['Saved Reports', endOfDayReports.length, 'bg-white text-espresso border-espresso/[0.06]'],
+                  ['Last Gross Sales', endOfDayReports[0] ? formatCurrency(endOfDayReports[0].gross_sales) : formatCurrency(0), 'bg-emerald-50 text-emerald-700 border-emerald-200'],
+                  ['Last Cash Difference', endOfDayReports[0] ? formatCurrency(endOfDayReports[0].cash_difference) : formatCurrency(0), 'bg-amber-50 text-amber-700 border-amber-200'],
+                ].map(([label, value, className]) => (
+                  <div key={label} className={`rounded-3xl border p-5 shadow-sm ${className}`}>
+                    <p className="text-[10px] uppercase tracking-[0.18em] font-black opacity-80">{label}</p>
+                    <p className="text-2xl font-black mt-2">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <Card>
+                <CardHeader title="Saved Shift Closeouts" subtitle="Permanent reports for admin viewing and receipt reprinting." />
+                {endOfDayReports.length > 0 ? (
+                  <div className="space-y-3">
+                    {endOfDayReports.map(report => (
+                      <div key={report.id} className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-black text-espresso">{report.report_date}</p>
+                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${Number(report.cash_difference) === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                              Cash Diff {formatCurrency(report.cash_difference)}
+                            </span>
+                            {report.printed_at && (
+                              <span className="rounded-full bg-cream px-2.5 py-1 text-[10px] font-black text-espresso/55">
+                                Printed {new Date(report.printed_at).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-espresso/55 mt-1">
+                            Closed by {report.staff_name || report.closed_by_name || 'Admin'} · {report.total_transactions} transactions · Gross {formatCurrency(report.gross_sales)}
+                          </p>
+                          <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] font-bold text-espresso/65">
+                            <span>Cash {formatCurrency(report.cash_sales)}</span>
+                            <span>GCash {formatCurrency(report.gcash_sales)}</span>
+                            <span>Booking {formatCurrency(report.booking_income)}</span>
+                            <span>Items {report.total_items_sold || 0}</span>
+                          </div>
+                          {(report.first_transaction_id || report.last_transaction_id) && (
+                            <p className="mt-2 text-[10px] font-black text-gold-dark">
+                              {report.first_transaction_id === report.last_transaction_id
+                                ? report.first_transaction_id
+                                : `${report.first_transaction_id} to ${report.last_transaction_id}`}
+                            </p>
+                          )}
+                        </div>
+                        <Button variant="outline" size="sm" icon={Printer} onClick={() => handleReprintEndOfDayReport(report)}>
+                          Reprint
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState icon={Printer} title="No end-of-day reports" description="Print the first closeout report from this admin page." />
+                )}
+              </Card>
+            </div>
+          )}
+
           {/* PAYMENT BOOKING VERIFICATION */}
           {activeTab === 'payments' && (
             <div className="max-w-[1480px] mx-auto space-y-6 animate-in-up" key="payments">
@@ -1098,6 +1305,77 @@ export default function AdminDashboard() {
           )}
         </main>
       </div>
+
+      {/* End-of-Day Report Modal */}
+      <Modal open={endOfDayModalOpen} onClose={() => !endOfDayPrinting && setEndOfDayModalOpen(false)} title="Print End-of-Day Report" size="sm">
+        <div className="space-y-4">
+          <p className="text-xs leading-relaxed text-espresso/60">
+            Opening cash and cash movement update the closing cash automatically. The system will save the report and send it to the 58mm receipt printer.
+          </p>
+          <Input
+            label="Report Date"
+            type="date"
+            value={endOfDayDate}
+            onChange={e => handleEndOfDayDateChange(e.target.value)}
+            disabled={endOfDayPrinting}
+          />
+          <Input
+            label="Opening Cash"
+            type="number"
+            min="0"
+            step="0.01"
+            value={endOfDayOpeningCash}
+            onChange={e => {
+              const value = e.target.value;
+              const expectedCash = getEndOfDayExpectedCashValue(value, endOfDayCashSales, endOfDayCashInOut).toFixed(2);
+              setEndOfDayOpeningCash(value);
+              setEndOfDayExpectedCash(expectedCash);
+              setEndOfDayActualCash(expectedCash);
+            }}
+            placeholder="0.00"
+            disabled={endOfDayPrinting || endOfDayCashLoading}
+          />
+          <Input
+            label="Cash In/Out"
+            type="number"
+            step="0.01"
+            value={endOfDayCashInOut}
+            onChange={e => {
+              const value = e.target.value;
+              const expectedCash = getEndOfDayExpectedCashValue(endOfDayOpeningCash, endOfDayCashSales, value).toFixed(2);
+              setEndOfDayCashInOut(value);
+              setEndOfDayExpectedCash(expectedCash);
+              setEndOfDayActualCash(expectedCash);
+            }}
+            placeholder="0.00"
+            disabled={endOfDayPrinting || endOfDayCashLoading}
+          />
+          <Input
+            label="Closing Cash / Actual Cash"
+            type="number"
+            min="0"
+            step="0.01"
+            value={endOfDayActualCash}
+            onChange={e => setEndOfDayActualCash(e.target.value)}
+            placeholder="0.00"
+            disabled={endOfDayPrinting || endOfDayCashLoading}
+          />
+          <div className="rounded-2xl border border-espresso/10 bg-cream/70 p-3 text-[11px] font-bold leading-relaxed text-espresso/65">
+            Auto-filled cash sales: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(endOfDayCashSales || 0)}. Expected cash: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(displayedEndOfDayExpectedCash || 0)}.
+          </div>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-bold leading-relaxed text-amber-800">
+            Confirm before printing. This creates a permanent saved report for future viewing and reprinting.
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button variant="gold" className="flex-1" icon={Printer} onClick={handlePrintEndOfDayReport} loading={endOfDayPrinting}>
+              Print Report
+            </Button>
+            <Button variant="outline" onClick={() => setEndOfDayModalOpen(false)} disabled={endOfDayPrinting}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

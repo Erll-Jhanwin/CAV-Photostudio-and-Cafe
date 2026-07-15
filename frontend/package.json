@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -19,6 +21,12 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "cap": "cap",
+    "cap:add:android": "cap add android",
+    "cap:copy": "npm run build && cap copy",
+    "cap:sync": "npm run build && cap sync",
+    "cap:open:android": "cap open android",
+    "cap:run:android": "npm run cap:sync && cap run android",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
@@ -41,6 +49,7 @@
     ]
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.2",
     "autoprefixer": "^10.5.2",
     "postcss": "^8.5.16",
     "tailwindcss": "^3.4.19"

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
 import {
   ShoppingBag, Package, DollarSign, LogOut, Search, Plus,
-  Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Printer, Pencil
+  Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -210,16 +210,6 @@ export default function StaffDashboard() {
   const [showCheckoutLoading, setShowCheckoutLoading] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState(null);
   const [receiptPrintError, setReceiptPrintError] = useState('');
-  const [endOfDayReports, setEndOfDayReports] = useState([]);
-  const [endOfDayModalOpen, setEndOfDayModalOpen] = useState(false);
-  const [endOfDayDate, setEndOfDayDate] = useState(todayValue());
-  const [endOfDayOpeningCash, setEndOfDayOpeningCash] = useState('0.00');
-  const [endOfDayCashInOut, setEndOfDayCashInOut] = useState('0.00');
-  const [endOfDayCashSales, setEndOfDayCashSales] = useState('');
-  const [endOfDayActualCash, setEndOfDayActualCash] = useState('');
-  const [endOfDayExpectedCash, setEndOfDayExpectedCash] = useState('');
-  const [endOfDayCashLoading, setEndOfDayCashLoading] = useState(false);
-  const [endOfDayPrinting, setEndOfDayPrinting] = useState(false);
   const checkoutInFlightRef = useRef(false);
 
   const [posSearch, setPosSearch] = useState('');
@@ -304,12 +294,8 @@ export default function StaffDashboard() {
         const ingredientsRes = await client.get('/api/inventory/ingredients/', { params: { limit: 300 } });
         setIngredients(ingredientsRes.data);
       } else if (tab === 'sales') {
-        const [ordersRes, reportsRes] = await Promise.all([
-          client.get('/api/pos/orders/', { params: { limit: 100 } }),
-          client.get('/api/pos/end-of-day-reports/')
-        ]);
+        const ordersRes = await client.get('/api/pos/orders/', { params: { limit: 100 } });
         setOrders(ordersRes.data);
-        setEndOfDayReports(reportsRes.data);
       }
 
       setLoadedTabs(current => ({ ...current, [tab]: true }));
@@ -391,12 +377,6 @@ export default function StaffDashboard() {
     address: order?.business_address || RECEIPT_BUSINESS.address,
     contactNumber: order?.business_contact_number || RECEIPT_BUSINESS.contactNumber,
   });
-  const getEndOfDayExpectedCashValue = (
-    openingCash = endOfDayOpeningCash,
-    cashSales = endOfDayCashSales,
-    cashInOut = endOfDayCashInOut
-  ) => Number(openingCash || 0) + Number(cashSales || 0) + Number(cashInOut || 0);
-
   const handleCheckout = async () => {
     if (cart.length === 0 || checkoutInFlightRef.current) return;
     const total = getCartTotal();
@@ -475,104 +455,6 @@ export default function StaffDashboard() {
       clearTimeout(loadingTimer);
       setCheckoutLoading(false);
       setShowCheckoutLoading(false);
-    }
-  };
-
-  const getExpectedCashForDate = async (dateValue) => {
-    setEndOfDayCashLoading(true);
-    try {
-      const res = await client.get('/api/pos/orders/', { params: { limit: 200 } });
-      const cashTotal = res.data
-        .filter(order => {
-          const orderDate = order.created_at ? new Date(order.created_at).toISOString().slice(0, 10) : '';
-          const paidCash = order.payment_status === 'PAID' && order.payments?.some(payment => payment.method === 'CASH');
-          return orderDate === dateValue && paidCash;
-        })
-        .reduce((sum, order) => sum + Number(order.total || 0), 0);
-      const cashSales = cashTotal.toFixed(2);
-      const expectedCash = getEndOfDayExpectedCashValue(endOfDayOpeningCash, cashSales, endOfDayCashInOut).toFixed(2);
-      setEndOfDayCashSales(cashSales);
-      setEndOfDayExpectedCash(expectedCash);
-      setEndOfDayActualCash(expectedCash);
-    } catch {
-      setEndOfDayCashSales('');
-      setEndOfDayExpectedCash('');
-      setEndOfDayActualCash('');
-    } finally {
-      setEndOfDayCashLoading(false);
-    }
-  };
-
-  const openEndOfDayModal = async (dateValue = todayValue()) => {
-    setEndOfDayDate(dateValue);
-    setEndOfDayModalOpen(true);
-    await getExpectedCashForDate(dateValue);
-  };
-
-  const handleEndOfDayDateChange = async (dateValue) => {
-    setEndOfDayDate(dateValue);
-    await getExpectedCashForDate(dateValue);
-  };
-
-  const handlePrintEndOfDayReport = async () => {
-    const openingCash = Number(endOfDayOpeningCash || 0);
-    const cashInOut = Number(endOfDayCashInOut || 0);
-    const actualCash = Number(endOfDayActualCash);
-    if (!Number.isFinite(openingCash) || openingCash < 0) {
-      alert('Enter a valid opening cash amount.');
-      return;
-    }
-    if (!Number.isFinite(cashInOut)) {
-      alert('Enter a valid cash in/out amount.');
-      return;
-    }
-    if (!endOfDayActualCash || !Number.isFinite(actualCash) || actualCash < 0) {
-      alert('Enter the actual cash counted in the drawer.');
-      return;
-    }
-    if (!window.confirm(`Print and save the end-of-day report for ${endOfDayDate}?`)) return;
-
-    try {
-      setEndOfDayPrinting(true);
-      setReceiptPrintError('');
-      const res = await client.post('/api/pos/end-of-day-reports/', {
-        report_date: endOfDayDate,
-        opening_cash: openingCash.toFixed(2),
-        cash_in_out: cashInOut.toFixed(2),
-        actual_cash: actualCash.toFixed(2),
-      });
-      setEndOfDayReports(current => [res.data, ...current.filter(report => report.id !== res.data.id)]);
-      setEndOfDayModalOpen(false);
-      setEndOfDayActualCash('');
-      setEndOfDayOpeningCash('0.00');
-      setEndOfDayCashInOut('0.00');
-      setEndOfDayCashSales('');
-      setEndOfDayExpectedCash('');
-      if (!res.data.receipt_print?.printed) {
-        setReceiptPrintError(res.data.receipt_print?.error || 'Report saved, but the end-of-day receipt could not be printed.');
-      }
-    } catch (err) {
-      const data = err.response?.data;
-      const message = data && typeof data === 'object'
-        ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
-        : 'Failed to print end-of-day report.';
-      alert(message);
-    } finally {
-      setEndOfDayPrinting(false);
-    }
-  };
-
-  const handleReprintEndOfDayReport = async (report) => {
-    if (!window.confirm(`Reprint end-of-day report for ${report.report_date}?`)) return;
-    try {
-      setReceiptPrintError('');
-      const res = await client.post(`/api/pos/end-of-day-reports/${report.id}/reprint/`);
-      setEndOfDayReports(current => current.map(item => item.id === report.id ? res.data : item));
-      if (!res.data.receipt_print?.printed) {
-        setReceiptPrintError(res.data.receipt_print?.error || 'Report found, but the receipt could not be printed.');
-      }
-    } catch {
-      alert('Failed to reprint report.');
     }
   };
 
@@ -779,7 +661,6 @@ export default function StaffDashboard() {
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
   ));
   const pagedBookingPayments = filteredBookingPayments.slice((paymentPage - 1) * TABLE_PAGE_SIZE, paymentPage * TABLE_PAGE_SIZE);
-  const displayedEndOfDayExpectedCash = endOfDayExpectedCash || getEndOfDayExpectedCashValue().toFixed(2);
 
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
@@ -839,16 +720,6 @@ export default function StaffDashboard() {
                   <div>
                     <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">POS Terminal</h1>
                     <p className="text-xs text-espresso/50 mt-1">Build customer orders for walk-ins or cafe purchases.</p>
-                  </div>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      icon={Printer}
-                      onClick={() => openEndOfDayModal()}
-                    >
-                      Print End-of-Day Report
-                    </Button>
                   </div>
                 </div>
 
@@ -1421,41 +1292,6 @@ export default function StaffDashboard() {
               ) : (
                 <EmptyState icon={DollarSign} title="No transactions" description="No sales match the selected payment method or date range." />
               )}
-
-              <Card>
-                <CardHeader title="End-of-Day Reports" subtitle="Saved shift closeout reports for viewing and reprinting." />
-                {endOfDayReports.length > 0 ? (
-                  <div className="space-y-3">
-                    {endOfDayReports.slice(0, 8).map(report => (
-                      <div key={report.id} className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-black text-espresso">{report.report_date}</p>
-                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${Number(report.cash_difference) === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                              Cash Diff {formatCurrency(report.cash_difference)}
-                            </span>
-                          </div>
-                          <p className="text-xs text-espresso/55 mt-1">
-                            Closed by {report.staff_name || report.closed_by_name || 'Staff'} · {report.total_transactions} transactions · Gross {formatCurrency(report.gross_sales)}
-                          </p>
-                          {(report.first_transaction_id || report.last_transaction_id) && (
-                            <p className="mt-1 text-[10px] font-black text-gold-dark">
-                              {report.first_transaction_id === report.last_transaction_id
-                                ? report.first_transaction_id
-                                : `${report.first_transaction_id} to ${report.last_transaction_id}`}
-                            </p>
-                          )}
-                        </div>
-                        <Button variant="outline" size="sm" icon={Printer} onClick={() => handleReprintEndOfDayReport(report)}>
-                          Reprint
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState icon={Printer} title="No end-of-day reports" description="Close a shift from the POS page to save and print the first report." />
-                )}
-              </Card>
             </div>
           )}
         </main>
@@ -1642,77 +1478,6 @@ export default function StaffDashboard() {
           <div className="flex gap-2">
             <Button variant="primary" className="flex-1" onClick={handleAdjustInventory}>Save</Button>
             <Button variant="outline" onClick={() => setManualAdjIngredient(null)}>Cancel</Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* End-of-Day Report Modal */}
-      <Modal open={endOfDayModalOpen} onClose={() => !endOfDayPrinting && setEndOfDayModalOpen(false)} title="Print End-of-Day Report" size="sm">
-        <div className="space-y-4">
-          <p className="text-xs leading-relaxed text-espresso/60">
-            Opening cash and cash movement update the closing cash automatically. The system will save the report and send it to the 58mm receipt printer.
-          </p>
-          <Input
-            label="Report Date"
-            type="date"
-            value={endOfDayDate}
-            onChange={e => handleEndOfDayDateChange(e.target.value)}
-            disabled={endOfDayPrinting}
-          />
-          <Input
-            label="Opening Cash"
-            type="number"
-            min="0"
-            step="0.01"
-            value={endOfDayOpeningCash}
-            onChange={e => {
-              const value = e.target.value;
-              const expectedCash = getEndOfDayExpectedCashValue(value, endOfDayCashSales, endOfDayCashInOut).toFixed(2);
-              setEndOfDayOpeningCash(value);
-              setEndOfDayExpectedCash(expectedCash);
-              setEndOfDayActualCash(expectedCash);
-            }}
-            placeholder="0.00"
-            disabled={endOfDayPrinting || endOfDayCashLoading}
-          />
-          <Input
-            label="Cash In/Out"
-            type="number"
-            step="0.01"
-            value={endOfDayCashInOut}
-            onChange={e => {
-              const value = e.target.value;
-              const expectedCash = getEndOfDayExpectedCashValue(endOfDayOpeningCash, endOfDayCashSales, value).toFixed(2);
-              setEndOfDayCashInOut(value);
-              setEndOfDayExpectedCash(expectedCash);
-              setEndOfDayActualCash(expectedCash);
-            }}
-            placeholder="0.00"
-            disabled={endOfDayPrinting || endOfDayCashLoading}
-          />
-          <Input
-            label="Closing Cash / Actual Cash"
-            type="number"
-            min="0"
-            step="0.01"
-            value={endOfDayActualCash}
-            onChange={e => setEndOfDayActualCash(e.target.value)}
-            placeholder="0.00"
-            disabled={endOfDayPrinting || endOfDayCashLoading}
-          />
-          <div className="rounded-2xl border border-espresso/10 bg-cream/70 p-3 text-[11px] font-bold leading-relaxed text-espresso/65">
-            Auto-filled cash sales: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(endOfDayCashSales || 0)}. Expected cash: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(displayedEndOfDayExpectedCash || 0)}.
-          </div>
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-bold leading-relaxed text-amber-800">
-            Confirm before printing. This creates a permanent saved report for future viewing and reprinting.
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button variant="gold" className="flex-1" icon={Printer} onClick={handlePrintEndOfDayReport} loading={endOfDayPrinting}>
-              Print Report
-            </Button>
-            <Button variant="outline" onClick={() => setEndOfDayModalOpen(false)} disabled={endOfDayPrinting}>
-              Cancel
-            </Button>
           </div>
         </div>
       </Modal>
