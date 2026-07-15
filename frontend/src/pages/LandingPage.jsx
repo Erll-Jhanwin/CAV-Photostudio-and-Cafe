@@ -6,6 +6,7 @@ import {
   User, Users, Heart, Cake, CalendarCheck
 } from 'lucide-react';
 import axios from 'axios';
+import { API_BASE_URL } from '../api/config';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
@@ -670,8 +671,8 @@ export default function LandingPage() {
     async function fetchData() {
       try {
         const [servicesRes, productsRes] = await Promise.all([
-          axios.get('http://localhost:8000/api/bookings/services/'),
-          axios.get('http://localhost:8000/api/inventory/products/')
+          axios.get(`${API_BASE_URL}/api/bookings/services/`),
+          axios.get(`${API_BASE_URL}/api/inventory/products/`)
         ]);
         setServices(servicesRes.data);
         setCafeItems(productsRes.data.filter(p => p.is_cafe_item));
@@ -712,7 +713,7 @@ export default function LandingPage() {
       }
 
       try {
-        const galleryRes = await axios.get('http://localhost:8000/api/gallery/images/');
+        const galleryRes = await axios.get(`${API_BASE_URL}/api/gallery/images/`);
         setGalleryImages(galleryRes.data);
       } catch {
         setGalleryImages([]);
@@ -724,7 +725,7 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
-    axios.get('http://localhost:8000/api/chatbot/faqs/')
+    axios.get(`${API_BASE_URL}/api/chatbot/faqs/`)
       .then(res => {
         const prompts = res.data.map(faq => faq.question).filter(Boolean).slice(0, 6);
         if (prompts.length) setChatFaqPrompts(prompts);
@@ -743,7 +744,7 @@ export default function LandingPage() {
     setChatInput('');
     setChatLoading(true);
     try {
-      const res = await axios.post('http://localhost:8000/api/chatbot/query/', { question: msg });
+      const res = await axios.post(`${API_BASE_URL}/api/chatbot/query/`, { question: msg });
       setChatMessages(p => [...p, { role: 'assistant', content: res.data.response }]);
     } catch {
       let answer = 'Thanks for asking!\n\nWe are open daily from 9:00 AM to 8:00 PM at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.';
