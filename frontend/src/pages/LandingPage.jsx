@@ -814,10 +814,10 @@ export default function LandingPage() {
               ) : (
                 <>
                   <Link to="/login" className="text-espresso/75 hover:text-espresso text-sm font-semibold transition-colors hidden sm:block">
-                    Sign In
+                    Access Account
                   </Link>
                   <Button variant="gold" size="sm" onClick={handleBookNow}>
-                    Book Now <ArrowRight className="w-3.5 h-3.5" />
+                    Reserve Your Session <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </>
               )}
@@ -867,11 +867,11 @@ export default function LandingPage() {
               Express yourself in front of the lens while enjoying rich artisanal coffees.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 pt-2">
-              <Button variant="gold" size="xl" onClick={handleBookNow}>
-                Book Studio Session <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              <Button variant="gold" size="xl" onClick={handleBookNow} className="group">
+                Start Your Studio Session <ArrowRight className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1" />
               </Button>
-              <a href="#cafe" className="inline-flex items-center justify-center gap-2 border border-cream/20 hover:border-cream/45 hover:bg-white/8 font-semibold px-6 md:px-8 py-4 rounded-[20px] transition-all duration-300 ease-out text-sm text-cream shadow-[0_12px_30px_rgba(0,0,0,0.10)]">
-                Browse Café Menu
+              <a href="#cafe" className="inline-flex items-center justify-center gap-2 border border-cream/20 hover:border-cream/45 hover:bg-white/8 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] font-semibold px-6 md:px-8 py-4 rounded-[20px] transition-all duration-300 ease-out text-sm text-cream shadow-[0_12px_30px_rgba(0,0,0,0.10)] hover:shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
+                Explore Café Favorites
               </a>
             </div>
           </div>
@@ -1115,9 +1115,9 @@ export default function LandingPage() {
                 <button
                   type="button"
                   onClick={handleBookNow}
-                  className="w-full bg-espresso text-cream py-4 rounded-[20px] font-bold text-sm flex items-center justify-center gap-2 hover:bg-espresso-light transition-all duration-300 shadow-[0_14px_34px_rgba(46,26,17,0.16)] hover:-translate-y-0.5"
+                  className="w-full bg-espresso text-cream py-4 rounded-[20px] font-bold text-sm flex items-center justify-center gap-2 hover:bg-espresso-light transition-all duration-300 shadow-[0_14px_34px_rgba(46,26,17,0.16)] hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(46,26,17,0.22)] active:translate-y-0 active:scale-[0.98]"
                 >
-                  <CalendarCheck className="w-4 h-4" /> Select Room &amp; Book
+                  <CalendarCheck className="w-4 h-4" /> Reserve This Package
                 </button>
                 <p className="text-center text-[11px] text-espresso/40">🔒 Secure booking • Easy process • Quality results</p>
               </div>
@@ -1131,9 +1131,9 @@ export default function LandingPage() {
               <button
                 type="button"
                 onClick={handleBookNow}
-                className="inline-flex items-center gap-2 bg-espresso text-cream px-8 py-3.5 rounded-[20px] font-bold text-sm hover:bg-espresso-light transition-all duration-300 shadow-[0_14px_34px_rgba(46,26,17,0.16)] hover:-translate-y-0.5"
+                className="inline-flex items-center gap-2 bg-espresso text-cream px-8 py-3.5 rounded-[20px] font-bold text-sm hover:bg-espresso-light transition-all duration-300 shadow-[0_14px_34px_rgba(46,26,17,0.16)] hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(46,26,17,0.22)] active:translate-y-0 active:scale-[0.98]"
               >
-                <ArrowRight className="w-4 h-4" /> Book Now
+                <ArrowRight className="w-4 h-4" /> Explore Packages
               </button>
             </div>
           )}

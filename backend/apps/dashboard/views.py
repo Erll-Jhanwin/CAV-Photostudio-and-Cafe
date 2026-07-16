@@ -123,20 +123,21 @@ class DashboardAnalyticsView(views.APIView):
         recent_bookings = bookings_in_range.select_related('customer', 'package').order_by('-created_at')[:10]
         bookings_list = [{
             'id': b.id,
-            'customer_name': b.customer.username,
+            'customer_name': b.customer.get_full_name() or b.customer.username,
             'package_name': b.package.name,
             'scheduled_date': b.scheduled_date.strftime('%Y-%m-%d'),
             'scheduled_time': b.scheduled_time.strftime('%H:%M'),
             'status': b.status,
             'amount': money(b.package.price),
-            'created_at': b.created_at.strftime('%Y-%m-%d')
+            'created_at': timezone.localtime(b.created_at).strftime('%Y-%m-%d %H:%M')
         } for b in recent_bookings]
 
-        recent_orders = paid_orders.select_related('staff').prefetch_related('payments').order_by('-created_at')[:10]
+        recent_orders = paid_pos_orders.select_related('staff').prefetch_related('payments').order_by('-created_at')[:10]
         orders_list = [{
             'id': order.id,
+            'transaction_id': order.transaction_id or f'POS-{order.id}',
             'cashier': order.staff.username if order.staff else 'N/A',
-            'date': order.created_at.strftime('%Y-%m-%d %H:%M'),
+            'date': timezone.localtime(order.created_at).strftime('%Y-%m-%d %H:%M'),
             'total': money(order.total),
             'payment_method': order.payments.first().method if order.payments.exists() else 'N/A',
         } for order in recent_orders]

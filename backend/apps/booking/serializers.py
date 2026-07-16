@@ -79,10 +79,22 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         booking = attrs.get('booking') or getattr(self.instance, 'booking', None)
         amount = attrs.get('amount') or getattr(self.instance, 'amount', None)
+        reference_number = attrs.get('reference_number') or getattr(self.instance, 'reference_number', '')
         request = self.context.get('request')
 
         if request and booking and request.user.role not in ['STAFF', 'ADMIN'] and booking.customer_id != request.user.id:
             raise serializers.ValidationError({'booking': 'You can only submit payments for your own bookings.'})
+
+        if reference_number:
+            normalized_reference = str(reference_number).strip()
+            duplicate_qs = BookingPayment.objects.filter(reference_number__iexact=normalized_reference)
+            if self.instance:
+                duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
+            if duplicate_qs.exists():
+                raise serializers.ValidationError({
+                    'reference_number': 'This GCash reference number has already been submitted.'
+                })
+            attrs['reference_number'] = normalized_reference
 
         if booking and amount is not None:
             required_down_payment = booking.package.price * Decimal('0.50')

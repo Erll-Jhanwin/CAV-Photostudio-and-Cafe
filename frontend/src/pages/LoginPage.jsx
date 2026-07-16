@@ -193,9 +193,9 @@ export default function LoginPage() {
 
       <button
         onClick={() => navigate('/')}
-        className="absolute left-5 top-5 z-20 flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-espresso/70 shadow-[0_12px_28px_rgba(46,26,17,0.08)] backdrop-blur transition-colors hover:text-espresso"
+        className="absolute left-5 top-5 z-20 flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-semibold text-espresso/70 shadow-[0_12px_28px_rgba(46,26,17,0.08)] backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:text-espresso active:translate-y-0 active:scale-[0.98]"
       >
-        <ArrowLeft className="h-4 w-4" /> Back
+        <ArrowLeft className="h-4 w-4" /> Return Home
       </button>
 
       <div className="relative z-10 grid w-full max-w-6xl overflow-hidden rounded-[28px] bg-espresso-dark shadow-[0_36px_90px_rgba(46,26,17,0.28)] lg:min-h-[720px] lg:grid-cols-[1.08fr_0.92fr]">
@@ -357,7 +357,7 @@ export default function LoginPage() {
                       onClick={() => { setShowForgotPassword(false); setForgotResult(null); setForgotUsername(''); }}
                       className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
                     >
-                      Back to Sign In
+                      Return to Sign In
                     </button>
                   </div>
                 </form>
@@ -449,7 +449,7 @@ export default function LoginPage() {
                   )}
 
                   <Button type="submit" variant="gold" size="lg" loading={loading} className="mt-1 w-full">
-                    {isRegister ? 'Create Account' : 'Sign In'}
+                    {isRegister ? 'Create My CAV Account' : 'Enter My Dashboard'}
                   </Button>
                 </form>
               )}
@@ -460,7 +460,7 @@ export default function LoginPage() {
                     onClick={() => { setIsRegister(!isRegister); clearModeMessages(); }}
                     className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
                   >
-                    {isRegister ? 'Already have an account? Sign In' : "Don't have an account? Register"}
+                    {isRegister ? 'Already booked with CAV? Sign In' : 'New to CAV? Create an account'}
                   </button>
                   <p className="text-[11px] leading-5 text-espresso/45">
                     By continuing, you agree to CAV's transparent data practices.{' '}

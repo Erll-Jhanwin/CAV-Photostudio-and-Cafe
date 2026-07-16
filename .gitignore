@@ -11,6 +11,7 @@ backend/venv/
 backend/staticfiles/
 backend/media/
 backend/.env
+backend/.env.example
 backend/db.sqlite3
 
 # Node/React

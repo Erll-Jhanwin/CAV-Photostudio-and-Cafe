@@ -8,10 +8,11 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
 # Import views directly from apps since apps are added to sys.path
-from users.views import CustomTokenObtainPairView, RegisterView, UserProfileView, StaffListView, ForgotPasswordView, GoogleAuthView
+from users.views import CustomTokenObtainPairView, RegisterView, UserProfileView, StaffListView, StaffDetailView, ForgotPasswordView, GoogleAuthView
 from booking.views import (
     ServiceListView, PackageListView, BookingListCreateView, BookingDetailUpdateView,
-    BookingPaymentListCreateView, BookingPaymentVerifyView, BookingAvailabilityView
+    BookingPaymentListCreateView, BookingPaymentVerifyView, BookingAvailabilityView,
+    BookingPaymentOcrView, BookingPaymentReferenceCheckView
 )
 from inventory.views import (
     ProductListCreateView, ProductDetailUpdateView, StockMovementListView, 
@@ -35,6 +36,7 @@ urlpatterns = [
     path('api/auth/google/', GoogleAuthView.as_view(), name='auth_google'),
     path('api/auth/profile/', UserProfileView.as_view(), name='auth_profile'),
     path('api/auth/users/', StaffListView.as_view(), name='staff_list'),
+    path('api/auth/users/<int:pk>/', StaffDetailView.as_view(), name='staff_detail'),
     path('api/auth/forgot-password/', ForgotPasswordView.as_view(), name='auth_forgot_password'),
     
     # Booking endpoints
@@ -44,6 +46,8 @@ urlpatterns = [
     path('api/bookings/', BookingListCreateView.as_view(), name='booking_list_create'),
     path('api/bookings/<int:pk>/', BookingDetailUpdateView.as_view(), name='booking_detail_update'),
     path('api/bookings/payments/', BookingPaymentListCreateView.as_view(), name='booking_payment_list_create'),
+    path('api/bookings/payments/ocr/', BookingPaymentOcrView.as_view(), name='booking_payment_ocr'),
+    path('api/bookings/payments/reference-check/', BookingPaymentReferenceCheckView.as_view(), name='booking_payment_reference_check'),
     path('api/bookings/payments/<int:pk>/verify/', BookingPaymentVerifyView.as_view(), name='booking_payment_verify'),
     
     # Inventory endpoints

@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, ComposedChart
 } from 'recharts';
 import { Button } from '../components/ui/Button';
@@ -101,7 +101,7 @@ function DashboardTable({ columns, rows, sort, onSort, renderCell, renderActions
                   {renderActions ? renderActions(row) : (
                     <button type="button" className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-cream px-3 py-2 text-[10px] font-black text-espresso hover:bg-gold transition-all">
                       <Eye className="w-3 h-3 shrink-0" />
-                      <span>View</span>
+                      <span>Open Details</span>
                     </button>
                   )}
                 </div>
@@ -114,19 +114,100 @@ function DashboardTable({ columns, rows, sort, onSort, renderCell, renderActions
   );
 }
 
-function TablePager({ page, setPage, total, pageSize }) {
+function PaginationControls({ page, setPage, total, pageSize, setPageSize, pageSizeOptions = [5, 10, 25, 50] }) {
   const pages = Math.max(Math.ceil(total / pageSize), 1);
+  const safePage = Math.min(Math.max(page, 1), pages);
+  const start = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const end = Math.min(total, safePage * pageSize);
+  const firstPage = Math.max(1, Math.min(safePage - 2, pages - 4));
+  const visiblePages = Array.from({ length: Math.min(5, pages) }, (_, i) => firstPage + i).filter(value => value <= pages);
+
   return (
-    <div className="flex items-center justify-between mt-4 text-xs text-espresso/55">
-      <span>Page {page} of {pages}</span>
-      <div className="flex gap-2">
-        <button type="button" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="p-2 rounded-xl bg-cream disabled:opacity-40 hover:bg-cream-dark transition-colors" aria-label="Previous page">
+    <div className="mt-3 flex flex-col gap-3 border-t border-espresso/[0.06] pt-3 text-xs text-espresso/60 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-bold text-espresso/70">
+          Showing {start}-{end} of {total}
+        </span>
+        {setPageSize && (
+          <label className="inline-flex items-center gap-2 rounded-xl bg-cream/70 px-2.5 py-1.5 font-bold">
+            <span>Rows</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              className="bg-transparent text-espresso focus:outline-none"
+              aria-label="Rows per page"
+            >
+              {pageSizeOptions.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button type="button" disabled={safePage <= 1} onClick={() => setPage(Math.max(1, safePage - 1))} className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-cream disabled:opacity-40 hover:bg-cream-dark transition-colors" aria-label="Previous page">
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <button type="button" disabled={page >= pages} onClick={() => setPage(p => Math.min(pages, p + 1))} className="p-2 rounded-xl bg-cream disabled:opacity-40 hover:bg-cream-dark transition-colors" aria-label="Next page">
+        {visiblePages.map(pageNumber => (
+          <button
+            key={pageNumber}
+            type="button"
+            onClick={() => setPage(pageNumber)}
+            className={`h-8 min-w-8 rounded-xl px-2 font-black transition-colors ${
+              pageNumber === safePage ? 'bg-espresso text-gold' : 'bg-cream text-espresso/65 hover:bg-cream-dark hover:text-espresso'
+            }`}
+            aria-current={pageNumber === safePage ? 'page' : undefined}
+          >
+            {pageNumber}
+          </button>
+        ))}
+        <button type="button" disabled={safePage >= pages} onClick={() => setPage(Math.min(pages, safePage + 1))} className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-cream disabled:opacity-40 hover:bg-cream-dark transition-colors" aria-label="Next page">
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
+    </div>
+  );
+}
+
+const paginateRows = (rows, page, pageSize) => {
+  const source = rows || [];
+  const pages = Math.max(Math.ceil(source.length / pageSize), 1);
+  const safePage = Math.min(Math.max(page, 1), pages);
+  return source.slice((safePage - 1) * pageSize, safePage * pageSize);
+};
+
+const sumBy = (rows, key) => rows.reduce((total, row) => total + Number(row?.[key] || 0), 0);
+
+const getAverage = (rows, key) => rows.length ? sumBy(rows, key) / rows.length : 0;
+
+const formatChartDate = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+};
+
+function SalesForecastTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload || {};
+  return (
+    <div className="rounded-2xl border border-espresso/[0.08] bg-white/95 p-3 text-xs shadow-[0_18px_45px_rgba(46,26,17,0.12)]">
+      <p className="mb-2 font-black text-espresso">{formatChartDate(label || row.date)}</p>
+      {row.actual_sales != null && (
+        <p className="font-bold text-espresso/75">Actual: {formatCurrency(row.actual_sales)}</p>
+      )}
+      {row.forecast_sales != null && (
+        <p className="font-bold text-gold-dark">Forecast: {formatCurrency(row.forecast_sales)}</p>
+      )}
+      {row.combined_sales != null && (
+        <p className="font-bold text-espresso">Combined: {formatCurrency(row.combined_sales)}</p>
+      )}
+      {row.lower_bound != null && row.upper_bound != null && (
+        <p className="mt-1 font-semibold text-espresso/50">
+          Confidence: {formatCurrency(row.lower_bound)} - {formatCurrency(row.upper_bound)}
+        </p>
+      )}
     </div>
   );
 }
@@ -204,6 +285,10 @@ export default function AdminDashboard() {
   const [newPassword, setNewPassword] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState('STAFF');
+  const [editingStaff, setEditingStaff] = useState(null);
+  const [editStaffForm, setEditStaffForm] = useState({ username: '', email: '', password: '', role: 'STAFF' });
+  const [staffSaving, setStaffSaving] = useState(false);
+  const [deletingStaffId, setDeletingStaffId] = useState(null);
 
   const [retrainLoading, setRetrainLoading] = useState(false);
   const [datePreset, setDatePreset] = useState('month');
@@ -211,12 +296,32 @@ export default function AdminDashboard() {
   const [customEnd, setCustomEnd] = useState('');
   const [chartGrain, setChartGrain] = useState('daily');
   const [visibleSeries, setVisibleSeries] = useState({
-    pos_revenue: true,
-    booking_revenue: true,
-    total_revenue: true,
+    actual: true,
+    forecast: true,
+    combined: true,
   });
   const [bookingPage, setBookingPage] = useState(1);
+  const [bookingPageSize, setBookingPageSize] = useState(5);
   const [posPage, setPosPage] = useState(1);
+  const [posPageSize, setPosPageSize] = useState(5);
+  const [topProductsPage, setTopProductsPage] = useState(1);
+  const [topProductsPageSize, setTopProductsPageSize] = useState(5);
+  const [topPackagesPage, setTopPackagesPage] = useState(1);
+  const [topPackagesPageSize, setTopPackagesPageSize] = useState(5);
+  const [reorderPage, setReorderPage] = useState(1);
+  const [reorderPageSize, setReorderPageSize] = useState(5);
+  const [lowStockPage, setLowStockPage] = useState(1);
+  const [lowStockPageSize, setLowStockPageSize] = useState(5);
+  const [inventoryAlertPage, setInventoryAlertPage] = useState(1);
+  const [inventoryAlertPageSize, setInventoryAlertPageSize] = useState(5);
+  const [reportsPage, setReportsPage] = useState(1);
+  const [reportsPageSize, setReportsPageSize] = useState(5);
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [paymentPageSize, setPaymentPageSize] = useState(10);
+  const [staffPage, setStaffPage] = useState(1);
+  const [staffPageSize, setStaffPageSize] = useState(10);
+  const [faqPage, setFaqPage] = useState(1);
+  const [faqPageSize, setFaqPageSize] = useState(10);
   const [bookingSort, setBookingSort] = useState({ key: 'created_at', dir: 'desc' });
   const [posSort, setPosSort] = useState({ key: 'date', dir: 'desc' });
   const [deletingBookingId, setDeletingBookingId] = useState(null);
@@ -233,17 +338,9 @@ export default function AdminDashboard() {
   const [endOfDayCashLoading, setEndOfDayCashLoading] = useState(false);
   const [endOfDayPrinting, setEndOfDayPrinting] = useState(false);
 
-  useEffect(() => {
-    if (!user || user.role !== 'ADMIN') {
-      navigate('/login');
-      return;
-    }
-    fetchData();
-  }, [user, navigate, datePreset, customStart, customEnd, chartGrain]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async ({ background = false } = {}) => {
     try {
-      setLoading(true);
+      if (!background) setLoading(true);
       const range = getRangeDates(datePreset, customStart, customEnd);
       const [analyticsRes, forecastRes, staffRes, faqRes, paymentsRes, endOfDayRes] = await Promise.all([
         client.get('/api/dashboard/analytics/', { params: { ...range, grain: chartGrain } }),
@@ -262,9 +359,36 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
-  };
+  }, [datePreset, customStart, customEnd, chartGrain]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'ADMIN') {
+      navigate('/login');
+      return;
+    }
+    fetchData();
+  }, [user, navigate, fetchData]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'ADMIN') return undefined;
+
+    const refresh = () => fetchData({ background: true });
+    const intervalId = window.setInterval(refresh, 30000);
+    window.addEventListener('focus', refresh);
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) refresh();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user, fetchData]);
 
   const handleCreateStaff = async (e) => {
     e.preventDefault();
@@ -277,6 +401,54 @@ export default function AdminDashboard() {
       fetchData();
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to create staff account.');
+    }
+  };
+
+  const openStaffEditModal = (staff) => {
+    setEditingStaff(staff);
+    setEditStaffForm({
+      username: staff.username || '',
+      email: staff.email || '',
+      password: '',
+      role: staff.role || 'STAFF',
+    });
+  };
+
+  const handleUpdateStaff = async (e) => {
+    e.preventDefault();
+    if (!editingStaff) return;
+    try {
+      setStaffSaving(true);
+      const payload = {
+        username: editStaffForm.username,
+        email: editStaffForm.email,
+        role: editStaffForm.role,
+      };
+      if (editStaffForm.password.trim()) {
+        payload.password = editStaffForm.password;
+      }
+      const res = await client.patch(`/api/auth/users/${editingStaff.id}/`, payload);
+      setStaffList(current => current.map(staff => staff.id === editingStaff.id ? res.data : staff));
+      setEditingStaff(null);
+      setEditStaffForm({ username: '', email: '', password: '', role: 'STAFF' });
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to update account.');
+    } finally {
+      setStaffSaving(false);
+    }
+  };
+
+  const handleDeleteStaff = async (staff) => {
+    if (!window.confirm(`Delete account for ${staff.username}? This cannot be undone.`)) return;
+    try {
+      setDeletingStaffId(staff.id);
+      await client.delete(`/api/auth/users/${staff.id}/`);
+      setStaffList(current => current.filter(item => item.id !== staff.id));
+      setStaffPage(page => Math.max(1, Math.min(page, Math.ceil((staffList.length - 1) / staffPageSize) || 1)));
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete account.');
+    } finally {
+      setDeletingStaffId(null);
     }
   };
 
@@ -337,7 +509,7 @@ export default function AdminDashboard() {
           recent_bookings: (current.recent_bookings || []).filter(row => row.id !== booking.id),
         };
       });
-      setBookingPage(page => Math.max(1, Math.min(page, Math.ceil((sortedBookings.length - 1) / tablePageSize) || 1)));
+      setBookingPage(page => Math.max(1, Math.min(page, Math.ceil((sortedBookings.length - 1) / bookingPageSize) || 1)));
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to delete booking.');
     } finally {
@@ -352,6 +524,7 @@ export default function AdminDashboard() {
       setVerifyingPaymentId(payment.id);
       const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
       setBookingPayments(current => current.map(item => item.id === payment.id ? res.data : item));
+      fetchData({ background: true });
     } catch (err) {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
     } finally {
@@ -468,7 +641,6 @@ export default function AdminDashboard() {
   if (loading) return <AdminSkeleton />;
 
   const navItems = [
-    { key: 'forecast', label: 'ML Forecast Center', icon: TrendingUp, active: activeTab === 'forecast', onClick: () => setActiveTab('forecast') },
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
     { key: 'reports', label: 'End-of-Day Reports', icon: Printer, active: activeTab === 'reports', onClick: () => setActiveTab('reports') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
@@ -476,7 +648,7 @@ export default function AdminDashboard() {
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
   ];
 
-  const pageTitles = { forecast: 'ML Forecast Center', analytics: 'InsightHub Dashboard', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager' };
   const metrics = analytics?.metrics || {};
   const statusData = [
     { label: 'Pending', value: metrics.pending || 0, color: '#F59E0B' },
@@ -485,7 +657,6 @@ export default function AdminDashboard() {
     { label: 'Cancelled', value: metrics.cancelled || 0, color: '#EF4444' },
   ];
   const revenueTotal = Number(metrics.pos_revenue || 0) + Number(metrics.booking_revenue || 0);
-  const tablePageSize = 5;
   const sortRows = (rows, sort) => [...(rows || [])].sort((a, b) => {
     const av = a[sort.key] ?? '';
     const bv = b[sort.key] ?? '';
@@ -498,8 +669,44 @@ export default function AdminDashboard() {
   };
   const sortedBookings = sortRows(analytics?.recent_bookings, bookingSort);
   const sortedPos = sortRows(analytics?.recent_pos_transactions, posSort);
-  const bookingPageRows = sortedBookings.slice((bookingPage - 1) * tablePageSize, bookingPage * tablePageSize);
-  const posPageRows = sortedPos.slice((posPage - 1) * tablePageSize, posPage * tablePageSize);
+  const bookingPageRows = paginateRows(sortedBookings, bookingPage, bookingPageSize);
+  const posPageRows = paginateRows(sortedPos, posPage, posPageSize);
+  const salesForecastRows = forecast?.sales_forecast || [];
+  const salesHistoryRows = analytics?.sales_history_chart || [];
+  const forecastChartData = [
+    ...salesHistoryRows.map(row => ({
+      date: row.date,
+      actual_sales: Number(row.total_revenue || 0),
+      combined_sales: Number(row.total_revenue || 0),
+    })),
+    ...salesForecastRows.map(row => ({
+      date: row.target_date,
+      forecast_sales: Number(row.predicted_sales || 0),
+      combined_sales: Number(row.predicted_sales || 0),
+      lower_bound: Number(row.lower_bound || 0),
+      upper_bound: Number(row.upper_bound || 0),
+    })),
+  ];
+  const nextDayForecast = Number(salesForecastRows[0]?.predicted_sales || 0);
+  const nextWeekForecast = sumBy(salesForecastRows, 'predicted_sales');
+  const nextMonthForecast = Math.round(getAverage(salesForecastRows, 'predicted_sales') * 30);
+  const forecastAccuracy = salesForecastRows.length
+    ? Math.round(Math.max(0, Math.min(99, 100 - (
+      salesForecastRows.reduce((total, row) => {
+        const predicted = Math.max(Number(row.predicted_sales || 0), 1);
+        const intervalWidth = Math.max(Number(row.upper_bound || 0) - Number(row.lower_bound || 0), 0);
+        return total + ((intervalWidth / predicted) * 35);
+      }, 0) / salesForecastRows.length
+    ))))
+    : 0;
+  const topProducts = analytics?.top_selling_products || [];
+  const topPackages = analytics?.top_booked_packages || [];
+  const topProductRows = paginateRows(topProducts, topProductsPage, topProductsPageSize);
+  const topPackageRows = paginateRows(topPackages, topPackagesPage, topPackagesPageSize);
+  const reorderRows = forecast?.reorder_recommendations || [];
+  const reorderPageRows = paginateRows(reorderRows, reorderPage, reorderPageSize);
+  const lowStockAlerts = analytics?.low_stock_alerts || [];
+  const lowStockPageRows = paginateRows(lowStockAlerts, lowStockPage, lowStockPageSize);
   const inventoryCounts = analytics?.inventory_status_counts || {};
   const inventorySummary = Object.entries(inventoryStatusMeta).map(([key, meta]) => ({
     key,
@@ -507,9 +714,14 @@ export default function AdminDashboard() {
     value: inventoryCounts[key] || 0,
   }));
   const inventoryAlerts = analytics?.inventory_alerts || [];
+  const inventoryAlertPageRows = paginateRows(inventoryAlerts, inventoryAlertPage, inventoryAlertPageSize);
   const filteredBookingPayments = bookingPayments.filter(payment => (
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
   ));
+  const paymentPageRows = paginateRows(filteredBookingPayments, paymentPage, paymentPageSize);
+  const reportPageRows = paginateRows(endOfDayReports, reportsPage, reportsPageSize);
+  const staffPageRows = paginateRows(staffList, staffPage, staffPageSize);
+  const faqPageRows = paginateRows(faqs, faqPage, faqPageSize);
   const paymentStatusCounts = bookingPayments.reduce((acc, payment) => {
     acc[payment.status] = (acc[payment.status] || 0) + 1;
     return acc;
@@ -535,7 +747,7 @@ export default function AdminDashboard() {
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} />
 
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
+        <main className={`flex-1 min-h-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${activeTab === 'reports' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {receiptPrintError && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -549,138 +761,40 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* FORECAST CENTER */}
-          {activeTab === 'forecast' && (
-            <div className="space-y-6 animate-in-up" key="forecast">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">ML Forecast Center</h1>
-                  <p className="text-xs text-espresso/50 mt-1">Predictive sales forecasting using historical data modeling.</p>
-                </div>
-                <Button variant="primary" size="sm" loading={retrainLoading} icon={Play} onClick={handleRetrain}>
-                  {retrainLoading ? 'Modeling...' : 'Retrain ML Engine'}
-                </Button>
-              </div>
-
-              <Card>
-                <CardHeader title="7-Day Projected Sales" subtitle="With confidence intervals (90% confidence)" />
-                <div className="h-72 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={forecast?.sales_forecast || []} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5ECE1" />
-                      <XAxis dataKey="target_date" stroke="#2E1A11" fontSize={11} tickLine={false} />
-                      <YAxis stroke="#2E1A11" fontSize={11} tickLine={false} axisLine={false} />
-                      <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #E5ECE1' }} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Line type="monotone" dataKey="predicted_sales" name="Forecasted Sales" stroke="#D4AF37" strokeWidth={3} dot={{ r: 4, fill: '#D4AF37' }} activeDot={{ r: 6 }} />
-                      <Line type="monotone" dataKey="upper_bound" name="Upper Bound" stroke="#8D6E63" strokeDasharray="5 5" strokeWidth={1.5} />
-                      <Line type="monotone" dataKey="lower_bound" name="Lower Bound" stroke="#E57373" strokeDasharray="5 5" strokeWidth={1.5} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                <div className="lg:col-span-8">
-                  <Card>
-                    <CardHeader title="Estimated Stock Depletions &amp; Reorders" subtitle="Based on 7-day demand forecast" />
-                    <div className="w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/70 scrollbar-thin">
-                      <table className="min-w-[860px] w-full table-fixed text-xs">
-                        <thead className="sticky top-0 z-10 bg-cream">
-                          <tr className="border-b border-espresso/[0.08] text-espresso/55 font-black uppercase tracking-wider">
-                            <th className="w-[28%] px-4 py-3 text-left align-bottom leading-snug">Product</th>
-                            <th className="w-[12%] px-4 py-3 text-center align-bottom leading-snug">Stock</th>
-                            <th className="w-[15%] px-4 py-3 text-center align-bottom leading-snug">7-Day Demand</th>
-                            <th className="w-[12%] px-4 py-3 text-center align-bottom leading-snug">Balance</th>
-                            <th className="w-[13%] px-4 py-3 text-center align-bottom leading-snug">Order Qty</th>
-                            <th className="w-[20%] px-4 py-3 text-left align-bottom leading-snug">Supplier</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {forecast?.reorder_recommendations?.length > 0 ? forecast.reorder_recommendations.map((rec, i) => (
-                            <tr key={i} className="border-b border-espresso/[0.04] hover:bg-cream/45 transition-colors">
-                              <td className="px-4 py-3.5 align-middle font-bold leading-relaxed text-espresso whitespace-normal break-words">{rec.product_name}</td>
-                              <td className="px-4 py-3.5 text-center align-middle font-bold leading-relaxed">{rec.current_stock}</td>
-                              <td className="px-4 py-3.5 text-center align-middle font-bold leading-relaxed text-gold-dark">{rec["7_day_forecasted_demand"]}</td>
-                              <td className={`px-4 py-3.5 text-center align-middle font-bold leading-relaxed ${rec.projected_stock <= 0 ? 'text-red-600' : 'text-espresso/60'}`}>
-                                {rec.projected_stock}
-                              </td>
-                              <td className="px-4 py-3.5 text-center align-middle">
-                                <span className="inline-flex justify-center rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold leading-none text-amber-700">
-                                  +{rec.recommended_order_quantity}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3.5 align-middle font-semibold leading-relaxed text-espresso/65 whitespace-normal break-words">{rec.supplier_name}</td>
-                            </tr>
-                          )) : (
-                            <tr>
-                              <td colSpan={6}>
-                                <EmptyState icon={Package} title="All stocks optimal" description="No reorder actions needed at this time." />
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </Card>
-                </div>
-
-                <div className="lg:col-span-4 space-y-6">
-                  <Card>
-                    <CardHeader title="Low Stock Alerts" />
-                    {analytics?.low_stock_alerts?.length > 0 ? (
-                      <div className="space-y-3">
-                        {analytics.low_stock_alerts.map((alert, i) => (
-                          <div key={i} className="bg-red-50/80 p-4 rounded-xl border border-red-100 flex justify-between items-start">
-                            <div>
-                              <p className="font-bold text-sm text-red-900">{alert.name}</p>
-                              <p className="text-[10px] text-red-600 mt-0.5">Supplier: {alert.supplier_name}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-bold text-red-800">Stock: {alert.stock_quantity} {alert.base_unit}</p>
-                              <p className="text-[10px] text-red-500">Min: {alert.minimum_stock_level}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <EmptyState icon={AlertTriangle} title="No alerts" description="All stock levels are healthy." />
-                    )}
-                  </Card>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* INSIGHTHUB DASHBOARD */}
           {activeTab === 'analytics' && (
-            <div className="max-w-[1680px] mx-auto space-y-4 md:space-y-5 animate-in-up" key="analytics">
+            <div className="w-full space-y-4 animate-in-up" key="analytics">
               <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.24em] text-gold-dark font-black mb-1">CAV InsightHub</p>
                   <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Business Overview</h1>
                   <p className="text-xs text-espresso/55 mt-1">Real-time sales, bookings, POS activity, and performance insights.</p>
                 </div>
-                <div className="bg-white/80 backdrop-blur-xl border border-espresso/[0.06] shadow-[0_14px_34px_rgba(46,26,17,0.06)] rounded-[20px] p-2 flex flex-col sm:flex-row gap-2">
-                  <select
-                    aria-label="Date range"
-                    value={datePreset}
-                    onChange={e => setDatePreset(e.target.value)}
-                    className="rounded-2xl bg-cream/70 border border-espresso/10 px-3 py-2 text-xs font-bold text-espresso focus:outline-none focus:ring-4 focus:ring-gold/15"
-                  >
-                    <option value="today">Today</option>
-                    <option value="yesterday">Yesterday</option>
-                    <option value="week">This Week</option>
-                    <option value="month">This Month</option>
-                    <option value="year">This Year</option>
-                    <option value="custom">Custom Date Range</option>
-                  </select>
-                  {datePreset === 'custom' && (
-                    <>
-                      <input type="date" aria-label="Custom start date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="rounded-2xl bg-cream/70 border border-espresso/10 px-3 py-2 text-xs font-bold text-espresso focus:outline-none focus:ring-4 focus:ring-gold/15" />
-                      <input type="date" aria-label="Custom end date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="rounded-2xl bg-cream/70 border border-espresso/10 px-3 py-2 text-xs font-bold text-espresso focus:outline-none focus:ring-4 focus:ring-gold/15" />
-                    </>
-                  )}
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="bg-white/80 backdrop-blur-xl border border-espresso/[0.06] shadow-[0_14px_34px_rgba(46,26,17,0.06)] rounded-[20px] p-2 flex flex-col sm:flex-row gap-2">
+                    <select
+                      aria-label="Date range"
+                      value={datePreset}
+                      onChange={e => setDatePreset(e.target.value)}
+                      className="rounded-2xl bg-cream/70 border border-espresso/10 px-3 py-2 text-xs font-bold text-espresso focus:outline-none focus:ring-4 focus:ring-gold/15"
+                    >
+                      <option value="today">Today</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="week">This Week</option>
+                      <option value="month">This Month</option>
+                      <option value="year">This Year</option>
+                      <option value="custom">Custom Date Range</option>
+                    </select>
+                    {datePreset === 'custom' && (
+                      <>
+                        <input type="date" aria-label="Custom start date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="rounded-2xl bg-cream/70 border border-espresso/10 px-3 py-2 text-xs font-bold text-espresso focus:outline-none focus:ring-4 focus:ring-gold/15" />
+                        <input type="date" aria-label="Custom end date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="rounded-2xl bg-cream/70 border border-espresso/10 px-3 py-2 text-xs font-bold text-espresso focus:outline-none focus:ring-4 focus:ring-gold/15" />
+                      </>
+                    )}
+                  </div>
+                  <Button variant="primary" size="sm" loading={retrainLoading} icon={Play} onClick={handleRetrain}>
+                    {retrainLoading ? 'Modeling...' : 'Refresh Forecast'}
+                  </Button>
                 </div>
               </div>
 
@@ -739,30 +853,84 @@ export default function AdminDashboard() {
                 })}
               </div>
 
-              <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)] gap-4 md:gap-5">
-                <Card padding={false}>
-                  <div className="p-5 md:p-6">
-                    <CardHeader title="Ingredient Stock Management" subtitle="Raw ingredient health monitored from staff inventory activity" className="mb-4" />
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                      {inventorySummary.map(status => (
-                        <div key={status.key} className="rounded-2xl bg-cream/60 border border-espresso/[0.05] p-3">
-                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${status.className}`}>
-                            {status.label}
-                          </span>
-                          <p className="font-sans text-2xl font-extrabold text-espresso mt-2">{status.value}</p>
-                          <p className="text-[10px] text-espresso/45 uppercase font-black">ingredient{status.value === 1 ? '' : 's'}</p>
-                        </div>
-                      ))}
+              <div className="grid grid-cols-1 gap-4 md:gap-5 2xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] 2xl:grid-rows-[auto_auto] 2xl:items-stretch">
+                  <Card padding={false} className="2xl:col-start-1 2xl:row-start-1">
+                    <div className="p-5 md:p-6">
+                      <CardHeader title="Ingredient Stock Management" subtitle="Raw ingredient health monitored from staff inventory activity" className="mb-4" />
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        {inventorySummary.map(status => (
+                          <div key={status.key} className="rounded-2xl bg-cream/60 border border-espresso/[0.05] p-3">
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${status.className}`}>
+                              {status.label}
+                            </span>
+                            <p className="font-sans text-2xl font-extrabold text-espresso mt-2">{status.value}</p>
+                            <p className="text-[10px] text-espresso/45 uppercase font-black">ingredient{status.value === 1 ? '' : 's'}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                </Card>
+                  </Card>
 
-                <Card padding={false}>
-                  <div className="p-5">
+                  <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2 2xl:col-start-1 2xl:row-start-2">
+                    <Card padding={false}>
+                      <div className="p-5">
+                        <CardHeader title="Revenue Sources" className="mb-4" />
+                        <div className="space-y-4">
+                          {[
+                            { label: 'POS Income', value: metrics.pos_revenue || 0, color: 'bg-espresso/70' },
+                            { label: 'Booking Income', value: metrics.booking_revenue || 0, color: 'bg-gold' },
+                          ].map(row => {
+                            const pct = revenueTotal ? Math.round((Number(row.value) / revenueTotal) * 100) : 0;
+                            return (
+                              <div key={row.label}>
+                                <div className="flex justify-between text-sm font-bold text-espresso mb-2">
+                                  <span>{row.label}</span>
+                                  <span>{formatCurrency(row.value)} · {pct}%</span>
+                                </div>
+                                <div className="h-3 rounded-full bg-cream-dark overflow-hidden">
+                                  <div className={`h-full ${row.color} rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </Card>
+
+                    <Card padding={false}>
+                      <div className="p-5">
+                        <CardHeader title="Booking Status Summary" className="mb-3" />
+                        <div className="grid grid-cols-[120px_1fr] gap-4 items-center">
+                          <div className="h-[120px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie data={statusData} dataKey="value" nameKey="label" innerRadius={36} outerRadius={54} paddingAngle={3}>
+                                  {statusData.map(s => <Cell key={s.label} fill={s.color} />)}
+                                </Pie>
+                                <Tooltip />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="space-y-2.5">
+                            {statusData.map(status => (
+                              <div key={status.label} className="flex items-center justify-between text-sm">
+                                <span className="flex items-center gap-2 font-bold text-espresso"><span className="w-2.5 h-2.5 rounded-full" style={{ background: status.color }} />{status.label}</span>
+                                <span className="font-black">{status.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  </div>
+
+                <Card padding={false} className="h-full min-h-0 overflow-hidden 2xl:col-start-2 2xl:row-span-2 2xl:row-start-1">
+                  <div className="flex h-full min-h-0 flex-col p-5">
                     <CardHeader title="Stock Action Alerts" className="mb-3" />
                     {inventoryAlerts.length > 0 ? (
-                      <div className="space-y-2.5 max-h-72 overflow-y-auto scrollbar-thin pr-1">
-                        {inventoryAlerts.map(alert => {
+                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                      <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1 scrollbar-thin">
+                        {inventoryAlertPageRows.map(alert => {
                           const meta = inventoryStatusMeta[alert.inventory_status] || inventoryStatusMeta.IN_STOCK;
                           return (
                             <div key={alert.id} className="rounded-2xl bg-white border border-espresso/[0.06] p-3 shadow-sm">
@@ -783,6 +951,8 @@ export default function AdminDashboard() {
                           );
                         })}
                       </div>
+                      <PaginationControls page={inventoryAlertPage} setPage={setInventoryAlertPage} total={inventoryAlerts.length} pageSize={inventoryAlertPageSize} setPageSize={setInventoryAlertPageSize} />
+                      </div>
                     ) : (
                       <EmptyState icon={Package} title="Stock is healthy" description="No ingredient actions are needed right now." />
                     )}
@@ -790,106 +960,165 @@ export default function AdminDashboard() {
                 </Card>
               </div>
 
-              <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1.75fr)_minmax(360px,0.8fr)] gap-4 md:gap-5 items-stretch">
-              <div className="animate-in-up">
-              <Card className="rounded-[24px] h-full" padding={false}>
-                <div className="p-5 md:p-6">
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
-                  <CardHeader title="Sales Analytics" subtitle="POS sales, booking revenue, and combined revenue" className="p-0" />
-                  <div className="flex flex-wrap gap-2">
-                    {['daily', 'weekly', 'monthly'].map(grain => (
-                      <button key={grain} onClick={() => setChartGrain(grain)} className={`px-3 py-2 rounded-2xl text-[11px] font-black capitalize transition-all ${chartGrain === grain ? 'bg-espresso text-gold' : 'bg-cream text-espresso/60 hover:text-espresso'}`}>
-                        {grain}
-                      </button>
-                    ))}
-                    {[
-                      ['pos_revenue', 'POS'],
-                      ['booking_revenue', 'Bookings'],
-                      ['total_revenue', 'Combined'],
-                    ].map(([key, label]) => (
-                      <button key={key} onClick={() => setVisibleSeries(v => ({ ...v, [key]: !v[key] }))} className={`px-3 py-2 rounded-2xl text-[11px] font-black transition-all ${visibleSeries[key] ? 'bg-gold text-espresso' : 'bg-cream text-espresso/45'}`}>
-                        {label}
-                      </button>
-                    ))}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {[
+                  {
+                    label: 'Predicted Sales',
+                    value: formatCurrency(nextDayForecast),
+                    detail: salesForecastRows[0] ? `Next day: ${formatChartDate(salesForecastRows[0].target_date)}` : 'Run forecast to generate next-day projection',
+                    icon: TrendingUp,
+                    className: 'bg-gold/10 text-gold-dark border-gold/20',
+                  },
+                  {
+                    label: 'Expected Revenue',
+                    value: formatCurrency(nextWeekForecast),
+                    detail: `7-day forecast · 30-day outlook ${formatCurrency(nextMonthForecast)}`,
+                    icon: DollarSign,
+                    className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                  },
+                  {
+                    label: 'Forecast Accuracy',
+                    value: salesForecastRows.length ? `${forecastAccuracy}%` : 'N/A',
+                    detail: 'Estimated from ML confidence interval width',
+                    icon: BarChart2,
+                    className: 'bg-blue-50 text-blue-700 border-blue-200',
+                  },
+                ].map(({ label, value, detail, icon: Icon, className }) => (
+                  <div key={label} className={`rounded-2xl border p-4 shadow-sm ${className}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.18em] font-black opacity-80">{label}</p>
+                        <p className="mt-2 text-2xl font-black">{value}</p>
+                      </div>
+                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/70">
+                        <Icon className="h-5 w-5" />
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[11px] font-bold opacity-75">{detail}</p>
                   </div>
-                </div>
-                <div className="h-[300px] 2xl:h-[360px] w-full">
-                  {analytics?.sales_history_chart?.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={analytics.sales_history_chart} margin={{ top: 12, right: 20, left: 0, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
-                        <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} />
-                        <YAxis stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} />
-                        <Tooltip formatter={(value) => formatCurrency(value)} contentStyle={{ borderRadius: 16, border: '1px solid rgba(46,26,17,0.08)' }} />
-                        <Legend wrapperStyle={{ fontSize: 11 }} />
-                        {visibleSeries.pos_revenue && <Bar dataKey="pos_revenue" name="POS Sales" fill="#8D6E63" radius={[8, 8, 0, 0]} />}
-                        {visibleSeries.booking_revenue && <Bar dataKey="booking_revenue" name="Booking Revenue" fill="#D4AF37" radius={[8, 8, 0, 0]} />}
-                        {visibleSeries.total_revenue && <Line type="monotone" dataKey="total_revenue" name="Combined Revenue" stroke="#2E1A11" strokeWidth={3} dot={false} />}
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <EmptyState icon={BarChart2} title="No sales data" description="No completed revenue exists for this date range." />
-                  )}
-                </div>
-                </div>
-              </Card>
+                ))}
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-1 gap-4 md:gap-5">
-                <div className="animate-in-up">
-                <Card className="h-full" padding={false}>
-                  <div className="p-5">
-                  <CardHeader title="Revenue Sources" className="mb-4" />
-                  <div className="space-y-4">
-                    {[
-                      { label: 'POS Income', value: metrics.pos_revenue || 0, color: 'bg-espresso/70' },
-                      { label: 'Booking Income', value: metrics.booking_revenue || 0, color: 'bg-gold' },
-                    ].map(row => {
-                      const pct = revenueTotal ? Math.round((Number(row.value) / revenueTotal) * 100) : 0;
-                      return (
-                        <div key={row.label}>
-                          <div className="flex justify-between text-sm font-bold text-espresso mb-2">
-                            <span>{row.label}</span>
-                            <span>{formatCurrency(row.value)} · {pct}%</span>
-                          </div>
-                          <div className="h-3 rounded-full bg-cream-dark overflow-hidden">
-                            <div className={`h-full ${row.color} rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  </div>
-                </Card>
-                </div>
-                <div className="animate-in-up">
-                <Card className="h-full" padding={false}>
-                  <div className="p-5">
-                  <CardHeader title="Booking Status Summary" className="mb-3" />
-                  <div className="grid grid-cols-[130px_1fr] gap-4 items-center">
-                    <div className="h-32">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={statusData} dataKey="value" nameKey="label" innerRadius={38} outerRadius={58} paddingAngle={3}>
-                            {statusData.map(s => <Cell key={s.label} fill={s.color} />)}
-                          </Pie>
-                          <Tooltip />
-                        </PieChart>
-                      </ResponsiveContainer>
+              <div className="animate-in-up">
+                <Card className="rounded-[24px]" padding={false}>
+                  <div className="p-5 md:p-6">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
+                      <CardHeader title="Sales Analytics" subtitle="Actual sales with ML forecast, projected revenue, and confidence bounds" className="p-0" />
+                      <div className="flex flex-wrap gap-2">
+                        {['daily', 'weekly', 'monthly'].map(grain => (
+                          <button key={grain} onClick={() => setChartGrain(grain)} className={`px-3 py-2 rounded-2xl text-[11px] font-black capitalize transition-all ${chartGrain === grain ? 'bg-espresso text-gold' : 'bg-cream text-espresso/60 hover:text-espresso'}`}>
+                            {grain}
+                          </button>
+                        ))}
+                        {[
+                          ['actual', 'Actual'],
+                          ['forecast', 'Forecast'],
+                          ['combined', 'Combined'],
+                        ].map(([key, label]) => (
+                          <button key={key} onClick={() => setVisibleSeries(v => ({ ...v, [key]: !v[key] }))} className={`px-3 py-2 rounded-2xl text-[11px] font-black transition-all ${visibleSeries[key] ? 'bg-gold text-espresso' : 'bg-cream text-espresso/45'}`}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-3">
-                      {statusData.map(status => (
-                        <div key={status.label} className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-2 font-bold text-espresso"><span className="w-2.5 h-2.5 rounded-full" style={{ background: status.color }} />{status.label}</span>
-                          <span className="font-black">{status.value}</span>
-                        </div>
-                      ))}
+                    <div className="h-[300px] 2xl:h-[360px] w-full">
+                      {forecastChartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={forecastChartData} margin={{ top: 12, right: 20, left: 0, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
+                            <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} tickFormatter={formatChartDate} />
+                            <YAxis stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `PHP ${Math.round(Number(value || 0) / 1000)}k`} />
+                            <Tooltip content={<SalesForecastTooltip />} />
+                            <Legend wrapperStyle={{ fontSize: 11 }} />
+                            {visibleSeries.actual && <Line type="monotone" dataKey="actual_sales" name="Actual Sales" stroke="#2E1A11" strokeWidth={3} dot={false} connectNulls={false} />}
+                            {visibleSeries.forecast && <Line type="monotone" dataKey="forecast_sales" name="ML Forecast" stroke="#D4AF37" strokeWidth={3} strokeDasharray="7 5" dot={{ r: 3, fill: '#D4AF37' }} connectNulls={false} />}
+                            {visibleSeries.forecast && <Line type="monotone" dataKey="upper_bound" name="Upper Confidence" stroke="#8D6E63" strokeWidth={1.5} strokeDasharray="3 5" dot={false} connectNulls={false} />}
+                            {visibleSeries.forecast && <Line type="monotone" dataKey="lower_bound" name="Lower Confidence" stroke="#E57373" strokeWidth={1.5} strokeDasharray="3 5" dot={false} connectNulls={false} />}
+                            {visibleSeries.combined && <Line type="monotone" dataKey="combined_sales" name="Combined Actual + Forecast" stroke="#3B82F6" strokeWidth={2.5} dot={false} connectNulls />}
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <EmptyState icon={BarChart2} title="No sales or forecast data" description="Run forecasting or select a date range with completed revenue." />
+                      )}
                     </div>
                   </div>
-                  </div>
                 </Card>
-                </div>
               </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+                <div className="xl:col-span-8">
+                  <Card className="!p-4 md:!p-5">
+                    <CardHeader title="Estimated Stock Depletions &amp; Reorders" subtitle="Based on the active demand forecast." />
+                    <div className="w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/70 scrollbar-thin">
+                      <table className="min-w-[860px] w-full table-fixed text-xs">
+                        <thead className="sticky top-0 z-10 bg-cream">
+                          <tr className="border-b border-espresso/[0.08] text-espresso/55 font-black uppercase tracking-wider">
+                            <th className="w-[28%] px-4 py-3 text-left align-bottom leading-snug">Product</th>
+                            <th className="w-[12%] px-4 py-3 text-center align-bottom leading-snug">Stock</th>
+                            <th className="w-[15%] px-4 py-3 text-center align-bottom leading-snug">7-Day Demand</th>
+                            <th className="w-[12%] px-4 py-3 text-center align-bottom leading-snug">Balance</th>
+                            <th className="w-[13%] px-4 py-3 text-center align-bottom leading-snug">Order Qty</th>
+                            <th className="w-[20%] px-4 py-3 text-left align-bottom leading-snug">Supplier</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reorderRows.length > 0 ? reorderPageRows.map((rec, i) => (
+                            <tr key={`${rec.product_name}-${i}`} className="border-b border-espresso/[0.04] hover:bg-cream/45 transition-colors">
+                              <td className="px-4 py-3.5 align-middle font-bold leading-relaxed text-espresso whitespace-normal break-words">{rec.product_name}</td>
+                              <td className="px-4 py-3.5 text-center align-middle font-bold leading-relaxed">{rec.current_stock}</td>
+                              <td className="px-4 py-3.5 text-center align-middle font-bold leading-relaxed text-gold-dark">{rec["7_day_forecasted_demand"]}</td>
+                              <td className={`px-4 py-3.5 text-center align-middle font-bold leading-relaxed ${rec.projected_stock <= 0 ? 'text-red-600' : 'text-espresso/60'}`}>
+                                {rec.projected_stock}
+                              </td>
+                              <td className="px-4 py-3.5 text-center align-middle">
+                                <span className="inline-flex justify-center rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold leading-none text-amber-700">
+                                  +{rec.recommended_order_quantity}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3.5 align-middle font-semibold leading-relaxed text-espresso/65 whitespace-normal break-words">{rec.supplier_name}</td>
+                            </tr>
+                          )) : (
+                            <tr>
+                              <td colSpan={6}>
+                                <EmptyState icon={Package} title="All stocks optimal" description="No reorder actions needed at this time." />
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    {reorderRows.length > 0 && (
+                      <PaginationControls page={reorderPage} setPage={setReorderPage} total={reorderRows.length} pageSize={reorderPageSize} setPageSize={setReorderPageSize} />
+                    )}
+                  </Card>
+                </div>
+
+                <div className="xl:col-span-4">
+                  <Card className="!p-4 md:!p-5">
+                    <CardHeader title="Low Stock Alerts" />
+                    {lowStockAlerts.length > 0 ? (
+                      <div className="space-y-3">
+                        {lowStockPageRows.map((alert, i) => (
+                          <div key={`${alert.name}-${i}`} className="bg-red-50/80 p-4 rounded-xl border border-red-100 flex justify-between items-start">
+                            <div>
+                              <p className="font-bold text-sm text-red-900">{alert.name}</p>
+                              <p className="text-[10px] text-red-600 mt-0.5">Supplier: {alert.supplier_name}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-red-800">Stock: {alert.stock_quantity} {alert.base_unit}</p>
+                              <p className="text-[10px] text-red-500">Min: {alert.minimum_stock_level}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState icon={AlertTriangle} title="No alerts" description="All stock levels are healthy." />
+                    )}
+                    {lowStockAlerts.length > 0 && (
+                      <PaginationControls page={lowStockPage} setPage={setLowStockPage} total={lowStockAlerts.length} pageSize={lowStockPageSize} setPageSize={setLowStockPageSize} />
+                    )}
+                  </Card>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 md:gap-5">
@@ -919,12 +1148,12 @@ export default function AdminDashboard() {
                         aria-label={`Delete booking for ${row.customer_name || 'customer'}`}
                       >
                         <Trash2 className="w-3 h-3" />
-                        {deletingBookingId === row.id ? 'Deleting...' : 'Delete'}
+                        {deletingBookingId === row.id ? 'Removing Booking...' : 'Remove Booking'}
                       </button>
                     )}
                   />
                   </div>
-                  <TablePager page={bookingPage} setPage={setBookingPage} total={sortedBookings.length} pageSize={tablePageSize} />
+                  <PaginationControls page={bookingPage} setPage={setBookingPage} total={sortedBookings.length} pageSize={bookingPageSize} setPageSize={setBookingPageSize} />
                   </div>
                 </Card>
                 </div>
@@ -946,7 +1175,7 @@ export default function AdminDashboard() {
                     renderCell={(row, key) => key === 'total' ? formatCurrency(row[key]) : row[key]}
                   />
                   </div>
-                  <TablePager page={posPage} setPage={setPosPage} total={sortedPos.length} pageSize={tablePageSize} />
+                  <PaginationControls page={posPage} setPage={setPosPage} total={sortedPos.length} pageSize={posPageSize} setPageSize={setPosPageSize} />
                   </div>
                 </Card>
                 </div>
@@ -958,8 +1187,11 @@ export default function AdminDashboard() {
                   <div className="p-5 md:p-6 h-full flex flex-col">
                   <CardHeader title="Top Selling Products" className="mb-3" />
                   <div className="min-h-0 flex-1 overflow-hidden">
-                  <PerformanceList rows={analytics?.top_selling_products || []} primaryKey="product" midKey="quantity_sold" midLabel="sold" />
+                  <PerformanceList rows={topProductRows} primaryKey="product" midKey="quantity_sold" midLabel="sold" />
                   </div>
+                  {topProducts.length > 0 && (
+                    <PaginationControls page={topProductsPage} setPage={setTopProductsPage} total={topProducts.length} pageSize={topProductsPageSize} setPageSize={setTopProductsPageSize} />
+                  )}
                   </div>
                 </Card>
                 </div>
@@ -968,8 +1200,11 @@ export default function AdminDashboard() {
                   <div className="p-5 md:p-6 h-full flex flex-col">
                   <CardHeader title="Top Booked Packages" className="mb-3" />
                   <div className="min-h-0 flex-1 overflow-hidden">
-                  <PerformanceList rows={analytics?.top_booked_packages || []} primaryKey="package" midKey="total_bookings" midLabel="bookings" />
+                  <PerformanceList rows={topPackageRows} primaryKey="package" midKey="total_bookings" midLabel="bookings" />
                   </div>
+                  {topPackages.length > 0 && (
+                    <PaginationControls page={topPackagesPage} setPage={setTopPackagesPage} total={topPackages.length} pageSize={topPackagesPageSize} setPageSize={setTopPackagesPageSize} />
+                  )}
                   </div>
                 </Card>
                 </div>
@@ -979,35 +1214,37 @@ export default function AdminDashboard() {
 
           {/* END-OF-DAY REPORTS */}
           {activeTab === 'reports' && (
-            <div className="max-w-[1280px] mx-auto space-y-6 animate-in-up" key="reports">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex h-full min-h-0 w-full flex-col gap-4 animate-in-up" key="reports">
+              <div className="shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
                   <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">End-of-Day Reports</h1>
                   <p className="text-xs text-espresso/50 mt-1">Print shift closeout reports and reprint saved records.</p>
                 </div>
                 <Button variant="gold" size="sm" icon={Printer} onClick={() => openEndOfDayModal()}>
-                  Print End-of-Day Report
+                  Prepare Closeout Report
                 </Button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
                   ['Saved Reports', endOfDayReports.length, 'bg-white text-espresso border-espresso/[0.06]'],
                   ['Last Gross Sales', endOfDayReports[0] ? formatCurrency(endOfDayReports[0].gross_sales) : formatCurrency(0), 'bg-emerald-50 text-emerald-700 border-emerald-200'],
                   ['Last Cash Difference', endOfDayReports[0] ? formatCurrency(endOfDayReports[0].cash_difference) : formatCurrency(0), 'bg-amber-50 text-amber-700 border-amber-200'],
                 ].map(([label, value, className]) => (
-                  <div key={label} className={`rounded-3xl border p-5 shadow-sm ${className}`}>
+                  <div key={label} className={`rounded-2xl border p-4 shadow-sm ${className}`}>
                     <p className="text-[10px] uppercase tracking-[0.18em] font-black opacity-80">{label}</p>
                     <p className="text-2xl font-black mt-2">{value}</p>
                   </div>
                 ))}
               </div>
 
-              <Card>
-                <CardHeader title="Saved Shift Closeouts" subtitle="Permanent reports for admin viewing and receipt reprinting." />
+              <Card padding={false} className="min-h-0 flex-1 overflow-hidden">
+                <div className="flex h-full min-h-0 flex-col p-4 md:p-5">
+                <CardHeader title="Saved Shift Closeouts" subtitle="Permanent reports for admin viewing and receipt reprinting." className="mb-4" />
                 {endOfDayReports.length > 0 ? (
-                  <div className="space-y-3">
-                    {endOfDayReports.map(report => (
+                  <>
+                  <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1 scrollbar-thin">
+                    {reportPageRows.map(report => (
                       <div key={report.id} className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1039,36 +1276,43 @@ export default function AdminDashboard() {
                           )}
                         </div>
                         <Button variant="outline" size="sm" icon={Printer} onClick={() => handleReprintEndOfDayReport(report)}>
-                          Reprint
+                          Reprint Closeout
                         </Button>
                       </div>
                     ))}
                   </div>
+                  <div className="shrink-0 sticky bottom-0 bg-white/95 pt-1">
+                    <PaginationControls page={reportsPage} setPage={setReportsPage} total={endOfDayReports.length} pageSize={reportsPageSize} setPageSize={setReportsPageSize} />
+                  </div>
+                  </>
                 ) : (
-                  <EmptyState icon={Printer} title="No end-of-day reports" description="Print the first closeout report from this admin page." />
+                  <div className="flex min-h-0 flex-1 items-center justify-center">
+                    <EmptyState icon={Printer} title="No end-of-day reports" description="Print the first closeout report from this admin page." />
+                  </div>
                 )}
+                </div>
               </Card>
             </div>
           )}
 
           {/* PAYMENT BOOKING VERIFICATION */}
           {activeTab === 'payments' && (
-            <div className="max-w-[1480px] mx-auto space-y-6 animate-in-up" key="payments">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="w-full space-y-4 animate-in-up" key="payments">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
                   ['Pending Verification', paymentStatusCounts.PENDING_VERIFICATION || 0, 'bg-amber-50 text-amber-700 border-amber-200'],
                   ['Approved', paymentStatusCounts.APPROVED || 0, 'bg-emerald-50 text-emerald-700 border-emerald-200'],
                   ['Rejected', paymentStatusCounts.REJECTED || 0, 'bg-red-50 text-red-700 border-red-200'],
                 ].map(([label, value, className]) => (
-                  <div key={label} className={`rounded-3xl border p-5 shadow-sm ${className}`}>
+                  <div key={label} className={`rounded-2xl border p-4 shadow-sm ${className}`}>
                     <p className="text-[10px] uppercase tracking-[0.18em] font-black opacity-80">{label}</p>
                     <p className="text-3xl font-black mt-2">{value}</p>
                   </div>
                 ))}
               </div>
 
-              <Card>
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
+              <Card className="!p-4 md:!p-5">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
                   <CardHeader
                     title="GCash Payment Booking Verification"
                     subtitle="Approve only after matching the reference, amount, date/time, and screenshot in the GCash merchant app."
@@ -1078,7 +1322,10 @@ export default function AdminDashboard() {
                     <Select
                       label="Filter Status"
                       value={paymentStatusFilter}
-                      onChange={e => setPaymentStatusFilter(e.target.value)}
+                      onChange={e => {
+                        setPaymentStatusFilter(e.target.value);
+                        setPaymentPage(1);
+                      }}
                       options={[
                         { value: 'PENDING_VERIFICATION', label: 'Pending Verification' },
                         { value: 'APPROVED', label: 'Approved' },
@@ -1090,8 +1337,9 @@ export default function AdminDashboard() {
                 </div>
 
                 {filteredBookingPayments.length > 0 ? (
-                  <div className="space-y-3 max-h-[680px] overflow-y-auto pr-1 scrollbar-thin">
-                    {filteredBookingPayments.map((payment, i) => {
+                  <>
+                  <div className="space-y-2.5">
+                    {paymentPageRows.map((payment, i) => {
                       const details = payment.booking_details || {};
                       const isPending = payment.status === 'PENDING_VERIFICATION';
                       return (
@@ -1143,7 +1391,7 @@ export default function AdminDashboard() {
                                   className="inline-flex items-center justify-center gap-2 rounded-[20px] bg-white/80 border border-espresso/10 px-4 py-2 text-xs font-black text-espresso hover:bg-cream-dark transition-all"
                                 >
                                   <Eye className="w-4 h-4" />
-                                  View Receipt
+                                  Review Receipt Proof
                                 </a>
                               )}
                               {isPending ? (
@@ -1155,7 +1403,7 @@ export default function AdminDashboard() {
                                     loading={verifyingPaymentId === payment.id}
                                     onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}
                                   >
-                                    Approve
+                                    Confirm Payment
                                   </Button>
                                   <Button
                                     size="sm"
@@ -1164,7 +1412,7 @@ export default function AdminDashboard() {
                                     disabled={verifyingPaymentId === payment.id}
                                     onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}
                                   >
-                                    Reject
+                                    Flag Payment Issue
                                   </Button>
                                 </>
                               ) : (
@@ -1180,6 +1428,8 @@ export default function AdminDashboard() {
                       );
                     })}
                   </div>
+                  <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={paymentPageSize} setPageSize={setPaymentPageSize} />
+                  </>
                 ) : (
                   <EmptyState icon={CreditCard} title="No payments found" description="Submitted GCash booking payments will appear here for verification." />
                 )}
@@ -1189,11 +1439,11 @@ export default function AdminDashboard() {
 
           {/* STAFF ACCOUNTS */}
           {activeTab === 'staff' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-in-up" key="staff">
-              <div className="lg:col-span-4">
-                <Card>
+            <div className="grid w-full grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,0.42fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(320px,0.36fr)_minmax(0,1fr)] items-stretch animate-in-up" key="staff">
+              <div className="min-h-[540px]">
+                <Card className="!p-4 md:!p-5 h-full flex flex-col">
                   <CardHeader title="Add Staff User" />
-                  <form onSubmit={handleCreateStaff} className="space-y-4">
+                  <form onSubmit={handleCreateStaff} className="flex min-h-0 flex-1 flex-col gap-4">
                     <Input label="Username" required value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="username" />
                     <Input label="Password" type="password" required value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="password" />
                     <Input label="Email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="staff@cav.com" />
@@ -1207,36 +1457,62 @@ export default function AdminDashboard() {
                         { value: 'CUSTOMER', label: 'Customer Profile' },
                       ]}
                     />
-                    <Button type="submit" variant="primary" className="w-full" icon={Plus}>
-                      Save User Profile
+                    <Button type="submit" variant="primary" className="mt-auto w-full" icon={Plus}>
+                      Create Staff Access
                     </Button>
                   </form>
                 </Card>
               </div>
 
-              <div className="lg:col-span-8">
-                <Card>
+              <div className="min-h-[540px]">
+                <Card className="!p-4 md:!p-5 h-full flex flex-col">
                   <CardHeader title="Existing Accounts" />
                   {staffList.length > 0 ? (
-                    <div className="w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/70 scrollbar-thin">
-                      <table className="min-w-[640px] w-full table-fixed text-xs">
+                    <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="min-h-0 flex-1 w-full overflow-hidden rounded-2xl border border-espresso/[0.06] bg-white/70">
+                      <table className="w-full table-fixed text-xs">
                         <thead className="sticky top-0 z-10 bg-cream">
                           <tr className="border-b border-espresso/[0.08] text-espresso/55 font-black uppercase tracking-wider">
-                            <th className="w-[32%] px-4 py-3 text-left align-bottom leading-snug">Username</th>
-                            <th className="w-[44%] px-4 py-3 text-left align-bottom leading-snug">Email</th>
-                            <th className="w-[24%] px-4 py-3 text-left align-bottom leading-snug">Role</th>
+                            <th className="w-[26%] px-4 py-3 text-left align-bottom leading-snug">Username</th>
+                            <th className="w-[38%] px-4 py-3 text-left align-bottom leading-snug">Email</th>
+                            <th className="w-[20%] px-4 py-3 text-left align-bottom leading-snug">Role</th>
+                            <th className="w-[16%] px-4 py-3 text-right align-bottom leading-snug">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {staffList.map((st, i) => (
+                          {staffPageRows.map((st, i) => (
                             <tr key={st.id} className="border-b border-espresso/5 hover:bg-espresso/[0.02] transition-colors animate-in-up" style={{ animationDelay: `${i * 30}ms` }}>
                               <td className="px-4 py-3.5 align-middle font-bold leading-relaxed text-espresso whitespace-normal break-words">{st.username}</td>
                               <td className="px-4 py-3.5 align-middle font-semibold leading-relaxed text-espresso/65 whitespace-normal break-words">{st.email || 'N/A'}</td>
                               <td className="px-4 py-3.5 align-middle"><StatusBadge status={st.role} /></td>
+                              <td className="px-4 py-3.5 align-middle">
+                                <div className="flex justify-end gap-1.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    icon={Edit}
+                                    title={`Edit ${st.username}`}
+                                    aria-label={`Edit ${st.username}`}
+                                    onClick={() => openStaffEditModal(st)}
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    icon={Trash2}
+                                    title={`Delete ${st.username}`}
+                                    aria-label={`Delete ${st.username}`}
+                                    onClick={() => handleDeleteStaff(st)}
+                                    disabled={deletingStaffId === st.id || st.id === user?.id}
+                                    className="text-red-500 hover:text-red-700"
+                                  />
+                                </div>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                    <PaginationControls page={staffPage} setPage={setStaffPage} total={staffList.length} pageSize={staffPageSize} setPageSize={setStaffPageSize} />
                     </div>
                   ) : (
                     <EmptyState icon={Users} title="No accounts found" description="Create your first staff account using the form." />
@@ -1248,9 +1524,9 @@ export default function AdminDashboard() {
 
           {/* FAQ MANAGER */}
           {activeTab === 'faq' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-in-up" key="faq">
-              <div className="lg:col-span-4">
-                <Card>
+            <div className="grid w-full grid-cols-1 gap-4 xl:grid-cols-12 items-start animate-in-up" key="faq">
+              <div className="xl:col-span-4">
+                <Card className="!p-4 md:!p-5">
                   <CardHeader title={editingFaq ? 'Update FAQ Entry' : 'Add FAQ Entry'} />
                   <form onSubmit={handleFAQSubmit} className="space-y-4">
                     <Input label="Question" required value={faqQuestion} onChange={e => setFaqQuestion(e.target.value)} placeholder="e.g. Do you accept credit cards?" />
@@ -1258,11 +1534,11 @@ export default function AdminDashboard() {
                     <Input label="Tags / Keywords" value={faqTags} onChange={e => setFaqTags(e.target.value)} placeholder="e.g. card, payment, visa" />
                     <div className="flex gap-2">
                       <Button type="submit" variant="primary" className="flex-1" icon={Check}>
-                        Save FAQ
+                        Publish FAQ Answer
                       </Button>
                       {editingFaq && (
                         <Button variant="outline" onClick={() => { setFaqQuestion(''); setFaqAnswer(''); setFaqTags(''); setEditingFaq(null); }}>
-                          Cancel
+                          Keep Current FAQ
                         </Button>
                       )}
                     </div>
@@ -1270,12 +1546,13 @@ export default function AdminDashboard() {
                 </Card>
               </div>
 
-              <div className="lg:col-span-8">
-                <Card>
+              <div className="xl:col-span-8">
+                <Card className="!p-4 md:!p-5">
                   <CardHeader title="Knowledge Base FAQs" subtitle="RAG-powered question bank" />
                   {faqs.length > 0 ? (
-                    <div className="space-y-3">
-                      {faqs.map((faq, i) => (
+                    <>
+                    <div className="space-y-2.5">
+                      {faqPageRows.map((faq, i) => (
                         <div key={faq.id} className="bg-cream p-4 md:p-5 rounded-2xl border border-espresso/5 flex justify-between items-start gap-4 animate-in-up" style={{ animationDelay: `${i * 50}ms` }}>
                           <div className="space-y-1.5 flex-1 min-w-0">
                             <p className="font-bold text-sm text-espresso">{faq.question}</p>
@@ -1296,6 +1573,8 @@ export default function AdminDashboard() {
                         </div>
                       ))}
                     </div>
+                    <PaginationControls page={faqPage} setPage={setFaqPage} total={faqs.length} pageSize={faqPageSize} setPageSize={setFaqPageSize} />
+                    </>
                   ) : (
                     <EmptyState icon={MessageSquare} title="No FAQs yet" description="Add your first FAQ entry to power the chatbot." />
                   )}
@@ -1305,6 +1584,57 @@ export default function AdminDashboard() {
           )}
         </main>
       </div>
+
+      <Modal
+        open={!!editingStaff}
+        onClose={() => !staffSaving && setEditingStaff(null)}
+        title="Edit Staff Account"
+        size="md"
+      >
+        <form onSubmit={handleUpdateStaff} className="space-y-4">
+          <Input
+            label="Username"
+            required
+            value={editStaffForm.username}
+            onChange={e => setEditStaffForm(current => ({ ...current, username: e.target.value }))}
+            disabled={staffSaving}
+          />
+          <Input
+            label="Email"
+            type="email"
+            value={editStaffForm.email}
+            onChange={e => setEditStaffForm(current => ({ ...current, email: e.target.value }))}
+            disabled={staffSaving}
+          />
+          <Input
+            label="New Password"
+            type="password"
+            value={editStaffForm.password}
+            onChange={e => setEditStaffForm(current => ({ ...current, password: e.target.value }))}
+            placeholder="Leave blank to keep current password"
+            disabled={staffSaving}
+          />
+          <Select
+            label="Role"
+            value={editStaffForm.role}
+            onChange={e => setEditStaffForm(current => ({ ...current, role: e.target.value }))}
+            disabled={staffSaving}
+            options={[
+              { value: 'STAFF', label: 'Regular Staff' },
+              { value: 'ADMIN', label: 'Super Administrator' },
+              { value: 'CUSTOMER', label: 'Customer Profile' },
+            ]}
+          />
+          <div className="flex flex-col sm:flex-row gap-2 pt-2">
+            <Button type="submit" variant="primary" className="flex-1" loading={staffSaving} icon={Check}>
+              Update Account
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setEditingStaff(null)} disabled={staffSaving}>
+              Keep Current Details
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* End-of-Day Report Modal */}
       <Modal open={endOfDayModalOpen} onClose={() => !endOfDayPrinting && setEndOfDayModalOpen(false)} title="Print End-of-Day Report" size="sm">
@@ -1368,10 +1698,10 @@ export default function AdminDashboard() {
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <Button variant="gold" className="flex-1" icon={Printer} onClick={handlePrintEndOfDayReport} loading={endOfDayPrinting}>
-              Print Report
+              Print & Save Report
             </Button>
             <Button variant="outline" onClick={() => setEndOfDayModalOpen(false)} disabled={endOfDayPrinting}>
-              Cancel
+              Keep Report Draft
             </Button>
           </div>
         </div>

@@ -209,6 +209,75 @@ class StaffListView(generics.ListCreateAPIView):
         
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
+class StaffDetailView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return None
+
+    def patch(self, request, pk):
+        if request.user.role != 'ADMIN':
+            return Response({"detail": "Only Admins can update staff accounts."}, status=status.HTTP_403_FORBIDDEN)
+
+        user = self.get_object(pk)
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        username = request.data.get('username', user.username).strip()
+        email = request.data.get('email', user.email or '')
+        role = request.data.get('role', user.role)
+        password = request.data.get('password', '')
+
+        if not username:
+            return Response({"detail": "Username is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(username=username).exclude(pk=user.pk).exists():
+            return Response({"detail": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.username = username
+        user.email = email
+        user.role = role
+        user.is_staff = role in ['STAFF', 'ADMIN']
+        if password:
+            user.set_password(password)
+        user.save()
+
+        if role == 'CUSTOMER':
+            Customer.objects.get_or_create(user=user)
+
+        AuditLog.objects.create(
+            user=request.user,
+            action="STAFF_UPDATE",
+            description=f"Updated user {user.username} with role {role}."
+        )
+
+        return Response(UserSerializer(user).data)
+
+    def delete(self, request, pk):
+        if request.user.role != 'ADMIN':
+            return Response({"detail": "Only Admins can delete staff accounts."}, status=status.HTTP_403_FORBIDDEN)
+
+        user = self.get_object(pk)
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if user.pk == request.user.pk:
+            return Response({"detail": "You cannot delete your own account."}, status=status.HTTP_400_BAD_REQUEST)
+
+        username = user.username
+        user.delete()
+
+        AuditLog.objects.create(
+            user=request.user,
+            action="STAFF_DELETE",
+            description=f"Deleted user {username}."
+        )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 class ForgotPasswordView(views.APIView):
     permission_classes = [permissions.AllowAny]
 

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 
 const variants = {
-  primary: 'bg-espresso text-cream hover:bg-espresso-light shadow-[0_14px_34px_rgba(46,26,17,0.18)]',
-  gold: 'bg-gold text-espresso hover:bg-gold-light shadow-[0_14px_34px_rgba(212,175,55,0.22)]',
-  outline: 'bg-white/70 border border-espresso/10 text-espresso hover:bg-cream-dark hover:border-espresso/20 shadow-[0_10px_24px_rgba(46,26,17,0.06)]',
-  ghost: 'text-espresso/75 hover:text-espresso hover:bg-espresso/5',
-  danger: 'bg-red-600 text-white hover:bg-red-700 shadow-[0_14px_34px_rgba(220,38,38,0.18)]',
-  success: 'bg-green-700 text-white hover:bg-green-800 shadow-[0_14px_34px_rgba(21,128,61,0.18)]',
+  primary: 'bg-espresso text-cream shadow-[0_14px_34px_rgba(46,26,17,0.18)] hover:bg-espresso-light hover:shadow-[0_18px_42px_rgba(46,26,17,0.24)] active:bg-espresso-dark',
+  gold: 'bg-gold text-espresso shadow-[0_14px_34px_rgba(212,175,55,0.22)] hover:bg-gold-light hover:shadow-[0_18px_42px_rgba(212,175,55,0.30)] active:bg-gold-dark',
+  outline: 'bg-white/70 border border-espresso/10 text-espresso shadow-[0_10px_24px_rgba(46,26,17,0.06)] hover:bg-cream-dark hover:border-espresso/20 hover:shadow-[0_14px_30px_rgba(46,26,17,0.10)] active:bg-cream',
+  ghost: 'text-espresso/75 hover:text-espresso hover:bg-espresso/5 active:bg-espresso/10',
+  danger: 'bg-red-600 text-white shadow-[0_14px_34px_rgba(220,38,38,0.18)] hover:bg-red-700 hover:shadow-[0_18px_42px_rgba(220,38,38,0.24)] active:bg-red-800',
+  success: 'bg-green-700 text-white shadow-[0_14px_34px_rgba(21,128,61,0.18)] hover:bg-green-800 hover:shadow-[0_18px_42px_rgba(21,128,61,0.24)] active:bg-green-900',
 };
 
 const sizes = {
@@ -42,8 +42,8 @@ export function Button({
       disabled={disabled || loading}
       className={`
         relative inline-flex items-center justify-center gap-2 font-bold rounded-[20px]
-        transition-all duration-300 ease-out active:scale-[0.98] hover:-translate-y-0.5
-        disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
+        transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-300 ease-out hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]
+        disabled:opacity-55 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:active:scale-100
         focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold
         overflow-hidden
         ${variants[variant] || variants.primary}
@@ -60,7 +60,7 @@ export function Button({
         />
       )}
       {loading ? (
-        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+        <svg className="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
@@ -77,7 +77,7 @@ export function IconButton({ icon, label, variant = 'ghost', size = 'md', classN
     <button
       aria-label={label}
       className={`
-        inline-flex items-center justify-center rounded-[18px] transition-all duration-300 ease-out hover:-translate-y-0.5 active:scale-95
+        inline-flex items-center justify-center rounded-[18px] transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-300 ease-out hover:-translate-y-0.5 active:translate-y-0 active:scale-95
         focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold
         ${variants[variant] || variants.ghost}
         ${size === 'sm' ? 'p-1.5' : size === 'lg' ? 'p-3' : 'p-2'}

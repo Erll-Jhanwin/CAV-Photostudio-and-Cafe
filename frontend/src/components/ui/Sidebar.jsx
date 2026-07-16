@@ -91,7 +91,7 @@ export function Sidebar({
             onClick={onLogout}
             className="w-full !text-white/80 hover:!text-white hover:bg-white/10 justify-start"
           >
-            Sign Out
+            End Session
           </Button>
         </div>
       </aside>
@@ -118,7 +118,7 @@ export function Sidebar({
               onClick={onSignOutCancel}
               className="rounded-2xl"
             >
-              Cancel
+              Stay Signed In
             </Button>
             <Button
               variant="danger"
@@ -126,7 +126,7 @@ export function Sidebar({
               onClick={handleConfirmSignOut}
               className="rounded-2xl"
             >
-              Sign Out
+              Sign Out Securely
             </Button>
           </div>
         </div>

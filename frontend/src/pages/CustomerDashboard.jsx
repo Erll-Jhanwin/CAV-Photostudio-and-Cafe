@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
-import { Calendar, User, Clock, Bell, LogOut, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Star, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
+import { Calendar, User, Clock, Bell, LogOut, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -143,30 +143,32 @@ const getStatusMeta = (status) => {
 
 const getBookingActions = (booking) => {
   const status = booking?.status;
-  const editAction = booking?.can_edit ? [{ label: 'Edit Booking', icon: RotateCcw }] : [];
+  const editAction = booking?.can_edit ? [{ key: 'edit', label: 'Refine Booking', icon: RotateCcw }] : [];
+  const receiptAction = booking?.payments?.some(payment => payment.receipt_url)
+    ? [{ key: 'receipt', label: 'Save Receipt', icon: Download }]
+    : [];
   switch (status) {
     case 'CONFIRMED':
     case 'CONFIRMED_DP':
       return [
-        { label: 'View Details', icon: Eye, primary: true },
+        { key: 'details', label: 'Review Details', icon: Eye, primary: true },
         ...editAction,
       ];
     case 'COMPLETED':
       return [
-        { label: 'View Details', icon: Eye, primary: true },
-        { label: 'Download Receipt', icon: Download },
-        { label: 'Leave Review', icon: Star },
+        { key: 'details', label: 'Review Details', icon: Eye, primary: true },
+        ...receiptAction,
       ];
     case 'CANCELLED':
       return [
-        { label: 'View Details', icon: Eye, primary: true },
+        { key: 'details', label: 'Review Details', icon: Eye, primary: true },
       ];
     case 'PENDING':
     default:
       return [
-        { label: 'View Details', icon: Eye, primary: true },
+        { key: 'details', label: 'Review Details', icon: Eye, primary: true },
         ...editAction,
-        { label: 'Cancel Booking', icon: XCircle, danger: true },
+        { key: 'cancel', label: 'Cancel Session', icon: XCircle, danger: true },
       ];
   }
 };
@@ -312,6 +314,17 @@ export default function CustomerDashboard() {
   const [paymentDate, setPaymentDate] = useState(getDateInputValue());
   const [paymentTime, setPaymentTime] = useState(getTimeInputValue());
   const [paymentReceipt, setPaymentReceipt] = useState(null);
+  const [paymentReceiptPreview, setPaymentReceiptPreview] = useState('');
+  const [paymentOcrLoading, setPaymentOcrLoading] = useState(false);
+  const [paymentOcrResult, setPaymentOcrResult] = useState(null);
+  const [paymentOcrWarnings, setPaymentOcrWarnings] = useState([]);
+  const [paymentScanProgress, setPaymentScanProgress] = useState({
+    status: 'idle',
+    percent: 0,
+    message: 'Upload a screenshot to scan payment details.',
+    messages: [],
+  });
+  const [paymentReferenceStatus, setPaymentReferenceStatus] = useState({ checking: false, exists: false, message: '' });
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const [gcashQrMissing, setGcashQrMissing] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(getMonthValue());
@@ -335,6 +348,12 @@ export default function CustomerDashboard() {
       setGcashQrMissing(false);
     }
   }, [selectedPackage]);
+
+  useEffect(() => {
+    return () => {
+      if (paymentReceiptPreview) URL.revokeObjectURL(paymentReceiptPreview);
+    };
+  }, [paymentReceiptPreview]);
 
   const allPackages = services.flatMap(service => (
     (service.packages || []).map(pkg => ({
@@ -525,6 +544,128 @@ export default function CustomerDashboard() {
     setSelectedTime('');
   };
 
+  const checkPaymentReferenceDuplicate = useCallback(async (referenceValue) => {
+    const cleanReference = referenceValue.trim();
+    if (!cleanReference) {
+      setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
+      return false;
+    }
+    try {
+      setPaymentReferenceStatus(current => ({ ...current, checking: true }));
+      const res = await client.get('/api/bookings/payments/reference-check/', {
+        params: { reference_number: cleanReference }
+      });
+      const exists = !!res.data.exists;
+      setPaymentReferenceStatus({
+        checking: false,
+        exists,
+        message: exists ? res.data.message || 'This GCash reference number has already been submitted.' : 'Reference number is available.',
+      });
+      return exists;
+    } catch {
+      setPaymentReferenceStatus({
+        checking: false,
+        exists: false,
+        message: 'Could not check this reference number yet. Staff will still verify it.',
+      });
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    const cleanReference = paymentReference.trim();
+    if (!cleanReference) {
+      setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      checkPaymentReferenceDuplicate(cleanReference);
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [paymentReference, checkPaymentReferenceDuplicate]);
+
+  const setPaymentScanStep = (status, percent, message) => {
+    setPaymentScanProgress(current => ({
+      status,
+      percent,
+      message,
+      messages: current.messages.includes(message)
+        ? current.messages
+        : [...current.messages, message].slice(-5),
+    }));
+  };
+
+  const handlePaymentReceiptUpload = async (file) => {
+    setPaymentReceipt(file || null);
+    setPaymentOcrResult(null);
+    setPaymentOcrWarnings([]);
+    setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
+    setPaymentScanProgress({
+      status: file ? 'uploading' : 'idle',
+      percent: file ? 5 : 0,
+      message: file ? 'Uploading image' : 'Upload a screenshot to scan payment details.',
+      messages: file ? ['Uploading image'] : [],
+    });
+    setPaymentReceiptPreview(current => {
+      if (current) URL.revokeObjectURL(current);
+      return file ? URL.createObjectURL(file) : '';
+    });
+    if (!file) return;
+
+    try {
+      setPaymentOcrLoading(true);
+      const ocrData = new FormData();
+      ocrData.append('receipt', file);
+      const res = await client.post('/api/bookings/payments/ocr/', ocrData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: progressEvent => {
+          if (!progressEvent.total) return;
+          const uploadPercent = Math.round((progressEvent.loaded * 30) / progressEvent.total);
+          setPaymentScanProgress(current => ({
+            ...current,
+            status: progressEvent.loaded >= progressEvent.total ? 'reading' : 'uploading',
+            percent: Math.min(35, Math.max(current.percent, 5 + uploadPercent)),
+            message: progressEvent.loaded >= progressEvent.total ? 'Reading payment details' : 'Uploading image',
+            messages: progressEvent.loaded >= progressEvent.total && !current.messages.includes('Reading payment details')
+              ? [...current.messages, 'Reading payment details'].slice(-5)
+              : current.messages,
+          }));
+        },
+      });
+      setPaymentScanStep('reading', 55, 'Reading payment details');
+      const fields = res.data.fields || {};
+      const nextReference = fields.reference_number?.value || '';
+      setPaymentScanStep('validating', 72, 'Validating reference number');
+      if (nextReference) setPaymentReference(nextReference);
+      setPaymentScanStep('autofilling', 88, 'Autofilling fields');
+      if (fields.amount?.value) setPaymentAmount(fields.amount.value);
+      if (fields.payment_date?.value) setPaymentDate(fields.payment_date.value);
+      if (fields.payment_time?.value) setPaymentTime(fields.payment_time.value);
+      setPaymentOcrResult(res.data);
+      setPaymentOcrWarnings(res.data.warnings || []);
+      if (res.data.duplicate_reference) {
+        setPaymentReferenceStatus({
+          checking: false,
+          exists: true,
+          message: 'This GCash reference number has already been submitted.',
+        });
+      }
+      const readableFields = Object.values(fields).filter(field => field?.value).length;
+      if (res.data.duplicate_reference) {
+        setPaymentScanStep('error', 100, 'Reference already submitted');
+      } else if (!res.data.ocr_available || readableFields === 0) {
+        setPaymentScanStep('error', 100, 'Scan failed');
+      } else {
+        setPaymentScanStep('success', 100, 'Scan complete');
+      }
+    } catch {
+      setPaymentOcrWarnings(['Could not scan this screenshot. Please enter the payment details manually.']);
+      setPaymentScanStep('error', 100, 'Scan failed');
+    } finally {
+      setPaymentOcrLoading(false);
+    }
+  };
+
   const getPackageById = useCallback((packageId) => (
     allPackages.find(pkg => String(pkg.id) === String(packageId))
   ), [allPackages]);
@@ -683,8 +824,18 @@ export default function CustomerDashboard() {
       alert(`Amount paid must be at least ${formatPeso(requiredDownPayment)}.`);
       return;
     }
+    if (paymentReferenceStatus.exists) {
+      alert('This GCash reference number has already been submitted. Please upload the correct receipt or enter a different reference number.');
+      return;
+    }
     try {
       setPaymentSubmitting(true);
+      const duplicateReference = await checkPaymentReferenceDuplicate(paymentReference);
+      if (duplicateReference) {
+        alert('This GCash reference number has already been submitted. Please upload the correct receipt or enter a different reference number.');
+        setPaymentSubmitting(false);
+        return;
+      }
       const latestAvailability = await fetchDayAvailability(selectedDate);
       const latestSlot = latestAvailability?.slots?.find(slot => slot.time === selectedTime);
       if (!latestSlot?.available) {
@@ -733,6 +884,16 @@ export default function CustomerDashboard() {
       setPaymentDate(getDateInputValue());
       setPaymentTime(getTimeInputValue());
       setPaymentReceipt(null);
+      setPaymentReceiptPreview('');
+      setPaymentOcrResult(null);
+      setPaymentOcrWarnings([]);
+      setPaymentScanProgress({
+        status: 'idle',
+        percent: 0,
+        message: 'Upload a screenshot to scan payment details.',
+        messages: [],
+      });
+      setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
       setCurrentStep(1);
       fetchDashboardData();
       setActiveTab('history');
@@ -748,18 +909,25 @@ export default function CustomerDashboard() {
     }
   };
 
-  const handleBookingAction = async (booking, actionLabel) => {
-    if (actionLabel === 'View Details') {
+  const handleBookingAction = async (booking, action) => {
+    if (action.key === 'details') {
       setSelectedBookingDetails(booking);
       return;
     }
 
-    if (actionLabel === 'Edit Booking') {
+    if (action.key === 'edit') {
       openEditBooking(booking);
       return;
     }
 
-    if (actionLabel !== 'Cancel Booking') return;
+    if (action.key === 'receipt') {
+      const receiptUrl = booking.payments?.find(payment => payment.receipt_url)?.receipt_url;
+      if (receiptUrl) window.open(receiptUrl, '_blank', 'noopener,noreferrer');
+      else setSelectedBookingDetails(booking);
+      return;
+    }
+
+    if (action.key !== 'cancel') return;
     if (!window.confirm(`Cancel booking for ${booking.package_details?.name || 'this package'}?`)) return;
 
     try {
@@ -844,10 +1012,58 @@ export default function CustomerDashboard() {
   const detailGallerySource = galleryImages.length ? galleryImages : packageSampleFallbacks;
   const detailGalleryImages = detailGallerySource
     .filter(item => item.image_url && item.category === detailGalleryCategory)
-    .slice(0, 6);
+    .slice(0, 4);
   const visibleDetailGalleryImages = detailGalleryImages.length
     ? detailGalleryImages
-    : packageSampleFallbacks.filter(item => item.category === detailGalleryCategory).slice(0, 6);
+    : packageSampleFallbacks.filter(item => item.category === detailGalleryCategory).slice(0, 4);
+  const hasPackageOptions = selectedService?.packages?.length > 0;
+  const isStep2PackageComplete = currentStep > 2 || (currentStep === 2 && (!hasPackageOptions || !!selectedPackage));
+  const isStep2ScheduleActive = currentStep === 2 && isStep2PackageComplete;
+  const isStep2ScheduleComplete = currentStep > 2 || (
+    currentStep === 2 &&
+    !!selectedDate &&
+    !!selectedTime &&
+    (!hasPackageOptions || !!selectedPackage)
+  );
+  const currentStepTitle = currentStep === 1
+    ? 'Step 1 of 4 - Choose Service'
+    : currentStep === 2
+    ? isStep2ScheduleActive
+      ? 'Step 2B of 4 — Schedule Date & Time'
+      : 'Step 2A of 4 — Select Package'
+    : currentStep === 3
+    ? 'Step 3 of 4 - Customer Info'
+    : 'Step 4 of 4 - Review';
+  const bookingProgressValue = currentStep === 2
+    ? isStep2ScheduleComplete
+      ? 2.6
+      : isStep2ScheduleActive
+      ? 2.35
+      : 2
+    : currentStep;
+  const bookingProgressItems = [
+    { step: 1, label: 'Service' },
+    {
+      step: 2,
+      label: 'Package & Schedule',
+      substeps: [
+        {
+          key: '2a',
+          label: '2A Select Package',
+          active: currentStep === 2 && !isStep2ScheduleActive,
+          complete: currentStep > 2 || (currentStep === 2 && isStep2PackageComplete),
+        },
+        {
+          key: '2b',
+          label: '2B Schedule Date & Time',
+          active: isStep2ScheduleActive,
+          complete: isStep2ScheduleComplete,
+        },
+      ],
+    },
+    { step: 3, label: 'Customer Info' },
+    { step: 4, label: 'Review' },
+  ];
   const getBookingTotal = (booking) => (
     parseFloat(booking.package_details?.price || 0) +
     (booking.items?.reduce((acc, item) => acc + (parseFloat(item.price) * item.quantity), 0) || 0)
@@ -903,12 +1119,16 @@ export default function CustomerDashboard() {
                     {/* Stepper progress indicator */}
                     <div className="border-b border-espresso/5 pb-4 mb-4 shrink-0">
                       {/* Mobile progress indicator */}
-                      <div className="md:hidden flex flex-col gap-2">
+                      <div className="md:hidden flex flex-col gap-2" aria-label={currentStepTitle}>
                         <div className="flex justify-between text-[11px] font-bold text-espresso">
-                          <span>Step {currentStep} of 4</span>
+                          <span>
+                            {currentStep === 2
+                              ? isStep2ScheduleActive ? 'Step 2B of 4' : 'Step 2A of 4'
+                              : `Step ${currentStep} of 4`}
+                          </span>
                           <span className="text-gold uppercase tracking-wider">
                             {currentStep === 1 && 'Choose Service'}
-                            {currentStep === 2 && 'Package & Schedule'}
+                            {currentStep === 2 && (isStep2ScheduleActive ? 'Schedule Date & Time' : 'Select Package')}
                             {currentStep === 3 && 'Customer Info'}
                             {currentStep === 4 && 'Review & Submit'}
                           </span>
@@ -916,7 +1136,7 @@ export default function CustomerDashboard() {
                         <div className="w-full bg-cream rounded-full h-1.5">
                           <div 
                             className="bg-gold h-1.5 rounded-full transition-all duration-300"
-                            style={{ width: `${(currentStep / 4) * 100}%` }}
+                            style={{ width: `${(bookingProgressValue / 4) * 100}%` }}
                           />
                         </div>
                       </div>
@@ -926,51 +1146,69 @@ export default function CustomerDashboard() {
                         <div className="absolute top-4 left-6 right-6 h-0.5 bg-cream z-0" />
                         <div 
                           className="absolute top-4 left-6 h-0.5 bg-gold transition-all duration-500 z-0"
-                          style={{ width: `${((currentStep - 1) / 3) * 88}%` }}
+                          style={{ width: `${((bookingProgressValue - 1) / 3) * 88}%` }}
                         />
-                        {[
-                          { step: 1, label: 'Service' },
-                          { step: 2, label: 'Package & Schedule' },
-                          { step: 3, label: 'Customer Info' },
-                          { step: 4, label: 'Review' }
-                        ].map((s) => (
-                          <button
-                            key={s.step}
-                            onClick={() => {
-                              if (s.step < currentStep) {
-                                setCurrentStep(s.step);
-                              } else if (s.step > currentStep) {
-                                let valid = true;
-                                for (let check = currentStep; check < s.step; check++) {
-                                  if (check === 1) {
-                                    if (!selectedService) valid = false;
+                        {bookingProgressItems.map((s) => {
+                          const isActive = currentStep === s.step;
+                          const isComplete = currentStep > s.step;
+                          return (
+                            <button
+                              key={s.step}
+                              onClick={() => {
+                                if (s.step < currentStep) {
+                                  setCurrentStep(s.step);
+                                } else if (s.step > currentStep) {
+                                  let valid = true;
+                                  for (let check = currentStep; check < s.step; check++) {
+                                    if (check === 1) {
+                                      if (!selectedService) valid = false;
+                                    }
+                                    if (check === 2) {
+                                      const isPkgOk = selectedService?.packages?.length > 0 ? !!selectedPackage : true;
+                                      if (!isPkgOk || !selectedDate || !selectedTime) valid = false;
+                                    }
                                   }
-                                  if (check === 2) {
-                                    const isPkgOk = selectedService?.packages?.length > 0 ? !!selectedPackage : true;
-                                    if (!isPkgOk || !selectedDate || !selectedTime) valid = false;
-                                  }
+                                  if (valid) setCurrentStep(s.step);
                                 }
-                                if (valid) setCurrentStep(s.step);
-                              }
-                            }}
-                            className="relative z-10 flex flex-col items-center gap-1.5 focus:outline-none"
-                          >
-                            <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border-2 transition-all duration-300 ${
-                              currentStep === s.step
-                                ? 'bg-espresso text-gold border-gold scale-105 shadow-sm'
-                                : currentStep > s.step
-                                ? 'bg-gold text-cream border-gold'
-                                : 'bg-white text-espresso/40 border-cream-dark'
-                            }`}>
-                              {s.step}
-                            </span>
-                            <span className={`text-[9px] uppercase font-extrabold tracking-widest transition-all duration-300 ${
-                              currentStep === s.step ? 'text-espresso' : 'text-espresso/40'
-                            }`}>
-                              {s.label}
-                            </span>
-                          </button>
-                        ))}
+                              }}
+                              className="relative z-10 flex min-w-[132px] flex-col items-center gap-1.5 focus:outline-none"
+                              aria-current={isActive ? 'step' : undefined}
+                            >
+                              <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border-2 transition-all duration-300 ${
+                                isActive
+                                  ? 'bg-espresso text-gold border-gold scale-105 shadow-sm'
+                                  : isComplete
+                                  ? 'bg-gold text-cream border-gold'
+                                  : 'bg-white text-espresso/40 border-cream-dark'
+                              }`}>
+                                {isComplete ? <Check className="w-4 h-4" /> : s.step}
+                              </span>
+                              <span className={`text-[9px] uppercase font-extrabold tracking-widest transition-all duration-300 ${
+                                isActive ? 'text-espresso' : isComplete ? 'text-gold-dark' : 'text-espresso/40'
+                              }`}>
+                                {s.label}
+                              </span>
+                              {s.substeps && (
+                                <div className="flex flex-wrap justify-center gap-1.5">
+                                  {s.substeps.map(substep => (
+                                    <span
+                                      key={substep.key}
+                                      className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider transition-all duration-300 ${
+                                        substep.active
+                                          ? 'border-gold bg-gold/15 text-espresso shadow-sm'
+                                          : substep.complete
+                                          ? 'border-gold bg-gold text-cream'
+                                          : 'border-espresso/10 bg-white text-espresso/35'
+                                      }`}
+                                    >
+                                      {substep.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -1057,7 +1295,7 @@ export default function CustomerDashboard() {
                           {selectedService ? (
                             selectedService.packages && selectedService.packages.length > 0 ? (
                               <div className="space-y-3 shrink-0">
-                                <h3 className="text-xs font-bold text-espresso/50 uppercase tracking-wider">Step 2a: Select Your Package</h3>
+                                <h3 className="text-xs font-bold text-espresso/50 uppercase tracking-wider">Step 2A: Select Your Package</h3>
                                 {(() => {
                                   const packages = selectedService.packages;
                                   const slides = [];
@@ -1161,13 +1399,11 @@ export default function CustomerDashboard() {
                                                         <div className="space-y-2 pt-2 mt-auto border-t border-espresso/5 shrink-0">
                                                           <div className="flex justify-between items-center">
                                                             <span className="text-gold font-extrabold text-xs">₱{pkg.price}</span>
-                                                            <span className={`text-[9px] font-extrabold px-2.5 py-1 rounded-md uppercase tracking-wider transition-all duration-300 ${
-                                                              isSelected 
-                                                                ? 'bg-gold text-cream shadow-sm' 
-                                                                : 'bg-espresso/5 text-espresso/50 group-hover/card:bg-espresso/10'
-                                                            }`}>
-                                                              {isSelected ? 'Selected' : 'Available'}
-                                                            </span>
+                                                            {!isSelected && (
+                                                              <span className="text-[9px] font-extrabold px-2.5 py-1 rounded-md uppercase tracking-wider transition-all duration-300 bg-espresso/5 text-espresso/50 group-hover/card:bg-espresso/10">
+                                                                Available
+                                                              </span>
+                                                            )}
                                                           </div>
                                                           <div className="grid grid-cols-1 gap-2">
                                                             <button
@@ -1266,7 +1502,7 @@ export default function CustomerDashboard() {
 
                           {/* Date and Time Section */}
                           <div className="border-t border-espresso/5 pt-4 space-y-3">
-                            <h3 className="text-xs font-bold text-espresso/50 uppercase tracking-wider">Step 2b: Schedule Date &amp; Time</h3>
+                            <h3 className="text-xs font-bold text-espresso/50 uppercase tracking-wider">Step 2B: Schedule Date &amp; Time</h3>
                             <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-4">
                               <div className="rounded-2xl bg-white border border-espresso/10 p-4 shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
@@ -1547,7 +1783,7 @@ export default function CustomerDashboard() {
                                   <span className="font-black text-gold-dark">{formatPeso(requiredDownPayment)}</span>
                                 </div>
                                 <p className="text-[11px] text-espresso/55 leading-relaxed">
-                                  Pay through the business GCash QR, then submit the exact reference and receipt screenshot. Staff will verify this in the merchant app before confirming the booking.
+                                  Pay through the business GCash QR, then upload the receipt screenshot. OCR will autofill readable details, but staff must still verify the merchant record before confirming the booking.
                                 </p>
                               </div>
 
@@ -1583,27 +1819,107 @@ export default function CustomerDashboard() {
                                   required
                                 />
                               </div>
+                              {(paymentReferenceStatus.message || paymentOcrWarnings.length > 0) && (
+                                <div className={`rounded-2xl border p-3 text-[11px] font-semibold leading-relaxed ${
+                                  paymentReferenceStatus.exists
+                                    ? 'border-red-100 bg-red-50 text-red-700'
+                                    : paymentOcrWarnings.length > 0
+                                    ? 'border-amber-100 bg-amber-50 text-amber-800'
+                                    : 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                                }`}>
+                                  {paymentReferenceStatus.message && (
+                                    <p>{paymentReferenceStatus.checking ? 'Checking reference number...' : paymentReferenceStatus.message}</p>
+                                  )}
+                                  {paymentOcrWarnings.map((warning, index) => (
+                                    <p key={`${warning}-${index}`}>{warning}</p>
+                                  ))}
+                                </div>
+                              )}
 
-                              <label className="block">
-                                <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70 mb-2">Receipt Screenshot</span>
-                                <div className="rounded-2xl border border-dashed border-espresso/15 bg-cream/35 p-3 flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-xl bg-white text-gold-dark flex items-center justify-center border border-espresso/5">
-                                    <Upload className="w-4 h-4" />
+                              <div>
+                                <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70 mb-2">GCash Screenshot OCR</span>
+                                <div className="rounded-2xl border border-dashed border-espresso/15 bg-cream/35 p-3 grid grid-cols-1 sm:grid-cols-[112px_1fr] gap-3">
+                                  <div className="h-28 rounded-xl bg-white text-gold-dark flex items-center justify-center border border-espresso/5 overflow-hidden">
+                                    {paymentReceiptPreview ? (
+                                      <img src={paymentReceiptPreview} alt="GCash receipt preview" className="h-full w-full object-cover" />
+                                    ) : (
+                                      <Upload className="w-5 h-5" />
+                                    )}
                                   </div>
                                   <div className="min-w-0 flex-1">
                                     <input
                                       type="file"
                                       accept="image/*"
-                                      onChange={e => setPaymentReceipt(e.target.files?.[0] || null)}
+                                      onChange={e => handlePaymentReceiptUpload(e.target.files?.[0] || null)}
                                       className="block w-full text-xs text-espresso file:mr-3 file:rounded-xl file:border-0 file:bg-espresso file:px-3 file:py-2 file:text-xs file:font-bold file:text-gold"
                                       required
                                     />
                                     <p className="text-[10px] text-espresso/45 mt-1 truncate">
-                                      {paymentReceipt ? paymentReceipt.name : 'Upload the GCash receipt screenshot.'}
+                                      {paymentReceipt ? paymentReceipt.name : 'Upload a clear GCash receipt screenshot.'}
                                     </p>
+                                    <div className={`mt-2 rounded-xl border p-2 text-[10px] leading-relaxed ${
+                                      paymentScanProgress.status === 'success'
+                                        ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                                        : paymentScanProgress.status === 'error'
+                                        ? 'border-red-100 bg-red-50 text-red-700'
+                                        : paymentOcrLoading
+                                        ? 'border-gold/20 bg-gold/10 text-espresso'
+                                        : 'border-espresso/5 bg-white/75 text-espresso/55'
+                                    }`}>
+                                      <div className="flex items-center justify-between gap-3">
+                                        <p className="font-black">
+                                          {paymentScanProgress.message}
+                                        </p>
+                                        {paymentReceipt && (paymentScanProgress.status === 'error' || paymentOcrWarnings.length > 0) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handlePaymentReceiptUpload(paymentReceipt)}
+                                            disabled={paymentOcrLoading}
+                                            className="shrink-0 rounded-lg border border-current/20 px-2 py-1 text-[9px] font-black uppercase tracking-wider transition-all hover:bg-white/60 disabled:opacity-50"
+                                          >
+                                            Retry Scan
+                                          </button>
+                                        )}
+                                      </div>
+                                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/80 border border-current/10">
+                                        <div
+                                          className={`h-full rounded-full transition-all duration-500 ${
+                                            paymentScanProgress.status === 'success'
+                                              ? 'bg-emerald-500'
+                                              : paymentScanProgress.status === 'error'
+                                              ? 'bg-red-500'
+                                              : 'bg-gold'
+                                          }`}
+                                          style={{ width: `${paymentScanProgress.percent}%` }}
+                                        />
+                                      </div>
+                                      {paymentScanProgress.messages.length > 0 ? (
+                                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
+                                          {paymentScanProgress.messages.map((message, index) => (
+                                            <span key={`${message}-${index}`} className="font-semibold">
+                                              {message}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="mt-2">OCR will try to fill the reference number, amount, payment date, and payment time automatically.</p>
+                                      )}
+                                      {paymentOcrResult && (
+                                        <div className="mt-2 border-t border-current/10 pt-2">
+                                          <p className="font-black text-espresso">Review and correct any field before submitting.</p>
+                                          <div className="mt-1 grid grid-cols-2 gap-1">
+                                            {Object.entries(paymentOcrResult.fields || {}).map(([key, field]) => (
+                                              <span key={key} className={field.confidence < 0.35 ? 'font-bold text-amber-700' : ''}>
+                                                {key.replace(/_/g, ' ')}: {Math.round((field.confidence || 0) * 100)}%
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
-                              </label>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1612,15 +1928,22 @@ export default function CustomerDashboard() {
 
                     {/* Bottom: Navigation controls */}
                     <div className="flex justify-between items-center border-t border-espresso/5 pt-4 mt-auto shrink-0">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => setCurrentStep(prev => prev - 1)}
-                        disabled={currentStep === 1}
-                        className="px-5 text-xs"
-                      >
-                        Previous
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => setCurrentStep(prev => prev - 1)}
+                          disabled={currentStep === 1}
+                          className="px-5 text-xs"
+                        >
+                          Back to Details
+                        </Button>
+                        {isStep2ScheduleActive && (
+                          <span className="text-[11px] font-black uppercase tracking-wider text-espresso/55">
+                            Step 2B of 4 — Schedule Date &amp; Time
+                          </span>
+                        )}
+                      </div>
                       
                       {currentStep < 4 ? (
                         <Button 
@@ -1630,17 +1953,18 @@ export default function CustomerDashboard() {
                           disabled={!canGoNext()}
                           className="px-6 text-xs"
                         >
-                          Next
+                          Continue Booking
                         </Button>
                       ) : (
                         <Button 
                           variant="gold" 
                           size="sm" 
                           onClick={handleBookingSubmit}
-                          disabled={paymentSubmitting}
+                          loading={paymentSubmitting}
+                          disabled={paymentSubmitting || paymentReferenceStatus.exists}
                           className="px-6 text-xs bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white"
                         >
-                          {paymentSubmitting ? 'Submitting...' : 'Submit Reservation'}
+                          {paymentSubmitting ? 'Securing Your Slot...' : 'Reserve Your Session'}
                         </Button>
                       )}
                     </div>
@@ -1838,8 +2162,8 @@ export default function CustomerDashboard() {
                                       <button
                                         key={action.label}
                                         type="button"
-                                        onClick={() => handleBookingAction(b, action.label)}
-                                        disabled={action.label === 'Cancel Booking' && cancellingBookingId === b.id}
+                                        onClick={() => handleBookingAction(b, action)}
+                                        disabled={action.key === 'cancel' && cancellingBookingId === b.id}
                                         aria-label={`${action.label} for ${b.package_details?.name || 'booking'}`}
                                         className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3.5 py-2 text-[11px] font-black border transition-all duration-200 active:scale-[0.98] focus-visible:outline-gold ${
                                           action.primary
@@ -1850,7 +2174,7 @@ export default function CustomerDashboard() {
                                         }`}
                                       >
                                         <ActionIcon className="w-3.5 h-3.5" />
-                                        {action.label === 'Cancel Booking' && cancellingBookingId === b.id ? 'Cancelling...' : action.label}
+                                        {action.key === 'cancel' && cancellingBookingId === b.id ? 'Cancelling Session...' : action.label}
                                       </button>
                                     );
                                   })}
@@ -1900,8 +2224,8 @@ export default function CustomerDashboard() {
                       <Input label="Phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)} />
                       <Textarea label="Address" value={address} onChange={e => setAddress(e.target.value)} rows={3} />
                       <div className="flex items-center gap-3 pt-2">
-                        <Button type="submit" variant="primary">Save Changes</Button>
-                        <Button type="button" variant="outline" size="sm" onClick={fetchDashboardData}>Cancel</Button>
+                        <Button type="submit" variant="primary">Update My Profile</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={fetchDashboardData}>Restore Saved Info</Button>
                       </div>
                     </form>
                   </Card>
@@ -1986,47 +2310,36 @@ export default function CustomerDashboard() {
           open={!!packageDetails}
           onClose={() => setPackageDetails(null)}
           title={detailPackage ? detailPackage.name : 'Package Details'}
-          size="3xl"
+          size="5xl"
+          bodyClassName="!max-h-none !overflow-visible !p-4 md:!p-5"
         >
           {detailPackage && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-5">
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-espresso/5 bg-cream/60 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-espresso/40">
-                      {detailService?.name || detailPackage.serviceName || 'Photo Session'}
-                    </p>
-                    <p className="mt-2 text-sm leading-relaxed text-espresso/65">
-                      {detailPackage.description || detailService?.description || detailPackage.serviceDescription || 'A guided CAV photo session prepared by the studio team.'}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
-                      <Clock className="w-4 h-4 text-gold mb-2" />
-                      <p className="text-[10px] font-black uppercase tracking-wider text-espresso/40">Duration</p>
-                      <p className="mt-1 font-black text-espresso">
-                        {detailService?.duration_minutes || detailPackage.serviceDuration || 30} min
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
-                      <Users className="w-4 h-4 text-gold mb-2" />
-                      <p className="text-[10px] font-black uppercase tracking-wider text-espresso/40">People</p>
-                      <p className="mt-1 font-black text-espresso">{getPackagePeople(detailPackage)}</p>
-                    </div>
-                    <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
-                      <Camera className="w-4 h-4 text-gold mb-2" />
-                      <p className="text-[10px] font-black uppercase tracking-wider text-espresso/40">Price</p>
-                      <p className="mt-1 font-black text-gold-dark">{formatPeso(detailPackage.price)}</p>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] gap-4">
+                <div className="space-y-3">
+                  <div className="rounded-2xl border border-espresso/5 bg-cream/60 p-3.5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-espresso/40">
+                          {detailService?.name || detailPackage.serviceName || 'Photo Session'}
+                        </p>
+                        <p className="mt-1 text-sm leading-snug text-espresso/68">
+                          {detailPackage.description || detailService?.description || detailPackage.serviceDescription || 'A guided CAV photo session prepared by the studio team.'}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-gold/20 bg-gold/10 px-4 py-2 text-right">
+                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/45">Price</p>
+                        <p className="text-xl font-black text-espresso">{formatPeso(detailPackage.price)}</p>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/40 mb-3">What's Included</p>
+                  <div className="rounded-2xl border border-espresso/5 bg-white p-3.5 shadow-sm">
+                    <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-espresso/40">What's Included</p>
                     {detailInclusions.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                         {detailInclusions.map((item, idx) => (
-                          <div key={`${item}-${idx}`} className="flex items-start gap-2 rounded-xl bg-cream/55 px-3 py-2 text-xs text-espresso/70">
+                          <div key={`${item}-${idx}`} className="flex items-start gap-2 rounded-xl bg-cream/55 px-2.5 py-1.5 text-[11px] leading-snug text-espresso/70">
                             <Check className="w-3.5 h-3.5 text-gold shrink-0 mt-0.5" />
                             <span>{item}</span>
                           </div>
@@ -2036,59 +2349,46 @@ export default function CustomerDashboard() {
                       <p className="text-xs text-espresso/50">Package inclusions will be confirmed by staff.</p>
                     )}
                   </div>
-                </div>
 
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/40 mb-3">Photo Outputs</p>
-                    <div className="space-y-2">
+                  <div className="rounded-2xl border border-espresso/5 bg-white p-3.5 shadow-sm">
+                    <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-espresso/40">Photo Outputs</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                       {detailOutputs.map((item, idx) => (
-                        <div key={`${item}-${idx}`} className="flex items-center gap-2 text-xs font-semibold text-espresso/70">
+                        <div key={`${item}-${idx}`} className="flex items-center gap-2 rounded-xl bg-cream/45 px-2.5 py-1.5 text-[11px] font-semibold leading-snug text-espresso/70">
                           <Camera className="w-3.5 h-3.5 text-gold shrink-0" />
                           <span>{item}</span>
                         </div>
                       ))}
                     </div>
                   </div>
+                </div>
 
-                  <div className="rounded-2xl border border-gold/20 bg-gold/10 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/45">Estimated Package Price</p>
-                    <p className="mt-1 text-2xl font-black text-espresso">{formatPeso(detailPackage.price)}</p>
-                    <p className="mt-1 text-[11px] leading-relaxed text-espresso/55">
-                      This is the package rate before staff confirms any special requests noted in your booking.
-                    </p>
+                <div className="rounded-2xl border border-espresso/5 bg-white p-3.5 shadow-sm">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/40">Sample Gallery</p>
+                    <span className="rounded-full bg-cream px-2.5 py-1 text-[10px] font-black text-espresso/55">
+                      {detailGalleryCategory === 'EVENTS' ? 'Events' : 'Studio'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {visibleDetailGalleryImages.map((image) => (
+                      <figure key={image.id} className="group relative aspect-[4/3] overflow-hidden rounded-xl bg-cream">
+                        <img
+                          src={image.image_url}
+                          alt={image.alt_text || image.title || detailPackage.name}
+                          loading="lazy"
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        />
+                        <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-espresso-dark/80 to-transparent p-2 text-[9px] font-bold text-white opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                          {image.title || detailPackage.name}
+                        </figcaption>
+                      </figure>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/40">Sample Shoot Gallery</p>
-                    <p className="text-xs text-espresso/50 mt-1">Images are matched from the current gallery category for this package.</p>
-                  </div>
-                  <span className="rounded-full bg-cream px-3 py-1 text-[10px] font-black text-espresso/55">
-                    {detailGalleryCategory === 'EVENTS' ? 'Events' : 'Studio'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {visibleDetailGalleryImages.map((image) => (
-                    <figure key={image.id} className="group relative aspect-[4/3] overflow-hidden rounded-2xl bg-cream">
-                      <img
-                        src={image.image_url}
-                        alt={image.alt_text || image.title || detailPackage.name}
-                        loading="lazy"
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                      <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-espresso-dark/80 to-transparent p-3 text-[10px] font-bold text-white opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-                        {image.title || detailPackage.name}
-                      </figcaption>
-                    </figure>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Button
                   variant="gold"
                   className="flex-1"
@@ -2097,10 +2397,10 @@ export default function CustomerDashboard() {
                     setPackageDetails(null);
                   }}
                 >
-                  Select This Package
+                  Choose This Package
                 </Button>
                 <Button variant="outline" className="flex-1" onClick={() => setPackageDetails(null)}>
-                  Continue Booking
+                  Keep Exploring Packages
                 </Button>
               </div>
             </div>
@@ -2148,7 +2448,7 @@ export default function CustomerDashboard() {
               </div>
             )}
             <Button variant="success" className="w-full" onClick={() => setBookingConfirmation(null)}>
-              Got it
+              View My Booking
             </Button>
           </div>
         </Modal>
@@ -2311,14 +2611,14 @@ export default function CustomerDashboard() {
 
               <div className="flex flex-col sm:flex-row gap-3 justify-end">
                 <Button variant="outline" onClick={closeEditBooking} disabled={editSaving}>
-                  Cancel
+                  Keep Current Booking
                 </Button>
                 <Button
                   variant="gold"
                   onClick={() => setEditConfirmOpen(true)}
                   disabled={editSaving || !editForm.package || !editForm.scheduled_date || !editForm.scheduled_time || !editingBooking.can_edit}
                 >
-                  Review Changes
+                  Review Updated Session
                 </Button>
               </div>
             </div>
@@ -2352,10 +2652,10 @@ export default function CustomerDashboard() {
               </div>
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1" onClick={() => setEditConfirmOpen(false)} disabled={editSaving}>
-                  Back
+                  Back to Edits
                 </Button>
-                <Button variant="gold" className="flex-1" onClick={submitEditBooking} disabled={editSaving}>
-                  {editSaving ? 'Saving...' : 'Save Changes'}
+                <Button variant="gold" className="flex-1" onClick={submitEditBooking} loading={editSaving} disabled={editSaving}>
+                  {editSaving ? 'Updating Session...' : 'Confirm Session Update'}
                 </Button>
               </div>
             </div>
@@ -2482,7 +2782,7 @@ export default function CustomerDashboard() {
                         {payment.receipt_url && (
                           <a href={payment.receipt_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-[11px] font-black text-espresso hover:text-gold-dark">
                             <ReceiptText className="w-3.5 h-3.5" />
-                            View Receipt
+                            Open Payment Receipt
                           </a>
                         )}
                       </div>
@@ -2531,11 +2831,11 @@ export default function CustomerDashboard() {
                       openEditBooking(selectedBookingDetails);
                     }}
                   >
-                    Edit Booking
+                    Refine Booking
                   </Button>
                 )}
                 <Button variant="outline" className="flex-1" onClick={() => setSelectedBookingDetails(null)}>
-                  Close
+                  Back to My Bookings
                 </Button>
               </div>
             </div>

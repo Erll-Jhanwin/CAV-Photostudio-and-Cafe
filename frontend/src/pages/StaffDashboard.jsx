@@ -3,7 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
 import {
   ShoppingBag, Package, DollarSign, LogOut, Search, Plus,
-  Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil
+  Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
+  PackageCheck, Clock, CalendarOff, Archive
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -57,12 +58,12 @@ function PaginationControls({ page, setPage, total, pageSize }) {
 }
 
 const inventoryStatuses = [
-  { key: 'ALL', label: 'All Items', className: 'bg-white text-espresso border-espresso/10' },
-  { key: 'IN_STOCK', label: 'In Stock', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  { key: 'LOW_STOCK', label: 'Low Stock', className: 'bg-amber-50 text-amber-700 border-amber-200' },
-  { key: 'NEAR_EXPIRY', label: 'Near Expiry', className: 'bg-orange-50 text-orange-700 border-orange-200' },
-  { key: 'EXPIRED', label: 'Expired', className: 'bg-red-50 text-red-700 border-red-200' },
-  { key: 'OVERSTOCKED', label: 'Overstocked', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { key: 'ALL', label: 'All Items', className: 'bg-white text-espresso border-espresso/10', icon: Package, iconClass: 'text-espresso bg-cream-dark' },
+  { key: 'IN_STOCK', label: 'In Stock', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: PackageCheck, iconClass: 'text-emerald-700 bg-emerald-50' },
+  { key: 'LOW_STOCK', label: 'Low Stock', className: 'bg-orange-50 text-orange-700 border-orange-200', icon: AlertTriangle, iconClass: 'text-orange-700 bg-orange-50' },
+  { key: 'NEAR_EXPIRY', label: 'Near Expiry', className: 'bg-amber-50 text-amber-700 border-amber-200', icon: Clock, iconClass: 'text-amber-700 bg-amber-50' },
+  { key: 'EXPIRED', label: 'Expired', className: 'bg-red-50 text-red-700 border-red-200', icon: CalendarOff, iconClass: 'text-red-700 bg-red-50' },
+  { key: 'OVERSTOCKED', label: 'Overstocked', className: 'bg-blue-50 text-blue-700 border-blue-200', icon: Archive, iconClass: 'text-blue-700 bg-blue-50' },
 ];
 
 const getInventoryStatusMeta = (status) => inventoryStatuses.find(item => item.key === status) || inventoryStatuses[0];
@@ -689,7 +690,7 @@ export default function StaffDashboard() {
                 <h4 className="font-bold text-sm">Connection Error</h4>
                 <p className="text-xs text-red-600/80 mt-1">{error}</p>
               </div>
-              <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData(activeTab, true)}>Retry</Button>
+              <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData(activeTab, true)}>Reconnect Dashboard</Button>
             </div>
           )}
 
@@ -905,7 +906,7 @@ export default function StaffDashboard() {
                         )}
 
                         <Button variant="gold" size="lg" className="w-full" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading}>
-                          {showCheckoutLoading ? 'Saving & Printing...' : `Pay ${formatReceiptCurrency(getCartTotal())}`}
+                          {showCheckoutLoading ? 'Finalizing Sale...' : `Complete Sale - ${formatReceiptCurrency(getCartTotal())}`}
                         </Button>
                       </div>
                     </div>
@@ -992,7 +993,7 @@ export default function StaffDashboard() {
                                 className="inline-flex items-center justify-center gap-2 rounded-[20px] bg-white border border-espresso/10 px-4 py-2 text-xs font-black text-espresso hover:bg-cream-dark transition-all"
                               >
                                 <Eye className="w-4 h-4" />
-                                View Receipt
+                                Review Receipt Proof
                               </a>
                             )}
                             {isPending ? (
@@ -1004,7 +1005,7 @@ export default function StaffDashboard() {
                                   loading={verifyingPaymentId === payment.id}
                                   onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}
                                 >
-                                  Approve
+                                  Confirm Payment
                                 </Button>
                                 <Button
                                   size="sm"
@@ -1013,7 +1014,7 @@ export default function StaffDashboard() {
                                   disabled={verifyingPaymentId === payment.id}
                                   onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}
                                 >
-                                  Reject
+                                  Flag Payment Issue
                                 </Button>
                               </>
                             ) : (
@@ -1044,22 +1045,40 @@ export default function StaffDashboard() {
                   <p className="text-xs text-espresso/50 mt-1">Monitor stock levels, expiry risk, and purchasing actions.</p>
                 </div>
                 <Button variant="primary" size="sm" icon={Plus} onClick={() => setProductModalOpen(true)}>
-                  Add Ingredient
+                  Add Stock Item
                 </Button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-                {inventoryStatuses.map(status => (
-                  <button
-                    key={status.key}
-                    type="button"
-                    onClick={() => setInventoryFilter(status.key)}
-                    className={`rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5 ${inventoryFilter === status.key ? 'bg-espresso text-cream border-espresso shadow-sm' : 'bg-white border-espresso/5 text-espresso hover:border-gold/40'}`}
-                  >
-                    <p className="text-[10px] uppercase font-black opacity-60">{status.label}</p>
-                    <p className="font-sans text-2xl font-extrabold mt-1">{inventoryCounts[status.key] || 0}</p>
-                  </button>
-                ))}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {inventoryStatuses.filter(status => status.key !== 'ALL').map(status => {
+                  const Icon = status.icon;
+                  const isActive = inventoryFilter === status.key;
+                  return (
+                    <button
+                      key={status.key}
+                      type="button"
+                      onClick={() => setInventoryFilter(status.key)}
+                      className={`group rounded-2xl border p-3 text-left shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_46px_rgba(46,26,17,0.08)] ${
+                        isActive ? 'bg-espresso text-cream border-espresso' : 'bg-cream/60 border-espresso/[0.05] text-espresso hover:border-gold/40'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl transition-colors ${isActive ? 'bg-gold/15 text-gold' : status.iconClass}`}>
+                          <Icon className="h-6 w-6" />
+                        </span>
+                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${isActive ? 'border-gold/30 bg-gold/10 text-gold' : status.className}`}>
+                          {status.label}
+                        </span>
+                      </div>
+                      <p className={`font-sans text-2xl font-extrabold mt-3 leading-tight ${isActive ? 'text-white' : 'text-espresso'}`}>
+                        {inventoryCounts[status.key] || 0}
+                      </p>
+                      <p className={`text-[10px] uppercase font-black ${isActive ? 'text-cream/55' : 'text-espresso/45'}`}>
+                        ingredient{(inventoryCounts[status.key] || 0) === 1 ? '' : 's'}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
 
               {inventoryAlerts.length > 0 && (
@@ -1173,7 +1192,7 @@ export default function StaffDashboard() {
                                   setAdjQty(0);
                                   setAdjUnit(ingredient.base_unit);
                                   setAdjMovementType('IN');
-                                }}>Adjust</Button>
+                                }}>Adjust Stock</Button>
                               </div>
                             </td>
                           </tr>
@@ -1255,7 +1274,7 @@ export default function StaffDashboard() {
                           <th className="p-4 text-left">Transaction ID</th>
                           <th className="p-4 text-left">Date &amp; Time</th>
                           <th className="p-4 text-right">Amount Paid</th>
-                          <th className="p-4 text-right">View</th>
+                          <th className="p-4 text-right">Receipt</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1275,8 +1294,8 @@ export default function StaffDashboard() {
                                 variant="ghost"
                                 size="xs"
                                 icon={Eye}
-                                title={`View receipt ${order.transaction_id || order.id}`}
-                                aria-label={`View receipt ${order.transaction_id || order.id}`}
+                                title={`Open receipt ${order.transaction_id || order.id}`}
+                                aria-label={`Open receipt ${order.transaction_id || order.id}`}
                                 onClick={() => setReceiptOrder(order)}
                               />
                             </td>
@@ -1335,8 +1354,8 @@ export default function StaffDashboard() {
             <Input label="Storage Location" required value={productForm.storage_location} onChange={e => handleProductFieldChange('storage_location', e.target.value)} />
           </div>
           <div className="sticky bottom-0 bg-white/95 flex flex-col sm:flex-row gap-2 pt-4 pb-1 border-t border-espresso/[0.06]">
-            <Button type="submit" variant="primary" className="flex-1">Save Ingredient</Button>
-            <Button type="button" variant="outline" onClick={() => setProductModalOpen(false)}>Cancel</Button>
+            <Button type="submit" variant="primary" className="flex-1">Add to Inventory</Button>
+            <Button type="button" variant="outline" onClick={() => setProductModalOpen(false)}>Keep Inventory As Is</Button>
           </div>
         </form>
       </Modal>
@@ -1441,10 +1460,10 @@ export default function StaffDashboard() {
           </div>
           <div className="sticky bottom-0 bg-white/95 flex flex-col sm:flex-row gap-2 pt-4 pb-1 border-t border-espresso/[0.06]">
             <Button type="submit" variant="primary" className="flex-1" loading={editIngredientSaving}>
-              Save Changes
+              Update Stock Details
             </Button>
             <Button type="button" variant="outline" onClick={() => setEditingIngredient(null)} disabled={editIngredientSaving}>
-              Cancel
+              Keep Current Details
             </Button>
           </div>
         </form>
@@ -1476,8 +1495,8 @@ export default function StaffDashboard() {
             }
           />
           <div className="flex gap-2">
-            <Button variant="primary" className="flex-1" onClick={handleAdjustInventory}>Save</Button>
-            <Button variant="outline" onClick={() => setManualAdjIngredient(null)}>Cancel</Button>
+            <Button variant="primary" className="flex-1" onClick={handleAdjustInventory}>Apply Stock Adjustment</Button>
+            <Button variant="outline" onClick={() => setManualAdjIngredient(null)}>Keep Stock Unchanged</Button>
           </div>
         </div>
       </Modal>
@@ -1591,7 +1610,7 @@ export default function StaffDashboard() {
           );
         })()}
         <div className="flex gap-3 mt-4">
-          <Button variant="outline" className="flex-1" onClick={() => setReceiptOrder(null)}>Close</Button>
+          <Button variant="outline" className="flex-1" onClick={() => setReceiptOrder(null)}>Back to Sales Log</Button>
         </div>
       </Modal>
     </div>

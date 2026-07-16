@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 
-export function Modal({ open, onClose, title, children, className = '', size = 'md' }) {
+export function Modal({ open, onClose, title, children, className = '', bodyClassName = '', size = 'md' }) {
   const overlayRef = useRef(null);
 
   useEffect(() => {
@@ -32,6 +32,7 @@ export function Modal({ open, onClose, title, children, className = '', size = '
     xl: 'max-w-xl',
     '2xl': 'max-w-2xl',
     '3xl': 'max-w-3xl',
+    '5xl': 'max-w-5xl',
   };
 
   return (
@@ -56,7 +57,7 @@ export function Modal({ open, onClose, title, children, className = '', size = '
             </button>
           </div>
         )}
-        <div className="p-6 md:p-7 max-h-[calc(100vh-11rem)] overflow-y-auto scrollbar-thin">{children}</div>
+        <div className={`p-6 md:p-7 max-h-[calc(100vh-11rem)] overflow-y-auto scrollbar-thin ${bodyClassName}`}>{children}</div>
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ from django.utils import timezone
 from booking.models import Service, Package, Booking, BookingItem, BookingPayment, BookingChangeLog
 from booking.serializers import ServiceSerializer, PackageSerializer, BookingSerializer, BookingPaymentSerializer
 from booking.availability import ACTIVE_BOOKING_STATUSES, get_available_slots, is_slot_available, parse_date_value
+from booking.payment_ocr import analyze_gcash_receipt
 from notifications.models import Notification
 from audit.models import AuditLog
 
@@ -389,6 +390,39 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
         )
 
         return Response(self.get_serializer(payment).data, status=status.HTTP_201_CREATED)
+
+class BookingPaymentReferenceCheckView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        reference_number = (request.query_params.get('reference_number') or '').strip()
+        if not reference_number:
+            return Response({"exists": False, "reference_number": ""})
+        exists = BookingPayment.objects.filter(reference_number__iexact=reference_number).exists()
+        return Response({
+            "exists": exists,
+            "reference_number": reference_number,
+            "message": "This GCash reference number has already been submitted." if exists else ""
+        })
+
+class BookingPaymentOcrView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        receipt = request.FILES.get('receipt')
+        if not receipt:
+            return Response({"receipt": "Upload a GCash screenshot."}, status=status.HTTP_400_BAD_REQUEST)
+        result = analyze_gcash_receipt(receipt)
+        reference_number = result.get('fields', {}).get('reference_number', {}).get('value')
+        if reference_number:
+            duplicate_exists = BookingPayment.objects.filter(reference_number__iexact=reference_number).exists()
+            result['duplicate_reference'] = duplicate_exists
+            if duplicate_exists:
+                result.setdefault('warnings', []).append('This GCash reference number has already been submitted.')
+        else:
+            result['duplicate_reference'] = False
+        return Response(result)
 
 class BookingPaymentVerifyView(generics.UpdateAPIView):
     serializer_class = BookingPaymentSerializer
