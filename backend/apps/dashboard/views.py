@@ -1,6 +1,6 @@
 from rest_framework import views, permissions
 from rest_framework.response import Response
-from django.db.models import Sum, Count
+from django.db.models import Prefetch, Sum, Count
 from django.db.models.functions import TruncDay, TruncMonth, TruncWeek
 from django.utils import timezone
 from datetime import datetime, timedelta
@@ -8,6 +8,7 @@ from sales.models import DailySalesSummary
 from booking.models import Booking
 from inventory.models import Ingredient, Product
 from pos.models import Order, OrderItem
+from pos.models import Payment
 
 
 def parse_date(value, fallback):
@@ -17,6 +18,15 @@ def parse_date(value, fallback):
       return datetime.strptime(value, '%Y-%m-%d').date()
     except ValueError:
       return fallback
+
+
+def parse_date_param(value, field, fallback):
+    if not value:
+        return fallback, None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date(), None
+    except ValueError:
+        return fallback, {field: "Use YYYY-MM-DD format."}
 
 
 def pct_change(current, previous):
@@ -39,12 +49,20 @@ class DashboardAnalyticsView(views.APIView):
 
         today = timezone.localdate()
         default_start = today - timedelta(days=30)
-        start_date = parse_date(request.query_params.get('start'), default_start)
-        end_date = parse_date(request.query_params.get('end'), today)
+        start_date, start_error = parse_date_param(request.query_params.get('start'), 'start', default_start)
+        end_date, end_error = parse_date_param(request.query_params.get('end'), 'end', today)
+        if start_error:
+            return Response(start_error, status=400)
+        if end_error:
+            return Response(end_error, status=400)
         if start_date > end_date:
             start_date, end_date = end_date, start_date
+        if (end_date - start_date).days > 370:
+            return Response({"detail": "Date range cannot exceed 370 days."}, status=400)
 
         grain = request.query_params.get('grain', 'daily')
+        if grain not in {'daily', 'weekly', 'monthly'}:
+            return Response({"grain": "Grain must be daily, weekly, or monthly."}, status=400)
         trunc_fn = {'weekly': TruncWeek, 'monthly': TruncMonth}.get(grain, TruncDay)
 
         start_dt = timezone.make_aware(datetime.combine(start_date, datetime.min.time()))
@@ -132,14 +150,16 @@ class DashboardAnalyticsView(views.APIView):
             'created_at': timezone.localtime(b.created_at).strftime('%Y-%m-%d %H:%M')
         } for b in recent_bookings]
 
-        recent_orders = paid_pos_orders.select_related('staff').prefetch_related('payments').order_by('-created_at')[:10]
+        recent_orders = paid_pos_orders.select_related('staff').prefetch_related(
+            Prefetch('payments', queryset=Payment.objects.order_by('id'), to_attr='prefetched_payments')
+        ).order_by('-created_at')[:10]
         orders_list = [{
             'id': order.id,
             'transaction_id': order.transaction_id or f'POS-{order.id}',
             'cashier': order.staff.username if order.staff else 'N/A',
             'date': timezone.localtime(order.created_at).strftime('%Y-%m-%d %H:%M'),
             'total': money(order.total),
-            'payment_method': order.payments.first().method if order.payments.exists() else 'N/A',
+            'payment_method': order.prefetched_payments[0].method if order.prefetched_payments else 'N/A',
         } for order in recent_orders]
 
         top_products = OrderItem.objects.filter(order__in=paid_pos_orders).values('product__name').annotate(

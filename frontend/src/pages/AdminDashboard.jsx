@@ -3,18 +3,18 @@ import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
 import {
   TrendingUp, BarChart2, Users, MessageSquare, Play, Package,
-  AlertTriangle, DollarSign, LogOut, Check, Plus, Trash2, Edit,
-  Menu, X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
-  ArrowDownRight, Eye, ChevronLeft, ChevronRight, Coffee, Camera, Printer
+  AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
+  X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
+  ArrowDownRight, Eye, ChevronLeft, ChevronRight, Camera, Printer
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, ComposedChart
+  Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart
 } from 'recharts';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
-import { Badge, StatusBadge } from '../components/ui/Badge';
+import { StatusBadge } from '../components/ui/Badge';
 import { Input, Select, Textarea } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -310,10 +310,6 @@ export default function AdminDashboard() {
   const [topPackagesPageSize, setTopPackagesPageSize] = useState(5);
   const [reorderPage, setReorderPage] = useState(1);
   const [reorderPageSize, setReorderPageSize] = useState(5);
-  const [lowStockPage, setLowStockPage] = useState(1);
-  const [lowStockPageSize, setLowStockPageSize] = useState(5);
-  const [inventoryAlertPage, setInventoryAlertPage] = useState(1);
-  const [inventoryAlertPageSize, setInventoryAlertPageSize] = useState(5);
   const [reportsPage, setReportsPage] = useState(1);
   const [reportsPageSize, setReportsPageSize] = useState(5);
   const [paymentPage, setPaymentPage] = useState(1);
@@ -337,6 +333,11 @@ export default function AdminDashboard() {
   const [endOfDayExpectedCash, setEndOfDayExpectedCash] = useState('');
   const [endOfDayCashLoading, setEndOfDayCashLoading] = useState(false);
   const [endOfDayPrinting, setEndOfDayPrinting] = useState(false);
+  const [systemResetOpen, setSystemResetOpen] = useState(false);
+  const [systemResetPassword, setSystemResetPassword] = useState('');
+  const [systemResetConfirmation, setSystemResetConfirmation] = useState('');
+  const [systemResetLoading, setSystemResetLoading] = useState(false);
+  const [systemResetError, setSystemResetError] = useState('');
 
   const fetchData = useCallback(async ({ background = false } = {}) => {
     try {
@@ -638,6 +639,48 @@ export default function AdminDashboard() {
 
   const handleLogout = useCallback(() => { logout(); navigate('/login', { replace: true }); }, [logout, navigate]);
 
+  const openSystemResetModal = () => {
+    setSystemResetPassword('');
+    setSystemResetConfirmation('');
+    setSystemResetError('');
+    setSystemResetOpen(true);
+  };
+
+  const closeSystemResetModal = () => {
+    if (systemResetLoading) return;
+    setSystemResetOpen(false);
+    setSystemResetPassword('');
+    setSystemResetConfirmation('');
+    setSystemResetError('');
+  };
+
+  const handleSystemReset = async (e) => {
+    e.preventDefault();
+    if (systemResetLoading) return;
+
+    setSystemResetError('');
+    setSystemResetLoading(true);
+    try {
+      await client.post('/api/admin/system-reset/', {
+        admin_password: systemResetPassword,
+        confirmation: systemResetConfirmation,
+      });
+      setSystemResetOpen(false);
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 600);
+    } catch (err) {
+      const payload = err.response?.data;
+      const msg = payload?.detail
+        || payload?.admin_password
+        || payload?.confirmation
+        || 'System reset failed. Please verify your password and try again.';
+      setSystemResetError(Array.isArray(msg) ? msg.join(' ') : msg);
+    } finally {
+      setSystemResetLoading(false);
+    }
+  };
+
   if (loading) return <AdminSkeleton />;
 
   const navItems = [
@@ -646,9 +689,10 @@ export default function AdminDashboard() {
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'staff', label: 'Staff Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
+    { key: 'system', label: 'System Controls', icon: AlertTriangle, active: activeTab === 'system', onClick: () => setActiveTab('system') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager', system: 'System Controls' };
   const metrics = analytics?.metrics || {};
   const statusData = [
     { label: 'Pending', value: metrics.pending || 0, color: '#F59E0B' },
@@ -705,16 +749,12 @@ export default function AdminDashboard() {
   const topPackageRows = paginateRows(topPackages, topPackagesPage, topPackagesPageSize);
   const reorderRows = forecast?.reorder_recommendations || [];
   const reorderPageRows = paginateRows(reorderRows, reorderPage, reorderPageSize);
-  const lowStockAlerts = analytics?.low_stock_alerts || [];
-  const lowStockPageRows = paginateRows(lowStockAlerts, lowStockPage, lowStockPageSize);
   const inventoryCounts = analytics?.inventory_status_counts || {};
   const inventorySummary = Object.entries(inventoryStatusMeta).map(([key, meta]) => ({
     key,
     ...meta,
     value: inventoryCounts[key] || 0,
   }));
-  const inventoryAlerts = analytics?.inventory_alerts || [];
-  const inventoryAlertPageRows = paginateRows(inventoryAlerts, inventoryAlertPage, inventoryAlertPageSize);
   const filteredBookingPayments = bookingPayments.filter(payment => (
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
   ));
@@ -853,8 +893,8 @@ export default function AdminDashboard() {
                 })}
               </div>
 
-              <div className="grid grid-cols-1 gap-4 md:gap-5 2xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] 2xl:grid-rows-[auto_auto] 2xl:items-stretch">
-                  <Card padding={false} className="2xl:col-start-1 2xl:row-start-1">
+              <div className="grid grid-cols-1 gap-4 md:gap-5">
+                  <Card padding={false}>
                     <div className="p-5 md:p-6">
                       <CardHeader title="Ingredient Stock Management" subtitle="Raw ingredient health monitored from staff inventory activity" className="mb-4" />
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -871,7 +911,7 @@ export default function AdminDashboard() {
                     </div>
                   </Card>
 
-                  <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2 2xl:col-start-1 2xl:row-start-2">
+                  <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
                     <Card padding={false}>
                       <div className="p-5">
                         <CardHeader title="Revenue Sources" className="mb-4" />
@@ -924,40 +964,6 @@ export default function AdminDashboard() {
                     </Card>
                   </div>
 
-                <Card padding={false} className="h-full min-h-0 overflow-hidden 2xl:col-start-2 2xl:row-span-2 2xl:row-start-1">
-                  <div className="flex h-full min-h-0 flex-col p-5">
-                    <CardHeader title="Stock Action Alerts" className="mb-3" />
-                    {inventoryAlerts.length > 0 ? (
-                      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                      <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1 scrollbar-thin">
-                        {inventoryAlertPageRows.map(alert => {
-                          const meta = inventoryStatusMeta[alert.inventory_status] || inventoryStatusMeta.IN_STOCK;
-                          return (
-                            <div key={alert.id} className="rounded-2xl bg-white border border-espresso/[0.06] p-3 shadow-sm">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="font-black text-sm text-espresso truncate">{alert.name}</p>
-                                  <p className="text-[10px] text-espresso/45">{alert.stock_quantity} {alert.base_unit} · Min {alert.minimum_stock_level}</p>
-                                </div>
-                                <span className={`shrink-0 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${meta.className}`}>
-                                  {meta.label}
-                                </span>
-                              </div>
-                              <div className="mt-2 flex items-center justify-between gap-3 text-[11px]">
-                                <span className="font-bold text-gold-dark">{alert.suggested_action}</span>
-                                <span className="text-espresso/45">{alert.supplier_name}</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <PaginationControls page={inventoryAlertPage} setPage={setInventoryAlertPage} total={inventoryAlerts.length} pageSize={inventoryAlertPageSize} setPageSize={setInventoryAlertPageSize} />
-                      </div>
-                    ) : (
-                      <EmptyState icon={Package} title="Stock is healthy" description="No ingredient actions are needed right now." />
-                    )}
-                  </div>
-                </Card>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -1045,8 +1051,7 @@ export default function AdminDashboard() {
                 </Card>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
-                <div className="xl:col-span-8">
+              <div className="animate-in-up">
                   <Card className="!p-4 md:!p-5">
                     <CardHeader title="Estimated Stock Depletions &amp; Reorders" subtitle="Based on the active demand forecast." />
                     <div className="w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/70 scrollbar-thin">
@@ -1091,34 +1096,6 @@ export default function AdminDashboard() {
                       <PaginationControls page={reorderPage} setPage={setReorderPage} total={reorderRows.length} pageSize={reorderPageSize} setPageSize={setReorderPageSize} />
                     )}
                   </Card>
-                </div>
-
-                <div className="xl:col-span-4">
-                  <Card className="!p-4 md:!p-5">
-                    <CardHeader title="Low Stock Alerts" />
-                    {lowStockAlerts.length > 0 ? (
-                      <div className="space-y-3">
-                        {lowStockPageRows.map((alert, i) => (
-                          <div key={`${alert.name}-${i}`} className="bg-red-50/80 p-4 rounded-xl border border-red-100 flex justify-between items-start">
-                            <div>
-                              <p className="font-bold text-sm text-red-900">{alert.name}</p>
-                              <p className="text-[10px] text-red-600 mt-0.5">Supplier: {alert.supplier_name}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-bold text-red-800">Stock: {alert.stock_quantity} {alert.base_unit}</p>
-                              <p className="text-[10px] text-red-500">Min: {alert.minimum_stock_level}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <EmptyState icon={AlertTriangle} title="No alerts" description="All stock levels are healthy." />
-                    )}
-                    {lowStockAlerts.length > 0 && (
-                      <PaginationControls page={lowStockPage} setPage={setLowStockPage} total={lowStockAlerts.length} pageSize={lowStockPageSize} setPageSize={setLowStockPageSize} />
-                    )}
-                  </Card>
-                </div>
               </div>
 
               <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 md:gap-5">
@@ -1582,8 +1559,129 @@ export default function AdminDashboard() {
               </div>
             </div>
           )}
+
+          {/* SYSTEM CONTROLS */}
+          {activeTab === 'system' && (
+            <div className="w-full max-w-5xl space-y-4 animate-in-up" key="system">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.24em] text-gold-dark font-black mb-1">Protected Admin Action</p>
+                <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">System Controls</h1>
+                <p className="mt-1 max-w-2xl text-xs leading-relaxed text-espresso/55">
+                  Reset operational records for a clean system state while keeping the business catalog intact.
+                </p>
+              </div>
+
+              <Card className="!p-4 md:!p-6 border-red-200/80 bg-red-50/45">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex min-w-0 gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-700">
+                      <AlertTriangle className="h-6 w-6" />
+                    </div>
+                    <div className="min-w-0 space-y-3">
+                      <div>
+                        <h2 className="text-lg font-black text-espresso">Reset System Data</h2>
+                        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-espresso/62">
+                          This deletes transactional and user-generated database records. It cannot be undone from the dashboard.
+                        </p>
+                      </div>
+                      <div className="grid gap-3 text-xs md:grid-cols-2">
+                        <div className="rounded-2xl border border-emerald-200 bg-white/80 p-4">
+                          <p className="mb-2 font-black uppercase tracking-[0.14em] text-emerald-700">Preserved</p>
+                          <p className="leading-relaxed text-espresso/65">Admin accounts, menu products, services, packages, inventory catalog, stock levels, recipes, FAQs, and gallery records.</p>
+                        </div>
+                        <div className="rounded-2xl border border-red-200 bg-white/80 p-4">
+                          <p className="mb-2 font-black uppercase tracking-[0.14em] text-red-700">Deleted</p>
+                          <p className="leading-relaxed text-espresso/65">Bookings, booking payments, POS orders/payments, reports, forecasts, sales summaries, stock movement history, purchase orders, notifications, chatbot logs, reset OTPs, old audit logs, and non-admin users.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    icon={Trash2}
+                    onClick={openSystemResetModal}
+                    className="w-full shrink-0 lg:w-auto"
+                  >
+                    Reset System Data
+                  </Button>
+                </div>
+              </Card>
+            </div>
+          )}
         </main>
       </div>
+
+      <Modal
+        open={systemResetOpen}
+        onClose={closeSystemResetModal}
+        title="Confirm System Reset"
+        size="lg"
+      >
+        <form onSubmit={handleSystemReset} className="space-y-5">
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div className="space-y-1">
+                <p className="font-black">This action permanently resets operational data.</p>
+                <p className="text-xs leading-relaxed text-red-700/85">
+                  Menu items, packages, inventory catalog, stock levels, recipes, FAQs, gallery records, and admin accounts are preserved.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {systemResetError && (
+            <div className="rounded-2xl border border-red-200 bg-white p-3 text-xs font-semibold text-red-700">
+              {systemResetError}
+            </div>
+          )}
+
+          <Input
+            label="Admin Password"
+            type="password"
+            value={systemResetPassword}
+            onChange={e => setSystemResetPassword(e.target.value)}
+            placeholder="Enter your admin password"
+            required
+            disabled={systemResetLoading}
+          />
+
+          <div className="space-y-2">
+            <Input
+              label="Confirmation"
+              value={systemResetConfirmation}
+              onChange={e => setSystemResetConfirmation(e.target.value)}
+              placeholder="RESET SYSTEM DATA"
+              required
+              disabled={systemResetLoading}
+            />
+            <p className="text-[11px] font-semibold leading-relaxed text-espresso/50">
+              Type <span className="font-black text-espresso">RESET SYSTEM DATA</span> exactly to enable the reset.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeSystemResetModal}
+              disabled={systemResetLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="danger"
+              icon={Trash2}
+              loading={systemResetLoading}
+              disabled={!systemResetPassword || systemResetConfirmation !== 'RESET SYSTEM DATA'}
+            >
+              Reset System Data
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal
         open={!!editingStaff}

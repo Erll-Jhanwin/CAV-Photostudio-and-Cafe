@@ -1,5 +1,6 @@
 import calendar
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -47,6 +48,10 @@ class BookingAvailabilityView(views.APIView):
 
         if not package_id:
             return Response({"package": "Package is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            package_id = int(package_id)
+        except (TypeError, ValueError):
+            return Response({"package": "Package must be a valid ID."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             package = Package.objects.get(id=package_id)
@@ -55,7 +60,10 @@ class BookingAvailabilityView(views.APIView):
 
         if exclude_booking_id:
             try:
+                exclude_booking_id = int(exclude_booking_id)
                 booking = Booking.objects.get(id=exclude_booking_id)
+            except (TypeError, ValueError):
+                return Response({"exclude_booking": "Booking must be a valid ID."}, status=status.HTTP_400_BAD_REQUEST)
             except Booking.DoesNotExist:
                 return Response({"exclude_booking": "Booking not found."}, status=status.HTTP_404_NOT_FOUND)
             if request.user.role not in ['STAFF', 'ADMIN'] and booking.customer_id != request.user.id:
@@ -76,10 +84,12 @@ class BookingAvailabilityView(views.APIView):
 
         try:
             year, month_number = [int(part) for part in (month or timezone.localdate().strftime('%Y-%m')).split('-')]
-        except ValueError:
+            if year < 1900 or year > 2100:
+                raise ValueError
+            _, days_in_month = calendar.monthrange(year, month_number)
+        except (ValueError, calendar.IllegalMonthError):
             return Response({"month": "Use YYYY-MM."}, status=status.HTTP_400_BAD_REQUEST)
 
-        _, days_in_month = calendar.monthrange(year, month_number)
         today = timezone.localdate()
         dates = []
         for day_number in range(1, days_in_month + 1):
@@ -129,6 +139,26 @@ class BookingListCreateView(generics.ListCreateAPIView):
         # Allow client booking
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        items_data = request.data.get('items', [])
+        if not isinstance(items_data, list):
+            return Response({"items": "Items must be a list."}, status=status.HTTP_400_BAD_REQUEST)
+
+        normalized_items = []
+        for item in items_data:
+            if not isinstance(item, dict):
+                return Response({"items": "Each item must be an object."}, status=status.HTTP_400_BAD_REQUEST)
+            name = str(item.get('name') or '').strip()
+            if not name or len(name) > 100:
+                return Response({"items": "Each item needs a name up to 100 characters."}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                price = Decimal(str(item.get('price')))
+                quantity = int(item.get('quantity', 1))
+            except (TypeError, ValueError, InvalidOperation):
+                return Response({"items": "Item price and quantity must be valid numbers."}, status=status.HTTP_400_BAD_REQUEST)
+            if price < 0 or quantity < 1:
+                return Response({"items": "Item price cannot be negative and quantity must be at least 1."}, status=status.HTTP_400_BAD_REQUEST)
+            normalized_items.append({"name": name, "price": price, "quantity": quantity})
+
         with transaction.atomic():
             list(Booking.objects.select_for_update().filter(
                 scheduled_date=serializer.validated_data['scheduled_date'],
@@ -145,14 +175,12 @@ class BookingListCreateView(generics.ListCreateAPIView):
                 )
             booking = serializer.save()
             
-            # Add custom items if supplied in request
-            items_data = request.data.get('items', [])
-            for item in items_data:
+            for item in normalized_items:
                 BookingItem.objects.create(
                     booking=booking,
-                    name=item.get('name'),
-                    price=item.get('price'),
-                    quantity=item.get('quantity', 1)
+                    name=item['name'],
+                    price=item['price'],
+                    quantity=item['quantity']
                 )
 
         # Notify Customer
@@ -194,6 +222,9 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         
         # Check permissions: staff/admin can manage statuses; customers can only cancel their own pending booking.
         new_status = request.data.get('status')
+        valid_statuses = {choice[0] for choice in Booking.STATUS_CHOICES}
+        if new_status and new_status not in valid_statuses:
+            return Response({"status": "Invalid booking status."}, status=status.HTTP_400_BAD_REQUEST)
         if not is_staff_user and new_status and (requested_edit_fields or requested_customer_fields):
             return Response({"detail": "Change booking status separately from booking edits."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -398,6 +429,8 @@ class BookingPaymentReferenceCheckView(views.APIView):
         reference_number = (request.query_params.get('reference_number') or '').strip()
         if not reference_number:
             return Response({"exists": False, "reference_number": ""})
+        if len(reference_number) > 100:
+            return Response({"reference_number": "Reference number is too long."}, status=status.HTTP_400_BAD_REQUEST)
         exists = BookingPayment.objects.filter(reference_number__iexact=reference_number).exists()
         return Response({
             "exists": exists,
@@ -408,12 +441,20 @@ class BookingPaymentReferenceCheckView(views.APIView):
 class BookingPaymentOcrView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = 'ocr'
 
     def post(self, request):
         receipt = request.FILES.get('receipt')
         if not receipt:
             return Response({"receipt": "Upload a GCash screenshot."}, status=status.HTTP_400_BAD_REQUEST)
-        result = analyze_gcash_receipt(receipt)
+        if receipt.size > 5 * 1024 * 1024:
+            return Response({"receipt": "Receipt file must be 5MB or smaller."}, status=status.HTTP_400_BAD_REQUEST)
+        if getattr(receipt, 'content_type', '') not in {'image/jpeg', 'image/png', 'image/webp'}:
+            return Response({"receipt": "OCR accepts JPG, PNG, or WEBP screenshots only."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = analyze_gcash_receipt(receipt)
+        except Exception:
+            return Response({"detail": "Could not read this receipt image."}, status=status.HTTP_400_BAD_REQUEST)
         reference_number = result.get('fields', {}).get('reference_number', {}).get('value')
         if reference_number:
             duplicate_exists = BookingPayment.objects.filter(reference_number__iexact=reference_number).exists()
@@ -441,7 +482,7 @@ class BookingPaymentVerifyView(generics.UpdateAPIView):
         payment.status = new_status
         payment.verified_by = request.user
         payment.verified_at = timezone.now()
-        payment.admin_note = request.data.get('admin_note', payment.admin_note or '')
+        payment.admin_note = str(request.data.get('admin_note', payment.admin_note or '') or '').strip()[:1000]
         payment.save()
 
         if new_status == 'APPROVED':

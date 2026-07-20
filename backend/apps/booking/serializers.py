@@ -87,6 +87,10 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
 
         if reference_number:
             normalized_reference = str(reference_number).strip()
+            if not re.fullmatch(r'[A-Za-z0-9\- ]{6,100}', normalized_reference):
+                raise serializers.ValidationError({
+                    'reference_number': 'Reference number must be 6-100 letters, numbers, spaces, or hyphens.'
+                })
             duplicate_qs = BookingPayment.objects.filter(reference_number__iexact=normalized_reference)
             if self.instance:
                 duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
@@ -97,6 +101,8 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             attrs['reference_number'] = normalized_reference
 
         if booking and amount is not None:
+            if amount <= 0:
+                raise serializers.ValidationError({'amount': 'Amount must be greater than zero.'})
             required_down_payment = booking.package.price * Decimal('0.50')
             if amount < required_down_payment:
                 raise serializers.ValidationError({
@@ -104,6 +110,16 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
                 })
 
         return attrs
+
+    def validate_receipt(self, value):
+        max_size = 5 * 1024 * 1024
+        allowed_types = {'image/jpeg', 'image/png', 'image/webp', 'application/pdf'}
+        if value.size > max_size:
+            raise serializers.ValidationError('Receipt file must be 5MB or smaller.')
+        content_type = getattr(value, 'content_type', '')
+        if content_type and content_type not in allowed_types:
+            raise serializers.ValidationError('Receipt must be a JPG, PNG, WEBP, or PDF file.')
+        return value
 
 class BookingSerializer(serializers.ModelSerializer):
     customer = UserSerializer(read_only=True)
@@ -152,6 +168,11 @@ class BookingSerializer(serializers.ModelSerializer):
             phone_digits = re.sub(r'\D', '', phone_number)
             if len(phone_digits) < 7:
                 raise serializers.ValidationError({'phone_number': 'Enter a valid contact number.'})
+            attrs['phone_number'] = phone_number.strip()
+
+        for field in ['first_name', 'last_name', 'email', 'address', 'notes']:
+            if field in attrs and isinstance(attrs[field], str):
+                attrs[field] = attrs[field].strip()
 
         schedule_changed = self.instance is None or any(
             field in attrs for field in ['package', 'scheduled_date', 'scheduled_time']

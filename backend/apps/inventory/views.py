@@ -1,6 +1,7 @@
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 from django.db import transaction
+from decimal import Decimal, InvalidOperation
 from inventory.models import (
     Category, Supplier, Product, StockMovement, PurchaseOrder, PurchaseOrderItem,
     Ingredient, RecipeIngredient, IngredientStockMovement
@@ -99,10 +100,26 @@ class ProductDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
         return Response(serializer.data)
 
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role not in ['STAFF', 'ADMIN']:
+            return Response({"detail": "Only staff and admins can remove products."}, status=status.HTTP_403_FORBIDDEN)
+        product = self.get_object()
+        product.is_active = False
+        product.save(update_fields=['is_active'])
+        AuditLog.objects.create(
+            user=request.user,
+            action="PRODUCT_DEACTIVATE",
+            description=f"Deactivated product: {product.name} (SKU: {product.sku})."
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 class StockMovementListView(generics.ListCreateAPIView):
-    queryset = StockMovement.objects.all().select_related('product', 'user').order_by('-timestamp')
     serializer_class = StockMovementSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = StockMovement.objects.select_related('product', 'user').order_by('-timestamp')
+        return apply_limit(queryset, self.request, default=100)
 
     def create(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -110,8 +127,13 @@ class StockMovementListView(generics.ListCreateAPIView):
             
         product_id = request.data.get('product')
         m_type = request.data.get('movement_type')
-        qty = int(request.data.get('quantity', 0))
-        reason = request.data.get('reason', 'Manual Update')
+        try:
+            qty = int(request.data.get('quantity', 0))
+        except (TypeError, ValueError):
+            return Response({"quantity": "Quantity must be a whole number."}, status=status.HTTP_400_BAD_REQUEST)
+        if qty <= 0:
+            return Response({"quantity": "Quantity must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+        reason = str(request.data.get('reason', 'Manual Update') or 'Manual Update').strip()[:100]
         
         try:
             product = Product.objects.get(id=product_id, is_active=True)
@@ -196,6 +218,11 @@ class IngredientDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
         return response
 
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role not in ['STAFF', 'ADMIN']:
+            return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+
 class RecipeIngredientListCreateView(generics.ListCreateAPIView):
     serializer_class = RecipeIngredientSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -213,9 +240,12 @@ class RecipeIngredientListCreateView(generics.ListCreateAPIView):
         return super().create(request, *args, **kwargs)
 
 class IngredientStockMovementListView(generics.ListCreateAPIView):
-    queryset = IngredientStockMovement.objects.all().select_related('ingredient', 'user').order_by('-timestamp')
     serializer_class = IngredientStockMovementSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = IngredientStockMovement.objects.select_related('ingredient', 'user').order_by('-timestamp')
+        return apply_limit(queryset, self.request, default=100)
 
     def create(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -225,7 +255,7 @@ class IngredientStockMovementListView(generics.ListCreateAPIView):
         movement_type = request.data.get('movement_type')
         input_quantity = request.data.get('quantity', request.data.get('input_quantity', 0))
         input_unit = request.data.get('unit', request.data.get('input_unit', '')).upper()
-        reason = request.data.get('reason', 'Manual ingredient adjustment')
+        reason = str(request.data.get('reason', 'Manual ingredient adjustment') or 'Manual ingredient adjustment').strip()[:150]
 
         if movement_type not in ('IN', 'OUT'):
             return Response({"detail": "Invalid movement type."}, status=status.HTTP_400_BAD_REQUEST)
@@ -238,6 +268,11 @@ class IngredientStockMovementListView(generics.ListCreateAPIView):
                 return Response({"detail": "Ingredient not found."}, status=status.HTTP_404_NOT_FOUND)
             except ValueError as exc:
                 return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            except (InvalidOperation, TypeError):
+                return Response({"quantity": "Quantity must be a valid number."}, status=status.HTTP_400_BAD_REQUEST)
+
+            if quantity <= 0:
+                return Response({"quantity": "Quantity must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
 
             if movement_type == 'IN':
                 ingredient.stock_quantity += quantity
@@ -305,9 +340,12 @@ class SupplierListCreateView(generics.ListCreateAPIView):
         return super().create(request, *args, **kwargs)
 
 class PurchaseOrderListCreateView(generics.ListCreateAPIView):
-    queryset = PurchaseOrder.objects.all().prefetch_related('items').order_by('-created_at')
     serializer_class = PurchaseOrderSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = PurchaseOrder.objects.select_related('supplier').prefetch_related('items__product').order_by('-created_at')
+        return apply_limit(queryset, self.request, default=100)
 
     def create(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -319,15 +357,37 @@ class PurchaseOrderListCreateView(generics.ListCreateAPIView):
         
         if not items_data:
             return Response({"detail": "Cannot create empty purchase order."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(items_data, list):
+            return Response({"items": "Items must be a list."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            supplier = Supplier.objects.get(id=supplier_id)
+        except Supplier.DoesNotExist:
+            return Response({"supplier": "Supplier not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        normalized_items = []
+        for item in items_data:
+            if not isinstance(item, dict):
+                return Response({"items": "Each item must be an object."}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                product_id = int(item.get('product_id'))
+                quantity = int(item.get('quantity'))
+                cost_price = Decimal(str(item.get('cost_price')))
+            except (TypeError, ValueError, InvalidOperation):
+                return Response({"items": "Each item needs valid product, quantity, and cost price."}, status=status.HTTP_400_BAD_REQUEST)
+            if quantity <= 0 or cost_price < 0:
+                return Response({"items": "Quantity must be greater than zero and cost price cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
+            if not Product.objects.filter(id=product_id, is_active=True).exists():
+                return Response({"product": f"Product with ID {product_id} not found."}, status=status.HTTP_404_NOT_FOUND)
+            normalized_items.append({"product_id": product_id, "quantity": quantity, "cost_price": cost_price})
 
         with transaction.atomic():
-            po = PurchaseOrder.objects.create(supplier_id=supplier_id, notes=notes)
-            for item in items_data:
+            po = PurchaseOrder.objects.create(supplier=supplier, notes=str(notes or '').strip()[:1000])
+            for item in normalized_items:
                 PurchaseOrderItem.objects.create(
                     purchase_order=po,
-                    product_id=item.get('product_id'),
-                    quantity=item.get('quantity'),
-                    cost_price=item.get('cost_price')
+                    product_id=item['product_id'],
+                    quantity=item['quantity'],
+                    cost_price=item['cost_price']
                 )
             
             AuditLog.objects.create(
@@ -351,13 +411,15 @@ class PurchaseOrderDetailUpdateView(generics.RetrieveUpdateAPIView):
         new_status = request.data.get('status')
 
         if new_status and po.status != new_status:
+            if new_status not in {choice[0] for choice in PurchaseOrder.STATUS_CHOICES}:
+                return Response({"status": "Invalid purchase order status."}, status=status.HTTP_400_BAD_REQUEST)
             if new_status == 'RECEIVED' and po.status != 'RECEIVED':
                 # Mark as received: increment product stock levels
                 with transaction.atomic():
-                    for item in po.items.all():
-                        product = item.product
+                    for item in po.items.select_related('product').select_for_update():
+                        product = Product.objects.select_for_update().get(pk=item.product_id)
                         product.stock_level += item.quantity
-                        product.save()
+                        product.save(update_fields=['stock_level'])
 
                         # Log stock movement
                         StockMovement.objects.create(

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
-import { Calendar, User, Clock, Bell, LogOut, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
+import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
-import { Input, Select, Textarea } from '../components/ui/Input';
+import { Input, Textarea } from '../components/ui/Input';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Skeleton, SkeletonProfileCard } from '../components/ui/Skeleton';
 import { Sidebar } from '../components/ui/Sidebar';
@@ -45,13 +45,6 @@ const splitPackageText = (text) => (
     .map(item => item.trim())
     .filter(Boolean)
 );
-
-const getPackagePeople = (pkg) => {
-  const parsed = parseDescription(pkg?.description || '');
-  if (parsed.persons) return parsed.persons;
-  const match = `${pkg?.description || ''} ${pkg?.inclusions || ''}`.match(/\b\d+(?:-\d+)?\s*(?:pax|person|persons|people)\b/i);
-  return match ? match[0] : 'See package inclusions';
-};
 
 const getPackagePhotoOutputs = (pkg) => {
   const parsed = parseDescription(pkg?.description || '');
@@ -187,6 +180,29 @@ const formatStatusLabel = (status) => ({
   PENDING_VERIFICATION: 'Pending Verification',
 }[status] || status);
 
+const bookingStepHeaders = {
+  service: { step: 'STEP 1 OF 4', title: 'CHOOSE SERVICE' },
+  package: { step: 'STEP 2A OF 4', title: 'SELECT PACKAGE' },
+  schedule: { step: 'STEP 2B OF 4', title: 'SCHEDULE DATE & TIME' },
+  customer: { step: 'STEP 3 OF 4', title: 'CUSTOMER INFO' },
+  review: { step: 'STEP 4 OF 4', title: 'REVIEW & PAYMENT' },
+};
+
+function BookingStepHeader({ step, title, description, className = '' }) {
+  return (
+    <div className={`text-left ${className}`}>
+      <h2 className="text-xs md:text-sm font-black uppercase tracking-[0.16em] text-espresso leading-snug">
+        {step} <span className="text-gold-dark">—</span> {title}
+      </h2>
+      {description && (
+        <p className="mt-1 text-[11px] text-espresso/50 leading-relaxed">
+          {description}
+        </p>
+      )}
+    </div>
+  );
+}
+
 const getDateInputValue = (date = new Date()) => {
   const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
   return localDate.toISOString().slice(0, 10);
@@ -303,7 +319,7 @@ export default function CustomerDashboard() {
   const [cancellingBookingId, setCancellingBookingId] = useState(null);
   const [editingBooking, setEditingBooking] = useState(null);
   const [editForm, setEditForm] = useState(null);
-  const [editMonth, setEditMonth] = useState(getMonthValue());
+  const [, setEditMonth] = useState(getMonthValue());
   const [editDayAvailability, setEditDayAvailability] = useState(null);
   const [editSlotLoading, setEditSlotLoading] = useState(false);
   const [editError, setEditError] = useState('');
@@ -418,11 +434,6 @@ export default function CustomerDashboard() {
   }, [currentStep, activeTab, canGoNext]);
 
   useEffect(() => {
-    if (!user) { navigate('/login'); return; }
-    fetchDashboardData();
-  }, [user, navigate]);
-
-  useEffect(() => {
     client.get('/api/chatbot/faqs/')
       .then(res => {
         const prompts = res.data.map(faq => faq.question).filter(Boolean).slice(0, 6);
@@ -431,7 +442,7 @@ export default function CustomerDashboard() {
       .catch(() => {});
   }, []);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       const [servicesRes, bookingsRes, profileRes, galleryRes] = await Promise.all([
@@ -471,7 +482,12 @@ export default function CustomerDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.email]);
+
+  useEffect(() => {
+    if (!user) { navigate('/login'); return; }
+    fetchDashboardData();
+  }, [user, navigate, fetchDashboardData]);
 
   const handleProfileUpdate = async (e) => {
     e.preventDefault();
@@ -963,17 +979,6 @@ export default function CustomerDashboard() {
     await sendChatMessage(chatInput);
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'PENDING': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'CONFIRMED': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'CONFIRMED_DP': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'COMPLETED': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'CANCELLED': return 'bg-red-50 text-red-700 border-red-200';
-      default: return 'bg-gray-50 text-gray-700 border-gray-200';
-    }
-  };
-
   const handleLogout = useCallback(() => { logout(); navigate('/login', { replace: true }); }, [logout, navigate]);
 
   if (loading) return <CustomerSkeleton />;
@@ -1025,15 +1030,16 @@ export default function CustomerDashboard() {
     !!selectedTime &&
     (!hasPackageOptions || !!selectedPackage)
   );
-  const currentStepTitle = currentStep === 1
-    ? 'Step 1 of 4 - Choose Service'
+  const activeBookingStepHeader = currentStep === 1
+    ? bookingStepHeaders.service
     : currentStep === 2
     ? isStep2ScheduleActive
-      ? 'Step 2B of 4 — Schedule Date & Time'
-      : 'Step 2A of 4 — Select Package'
+      ? bookingStepHeaders.schedule
+      : bookingStepHeaders.package
     : currentStep === 3
-    ? 'Step 3 of 4 - Customer Info'
-    : 'Step 4 of 4 - Review';
+    ? bookingStepHeaders.customer
+    : bookingStepHeaders.review;
+  const currentStepTitle = `${activeBookingStepHeader.step} — ${activeBookingStepHeader.title}`;
   const bookingProgressValue = currentStep === 2
     ? isStep2ScheduleComplete
       ? 2.6
@@ -1118,21 +1124,10 @@ export default function CustomerDashboard() {
                   <Card className="flex flex-col h-[580px] max-h-[580px] overflow-hidden" padding={true}>
                     {/* Stepper progress indicator */}
                     <div className="border-b border-espresso/5 pb-4 mb-4 shrink-0">
+                      <BookingStepHeader {...activeBookingStepHeader} className="mb-3" />
+
                       {/* Mobile progress indicator */}
                       <div className="md:hidden flex flex-col gap-2" aria-label={currentStepTitle}>
-                        <div className="flex justify-between text-[11px] font-bold text-espresso">
-                          <span>
-                            {currentStep === 2
-                              ? isStep2ScheduleActive ? 'Step 2B of 4' : 'Step 2A of 4'
-                              : `Step ${currentStep} of 4`}
-                          </span>
-                          <span className="text-gold uppercase tracking-wider">
-                            {currentStep === 1 && 'Choose Service'}
-                            {currentStep === 2 && (isStep2ScheduleActive ? 'Schedule Date & Time' : 'Select Package')}
-                            {currentStep === 3 && 'Customer Info'}
-                            {currentStep === 4 && 'Review & Submit'}
-                          </span>
-                        </div>
                         <div className="w-full bg-cream rounded-full h-1.5">
                           <div 
                             className="bg-gold h-1.5 rounded-full transition-all duration-300"
@@ -1222,7 +1217,6 @@ export default function CustomerDashboard() {
                         <div className="w-[25%] shrink-0 h-full overflow-y-auto pr-1 pb-4 flex flex-col gap-5">
                           {/* Top Section: Service Cards */}
                           <div>
-                            <h2 className="text-xs font-bold text-espresso/50 uppercase tracking-wider mb-3">Step 1: Choose Service</h2>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {services.map(svc => (
                                 <button key={svc.id}
@@ -1295,7 +1289,7 @@ export default function CustomerDashboard() {
                           {selectedService ? (
                             selectedService.packages && selectedService.packages.length > 0 ? (
                               <div className="space-y-3 shrink-0">
-                                <h3 className="text-xs font-bold text-espresso/50 uppercase tracking-wider">Step 2A: Select Your Package</h3>
+                                <BookingStepHeader {...bookingStepHeaders.package} />
                                 {(() => {
                                   const packages = selectedService.packages;
                                   const slides = [];
@@ -1502,7 +1496,7 @@ export default function CustomerDashboard() {
 
                           {/* Date and Time Section */}
                           <div className="border-t border-espresso/5 pt-4 space-y-3">
-                            <h3 className="text-xs font-bold text-espresso/50 uppercase tracking-wider">Step 2B: Schedule Date &amp; Time</h3>
+                            <BookingStepHeader {...bookingStepHeaders.schedule} />
                             <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-4">
                               <div className="rounded-2xl bg-white border border-espresso/10 p-4 shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
@@ -1627,10 +1621,7 @@ export default function CustomerDashboard() {
 
                         {/* Step 3: Customer Information & Notes */}
                         <div className="w-[25%] shrink-0 h-full overflow-y-auto pr-1 pb-4 flex flex-col gap-4">
-                          <div>
-                            <h2 className="text-sm font-bold text-espresso mb-1">Customer Information</h2>
-                            <p className="text-[11px] text-espresso/50">Confirm the details staff will use for this booking.</p>
-                          </div>
+                          <p className="text-[11px] text-espresso/50">Confirm the details staff will use for this booking.</p>
 
                           <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm space-y-3">
                             <Input
@@ -1693,10 +1684,7 @@ export default function CustomerDashboard() {
 
                         {/* Step 4: Review & Submit */}
                         <div className="w-[25%] shrink-0 h-full overflow-y-auto pr-1 pb-4 flex flex-col gap-4">
-                          <div>
-                            <h2 className="text-sm font-bold text-espresso mb-1">Review &amp; Confirm Booking</h2>
-                            <p className="text-[11px] text-espresso/50">Verify details before submitting your slot reservation request.</p>
-                          </div>
+                          <p className="text-[11px] text-espresso/50">Verify details before submitting your slot reservation request.</p>
 
                           <div className="bg-cream/45 p-4 rounded-xl border border-espresso/5 space-y-3 text-xs">
                             <div className="grid grid-cols-2 gap-y-2 border-b border-espresso/5 pb-2">
@@ -1938,11 +1926,6 @@ export default function CustomerDashboard() {
                         >
                           Back to Details
                         </Button>
-                        {isStep2ScheduleActive && (
-                          <span className="text-[11px] font-black uppercase tracking-wider text-espresso/55">
-                            Step 2B of 4 — Schedule Date &amp; Time
-                          </span>
-                        )}
                       </div>
                       
                       {currentStep < 4 ? (
@@ -2094,19 +2077,36 @@ export default function CustomerDashboard() {
                                       <span>CAV Photo Studio &amp; Cafe</span>
                                     </span>
                                   </div>
-                                  <div className="rounded-2xl bg-cream/55 border border-espresso/[0.05] p-3 text-xs space-y-1.5">
-                                    <p className="inline-flex items-center gap-1.5 font-black text-espresso">
-                                      <Sparkles className="w-3.5 h-3.5 text-gold-dark" />
-                                      {b.package_details?.name || 'Photography Package'}
-                                    </p>
-                                    <p className="inline-flex items-center gap-1.5 text-espresso/60 break-all">
-                                      <Phone className="w-3.5 h-3.5 text-gold-dark shrink-0" />
-                                      {contact.phone}
-                                    </p>
-                                    <p className="inline-flex items-center gap-1.5 text-espresso/60 break-all">
-                                      <Mail className="w-3.5 h-3.5 text-gold-dark shrink-0" />
-                                      {contact.email}
-                                    </p>
+                                  <div className="rounded-2xl border border-espresso/[0.07] bg-white/85 p-4 md:p-5 shadow-[0_12px_28px_rgba(46,26,17,0.06)]">
+                                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,max-content)] items-center gap-x-4 gap-y-3">
+                                      <div className="flex min-w-0 items-center gap-4">
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gold/10 text-gold-dark">
+                                          <Sparkles className="h-4 w-4" />
+                                        </span>
+                                        <div className="min-w-0">
+                                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/38">Selected Package</p>
+                                          <p className="truncate text-sm font-black leading-5 text-espresso md:text-base">
+                                            {b.package_details?.name || 'Photography Package'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="flex min-w-0 items-center justify-end gap-3 text-right">
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cream text-gold-dark">
+                                          <Phone className="h-4 w-4" />
+                                        </span>
+                                        <span className="max-w-[34vw] truncate whitespace-nowrap text-xs font-bold text-espresso/68 sm:max-w-[180px]">
+                                          {contact.phone}
+                                        </span>
+                                      </div>
+                                      <div className="col-span-2 flex min-w-0 items-center gap-4 border-t border-espresso/[0.06] pt-3">
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cream text-gold-dark">
+                                          <Mail className="h-4 w-4" />
+                                        </span>
+                                        <span className="min-w-0 truncate whitespace-nowrap text-xs font-semibold text-espresso/60">
+                                          {contact.email}
+                                        </span>
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                               </div>

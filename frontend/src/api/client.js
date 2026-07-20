@@ -3,10 +3,13 @@ import { API_BASE_URL } from './config';
 
 const client = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+let refreshPromise = null;
 
 // Request Interceptor: Inject JWT token from localStorage
 client.interceptors.request.use(
@@ -29,15 +32,25 @@ client.interceptors.response.use(
     const originalRequest = error.config;
     
     // If we get a 401 and we haven't retried yet
-    if (error.response && error.response.status === 401 && !originalRequest._retry) {
+    if (
+      error.response &&
+      error.response.status === 401 &&
+      !originalRequest._retry &&
+      !originalRequest.url?.includes('/api/auth/token/refresh/')
+    ) {
       originalRequest._retry = true;
       const refreshToken = localStorage.getItem('refresh_token');
       
       if (refreshToken) {
         try {
-          const res = await axios.post(`${API_BASE_URL}/api/auth/token/refresh/`, {
-            refresh: refreshToken,
-          });
+          if (!refreshPromise) {
+            refreshPromise = axios.post(`${API_BASE_URL}/api/auth/token/refresh/`, {
+              refresh: refreshToken,
+            }, { timeout: 15000 }).finally(() => {
+              refreshPromise = null;
+            });
+          }
+          const res = await refreshPromise;
           
           if (res.status === 200) {
             const newAccess = res.data.access;

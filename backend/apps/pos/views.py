@@ -4,13 +4,13 @@ from rest_framework.response import Response
 from django.db import transaction, close_old_connections
 from django.db.models import Sum, Count, Min, Q
 from django.utils import timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime
 from threading import Thread
 from pos.models import Order, OrderItem, Payment, EndOfDayReport, TransactionSequence
 from pos.serializers import OrderSerializer, EndOfDayReportSerializer
 from pos.receipt_printing import print_receipt, print_end_of_day_report
-from booking.models import BookingPayment
+from booking.models import Booking, BookingPayment
 from inventory.models import Product, StockMovement, Ingredient, IngredientStockMovement, RecipeIngredient
 from sales.models import DailySalesSummary
 from audit.models import AuditLog
@@ -44,10 +44,15 @@ def validate_payment_method(method):
     return None
 
 def money(value):
-    return Decimal(str(value or '0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    try:
+        return Decimal(str(value or '0')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError("Enter a valid amount.")
 
 def calculate_discount(subtotal, discount_data):
     discount_data = discount_data or {}
+    if not isinstance(discount_data, dict):
+        return None, Response({"discount": "Discount must be an object."}, status=status.HTTP_400_BAD_REQUEST)
     discount_type = str(discount_data.get('type') or 'FIXED').upper()
     if discount_type not in {'FIXED', 'PERCENT'}:
         return None, Response({"discount": "Discount type must be FIXED or PERCENT."}, status=status.HTTP_400_BAD_REQUEST)
@@ -320,9 +325,22 @@ class OrderListCreateView(generics.ListCreateAPIView):
 
         if not items_data:
             return Response({"detail": "Cart is empty."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(items_data, list):
+            return Response({"detail": "Cart items must be a list."}, status=status.HTTP_400_BAD_REQUEST)
+        if order_type not in {'WALK_IN', 'BOOKING_LINKED'}:
+            return Response({"order_type": "Order type must be WALK_IN or BOOKING_LINKED."}, status=status.HTTP_400_BAD_REQUEST)
+        if order_type == 'BOOKING_LINKED':
+            if not booking_id:
+                return Response({"booking_id": "Booking is required for linked orders."}, status=status.HTTP_400_BAD_REQUEST)
+            if not Booking.objects.filter(id=booking_id).exists():
+                return Response({"booking_id": "Booking not found."}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            booking_id = None
 
         item_quantities = {}
         for item in items_data:
+            if not isinstance(item, dict):
+                return Response({"detail": "Invalid cart item."}, status=status.HTTP_400_BAD_REQUEST)
             try:
                 product_id = int(item.get('product_id'))
                 qty = int(item.get('quantity', 1))
@@ -400,12 +418,19 @@ class OrderListCreateView(generics.ListCreateAPIView):
             method = None
             tx_id = ''
             if payment_data:
-                amount_paid = money(payment_data.get('amount', final_total))
+                if not isinstance(payment_data, dict):
+                    return Response({"payment": "Payment must be an object."}, status=status.HTTP_400_BAD_REQUEST)
+                try:
+                    amount_paid = money(payment_data.get('amount', final_total))
+                except ValueError as exc:
+                    return Response({"amount": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+                if amount_paid < 0:
+                    return Response({"amount": "Payment amount cannot be negative."}, status=status.HTTP_400_BAD_REQUEST)
                 method = payment_data.get('method', 'CASH')
                 method_error = validate_payment_method(method)
                 if method_error:
                     return method_error
-                tx_id = payment_data.get('transaction_id', '')
+                tx_id = str(payment_data.get('transaction_id', '') or '').strip()[:100]
 
             payment_status_value = 'PAID' if amount_paid is not None and amount_paid >= final_total else 'PENDING'
             order = Order.objects.create(
@@ -494,9 +519,14 @@ class OrderListCreateView(generics.ListCreateAPIView):
         return Response(receipt_payload, status=status.HTTP_201_CREATED)
 
 class OrderDetailView(generics.RetrieveAPIView):
-    queryset = Order.objects.all()
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = Order.objects.select_related('staff', 'booking__customer').prefetch_related('items', 'payments', 'items__product')
+        if self.request.user.role in ['STAFF', 'ADMIN']:
+            return queryset
+        return queryset.filter(booking__customer=self.request.user)
 
 class PaymentCreateView(generics.CreateAPIView):
     queryset = Payment.objects.all()
@@ -507,12 +537,17 @@ class PaymentCreateView(generics.CreateAPIView):
             return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
             
         order_id = request.data.get('order')
-        amount = money(request.data.get('amount'))
+        try:
+            amount = money(request.data.get('amount'))
+        except ValueError as exc:
+            return Response({"amount": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if amount <= 0:
+            return Response({"amount": "Payment amount must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
         method = request.data.get('method', 'CASH')
         method_error = validate_payment_method(method)
         if method_error:
             return method_error
-        tx_id = request.data.get('transaction_id', '')
+        tx_id = str(request.data.get('transaction_id', '') or '').strip()[:100]
 
         try:
             order = Order.objects.get(id=order_id)
@@ -528,8 +563,8 @@ class PaymentCreateView(generics.CreateAPIView):
             )
 
             # Recalculate total payments
-            total_paid = sum(float(p.amount) for p in order.payments.all())
-            if total_paid >= float(order.total):
+            total_paid = order.payments.aggregate(value=Sum('amount'))['value'] or Decimal('0.00')
+            if total_paid >= order.total:
                 if order.payment_status != 'PAID':
                     order.payment_status = 'PAID'
                     order.save(update_fields=['payment_status'])

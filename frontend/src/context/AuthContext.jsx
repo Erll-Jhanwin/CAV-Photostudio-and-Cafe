@@ -59,7 +59,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.clear();
+    ['access_token', 'refresh_token', 'user'].forEach((key) => localStorage.removeItem(key));
     sessionStorage.clear();
     document.cookie.split(';').forEach((cookie) => {
       const name = cookie.split('=')[0].trim();

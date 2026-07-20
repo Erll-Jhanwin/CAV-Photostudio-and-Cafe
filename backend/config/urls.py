@@ -8,7 +8,18 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
 # Import views directly from apps since apps are added to sys.path
-from users.views import CustomTokenObtainPairView, RegisterView, UserProfileView, StaffListView, StaffDetailView, ForgotPasswordView, GoogleAuthView
+from users.views import (
+    CustomTokenObtainPairView,
+    RegisterView,
+    UserProfileView,
+    StaffListView,
+    StaffDetailView,
+    ForgotPasswordView,
+    PasswordResetVerifyOTPView,
+    PasswordResetConfirmView,
+    SystemDataResetView,
+    GoogleAuthView,
+)
 from booking.views import (
     ServiceListView, PackageListView, BookingListCreateView, BookingDetailUpdateView,
     BookingPaymentListCreateView, BookingPaymentVerifyView, BookingAvailabilityView,
@@ -38,6 +49,9 @@ urlpatterns = [
     path('api/auth/users/', StaffListView.as_view(), name='staff_list'),
     path('api/auth/users/<int:pk>/', StaffDetailView.as_view(), name='staff_detail'),
     path('api/auth/forgot-password/', ForgotPasswordView.as_view(), name='auth_forgot_password'),
+    path('api/auth/forgot-password/verify/', PasswordResetVerifyOTPView.as_view(), name='auth_forgot_password_verify'),
+    path('api/auth/forgot-password/confirm/', PasswordResetConfirmView.as_view(), name='auth_forgot_password_confirm'),
+    path('api/admin/system-reset/', SystemDataResetView.as_view(), name='admin_system_reset'),
     
     # Booking endpoints
     path('api/bookings/services/', ServiceListView.as_view(), name='service_list'),

@@ -19,16 +19,16 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
+    "start": "node ./node_modules/react-scripts/bin/react-scripts.js start",
+    "build": "node ./node_modules/react-scripts/bin/react-scripts.js build",
     "cap": "cap",
     "cap:add:android": "cap add android",
     "cap:copy": "npm run build && cap copy",
     "cap:sync": "npm run build && cap sync",
     "cap:open:android": "cap open android",
     "cap:run:android": "npm run cap:sync && cap run android",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "test": "node ./node_modules/react-scripts/bin/react-scripts.js test",
+    "eject": "node ./node_modules/react-scripts/bin/react-scripts.js eject"
   },
   "eslintConfig": {
     "extends": [

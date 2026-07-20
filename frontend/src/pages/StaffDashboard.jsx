@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
 import {
-  ShoppingBag, Package, DollarSign, LogOut, Search, Plus,
+  ShoppingBag, Package, DollarSign, Search, Plus,
   Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
   PackageCheck, Clock, CalendarOff, Archive
 } from 'lucide-react';
@@ -235,7 +235,7 @@ export default function StaffDashboard() {
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [productForm, setProductForm] = useState(emptyProductForm());
 
-  const loadStaticInventoryOptions = async (force = false) => {
+  const loadStaticInventoryOptions = useCallback(async (force = false) => {
     const cachedCategories = !force ? readStaffCache('categories') : null;
     const cachedSuppliers = !force ? readStaffCache('suppliers') : null;
     if (cachedCategories) setCategories(cachedCategories);
@@ -250,15 +250,15 @@ export default function StaffDashboard() {
     setSuppliers(suppliersRes.data);
     writeStaffCache('categories', categoriesRes.data);
     writeStaffCache('suppliers', suppliersRes.data);
-  };
+  }, []);
 
-  const refreshProducts = async () => {
+  const refreshProducts = useCallback(async () => {
     const productsRes = await client.get('/api/inventory/products/', { params: { limit: 240 } });
     setProducts(productsRes.data);
     writeStaffCache('products', productsRes.data);
-  };
+  }, []);
 
-  const ensureDefaultRecipesOnce = async () => {
+  const ensureDefaultRecipesOnce = useCallback(async () => {
     if (sessionStorage.getItem('staff:recipesChecked')) return;
     sessionStorage.setItem('staff:recipesChecked', 'true');
     try {
@@ -269,9 +269,9 @@ export default function StaffDashboard() {
     } catch {
       /* default recipe generation is non-critical for first paint */
     }
-  };
+  }, [refreshProducts]);
 
-  const loadTabData = async (tab = activeTab, force = false) => {
+  const loadTabData = useCallback(async (tab = activeTab, force = false) => {
     if (!force && loadedTabs[tab]) return;
     try {
       setError('');
@@ -306,7 +306,7 @@ export default function StaffDashboard() {
       setLoadingResources(current => ({ ...current, [tab]: false }));
       setLoading(false);
     }
-  };
+  }, [activeTab, loadedTabs, ensureDefaultRecipesOnce, loadStaticInventoryOptions]);
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) {
@@ -314,7 +314,7 @@ export default function StaffDashboard() {
       return;
     }
     loadTabData(activeTab);
-  }, [user, navigate, activeTab]);
+  }, [user, navigate, activeTab, loadTabData]);
 
   useEffect(() => { setProductPage(1); }, [posSearch]);
   useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
@@ -644,9 +644,6 @@ export default function StaffDashboard() {
     }
     return counts;
   }, {});
-  const inventoryAlerts = ingredients
-    .filter(ingredient => ['LOW_STOCK', 'NEAR_EXPIRY', 'EXPIRED', 'OVERSTOCKED'].includes(ingredient.inventory_status))
-    .slice(0, 4);
   const salesStart = salesStartDate ? new Date(`${salesStartDate}T00:00:00`) : null;
   const salesEnd = salesEndDate ? new Date(`${salesEndDate}T23:59:59.999`) : null;
   const filteredOrders = orders.filter(order => {
@@ -1080,28 +1077,6 @@ export default function StaffDashboard() {
                   );
                 })}
               </div>
-
-              {inventoryAlerts.length > 0 && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  {inventoryAlerts.map(ingredient => {
-                    const meta = getInventoryStatusMeta(ingredient.inventory_status);
-                    return (
-                      <div key={ingredient.id} className="bg-white border border-espresso/5 rounded-2xl p-4 flex items-start justify-between gap-4 shadow-sm">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-bold text-sm text-espresso truncate">{ingredient.name}</p>
-                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${meta.className}`}>
-                              {ingredient.inventory_status_label}
-                            </span>
-                          </div>
-                          <p className="text-xs text-espresso/55 mt-1">{ingredient.suggested_action}</p>
-                        </div>
-                        <AlertTriangle className="w-5 h-5 text-gold shrink-0" />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
 
               <div className="flex flex-col lg:flex-row gap-3">
                 <div className="relative flex-1">

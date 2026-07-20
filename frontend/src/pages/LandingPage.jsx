@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Camera, Coffee, ChevronRight, ChevronLeft, MessageSquare, Send, X,
@@ -15,7 +15,7 @@ import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/Chatb
 function LandingSkeleton() {
   return (
     <div className="min-h-screen bg-cream">
-      <header className="sticky top-0 z-40 bg-cream/80 backdrop-blur-md border-b border-espresso/5">
+      <header className="sticky top-0 z-40 bg-white border-b border-espresso/[0.08] shadow-[0_8px_24px_rgba(46,26,17,0.06)]">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Skeleton className="w-10 h-10 rounded-lg" />
@@ -623,7 +623,6 @@ export default function LandingPage() {
   const [galleryImages, setGalleryImages] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [navCompact, setNavCompact] = useState(false);
   const [landingSelectedService, setLandingSelectedService] = useState(null);
   const [landingPackageSlide, setLandingPackageSlide] = useState(0);
   const [landingCardsPerSlide, setLandingCardsPerSlide] = useState(2);
@@ -635,16 +634,9 @@ export default function LandingPage() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  useEffect(() => {
-    const handleScroll = () => setNavCompact(window.scrollY > 24);
-    handleScroll();
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
   const parseDescription = (desc) => {
     if (!desc) return { isSplit: false };
-    const match = desc.match(/(\d[\d\-–]+\s*(?:person|persons))\s*[/\|]\s*(\d+\s*shots?)/i);
+    const match = desc.match(/(\d[\d\-–]+\s*(?:person|persons))\s*[/|]\s*(\d+\s*shots?)/i);
     if (match) return { isSplit: true, persons: match[1].trim(), shots: match[2].trim() };
     return { isSplit: false };
   };
@@ -769,81 +761,100 @@ export default function LandingPage() {
     else navigate('/login?redirect=book');
   };
 
+  const navLinks = [
+    { label: 'Home', href: '#hero' },
+    { label: 'Photo Studio', href: '#studio' },
+    { label: 'Café Menu', href: '#cafe' },
+    { label: 'Gallery', href: '#gallery' },
+    { label: 'Our Story', href: '#about' },
+  ];
+
   if (!loaded) return <LandingSkeleton />;
 
   return (
     <div className="min-h-screen bg-cream flex flex-col relative page-transition">
       {/* Navigation */}
-      <header className={`sticky top-0 z-40 bg-cream/78 backdrop-blur-2xl border-b border-espresso/[0.06] transition-all duration-300 ease-out ${
-        navCompact ? 'shadow-[0_14px_40px_rgba(46,26,17,0.08)]' : 'shadow-none'
-      }`}>
+      <header className="sticky top-0 z-40 border-b border-espresso/[0.08] bg-white shadow-[0_8px_24px_rgba(46,26,17,0.06)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className={`flex items-center justify-between transition-all duration-300 ease-out ${navCompact ? 'h-14' : 'h-[4.5rem] md:h-20'}`}>
-            <Link to="/" className="flex items-center gap-2.5 group">
-              <div className={`bg-espresso text-gold rounded-[18px] group-hover:scale-105 transition-all duration-300 shadow-[0_12px_28px_rgba(46,26,17,0.18)] ${navCompact ? 'p-1.5' : 'p-2.5'}`}>
+          <div className="flex h-16 items-center justify-between gap-4 md:h-[72px]">
+            <Link to="/" className="flex min-w-0 items-center gap-3 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-espresso text-gold shadow-[0_8px_18px_rgba(46,26,17,0.14)]">
                 <Camera className="w-5 h-5" />
               </div>
-              <div className="hidden sm:block">
-                <span className={`font-sans font-extrabold tracking-tight text-espresso transition-all duration-300 ${navCompact ? 'text-lg' : 'text-xl'}`}>CAV</span>
-                <span className="text-[9px] block tracking-[0.18em] uppercase font-semibold text-gold leading-tight">Studio &amp; Café</span>
+              <div className="min-w-0">
+                <span className="block truncate font-sans text-lg font-black leading-tight text-espresso md:text-xl">CAV</span>
+                <span className="hidden text-[9px] font-bold uppercase leading-tight tracking-[0.18em] text-gold-dark sm:block">Studio &amp; Café</span>
               </div>
             </Link>
 
-            <nav className="hidden md:flex items-center gap-2 text-sm font-semibold">
-              {[
-                { label: 'Home', href: '#hero' },
-                { label: 'Photo Studio', href: '#studio' },
-                { label: 'Café Menu', href: '#cafe' },
-                { label: 'Gallery', href: '#gallery' },
-                { label: 'Our Story', href: '#about' },
-              ].map(item => (
-                <a key={item.href} href={item.href} className="px-4 py-2 rounded-full text-espresso/72 hover:text-espresso hover:bg-espresso/5 transition-all duration-300">
+            <nav className="hidden items-center justify-center gap-1 text-sm font-bold md:flex">
+              {navLinks.map(item => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className="rounded-2xl px-3.5 py-2 text-espresso/68 transition-colors hover:bg-cream hover:text-espresso focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold lg:px-4"
+                >
                   {item.label}
                 </a>
               ))}
             </nav>
 
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               {user ? (
                 <Link
                   to={user.role === 'ADMIN' ? '/admin' : user.role === 'STAFF' ? '/staff' : '/customer'}
-                  className="bg-espresso text-gold hover:bg-espresso-light px-4 py-2 rounded-full text-sm font-semibold transition-all shadow-md"
+                  className="rounded-2xl bg-espresso px-4 py-2.5 text-sm font-black text-gold shadow-[0_8px_18px_rgba(46,26,17,0.14)] transition-colors hover:bg-espresso-light focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
                 >
                   Dashboard
                 </Link>
               ) : (
                 <>
-                  <Link to="/login" className="text-espresso/75 hover:text-espresso text-sm font-semibold transition-colors hidden sm:block">
+                  <Link to="/login" className="hidden rounded-2xl px-3 py-2 text-sm font-bold text-espresso/68 transition-colors hover:bg-cream hover:text-espresso focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold sm:block">
                     Access Account
                   </Link>
-                  <Button variant="gold" size="sm" onClick={handleBookNow}>
-                    Reserve Your Session <ArrowRight className="w-3.5 h-3.5" />
+                  <Button variant="gold" size="sm" onClick={handleBookNow} className="hidden rounded-2xl px-4 font-black sm:inline-flex">
+                    Reserve <span className="hidden lg:inline">Your Session</span> <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </>
               )}
               <button
                 onClick={() => setMobileNavOpen(!mobileNavOpen)}
-                className="md:hidden p-2 rounded-full text-espresso/70 hover:text-espresso hover:bg-espresso/5 transition-all"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-espresso/10 bg-white text-espresso transition-colors hover:bg-cream focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold md:hidden"
+                aria-expanded={mobileNavOpen}
                 aria-label="Toggle navigation"
               >
-                <Menu className="w-5 h-5" />
+                {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
             </div>
           </div>
         </div>
         {mobileNavOpen && (
-          <div className="md:hidden border-t border-espresso/[0.06] bg-cream/95 backdrop-blur-2xl animate-in">
-            <div className="px-4 py-3 space-y-1">
-              {['Home', 'Photo Studio', 'Café Menu', 'Gallery', 'Our Story'].map((label) => (
+          <div className="border-t border-espresso/[0.08] bg-white md:hidden">
+            <div className="mx-auto max-w-7xl space-y-1 px-4 py-3">
+              {navLinks.map((item) => (
                 <a
-                  key={label}
-                  href={`#${label === 'Home' ? 'hero' : label === 'Photo Studio' ? 'studio' : label === 'Café Menu' ? 'cafe' : label === 'Gallery' ? 'gallery' : 'about'}`}
+                  key={item.href}
+                  href={item.href}
                   onClick={() => setMobileNavOpen(false)}
-                  className="block px-4 py-3 rounded-[18px] text-sm font-semibold text-espresso/75 hover:bg-espresso/5 hover:text-espresso transition-colors"
+                  className="block rounded-2xl px-4 py-3 text-sm font-bold text-espresso/72 transition-colors hover:bg-cream hover:text-espresso focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
                 >
-                  {label}
+                  {item.label}
                 </a>
               ))}
+              {!user && (
+                <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-2">
+                  <Link
+                    to="/login"
+                    onClick={() => setMobileNavOpen(false)}
+                    className="inline-flex items-center justify-center rounded-2xl border border-espresso/10 bg-white px-4 py-3 text-sm font-black text-espresso transition-colors hover:bg-cream"
+                  >
+                    Access Account
+                  </Link>
+                  <Button variant="gold" size="sm" onClick={() => { setMobileNavOpen(false); handleBookNow(); }} className="justify-center rounded-2xl py-3 font-black">
+                    Reserve Your Session
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
+  CheckCircle2,
   Coffee,
   CalendarCheck,
 } from 'lucide-react';
@@ -26,7 +27,13 @@ export default function LoginPage() {
 
   const [isRegister, setIsRegister] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [forgotUsername, setForgotUsername] = useState('');
+  const [forgotStep, setForgotStep] = useState('email');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotResetToken, setForgotResetToken] = useState('');
+  const [forgotPassword, setForgotPassword] = useState('');
+  const [forgotPasswordConfirm, setForgotPasswordConfirm] = useState('');
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotResult, setForgotResult] = useState(null);
   const [error, setError] = useState('');
@@ -144,17 +151,73 @@ export default function LoginPage() {
     }
   };
 
+  const resetForgotPasswordFlow = () => {
+    setShowForgotPassword(false);
+    setForgotStep('email');
+    setForgotEmail('');
+    setForgotOtp('');
+    setForgotResetToken('');
+    setForgotPassword('');
+    setForgotPasswordConfirm('');
+    setShowForgotNewPassword(false);
+    setForgotResult(null);
+  };
+
+  const useDifferentResetEmail = () => {
+    setForgotStep('email');
+    setForgotOtp('');
+    setForgotResetToken('');
+    setForgotPassword('');
+    setForgotPasswordConfirm('');
+    setForgotResult(null);
+  };
+
   const handleForgotSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setForgotResult(null);
     setForgotLoading(true);
+
     try {
-      const res = await client.post('/api/auth/forgot-password/', { username: forgotUsername });
-      setForgotResult(res.data);
+      if (forgotStep === 'email') {
+        const res = await client.post('/api/auth/forgot-password/', { email: forgotEmail });
+        setForgotResult({ detail: res.data?.detail || 'If that email is registered, a one-time password has been sent.' });
+        setForgotStep('otp');
+        return;
+      }
+
+      if (forgotStep === 'otp') {
+        const res = await client.post('/api/auth/forgot-password/verify/', {
+          email: forgotEmail,
+          otp: forgotOtp,
+        });
+        setForgotResetToken(res.data?.reset_token || '');
+        setForgotResult({ detail: res.data?.detail || 'OTP verified. You can now set a new password.' });
+        setForgotStep('password');
+        return;
+      }
+
+      if (forgotPassword !== forgotPasswordConfirm) {
+        setForgotResult({ detail: 'Passwords do not match.', error: true });
+        return;
+      }
+
+      const res = await client.post('/api/auth/forgot-password/confirm/', {
+        email: forgotEmail,
+        reset_token: forgotResetToken,
+        new_password: forgotPassword,
+      });
+      setSuccess(res.data?.detail || 'Password updated successfully. You can now sign in.');
+      resetForgotPasswordFlow();
+      setForm((f) => ({ ...f, email: forgotEmail, password: '' }));
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Something went wrong. Please try again.';
-      setForgotResult({ detail: msg });
+      const payload = err.response?.data;
+      const msg = payload?.detail
+        || payload?.new_password?.join?.(' ')
+        || payload?.email?.join?.(' ')
+        || payload?.otp?.join?.(' ')
+        || 'Something went wrong. Please try again.';
+      setForgotResult({ detail: msg, error: true });
     } finally {
       setForgotLoading(false);
     }
@@ -182,8 +245,31 @@ export default function LoginPage() {
   const formDescription = isRegister
     ? 'Create an account to book studio sessions and stay connected with CAV.'
     : showForgotPassword
-      ? "Enter your username and we'll generate a temporary password for your account."
+      ? 'Use your registered email to receive an OTP, verify it, and choose a new password.'
       : 'Access your dashboard, bookings, and account tools.';
+  const forgotStepInfo = {
+    email: {
+      title: 'Request OTP',
+      description: "Enter the email registered to your CAV account. We'll send a one-time code if the account exists.",
+      button: 'Send OTP',
+    },
+    otp: {
+      title: 'Verify OTP',
+      description: 'Enter the 6-digit code from your email. Codes expire quickly and can only be used once.',
+      button: 'Verify OTP',
+    },
+    password: {
+      title: 'Set New Password',
+      description: 'Choose a strong password to finish securing your account.',
+      button: 'Update Password',
+    },
+  };
+  const forgotSteps = [
+    { key: 'email', label: 'Email' },
+    { key: 'otp', label: 'OTP' },
+    { key: 'password', label: 'Password' },
+  ];
+  const activeForgotStepIndex = forgotSteps.findIndex((step) => step.key === forgotStep);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-cream px-4 py-8 sm:px-6 lg:px-8 page-transition">
@@ -264,20 +350,30 @@ export default function LoginPage() {
 
             {!isRegister && !showForgotPassword && (
               <div className="space-y-3 rounded-[22px] border border-espresso/[0.06] bg-white p-4 shadow-[0_18px_45px_rgba(46,26,17,0.08)]">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-espresso/45">Quick Login</p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-espresso/45">Quick Login Accounts</p>
+                  <span className="rounded-full bg-gold/10 px-2.5 py-1 text-[10px] font-black text-gold-dark">Click to sign in</span>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {[
-                    { label: 'Customer', user: 'customer', pass: 'Customer123!' },
-                    { label: 'Staff', user: 'staff', pass: 'Staff123!' },
-                    { label: 'Admin', user: 'admin', pass: 'Admin123!' },
-                  ].map(({ label, user, pass }) => (
+                    { label: 'Customer Account', user: 'customer', pass: 'Customer123!', icon: User, helper: 'Open customer dashboard' },
+                    { label: 'Staff Account', user: 'staff', pass: 'Staff123!', icon: Coffee, helper: 'Open staff workspace' },
+                    { label: 'Admin Account', user: 'admin', pass: 'Admin123!', icon: ShieldAlert, helper: 'Open admin console' },
+                  ].map(({ label, user, pass, icon: Icon, helper }) => (
                     <button
                       key={label}
+                      type="button"
                       onClick={() => quickLogin(user, pass)}
                       disabled={loading}
-                      className="rounded-[16px] border border-espresso/[0.06] bg-cream px-2 py-3 text-xs font-bold text-espresso/70 transition-all duration-300 hover:-translate-y-0.5 hover:bg-cream-dark hover:text-espresso disabled:opacity-50"
+                      className="group flex min-h-[86px] items-center gap-3 rounded-[18px] border border-espresso/[0.06] bg-cream px-3.5 py-3 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-gold/40 hover:bg-cream-dark hover:shadow-[0_14px_30px_rgba(46,26,17,0.08)] disabled:opacity-50"
                     >
-                      {label}
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-gold-dark shadow-[0_8px_18px_rgba(46,26,17,0.06)] transition-colors group-hover:bg-gold group-hover:text-espresso">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-black text-espresso">{label}</span>
+                        <span className="mt-0.5 block text-[11px] font-semibold text-espresso/52">{helper}</span>
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -317,44 +413,129 @@ export default function LoginPage() {
 
               {showForgotPassword ? (
                 <form onSubmit={handleForgotSubmit} className="space-y-4" noValidate>
-                  <div className="space-y-2 pb-2 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gold/10 text-gold">
-                      <RefreshCw className="h-6 w-6" />
+                  <div className="space-y-4 pb-2">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gold/10 text-gold">
+                        {forgotStep === 'password' ? <CheckCircle2 className="h-6 w-6" /> : <RefreshCw className="h-6 w-6" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-espresso">{forgotStepInfo[forgotStep].title}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-espresso/50">{forgotStepInfo[forgotStep].description}</p>
+                      </div>
                     </div>
-                    <p className="text-sm font-semibold text-espresso">Reset your password</p>
-                    <p className="text-xs text-espresso/50">Enter your username and we'll generate a temporary password.</p>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {forgotSteps.map((step, index) => {
+                        const isActive = step.key === forgotStep;
+                        const isComplete = index < activeForgotStepIndex;
+                        return (
+                          <div
+                            key={step.key}
+                            className={`rounded-full px-2.5 py-2 text-center text-[10px] font-bold uppercase tracking-[0.12em] transition-colors ${
+                              isActive || isComplete
+                                ? 'bg-gold text-espresso'
+                                : 'bg-espresso/[0.06] text-espresso/42'
+                            }`}
+                          >
+                            {step.label}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {forgotResult && (
-                    <div className={`space-y-2 rounded-xl p-3.5 text-xs ${forgotResult.temp_password ? 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-700' : 'border border-red-500/20 bg-red-500/10 text-red-700'}`}>
+                    <div className={`space-y-2 rounded-xl p-3.5 text-xs ${forgotResult.error ? 'border border-red-500/20 bg-red-500/10 text-red-700' : 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-700'}`}>
                       <p>{forgotResult.detail}</p>
-                      {forgotResult.temp_password && (
-                        <div className="rounded-lg bg-espresso/5 p-3 text-center">
-                          <p className="mb-1 text-[10px] text-espresso/50">Temporary Password</p>
-                          <p className="font-sans text-sm font-bold tracking-wider text-gold">{forgotResult.temp_password}</p>
-                        </div>
-                      )}
                     </div>
                   )}
 
-                  <Input
-                    label="Username"
-                    icon={User}
-                    type="text"
-                    required
-                    value={forgotUsername}
-                    onChange={(e) => setForgotUsername(e.target.value)}
-                    placeholder="Enter your username"
-                  />
+                  {forgotStep === 'email' && (
+                    <Input
+                      label="Registered Email"
+                      icon={Mail}
+                      type="email"
+                      required
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="name@example.com"
+                    />
+                  )}
+
+                  {forgotStep === 'otp' && (
+                    <div className="space-y-3">
+                      <Input
+                        label="One-Time OTP"
+                        icon={Key}
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        required
+                        value={forgotOtp}
+                        onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="000000"
+                        className="text-center font-mono text-lg tracking-[0.24em]"
+                      />
+                      <button
+                        type="button"
+                        onClick={useDifferentResetEmail}
+                        className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
+                      >
+                        Use a different email
+                      </button>
+                    </div>
+                  )}
+
+                  {forgotStep === 'password' && (
+                    <div className="space-y-4">
+                      <Input
+                        label="New Password"
+                        icon={Key}
+                        type={showForgotNewPassword ? 'text' : 'password'}
+                        required
+                        value={forgotPassword}
+                        onChange={(e) => setForgotPassword(e.target.value)}
+                        placeholder="Enter a new password"
+                        suffix={
+                          <button
+                            type="button"
+                            onClick={() => setShowForgotNewPassword(!showForgotNewPassword)}
+                            className="p-1 text-espresso/35 transition-colors hover:text-espresso/60"
+                            tabIndex={-1}
+                            aria-label={showForgotNewPassword ? 'Hide password' : 'Show password'}
+                          >
+                            {showForgotNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        }
+                      />
+                      <Input
+                        label="Confirm Password"
+                        icon={Key}
+                        type={showForgotNewPassword ? 'text' : 'password'}
+                        required
+                        value={forgotPasswordConfirm}
+                        onChange={(e) => setForgotPasswordConfirm(e.target.value)}
+                        placeholder="Re-enter new password"
+                      />
+                      <button
+                        type="button"
+                        onClick={useDifferentResetEmail}
+                        className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
+                      >
+                        Use a different email
+                      </button>
+                    </div>
+                  )}
 
                   <Button type="submit" variant="gold" size="lg" loading={forgotLoading} className="w-full">
-                    Generate Temporary Password
+                    {forgotStepInfo[forgotStep].button}
                   </Button>
 
                   <div className="pt-1 text-center">
                     <button
                       type="button"
-                      onClick={() => { setShowForgotPassword(false); setForgotResult(null); setForgotUsername(''); }}
+                      onClick={resetForgotPasswordFlow}
                       className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
                     >
                       Return to Sign In

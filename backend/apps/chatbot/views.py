@@ -1,4 +1,5 @@
 import os
+import logging
 import requests
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -6,6 +7,9 @@ from django.conf import settings
 from chatbot.models import ChatbotFAQ, ChatbotLog
 from audit.models import AuditLog
 from chatbot.booking_assistant import build_booking_chatbot_response, detect_language
+
+logger = logging.getLogger(__name__)
+MAX_CHATBOT_QUESTION_LENGTH = 500
 
 def get_chatbot_fallback_response(best_faq=None, lang='en'):
     if best_faq:
@@ -26,11 +30,17 @@ def get_chatbot_fallback_response(best_faq=None, lang='en'):
 
 class ChatbotQueryView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]  # Customers can query chatbot without login
+    throttle_scope = 'chatbot'
 
     def create(self, request, *args, **kwargs):
-        question = request.data.get('question', '').strip()
+        question = request.data.get('question', '')
+        if not isinstance(question, str):
+            return Response({"detail": "Question must be text."}, status=status.HTTP_400_BAD_REQUEST)
+        question = ' '.join(question.replace('\x00', '').split()).strip()
         if not question:
             return Response({"detail": "Question is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(question) > MAX_CHATBOT_QUESTION_LENGTH:
+            return Response({"detail": f"Question must be {MAX_CHATBOT_QUESTION_LENGTH} characters or fewer."}, status=status.HTTP_400_BAD_REQUEST)
 
         lang = detect_language(question)
 
@@ -48,7 +58,7 @@ class ChatbotQueryView(generics.CreateAPIView):
             return Response({"question": question, "response": response_text, "matched_faq": None})
 
         # 1. RAG Layer: Look up closest FAQ in our local database
-        faqs = ChatbotFAQ.objects.all()
+        faqs = ChatbotFAQ.objects.all().only('question', 'answer', 'tags')[:100]
         words = set(question.lower().replace("?", "").split())
         
         best_faq = None
@@ -97,7 +107,9 @@ class ChatbotQueryView(generics.CreateAPIView):
                         "role": "user",
                         "content": question
                     }
-                ]
+                ],
+                "max_tokens": 300,
+                "temperature": 0.2,
             }
             try:
                 r = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=10)
@@ -105,8 +117,10 @@ class ChatbotQueryView(generics.CreateAPIView):
                     resp_json = r.json()
                     response_text = resp_json['choices'][0]['message']['content'].strip()
                 else:
+                    logger.warning("OpenRouter chatbot request failed with status %s", r.status_code)
                     response_text = get_chatbot_fallback_response(best_faq, lang)
-            except requests.RequestException:
+            except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
+                logger.warning("OpenRouter chatbot request failed: %s", exc)
                 response_text = get_chatbot_fallback_response(best_faq, lang)
         else:
             response_text = get_chatbot_fallback_response(best_faq, lang)
@@ -126,7 +140,7 @@ class ChatbotQueryView(generics.CreateAPIView):
         })
 
 class FAQListCreateView(generics.ListCreateAPIView):
-    queryset = ChatbotFAQ.objects.all()
+    queryset = ChatbotFAQ.objects.all().order_by('question')[:200]
 
     def get_permissions(self):
         if self.request.method == 'GET':
@@ -140,6 +154,18 @@ class FAQListCreateView(generics.ListCreateAPIView):
             class Meta:
                 model = ChatbotFAQ
                 fields = ['id', 'question', 'answer', 'tags']
+
+            def validate(self, attrs):
+                for field in ['question', 'answer', 'tags']:
+                    if field in attrs and isinstance(attrs[field], str):
+                        attrs[field] = attrs[field].strip()
+                if not attrs.get('question') or not attrs.get('answer'):
+                    raise serializers.ValidationError("Question and answer are required.")
+                if len(attrs.get('question', '')) > 500:
+                    raise serializers.ValidationError({"question": "Question must be 500 characters or fewer."})
+                if len(attrs.get('answer', '')) > 3000:
+                    raise serializers.ValidationError({"answer": "Answer must be 3000 characters or fewer."})
+                return attrs
         return FAQSerializer
 
     def create(self, request, *args, **kwargs):
@@ -164,6 +190,20 @@ class FAQDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
             class Meta:
                 model = ChatbotFAQ
                 fields = ['id', 'question', 'answer', 'tags']
+
+            def validate(self, attrs):
+                for field in ['question', 'answer', 'tags']:
+                    if field in attrs and isinstance(attrs[field], str):
+                        attrs[field] = attrs[field].strip()
+                if 'question' in attrs and not attrs.get('question'):
+                    raise serializers.ValidationError({"question": "Question is required."})
+                if 'answer' in attrs and not attrs.get('answer'):
+                    raise serializers.ValidationError({"answer": "Answer is required."})
+                if len(attrs.get('question', '')) > 500:
+                    raise serializers.ValidationError({"question": "Question must be 500 characters or fewer."})
+                if len(attrs.get('answer', '')) > 3000:
+                    raise serializers.ValidationError({"answer": "Answer must be 3000 characters or fewer."})
+                return attrs
         return FAQSerializer
 
     def update(self, request, *args, **kwargs):
