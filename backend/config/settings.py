@@ -175,6 +175,9 @@ EMAIL_HOST_PASSWORD = ''.join(_email_host_password.split()) if EMAIL_HOST.lower(
 EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', True)
 EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '20'))
+EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'smtp').strip().lower()
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+RESEND_API_URL = os.environ.get('RESEND_API_URL', 'https://api.resend.com/emails')
 
 OCR_API_PROVIDER = os.environ.get('OCR_API_PROVIDER', 'ocr_space')
 OCR_API_URL = os.environ.get('OCR_API_URL', 'https://api.ocr.space/parse/image')

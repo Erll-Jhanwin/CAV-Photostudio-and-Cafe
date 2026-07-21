@@ -3,6 +3,7 @@ from django.test import TestCase, override_settings
 
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
+from unittest.mock import Mock, patch
 
 from users.models import PasswordResetOTP
 
@@ -27,5 +28,24 @@ class PasswordResetEmailTests(TestCase):
         self.assertEqual(mail.outbox[0].to, [self.user.email])
         self.assertIn('CAV password reset code', mail.outbox[0].subject)
         self.assertTrue(PasswordResetOTP.objects.filter(user=self.user, used_at__isnull=True).exists())
+
+    @override_settings(
+        EMAIL_PROVIDER='resend',
+        RESEND_API_KEY='re_test_key',
+        DEFAULT_FROM_EMAIL='CAV <onboarding@resend.dev>',
+    )
+    @patch('users.email_delivery.requests.post')
+    def test_password_reset_can_use_resend_https_delivery(self, mocked_post):
+        mocked_post.return_value = Mock(raise_for_status=Mock())
+
+        response = self.client.post('/api/auth/forgot-password/', {
+            'email': self.user.email,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(mocked_post.call_count, 1)
+        request_payload = mocked_post.call_args.kwargs['json']
+        self.assertEqual(request_payload['to'], [self.user.email])
+        self.assertIn('CAV password reset code', request_payload['subject'])
 
 # Create your tests here.

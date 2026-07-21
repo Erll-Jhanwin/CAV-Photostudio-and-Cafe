@@ -9,7 +9,6 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.mail import send_mail
 from django.core.validators import validate_email as django_validate_email
 from django.db import transaction
 from django.utils import timezone
@@ -24,6 +23,7 @@ from users.serializers import (
     PasswordResetConfirmSerializer,
 )
 from users.models import Customer, PasswordResetOTP
+from users.email_delivery import send_password_reset_email
 from audit.models import AuditLog
 from booking.models import Booking
 from inventory.models import InventoryEvent
@@ -458,17 +458,7 @@ class ForgotPasswordView(views.APIView):
         )
 
         try:
-            send_mail(
-                subject='Your CAV password reset code',
-                message=(
-                    f'Your CAV password reset OTP is {otp}.\n\n'
-                    f'This code expires in {PASSWORD_RESET_OTP_TTL_MINUTES} minutes. '
-                    'If you did not request this, you can ignore this email.'
-                ),
-                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
+            send_password_reset_email(user.email, otp)
         except Exception:
             logger.exception('Password reset email delivery failed for user_id=%s.', user.id)
             reset_otp.used_at = timezone.now()
