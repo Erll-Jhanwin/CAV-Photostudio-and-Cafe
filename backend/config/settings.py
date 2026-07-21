@@ -191,6 +191,8 @@ CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS', [
     'http://127.0.0.1:3000',
     'http://localhost:8100',
     'http://127.0.0.1:8100',
+    'https://localhost',
+    'capacitor://localhost',
 ])
 CORS_ALLOW_CREDENTIALS = env_bool('CORS_ALLOW_CREDENTIALS', False)
 CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS', CORS_ALLOWED_ORIGINS)
