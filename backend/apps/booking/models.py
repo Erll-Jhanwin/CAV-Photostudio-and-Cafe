@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.db.models.functions import Lower
 from django.utils import timezone
 from datetime import datetime, timedelta
 
@@ -13,6 +14,14 @@ class Service(models.Model):
     base_price = models.DecimalField(max_digits=10, decimal_places=2)
     image_url = models.CharField(max_length=500, blank=True, null=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                Lower('name'),
+                name='booking_service_name_ci_unique',
+            ),
+        ]
+
     def __str__(self):
         return self.name
 
@@ -22,6 +31,15 @@ class Package(models.Model):
     description = models.TextField(blank=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     inclusions = models.TextField(help_text="Comma-separated or newline-separated list of package inclusions")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                'service',
+                Lower('name'),
+                name='booking_package_service_name_ci_unique',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.service.name} - {self.name} (PHP {self.price})"
@@ -42,7 +60,22 @@ class Booking(models.Model):
     notes = models.TextField(blank=True, null=True)
     items = models.JSONField(default=list, blank=True)
     change_history = models.JSONField(default=list, blank=True)
+    idempotency_key = models.CharField(max_length=100, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['scheduled_date', 'scheduled_time'],
+                condition=models.Q(status__in=['PENDING', 'CONFIRMED', 'CONFIRMED_DP']),
+                name='booking_active_slot_unique',
+            ),
+            models.UniqueConstraint(
+                fields=['customer', 'idempotency_key'],
+                condition=models.Q(idempotency_key__isnull=False) & ~models.Q(idempotency_key=''),
+                name='booking_customer_idempotency_unique',
+            ),
+        ]
 
     @property
     def starts_at(self):

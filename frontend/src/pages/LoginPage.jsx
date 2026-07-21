@@ -57,6 +57,11 @@ export default function LoginPage() {
     else navigate('/customer');
   }, [navigate, redirect]);
 
+  const showLoginSuccess = (authUser) => {
+    const displayName = authUser?.username || authUser?.email || 'User';
+    window.alert(`${displayName} logged in successfully.`);
+  };
+
   useEffect(() => {
     if (!googleClientId || !googleButtonRef.current) return undefined;
 
@@ -70,6 +75,7 @@ export default function LoginPage() {
       const res = await loginWithGoogle(response.credential);
       setLoading(false);
       if (res.success) {
+        showLoginSuccess(res.user);
         navigateAfterAuth(res.user);
       } else {
         setError(res.error);
@@ -121,6 +127,7 @@ export default function LoginPage() {
     const res = await login(form.username, form.password);
     setLoading(false);
     if (res.success) {
+      showLoginSuccess(res.user);
       navigateAfterAuth(res.user);
     } else {
       setError(res.error);
@@ -229,6 +236,7 @@ export default function LoginPage() {
     const res = await login(user, pass);
     setLoading(false);
     if (res.success) {
+      showLoginSuccess(res.user);
       navigateAfterAuth(res.user);
     } else {
       setError(res.error);

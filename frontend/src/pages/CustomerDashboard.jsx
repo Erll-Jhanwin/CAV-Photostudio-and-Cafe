@@ -12,6 +12,7 @@ import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { Modal } from '../components/ui/Modal';
 import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
+import { useStyledConfirm } from '../components/ui/StyledAlert';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -171,6 +172,53 @@ const formatPeso = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', 
   maximumFractionDigits: 2,
 })}`;
 
+const normalizeId = (value) => String(value ?? '').trim();
+
+const uniqueBy = (rows, getKey) => {
+  const seen = new Set();
+  return (Array.isArray(rows) ? rows : []).filter(row => {
+    const key = normalizeId(getKey(row));
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const mergeBookingItems = (items) => {
+  const merged = new Map();
+  (Array.isArray(items) ? items : []).forEach(item => {
+    const name = String(item?.name || '').trim();
+    if (!name) return;
+    const key = name.toLowerCase();
+    const quantity = Math.max(Number(item?.quantity || 1), 1);
+    const existing = merged.get(key);
+    if (existing) {
+      existing.quantity += quantity;
+      return;
+    }
+    merged.set(key, { ...item, name, quantity });
+  });
+  return Array.from(merged.values());
+};
+
+const normalizeBooking = (booking) => ({
+  ...booking,
+  items: mergeBookingItems(booking?.items),
+  payments: uniqueBy(booking?.payments, payment => payment.id || `${payment.reference_number}-${payment.created_at}`),
+});
+
+const normalizeBookings = (rows) => uniqueBy(rows, row => row.id).map(normalizeBooking);
+
+const normalizeServices = (rows) => uniqueBy(rows, row => row.id || row.name).map(service => ({
+  ...service,
+  packages: uniqueBy(service.packages, pkg => pkg.id || `${pkg.service}-${pkg.name}`),
+}));
+
+const createIdempotencyKey = (prefix) => {
+  const random = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`;
+};
+
 const DOWN_PAYMENT_RATE = 0.5;
 const calculateDownPayment = (price) => Number(price || 0) * DOWN_PAYMENT_RATE;
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
@@ -288,6 +336,7 @@ function CustomerSkeleton() {
 export default function CustomerDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const confirm = useStyledConfirm();
   const [activeTab, setActiveTab] = useState('book');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
@@ -304,6 +353,7 @@ export default function CustomerDashboard() {
   const [address, setAddress] = useState('');
   const [points, setPoints] = useState(0);
   const [loyaltyTier, setLoyaltyTier] = useState('Bronze');
+  const [profileSaving, setProfileSaving] = useState(false);
 
   const [selectedService, setSelectedService] = useState(null);
   const [selectedPackage, setSelectedPackage] = useState(null);
@@ -350,6 +400,10 @@ export default function CustomerDashboard() {
   const [slotLoading, setSlotLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState('');
   const [galleryImages, setGalleryImages] = useState([]);
+  const bookingSubmitInFlightRef = useRef(false);
+  const bookingSubmitClickRef = useRef(0);
+  const bookingIdempotencyKeyRef = useRef('');
+  const paymentIdempotencyKeyRef = useRef('');
 
   useEffect(() => {
     const handleResize = () => setCardsPerSlide(window.innerWidth < 640 ? 1 : 2);
@@ -371,7 +425,7 @@ export default function CustomerDashboard() {
     };
   }, [paymentReceiptPreview]);
 
-  const allPackages = services.flatMap(service => (
+  const allPackages = uniqueBy(services.flatMap(service => (
     (service.packages || []).map(pkg => ({
       ...pkg,
       serviceName: service.name,
@@ -379,7 +433,7 @@ export default function CustomerDashboard() {
       serviceDuration: service.duration_minutes,
       serviceImageUrl: service.image_url,
     }))
-  ));
+  )), pkg => pkg.id || `${pkg.service}-${pkg.name}`);
 
   const [chatMessages, setChatMessages] = useState([
     { role: 'assistant', content: 'Hello! I am your CAV AI assistant. How can I help you today? You can ask me about studio rooms, slots, packages, or coffee!' }
@@ -451,8 +505,10 @@ export default function CustomerDashboard() {
         client.get('/api/auth/profile/'),
         client.get('/api/gallery/images/').catch(() => ({ data: [] }))
       ]);
-      setServices(servicesRes.data);
-      setBookings(bookingsRes.data);
+      const uniqueServices = normalizeServices(servicesRes.data);
+      const uniqueBookings = normalizeBookings(bookingsRes.data);
+      setServices(uniqueServices);
+      setBookings(uniqueBookings);
       setGalleryImages(Array.isArray(galleryRes.data) ? galleryRes.data : []);
       const p = profileRes.data;
       setFirstName(p.first_name || '');
@@ -467,7 +523,7 @@ export default function CustomerDashboard() {
       const mockNotifications = [
         { id: 1, title: 'Welcome to CAV!', message: 'Enjoy 10% off on your first photo shoot session.', created_at: 'Just now', read: false }
       ];
-      bookingsRes.data.forEach(b => {
+      uniqueBookings.forEach(b => {
         if (['CONFIRMED', 'CONFIRMED_DP'].includes(b.status)) {
           mockNotifications.push({
             id: `b-${b.id}`, title: 'Booking Confirmed',
@@ -491,14 +547,26 @@ export default function CustomerDashboard() {
 
   const handleProfileUpdate = async (e) => {
     e.preventDefault();
+    if (profileSaving) return;
+    const confirmed = await confirm({
+      title: 'Update Profile',
+      message: 'Save changes to your profile?',
+      confirmLabel: 'Update Profile',
+      type: 'warning',
+    });
+    if (!confirmed) return;
     try {
+      setProfileSaving(true);
       await client.patch('/api/auth/profile/', {
         first_name: firstName, last_name: lastName,
         phone_number: phone, address
       });
       fetchDashboardData();
+      alert('Profile updated successfully.');
     } catch {
       alert('Failed to update profile.');
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -769,11 +837,19 @@ export default function CustomerDashboard() {
   };
 
   const submitEditBooking = async () => {
-    if (!editingBooking || !editForm) return;
+    if (!editingBooking || !editForm || editSaving) return;
     if (!editForm.package || !editForm.scheduled_date || !editForm.scheduled_time) {
       setEditError('Please select a package, date, and available time slot.');
       return;
     }
+
+    const confirmed = await confirm({
+      title: 'Update Booking',
+      message: 'Save changes to this booking?',
+      confirmLabel: 'Update Booking',
+      type: 'warning',
+    });
+    if (!confirmed) return;
 
     try {
       setEditSaving(true);
@@ -798,14 +874,16 @@ export default function CustomerDashboard() {
         change_reason: editForm.change_reason,
       });
 
-      setBookings(current => current.map(item => item.id === editingBooking.id ? res.data : item));
-      setSelectedBookingDetails(current => current?.id === editingBooking.id ? res.data : current);
+      const normalizedBooking = normalizeBooking(res.data);
+      setBookings(current => normalizeBookings(current.map(item => item.id === editingBooking.id ? normalizedBooking : item)));
+      setSelectedBookingDetails(current => current?.id === editingBooking.id ? normalizedBooking : current);
       setFirstName(editForm.first_name);
       setLastName(editForm.last_name);
       setBookingEmail(editForm.email);
       setPhone(editForm.phone_number);
       setAddress(editForm.address);
       closeEditBooking(true);
+      alert('Booking updated successfully.');
     } catch (err) {
       const errorData = err.response?.data || {};
       setEditError(errorData.scheduled_time || errorData.detail || 'Failed to update booking.');
@@ -826,6 +904,12 @@ export default function CustomerDashboard() {
   }, [selectedDate, fetchDayAvailability]);
 
   const handleBookingSubmit = async () => {
+    const now = Date.now();
+    if (bookingSubmitInFlightRef.current || paymentSubmitting || now - bookingSubmitClickRef.current < 900) {
+      return;
+    }
+    bookingSubmitClickRef.current = now;
+
     if (!selectedPackage || !selectedDate || !selectedTime) {
       alert('Please fill in all booking details.');
       return;
@@ -844,8 +928,25 @@ export default function CustomerDashboard() {
       alert('This GCash reference number has already been submitted. Please upload the correct receipt or enter a different reference number.');
       return;
     }
+    bookingSubmitInFlightRef.current = true;
+    const confirmed = await confirm({
+      title: 'Submit Booking',
+      message: `Reserve ${selectedPackage.name} on ${selectedDate} at ${selectedTime}?`,
+      confirmLabel: 'Submit Booking',
+      type: 'success',
+    });
+    if (!confirmed) {
+      bookingSubmitInFlightRef.current = false;
+      return;
+    }
     try {
       setPaymentSubmitting(true);
+      if (!bookingIdempotencyKeyRef.current) {
+        bookingIdempotencyKeyRef.current = createIdempotencyKey('booking');
+      }
+      if (!paymentIdempotencyKeyRef.current) {
+        paymentIdempotencyKeyRef.current = createIdempotencyKey('booking-payment');
+      }
       const duplicateReference = await checkPaymentReferenceDuplicate(paymentReference);
       if (duplicateReference) {
         alert('This GCash reference number has already been submitted. Please upload the correct receipt or enter a different reference number.');
@@ -873,6 +974,9 @@ export default function CustomerDashboard() {
         email: bookingEmail.trim(),
         phone_number: phone.trim(),
         address: address.trim(),
+        idempotency_key: bookingIdempotencyKeyRef.current,
+      }, {
+        headers: { 'Idempotency-Key': bookingIdempotencyKeyRef.current },
       });
       const paidAt = new Date(`${paymentDate}T${paymentTime}:00`);
       const paymentData = new FormData();
@@ -881,8 +985,12 @@ export default function CustomerDashboard() {
       paymentData.append('amount', paidAmount.toFixed(2));
       paymentData.append('paid_at', paidAt.toISOString());
       paymentData.append('receipt', paymentReceipt);
+      paymentData.append('idempotency_key', paymentIdempotencyKeyRef.current);
       const paymentRes = await client.post('/api/bookings/payments/', paymentData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          'Idempotency-Key': paymentIdempotencyKeyRef.current,
+        }
       });
       setBookingConfirmation({
         id: bookingRes.data?.id,
@@ -910,9 +1018,12 @@ export default function CustomerDashboard() {
         messages: [],
       });
       setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
+      bookingIdempotencyKeyRef.current = '';
+      paymentIdempotencyKeyRef.current = '';
       setCurrentStep(1);
       fetchDashboardData();
       setActiveTab('history');
+      alert('Booking submitted successfully.');
     } catch (err) {
       const errorData = err.response?.data || {};
       alert(errorData.scheduled_time || errorData.amount || errorData.detail || 'Failed to submit booking payment.');
@@ -921,6 +1032,7 @@ export default function CustomerDashboard() {
         fetchMonthAvailability();
       }
     } finally {
+      bookingSubmitInFlightRef.current = false;
       setPaymentSubmitting(false);
     }
   };
@@ -944,13 +1056,22 @@ export default function CustomerDashboard() {
     }
 
     if (action.key !== 'cancel') return;
-    if (!window.confirm(`Cancel booking for ${booking.package_details?.name || 'this package'}?`)) return;
+    if (cancellingBookingId === booking.id) return;
+    const confirmed = await confirm({
+      title: 'Cancel Booking',
+      message: `Cancel booking for ${booking.package_details?.name || 'this package'}?`,
+      confirmLabel: 'Cancel Booking',
+      type: 'error',
+    });
+    if (!confirmed) return;
 
     try {
       setCancellingBookingId(booking.id);
       const res = await client.patch(`/api/bookings/${booking.id}/`, { status: 'CANCELLED' });
-      setBookings(current => current.map(item => item.id === booking.id ? res.data : item));
-      setSelectedBookingDetails(current => current?.id === booking.id ? res.data : current);
+      const normalizedBooking = normalizeBooking(res.data);
+      setBookings(current => normalizeBookings(current.map(item => item.id === booking.id ? normalizedBooking : item)));
+      setSelectedBookingDetails(current => current?.id === booking.id ? normalizedBooking : current);
+      alert('Booking cancelled successfully.');
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to cancel booking.');
     } finally {
@@ -979,7 +1100,11 @@ export default function CustomerDashboard() {
     await sendChatMessage(chatInput);
   };
 
-  const handleLogout = useCallback(() => { logout(); navigate('/login', { replace: true }); }, [logout, navigate]);
+  const handleLogout = useCallback(() => {
+    alert('Signed out successfully.');
+    logout();
+    navigate('/login', { replace: true });
+  }, [logout, navigate]);
 
   if (loading) return <CustomerSkeleton />;
 
@@ -2218,14 +2343,14 @@ export default function CustomerDashboard() {
                     <CardHeader title="Personal Information" />
                     <form onSubmit={handleProfileUpdate} className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
-                        <Input label="First Name" value={firstName} onChange={e => setFirstName(e.target.value)} />
-                        <Input label="Last Name" value={lastName} onChange={e => setLastName(e.target.value)} />
+                        <Input label="First Name" value={firstName} onChange={e => setFirstName(e.target.value)} disabled={profileSaving} />
+                        <Input label="Last Name" value={lastName} onChange={e => setLastName(e.target.value)} disabled={profileSaving} />
                       </div>
-                      <Input label="Phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)} />
-                      <Textarea label="Address" value={address} onChange={e => setAddress(e.target.value)} rows={3} />
+                      <Input label="Phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)} disabled={profileSaving} />
+                      <Textarea label="Address" value={address} onChange={e => setAddress(e.target.value)} rows={3} disabled={profileSaving} />
                       <div className="flex items-center gap-3 pt-2">
-                        <Button type="submit" variant="primary">Update My Profile</Button>
-                        <Button type="button" variant="outline" size="sm" onClick={fetchDashboardData}>Restore Saved Info</Button>
+                        <Button type="submit" variant="primary" loading={profileSaving} disabled={profileSaving}>Update My Profile</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={fetchDashboardData} disabled={profileSaving}>Restore Saved Info</Button>
                       </div>
                     </form>
                   </Card>

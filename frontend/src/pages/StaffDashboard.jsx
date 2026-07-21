@@ -17,6 +17,7 @@ import { Skeleton, SkeletonTable, SkeletonProfileCard } from '../components/ui/S
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { DataTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
+import { useStyledConfirm } from '../components/ui/StyledAlert';
 
 function StaffSkeleton() {
   return (
@@ -59,6 +60,7 @@ const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-P
 const STAFF_CACHE_TTL_MS = 60 * 1000;
 const PRODUCT_PAGE_SIZE = 12;
 const TABLE_PAGE_SIZE = 10;
+const DISCOUNT_OPTIONS = [10, 20, 30];
 const RECEIPT_BUSINESS = {
   logoUrl: '/cavlogo.jpg',
   logoText: 'CAV',
@@ -169,6 +171,7 @@ const updateProductRecipeStock = (product, quantitySold) => {
 export default function StaffDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const confirm = useStyledConfirm();
   const [activeTab, setActiveTab] = useState('pos');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
@@ -188,7 +191,6 @@ export default function StaffDashboard() {
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [transactionId, setTransactionId] = useState('');
   const [amountReceived, setAmountReceived] = useState('');
-  const [discountType, setDiscountType] = useState('FIXED');
   const [discountValue, setDiscountValue] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [showCheckoutLoading, setShowCheckoutLoading] = useState(false);
@@ -202,6 +204,7 @@ export default function StaffDashboard() {
   const [editingIngredient, setEditingIngredient] = useState(null);
   const [editIngredientForm, setEditIngredientForm] = useState(emptyProductForm());
   const [editIngredientSaving, setEditIngredientSaving] = useState(false);
+  const [adjustingStock, setAdjustingStock] = useState(false);
   const [adjQty, setAdjQty] = useState(0);
   const [adjUnit, setAdjUnit] = useState('ML');
   const [adjMovementType, setAdjMovementType] = useState('IN');
@@ -219,6 +222,7 @@ export default function StaffDashboard() {
   const [salesSort, setSalesSort] = useState({ key: 'created_at', dir: 'desc' });
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [productForm, setProductForm] = useState(emptyProductForm());
+  const [productSaving, setProductSaving] = useState(false);
 
   const loadStaticInventoryOptions = useCallback(async (force = false) => {
     const cachedCategories = !force ? readStaffCache('categories') : null;
@@ -335,8 +339,7 @@ export default function StaffDashboard() {
     const subtotal = getCartSubtotal();
     const value = Number(discountValue || 0);
     if (!Number.isFinite(value) || value <= 0) return 0;
-    if (discountType === 'PERCENT') return Math.min(subtotal * Math.min(value, 100) / 100, subtotal);
-    return Math.min(value, subtotal);
+    return Math.min(subtotal * Math.min(value, 100) / 100, subtotal);
   };
   const getCartTotal = () => Math.max(getCartSubtotal() - getCartDiscountAmount(), 0);
   const getReceiptPayment = (order) => order?.payments?.[0] || null;
@@ -373,18 +376,18 @@ export default function StaffDashboard() {
       alert('Amount received must be equal to or greater than the total.');
       return;
     }
-    if (!Number.isFinite(discountNumber) || discountNumber < 0) {
-      alert('Enter a valid discount.');
+    if (!Number.isFinite(discountNumber) || ![0, ...DISCOUNT_OPTIONS].includes(discountNumber)) {
+      alert('Select a valid discount.');
       return;
     }
-    if (discountType === 'PERCENT' && discountNumber > 100) {
-      alert('Percentage discount cannot exceed 100%.');
-      return;
-    }
-    if (discountType === 'FIXED' && discountNumber > getCartSubtotal()) {
-      alert('Discount amount cannot exceed the cart subtotal.');
-      return;
-    }
+
+    const confirmed = await confirm({
+      title: 'Complete Sale',
+      message: `Complete this ${paymentMethod} sale for ${formatReceiptCurrency(total)}?`,
+      confirmLabel: 'Complete Sale',
+      type: 'success',
+    });
+    if (!confirmed) return;
 
     let loadingTimer;
     try {
@@ -395,7 +398,7 @@ export default function StaffDashboard() {
       const payload = {
         items: cart.map(item => ({ product_id: item.id, quantity: item.quantity })),
         order_type: 'WALK_IN',
-        discount: { type: discountType, value: discountNumber },
+        discount: { type: 'PERCENT', value: discountNumber },
         payment: { amount: cashReceived, method: paymentMethod, transaction_id: transactionId }
       };
       const res = await client.post('/api/pos/orders/', payload);
@@ -432,8 +435,8 @@ export default function StaffDashboard() {
       setCart([]);
       setTransactionId('');
       setAmountReceived('');
-      setDiscountType('FIXED');
       setDiscountValue('');
+      alert('Sale completed successfully.');
     } catch (err) {
       alert(err.response?.data?.detail || 'Checkout failed.');
     } finally {
@@ -446,11 +449,19 @@ export default function StaffDashboard() {
 
   const handleVerifyBookingPayment = async (payment, newStatus) => {
     const action = newStatus === 'APPROVED' ? 'approve' : 'reject';
-    if (!window.confirm(`Are you sure you want to ${action} payment ${payment.reference_number}?`)) return;
+    if (verifyingPaymentId === payment.id) return;
+    const confirmed = await confirm({
+      title: `${newStatus === 'APPROVED' ? 'Approve' : 'Reject'} Payment`,
+      message: `Are you sure you want to ${action} payment ${payment.reference_number}?`,
+      confirmLabel: newStatus === 'APPROVED' ? 'Approve Payment' : 'Reject Payment',
+      type: newStatus === 'APPROVED' ? 'success' : 'error',
+    });
+    if (!confirmed) return;
     try {
       setVerifyingPaymentId(payment.id);
       const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
       setBookingPayments(current => current.map(item => item.id === payment.id ? res.data : item));
+      alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'} successfully.`);
     } catch (err) {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
     } finally {
@@ -459,8 +470,22 @@ export default function StaffDashboard() {
   };
 
   const handleAdjustInventory = async () => {
-    if (!manualAdjIngredient) return;
+    if (!manualAdjIngredient || adjustingStock) return;
+    const quantity = Number(adjQty || 0);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      alert('Enter a valid stock adjustment quantity.');
+      return;
+    }
+    const isAdding = adjMovementType === 'IN';
+    const confirmed = await confirm({
+      title: isAdding ? 'Add Stock' : 'Remove Stock',
+      message: `${isAdding ? 'Add' : 'Remove'} ${quantity} ${adjUnit} ${isAdding ? 'to' : 'from'} ${manualAdjIngredient.name}?`,
+      confirmLabel: isAdding ? 'Add Stock' : 'Remove Stock',
+      type: isAdding ? 'success' : 'warning',
+    });
+    if (!confirmed) return;
     try {
+      setAdjustingStock(true);
       await client.post('/api/inventory/ingredient-movements/', {
         ingredient: manualAdjIngredient.id,
         movement_type: adjMovementType,
@@ -497,8 +522,11 @@ export default function StaffDashboard() {
         return { ...updatedProduct, available_servings: getProductAvailable(updatedProduct) };
       }));
       setManualAdjIngredient(null);
+      alert(isAdding ? 'Stock added successfully.' : 'Stock adjusted successfully.');
     } catch {
       alert('Adjustment failed.');
+    } finally {
+      setAdjustingStock(false);
     }
   };
 
@@ -531,7 +559,14 @@ export default function StaffDashboard() {
 
   const handleUpdateIngredient = async (e) => {
     e.preventDefault();
-    if (!editingIngredient) return;
+    if (!editingIngredient || editIngredientSaving) return;
+    const confirmed = await confirm({
+      title: 'Update Stock Record',
+      message: `Save changes to ${editingIngredient.name}?`,
+      confirmLabel: 'Update Record',
+      type: 'warning',
+    });
+    if (!confirmed) return;
     try {
       setEditIngredientSaving(true);
       const payload = {
@@ -560,6 +595,7 @@ export default function StaffDashboard() {
       }));
       setEditingIngredient(null);
       setEditIngredientForm(emptyProductForm());
+      alert('Record updated successfully.');
     } catch (err) {
       const data = err.response?.data;
       const message = data && typeof data === 'object'
@@ -573,7 +609,16 @@ export default function StaffDashboard() {
 
   const handleCreateProduct = async (e) => {
     e.preventDefault();
+    if (productSaving) return;
+    const confirmed = await confirm({
+      title: 'Add Stock Item',
+      message: `Add ${productForm.name || 'this stock item'} to inventory?`,
+      confirmLabel: 'Add Stock',
+      type: 'success',
+    });
+    if (!confirmed) return;
     try {
+      setProductSaving(true);
       const payload = {
         name: productForm.name,
         category: Number(productForm.category),
@@ -591,16 +636,23 @@ export default function StaffDashboard() {
       setIngredients(current => [res.data, ...current]);
       setProductForm(emptyProductForm());
       setProductModalOpen(false);
+      alert('Stock added successfully.');
     } catch (err) {
       const data = err.response?.data;
       const message = data && typeof data === 'object'
         ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
         : 'Failed to create stock item.';
       alert(message);
+    } finally {
+      setProductSaving(false);
     }
   };
 
-  const handleLogout = useCallback(() => { logout(); navigate('/login', { replace: true }); }, [logout, navigate]);
+  const handleLogout = useCallback(() => {
+    alert('Signed out successfully.');
+    logout();
+    navigate('/login', { replace: true });
+  }, [logout, navigate]);
 
   if (loading) return <StaffSkeleton />;
 
@@ -819,31 +871,42 @@ export default function StaffDashboard() {
                           </div>
                           <div className="space-y-2">
                             <p className="text-[10px] uppercase font-bold text-espresso/50">Discount</p>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              {[
-                                ['FIXED', 'Amount'],
-                                ['PERCENT', 'Percent'],
-                              ].map(([value, label]) => (
+                            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDiscountValue('');
+                                }}
+                                className={`text-xs font-bold py-2 rounded-xl border transition-all ${
+                                  !Number(discountValue || 0)
+                                    ? 'bg-espresso text-cream border-espresso shadow-sm'
+                                    : 'border-espresso/10 text-espresso/60 hover:border-espresso/30'
+                                }`}
+                                aria-pressed={!Number(discountValue || 0)}
+                              >
+                                No Discount
+                              </button>
+                              {DISCOUNT_OPTIONS.map(value => {
+                                const isActive = Number(discountValue || 0) === value;
+                                return (
                                 <button
                                   key={value}
                                   type="button"
-                                  onClick={() => setDiscountType(value)}
-                                  className={`text-xs font-bold py-2 rounded-xl border transition-all ${discountType === value ? 'bg-espresso text-cream border-espresso shadow-sm' : 'border-espresso/10 text-espresso/60 hover:border-espresso/30'}`}
+                                  onClick={() => {
+                                    setDiscountValue(String(value));
+                                  }}
+                                  className={`text-xs font-bold py-2 rounded-xl border transition-all ${
+                                    isActive
+                                      ? 'bg-espresso text-cream border-espresso shadow-sm'
+                                      : 'border-espresso/10 text-espresso/60 hover:border-espresso/30'
+                                  }`}
+                                  aria-pressed={isActive}
                                 >
-                                  {label}
+                                  {value}%
                                 </button>
-                              ))}
+                                );
+                              })}
                             </div>
-                            <Input
-                              label={discountType === 'PERCENT' ? 'Discount Percent' : 'Discount Amount'}
-                              type="number"
-                              min="0"
-                              max={discountType === 'PERCENT' ? '100' : getCartSubtotal()}
-                              step="0.01"
-                              value={discountValue}
-                              onChange={e => setDiscountValue(e.target.value)}
-                              placeholder={discountType === 'PERCENT' ? '0%' : '0.00'}
-                            />
                           </div>
                           <div className="flex justify-between text-xs font-bold text-espresso/60">
                             <span>Discount Applied</span>
@@ -1312,8 +1375,12 @@ export default function StaffDashboard() {
             <Input label="Storage Location" required value={productForm.storage_location} onChange={e => handleProductFieldChange('storage_location', e.target.value)} />
           </div>
           <div className="sticky bottom-0 bg-white/95 flex flex-col sm:flex-row gap-2 pt-4 pb-1 border-t border-espresso/[0.06]">
-            <Button type="submit" variant="primary" className="flex-1">Add to Inventory</Button>
-            <Button type="button" variant="outline" onClick={() => setProductModalOpen(false)}>Keep Inventory As Is</Button>
+            <Button type="submit" variant="primary" className="flex-1" loading={productSaving} disabled={productSaving}>
+              Add to Inventory
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setProductModalOpen(false)} disabled={productSaving}>
+              Keep Inventory As Is
+            </Button>
           </div>
         </form>
       </Modal>
@@ -1428,7 +1495,7 @@ export default function StaffDashboard() {
       </Modal>
 
       {/* Adj Modal */}
-      <Modal open={!!manualAdjIngredient} onClose={() => setManualAdjIngredient(null)} title="Adjust Ingredient Stock" size="sm">
+      <Modal open={!!manualAdjIngredient} onClose={() => !adjustingStock && setManualAdjIngredient(null)} title="Adjust Ingredient Stock" size="sm">
         <p className="text-xs text-espresso/60 mb-4">
           Modify ingredient stock for <strong className="text-espresso">{manualAdjIngredient?.name}</strong>.
         </p>
@@ -1437,24 +1504,30 @@ export default function StaffDashboard() {
             label="Movement"
             value={adjMovementType}
             onChange={e => setAdjMovementType(e.target.value)}
+            disabled={adjustingStock}
             options={[
               { value: 'IN', label: 'Stock In' },
               { value: 'OUT', label: 'Stock Out' },
             ]}
           />
-          <Input label="Quantity" type="number" min="0" step="0.01" value={adjQty} onChange={e => setAdjQty(e.target.value)} />
+          <Input label="Quantity" type="number" min="0" step="0.01" value={adjQty} onChange={e => setAdjQty(e.target.value)} disabled={adjustingStock} />
           <Select
             label="Unit"
             value={adjUnit}
             onChange={e => setAdjUnit(e.target.value)}
+            disabled={adjustingStock}
             options={manualAdjIngredient?.base_unit === 'G'
               ? [{ value: 'G', label: 'g' }, { value: 'KG', label: 'kg' }]
               : [{ value: 'ML', label: 'mL' }, { value: 'L', label: 'L' }]
             }
           />
           <div className="flex gap-2">
-            <Button variant="primary" className="flex-1" onClick={handleAdjustInventory}>Apply Stock Adjustment</Button>
-            <Button variant="outline" onClick={() => setManualAdjIngredient(null)}>Keep Stock Unchanged</Button>
+            <Button variant="primary" className="flex-1" onClick={handleAdjustInventory} loading={adjustingStock} disabled={adjustingStock}>
+              Apply Stock Adjustment
+            </Button>
+            <Button variant="outline" onClick={() => setManualAdjIngredient(null)} disabled={adjustingStock}>
+              Keep Stock Unchanged
+            </Button>
           </div>
         </div>
       </Modal>

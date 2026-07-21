@@ -38,6 +38,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     receipt_url = serializers.SerializerMethodField()
     verified_by_details = UserSerializer(source='verified_by', read_only=True)
     required_down_payment = serializers.SerializerMethodField()
+    idempotency_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Payment
@@ -135,6 +136,7 @@ class BookingSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(write_only=True, required=False, allow_blank=True)
     phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
     address = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    idempotency_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Booking
@@ -143,7 +145,8 @@ class BookingSerializer(serializers.ModelSerializer):
             'scheduled_time', 'status', 'notes', 'created_at', 'items',
             'payments', 'required_down_payment', 'change_history',
             'can_edit', 'edit_locked_reason', 'edit_deadline',
-            'first_name', 'last_name', 'email', 'phone_number', 'address'
+            'first_name', 'last_name', 'email', 'phone_number', 'address',
+            'idempotency_key'
         ]
         read_only_fields = ['customer', 'status', 'created_at']
 
@@ -203,6 +206,7 @@ class BookingSerializer(serializers.ModelSerializer):
         return booking
 
     def update(self, instance, validated_data):
+        validated_data.pop('idempotency_key', None)
         customer_data = {
             field: validated_data.pop(field)
             for field in ['first_name', 'last_name', 'email', 'phone_number', 'address']

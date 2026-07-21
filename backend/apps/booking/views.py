@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from rest_framework import generics, permissions, status, filters, views
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
@@ -16,6 +16,15 @@ from payment.models import Payment
 from audit.models import AuditLog
 
 User = get_user_model()
+
+IDEMPOTENCY_KEY_MAX_LENGTH = 100
+
+def get_idempotency_key(request):
+    value = request.headers.get('Idempotency-Key') or request.headers.get('X-Idempotency-Key') or request.data.get('idempotency_key')
+    value = str(value or '').strip()
+    if not value:
+        return ''
+    return value[:IDEMPOTENCY_KEY_MAX_LENGTH]
 
 def apply_limit(queryset, request, default=None, maximum=200):
     raw_limit = request.query_params.get('limit')
@@ -137,13 +146,21 @@ class BookingListCreateView(generics.ListCreateAPIView):
 
     def create(self, request, *args, **kwargs):
         # Allow client booking
+        idempotency_key = get_idempotency_key(request)
+        if idempotency_key:
+            existing_booking = Booking.objects.filter(customer=request.user, idempotency_key=idempotency_key).select_related(
+                'customer', 'package', 'package__service'
+            ).prefetch_related('payments').first()
+            if existing_booking:
+                return Response(BookingSerializer(existing_booking, context={'request': request}).data, status=status.HTTP_200_OK)
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         items_data = request.data.get('items', [])
         if not isinstance(items_data, list):
             return Response({"items": "Items must be a list."}, status=status.HTTP_400_BAD_REQUEST)
 
-        normalized_items = []
+        normalized_items_by_name = {}
         for item in items_data:
             if not isinstance(item, dict):
                 return Response({"items": "Each item must be an object."}, status=status.HTTP_400_BAD_REQUEST)
@@ -157,31 +174,57 @@ class BookingListCreateView(generics.ListCreateAPIView):
                 return Response({"items": "Item price and quantity must be valid numbers."}, status=status.HTTP_400_BAD_REQUEST)
             if price < 0 or quantity < 1:
                 return Response({"items": "Item price cannot be negative and quantity must be at least 1."}, status=status.HTTP_400_BAD_REQUEST)
-            normalized_items.append({"name": name, "price": price, "quantity": quantity})
+            item_key = name.casefold()
+            if item_key in normalized_items_by_name:
+                normalized_items_by_name[item_key]['quantity'] += quantity
+            else:
+                normalized_items_by_name[item_key] = {"name": name, "price": price, "quantity": quantity}
+        normalized_items = list(normalized_items_by_name.values())
 
-        with transaction.atomic():
-            list(Booking.objects.select_for_update().filter(
-                scheduled_date=serializer.validated_data['scheduled_date'],
-                status__in=ACTIVE_BOOKING_STATUSES
-            ))
-            if not is_slot_available(
-                serializer.validated_data['package'].id,
-                serializer.validated_data['scheduled_date'],
-                serializer.validated_data['scheduled_time']
-            ):
-                return Response(
-                    {"scheduled_time": "This schedule was just booked. Please select another available time slot."},
-                    status=status.HTTP_409_CONFLICT
+        try:
+            with transaction.atomic():
+                list(Booking.objects.select_for_update().filter(
+                    scheduled_date=serializer.validated_data['scheduled_date'],
+                    status__in=ACTIVE_BOOKING_STATUSES
+                ))
+                if idempotency_key:
+                    existing_booking = Booking.objects.filter(customer=request.user, idempotency_key=idempotency_key).select_related(
+                        'customer', 'package', 'package__service'
+                    ).prefetch_related('payments').first()
+                    if existing_booking:
+                        return Response(BookingSerializer(existing_booking, context={'request': request}).data, status=status.HTTP_200_OK)
+                if not is_slot_available(
+                    serializer.validated_data['package'].id,
+                    serializer.validated_data['scheduled_date'],
+                    serializer.validated_data['scheduled_time']
+                ):
+                    return Response(
+                        {"scheduled_time": "This schedule was just booked. Please select another available time slot."},
+                        status=status.HTTP_409_CONFLICT
+                    )
+                booking = serializer.save(
+                    idempotency_key=idempotency_key or None,
+                    items=[
+                        {
+                            "id": index + 1,
+                            "name": item['name'],
+                            "price": str(item['price']),
+                            "quantity": item['quantity'],
+                        }
+                        for index, item in enumerate(normalized_items)
+                    ]
                 )
-            booking = serializer.save(items=[
-                {
-                    "id": index + 1,
-                    "name": item['name'],
-                    "price": str(item['price']),
-                    "quantity": item['quantity'],
-                }
-                for index, item in enumerate(normalized_items)
-            ])
+        except IntegrityError:
+            if idempotency_key:
+                existing_booking = Booking.objects.filter(customer=request.user, idempotency_key=idempotency_key).select_related(
+                    'customer', 'package', 'package__service'
+                ).prefetch_related('payments').first()
+                if existing_booking:
+                    return Response(BookingSerializer(existing_booking, context={'request': request}).data, status=status.HTTP_200_OK)
+            return Response(
+                {"scheduled_time": "This schedule was just booked. Please select another available time slot."},
+                status=status.HTTP_409_CONFLICT
+            )
 
         # Log Audit
         AuditLog.objects.create(
@@ -371,14 +414,37 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
         return apply_limit(queryset.filter(booking__customer=user), self.request, default=100)
 
     def create(self, request, *args, **kwargs):
+        idempotency_key = get_idempotency_key(request)
+        if idempotency_key:
+            existing_payment = Payment.objects.filter(
+                payment_type=Payment.BOOKING,
+                idempotency_key=idempotency_key,
+            ).select_related('booking', 'booking__customer', 'booking__package', 'verified_by').first()
+            if existing_payment:
+                return Response(self.get_serializer(existing_payment).data, status=status.HTTP_200_OK)
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        payment = serializer.save(
-            payment_type=Payment.BOOKING,
-            method='GCASH',
-            status='PENDING_VERIFICATION',
-            paid_at=serializer.validated_data.get('paid_at') or timezone.now(),
-        )
+        try:
+            payment = serializer.save(
+                payment_type=Payment.BOOKING,
+                method='GCASH',
+                status='PENDING_VERIFICATION',
+                paid_at=serializer.validated_data.get('paid_at') or timezone.now(),
+                idempotency_key=idempotency_key or None,
+            )
+        except IntegrityError:
+            if idempotency_key:
+                existing_payment = Payment.objects.filter(
+                    payment_type=Payment.BOOKING,
+                    idempotency_key=idempotency_key,
+                ).select_related('booking', 'booking__customer', 'booking__package', 'verified_by').first()
+                if existing_payment:
+                    return Response(self.get_serializer(existing_payment).data, status=status.HTTP_200_OK)
+            return Response(
+                {"reference_number": "This GCash reference number has already been submitted."},
+                status=status.HTTP_409_CONFLICT
+            )
 
         AuditLog.objects.create(
             user=request.user,

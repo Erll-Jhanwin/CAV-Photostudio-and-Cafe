@@ -22,6 +22,7 @@ import { Skeleton, SkeletonChart, SkeletonStatsCard, SkeletonTable, SkeletonProf
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { DataTable as DashboardTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
+import { useStyledConfirm } from '../components/ui/StyledAlert';
 
 const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
   minimumFractionDigits: 0,
@@ -152,6 +153,7 @@ function AdminSkeleton({ pageTitle }) {
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const confirm = useStyledConfirm();
   const [activeTab, setActiveTab] = useState('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
@@ -168,6 +170,8 @@ export default function AdminDashboard() {
   const [faqAnswer, setFaqAnswer] = useState('');
   const [faqTags, setFaqTags] = useState('');
   const [editingFaq, setEditingFaq] = useState(null);
+  const [faqSaving, setFaqSaving] = useState(false);
+  const [deletingFaqId, setDeletingFaqId] = useState(null);
 
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -176,6 +180,7 @@ export default function AdminDashboard() {
   const [editingStaff, setEditingStaff] = useState(null);
   const [editStaffForm, setEditStaffForm] = useState({ username: '', email: '', password: '', role: 'STAFF' });
   const [staffSaving, setStaffSaving] = useState(false);
+  const [creatingStaff, setCreatingStaff] = useState(false);
   const [deletingStaffId, setDeletingStaffId] = useState(null);
 
   const [retrainLoading, setRetrainLoading] = useState(false);
@@ -283,15 +288,27 @@ export default function AdminDashboard() {
 
   const handleCreateStaff = async (e) => {
     e.preventDefault();
+    if (creatingStaff) return;
+    const confirmed = await confirm({
+      title: 'Create Staff Account',
+      message: `Create an account for ${newUsername || 'this staff member'}?`,
+      confirmLabel: 'Create Account',
+      type: 'success',
+    });
+    if (!confirmed) return;
     try {
+      setCreatingStaff(true);
       await client.post('/api/auth/users/', {
         username: newUsername, password: newPassword,
         email: newEmail, role: newRole
       });
       setNewUsername(''); setNewPassword(''); setNewEmail(''); setNewRole('STAFF');
       fetchData();
+      alert('Staff account created successfully.');
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to create staff account.');
+    } finally {
+      setCreatingStaff(false);
     }
   };
 
@@ -307,7 +324,14 @@ export default function AdminDashboard() {
 
   const handleUpdateStaff = async (e) => {
     e.preventDefault();
-    if (!editingStaff) return;
+    if (!editingStaff || staffSaving) return;
+    const confirmed = await confirm({
+      title: 'Update Staff Account',
+      message: `Save changes to ${editingStaff.username}?`,
+      confirmLabel: 'Update Account',
+      type: 'warning',
+    });
+    if (!confirmed) return;
     try {
       setStaffSaving(true);
       const payload = {
@@ -322,6 +346,7 @@ export default function AdminDashboard() {
       setStaffList(current => current.map(staff => staff.id === editingStaff.id ? res.data : staff));
       setEditingStaff(null);
       setEditStaffForm({ username: '', email: '', password: '', role: 'STAFF' });
+      alert('Record updated successfully.');
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to update account.');
     } finally {
@@ -330,12 +355,20 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteStaff = async (staff) => {
-    if (!window.confirm(`Delete account for ${staff.username}? This cannot be undone.`)) return;
+    if (deletingStaffId === staff.id) return;
+    const confirmed = await confirm({
+      title: 'Delete Staff Account',
+      message: `Delete account for ${staff.username}? This cannot be undone.`,
+      confirmLabel: 'Delete Account',
+      type: 'error',
+    });
+    if (!confirmed) return;
     try {
       setDeletingStaffId(staff.id);
       await client.delete(`/api/auth/users/${staff.id}/`);
       setStaffList(current => current.filter(item => item.id !== staff.id));
       setStaffPage(page => Math.max(1, Math.min(page, Math.ceil((staffList.length - 1) / staffPageSize) || 1)));
+      alert('Record deleted successfully.');
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to delete account.');
     } finally {
@@ -345,7 +378,16 @@ export default function AdminDashboard() {
 
   const handleFAQSubmit = async (e) => {
     e.preventDefault();
+    if (faqSaving) return;
+    const confirmed = await confirm({
+      title: editingFaq ? 'Update FAQ' : 'Add FAQ',
+      message: editingFaq ? 'Save changes to this FAQ?' : 'Add this FAQ to the chatbot knowledge base?',
+      confirmLabel: editingFaq ? 'Update FAQ' : 'Add FAQ',
+      type: editingFaq ? 'warning' : 'success',
+    });
+    if (!confirmed) return;
     try {
+      setFaqSaving(true);
       if (editingFaq) {
         await client.put(`/api/chatbot/faqs/${editingFaq.id}/`, {
           question: faqQuestion, answer: faqAnswer, tags: faqTags
@@ -357,8 +399,11 @@ export default function AdminDashboard() {
       }
       setFaqQuestion(''); setFaqAnswer(''); setFaqTags(''); setEditingFaq(null);
       fetchData();
+      alert(editingFaq ? 'Record updated successfully.' : 'Record added successfully.');
     } catch {
       alert('Failed to save FAQ.');
+    } finally {
+      setFaqSaving(false);
     }
   };
 
@@ -371,15 +416,35 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteFAQ = async (id) => {
-    if (!window.confirm('Delete this FAQ?')) return;
+    if (deletingFaqId === id) return;
+    const confirmed = await confirm({
+      title: 'Delete FAQ',
+      message: 'Delete this FAQ? This cannot be undone.',
+      confirmLabel: 'Delete FAQ',
+      type: 'error',
+    });
+    if (!confirmed) return;
     try {
+      setDeletingFaqId(id);
       await client.delete(`/api/chatbot/faqs/${id}/`);
       fetchData();
-    } catch { /* ignore */ }
+      alert('Record deleted successfully.');
+    } catch {
+      alert('Failed to delete FAQ.');
+    } finally {
+      setDeletingFaqId(null);
+    }
   };
 
   const handleDeleteBooking = async (booking) => {
-    if (!window.confirm(`Delete booking for ${booking.customer_name}?`)) return;
+    if (deletingBookingId === booking.id) return;
+    const confirmed = await confirm({
+      title: 'Delete Booking',
+      message: `Delete booking for ${booking.customer_name}? This cannot be undone.`,
+      confirmLabel: 'Delete Booking',
+      type: 'error',
+    });
+    if (!confirmed) return;
     try {
       setDeletingBookingId(booking.id);
       await client.delete(`/api/bookings/${booking.id}/`);
@@ -401,6 +466,7 @@ export default function AdminDashboard() {
         };
       });
       setBookingPage(page => Math.max(1, Math.min(page, Math.ceil((sortedBookings.length - 1) / bookingPageSize) || 1)));
+      alert('Record deleted successfully.');
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to delete booking.');
     } finally {
@@ -410,12 +476,20 @@ export default function AdminDashboard() {
 
   const handleVerifyBookingPayment = async (payment, newStatus) => {
     const action = newStatus === 'APPROVED' ? 'approve' : 'reject';
-    if (!window.confirm(`Are you sure you want to ${action} payment ${payment.reference_number}?`)) return;
+    if (verifyingPaymentId === payment.id) return;
+    const confirmed = await confirm({
+      title: `${newStatus === 'APPROVED' ? 'Approve' : 'Reject'} Payment`,
+      message: `Are you sure you want to ${action} payment ${payment.reference_number}?`,
+      confirmLabel: newStatus === 'APPROVED' ? 'Approve Payment' : 'Reject Payment',
+      type: newStatus === 'APPROVED' ? 'success' : 'error',
+    });
+    if (!confirmed) return;
     try {
       setVerifyingPaymentId(payment.id);
       const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
       setBookingPayments(current => current.map(item => item.id === payment.id ? res.data : item));
       fetchData({ background: true });
+      alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'} successfully.`);
     } catch (err) {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
     } finally {
@@ -481,7 +555,13 @@ export default function AdminDashboard() {
       alert('Enter the actual cash counted in the drawer.');
       return;
     }
-    if (!window.confirm(`Print and save the end-of-day report for ${endOfDayDate}?`)) return;
+    const confirmed = await confirm({
+      title: 'Print End-of-Day Report',
+      message: `Print and save the end-of-day report for ${endOfDayDate}?`,
+      confirmLabel: 'Print Report',
+      type: 'success',
+    });
+    if (!confirmed) return;
 
     try {
       setEndOfDayPrinting(true);
@@ -502,6 +582,7 @@ export default function AdminDashboard() {
       if (!res.data.receipt_print?.printed) {
         setReceiptPrintError(res.data.receipt_print?.error || 'Report saved, but the end-of-day receipt could not be printed.');
       }
+      alert('End-of-day report saved successfully.');
     } catch (err) {
       const data = err.response?.data;
       const message = data && typeof data === 'object'
@@ -514,7 +595,13 @@ export default function AdminDashboard() {
   };
 
   const handleReprintEndOfDayReport = async (report) => {
-    if (!window.confirm(`Reprint end-of-day report for ${report.report_date}?`)) return;
+    const confirmed = await confirm({
+      title: 'Reprint Report',
+      message: `Reprint end-of-day report for ${report.report_date}?`,
+      confirmLabel: 'Reprint Report',
+      type: 'warning',
+    });
+    if (!confirmed) return;
     try {
       setReceiptPrintError('');
       const res = await client.post(`/api/pos/end-of-day-reports/${report.id}/reprint/`);
@@ -522,12 +609,17 @@ export default function AdminDashboard() {
       if (!res.data.receipt_print?.printed) {
         setReceiptPrintError(res.data.receipt_print?.error || 'Report found, but the receipt could not be printed.');
       }
+      alert('Report reprinted successfully.');
     } catch {
       alert('Failed to reprint report.');
     }
   };
 
-  const handleLogout = useCallback(() => { logout(); navigate('/login', { replace: true }); }, [logout, navigate]);
+  const handleLogout = useCallback(() => {
+    alert('Signed out successfully.');
+    logout();
+    navigate('/login', { replace: true });
+  }, [logout, navigate]);
 
   const openSystemResetModal = () => {
     setSystemResetPassword('');
@@ -555,6 +647,7 @@ export default function AdminDashboard() {
         admin_password: systemResetPassword,
         confirmation: systemResetConfirmation,
       });
+      alert('System reset completed successfully.');
       setSystemResetOpen(false);
       window.setTimeout(() => {
         window.location.reload();
@@ -1299,20 +1392,21 @@ export default function AdminDashboard() {
                 <Card className="!p-4 md:!p-5 h-full flex flex-col">
                   <CardHeader title="Add Staff User" />
                   <form onSubmit={handleCreateStaff} className="flex min-h-0 flex-1 flex-col gap-4">
-                    <Input label="Username" required value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="username" />
-                    <Input label="Password" type="password" required value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="password" />
-                    <Input label="Email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="staff@cav.com" />
+                    <Input label="Username" required value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="username" disabled={creatingStaff} />
+                    <Input label="Password" type="password" required value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="password" disabled={creatingStaff} />
+                    <Input label="Email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="staff@cav.com" disabled={creatingStaff} />
                     <Select
                       label="Role"
                       value={newRole}
                       onChange={e => setNewRole(e.target.value)}
+                      disabled={creatingStaff}
                       options={[
                         { value: 'STAFF', label: 'Regular Staff' },
                         { value: 'ADMIN', label: 'Super Administrator' },
                         { value: 'CUSTOMER', label: 'Customer Profile' },
                       ]}
                     />
-                    <Button type="submit" variant="primary" className="mt-auto w-full" icon={Plus}>
+                    <Button type="submit" variant="primary" className="mt-auto w-full" icon={Plus} loading={creatingStaff} disabled={creatingStaff}>
                       Create Staff Access
                     </Button>
                   </form>
@@ -1374,15 +1468,15 @@ export default function AdminDashboard() {
                 <Card className="!p-4 md:!p-5">
                   <CardHeader title={editingFaq ? 'Update FAQ Entry' : 'Add FAQ Entry'} />
                   <form onSubmit={handleFAQSubmit} className="space-y-4">
-                    <Input label="Question" required value={faqQuestion} onChange={e => setFaqQuestion(e.target.value)} placeholder="e.g. Do you accept credit cards?" />
-                    <Textarea label="Answer" required value={faqAnswer} onChange={e => setFaqAnswer(e.target.value)} placeholder="e.g. Yes! We accept Mastercard, Visa, and GCash." rows={4} />
-                    <Input label="Tags / Keywords" value={faqTags} onChange={e => setFaqTags(e.target.value)} placeholder="e.g. card, payment, visa" />
+                    <Input label="Question" required value={faqQuestion} onChange={e => setFaqQuestion(e.target.value)} placeholder="e.g. Do you accept credit cards?" disabled={faqSaving} />
+                    <Textarea label="Answer" required value={faqAnswer} onChange={e => setFaqAnswer(e.target.value)} placeholder="e.g. Yes! We accept Mastercard, Visa, and GCash." rows={4} disabled={faqSaving} />
+                    <Input label="Tags / Keywords" value={faqTags} onChange={e => setFaqTags(e.target.value)} placeholder="e.g. card, payment, visa" disabled={faqSaving} />
                     <div className="flex gap-2">
-                      <Button type="submit" variant="primary" className="flex-1" icon={Check}>
+                      <Button type="submit" variant="primary" className="flex-1" icon={Check} loading={faqSaving} disabled={faqSaving}>
                         Publish FAQ Answer
                       </Button>
                       {editingFaq && (
-                        <Button variant="outline" onClick={() => { setFaqQuestion(''); setFaqAnswer(''); setFaqTags(''); setEditingFaq(null); }}>
+                        <Button variant="outline" onClick={() => { setFaqQuestion(''); setFaqAnswer(''); setFaqTags(''); setEditingFaq(null); }} disabled={faqSaving}>
                           Keep Current FAQ
                         </Button>
                       )}
@@ -1413,7 +1507,7 @@ export default function AdminDashboard() {
                               icon={Edit}
                               onClick={() => { setEditingFaq(faq); setFaqQuestion(faq.question); setFaqAnswer(faq.answer); setFaqTags(faq.tags || ''); }}
                             />
-                            <Button variant="ghost" size="sm" icon={Trash2} onClick={() => handleDeleteFAQ(faq.id)} className="text-red-500 hover:text-red-700" />
+                            <Button variant="ghost" size="sm" icon={Trash2} onClick={() => handleDeleteFAQ(faq.id)} loading={deletingFaqId === faq.id} disabled={deletingFaqId === faq.id} className="text-red-500 hover:text-red-700" />
                           </div>
                         </div>
                       ))}

@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.db.models.functions import Lower
 
 
 class Payment(models.Model):
@@ -41,6 +42,7 @@ class Payment(models.Model):
     verified_at = models.DateTimeField(null=True, blank=True)
     admin_note = models.TextField(blank=True)
     metadata = models.JSONField(default=dict, blank=True)
+    idempotency_key = models.CharField(max_length=100, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -53,7 +55,18 @@ class Payment(models.Model):
                     | models.Q(payment_type='POS', order_id__isnull=False, booking_id__isnull=True)
                 ),
                 name='payment_has_one_parent',
-            )
+            ),
+            models.UniqueConstraint(
+                Lower('reference_number'),
+                'payment_type',
+                condition=models.Q(reference_number__isnull=False) & ~models.Q(reference_number=''),
+                name='payment_type_reference_ci_unique',
+            ),
+            models.UniqueConstraint(
+                fields=['payment_type', 'idempotency_key'],
+                condition=models.Q(idempotency_key__isnull=False) & ~models.Q(idempotency_key=''),
+                name='payment_type_idempotency_unique',
+            ),
         ]
 
     @property
