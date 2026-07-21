@@ -168,6 +168,13 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', True)
 EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
 
+OCR_API_PROVIDER = os.environ.get('OCR_API_PROVIDER', 'ocr_space')
+OCR_API_URL = os.environ.get('OCR_API_URL', 'https://api.ocr.space/parse/image')
+OCR_API_KEY = os.environ.get('OCR_API_KEY', '')
+OCR_API_TIMEOUT = int(os.environ.get('OCR_API_TIMEOUT', '20'))
+OCR_SPACE_ENGINE = os.environ.get('OCR_SPACE_ENGINE', '2')
+OCR_FALLBACK_TESSERACT = env_bool('OCR_FALLBACK_TESSERACT', True)
+
 # REST Framework configurations
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

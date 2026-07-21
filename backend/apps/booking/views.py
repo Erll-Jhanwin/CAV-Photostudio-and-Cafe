@@ -496,6 +496,7 @@ class BookingPaymentOcrView(views.APIView):
             result = analyze_gcash_receipt(receipt)
         except Exception:
             return Response({"detail": "Could not read this receipt image."}, status=status.HTTP_400_BAD_REQUEST)
+        result.pop('raw_text', None)
         reference_number = result.get('fields', {}).get('reference_number', {}).get('value')
         if reference_number:
             duplicate_exists = Payment.objects.filter(payment_type=Payment.BOOKING, reference_number__iexact=reference_number).exists()

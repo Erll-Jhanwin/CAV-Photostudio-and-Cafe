@@ -164,9 +164,12 @@ const createIdempotencyKey = (prefix) => {
 };
 
 const DOWN_PAYMENT_RATE = 0.5;
+const PAYMENT_RECEIPT_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const PAYMENT_RECEIPT_MAX_SIZE = 5 * 1024 * 1024;
 const calculateDownPayment = (price) => Number(price || 0) * DOWN_PAYMENT_RATE;
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 const isValidPhone = (value) => String(value || '').replace(/[^\d+]/g, '').replace(/^\+/, '').length >= 7;
+const isValidPaymentReference = (value) => /^[A-Za-z0-9\- ]{6,100}$/.test(String(value || '').trim());
 const formatStatusLabel = (status) => ({
   CONFIRMED_DP: 'Confirmed - Down Payment Received',
   PENDING_VERIFICATION: 'Pending Verification',
@@ -734,6 +737,14 @@ export default function CustomerDashboard() {
   };
 
   const handlePaymentReceiptUpload = async (file) => {
+    if (file && !PAYMENT_RECEIPT_ALLOWED_TYPES.includes(file.type)) {
+      alert('Receipt screenshot must be a JPG, PNG, or WEBP image.');
+      file = null;
+    }
+    if (file && file.size > PAYMENT_RECEIPT_MAX_SIZE) {
+      alert('Receipt screenshot must be 5MB or smaller.');
+      file = null;
+    }
     setPaymentReceipt(file || null);
     setPaymentOcrResult(null);
     setPaymentOcrWarnings([]);
@@ -741,8 +752,8 @@ export default function CustomerDashboard() {
     setPaymentScanProgress({
       status: file ? 'uploading' : 'idle',
       percent: file ? 5 : 0,
-      message: file ? 'Uploading image' : 'Upload a screenshot to scan payment details.',
-      messages: file ? ['Uploading image'] : [],
+      message: file ? 'Uploading receipt to OCR API' : 'Upload a screenshot to scan payment details.',
+      messages: file ? ['Uploading receipt to OCR API'] : [],
     });
     setPaymentReceiptPreview(current => {
       if (current) URL.revokeObjectURL(current);
@@ -763,14 +774,14 @@ export default function CustomerDashboard() {
             ...current,
             status: progressEvent.loaded >= progressEvent.total ? 'reading' : 'uploading',
             percent: Math.min(35, Math.max(current.percent, 5 + uploadPercent)),
-            message: progressEvent.loaded >= progressEvent.total ? 'Reading payment details' : 'Uploading image',
-            messages: progressEvent.loaded >= progressEvent.total && !current.messages.includes('Reading payment details')
-              ? [...current.messages, 'Reading payment details'].slice(-5)
+            message: progressEvent.loaded >= progressEvent.total ? 'Scanning receipt with OCR API' : 'Uploading receipt to OCR API',
+            messages: progressEvent.loaded >= progressEvent.total && !current.messages.includes('Scanning receipt with OCR API')
+              ? [...current.messages, 'Scanning receipt with OCR API'].slice(-5)
               : current.messages,
           }));
         },
       });
-      setPaymentScanStep('reading', 55, 'Reading payment details');
+      setPaymentScanStep('reading', 55, 'Extracting payment details');
       const fields = res.data.fields || {};
       const nextReference = fields.reference_number?.value || '';
       setPaymentScanStep('validating', 72, 'Validating reference number');
@@ -974,8 +985,20 @@ export default function CustomerDashboard() {
       alert('Please complete the GCash payment proof fields and upload the receipt screenshot.');
       return;
     }
+    if (!isValidPaymentReference(paymentReference)) {
+      alert('GCash reference number must be 6-100 letters, numbers, spaces, or hyphens.');
+      return;
+    }
     if (!Number.isFinite(paidAmount) || paidAmount < requiredDownPayment) {
       alert(`Amount paid must be at least ${formatPeso(requiredDownPayment)}.`);
+      return;
+    }
+    if (paymentOcrLoading) {
+      alert('Please wait until receipt scanning is complete.');
+      return;
+    }
+    if (paymentReferenceStatus.checking) {
+      alert('Please wait until the reference number check is complete.');
       return;
     }
     if (paymentReferenceStatus.exists) {
@@ -1978,6 +2001,8 @@ export default function CustomerDashboard() {
                                   value={paymentReference}
                                   onChange={e => setPaymentReference(e.target.value)}
                                   placeholder="e.g. 1234567890123"
+                                  maxLength={100}
+                                  disabled={paymentSubmitting}
                                   required
                                 />
                                 <Input
@@ -1987,6 +2012,7 @@ export default function CustomerDashboard() {
                                   step="0.01"
                                   value={paymentAmount}
                                   onChange={e => setPaymentAmount(e.target.value)}
+                                  disabled={paymentSubmitting}
                                   required
                                 />
                                 <Input
@@ -1994,6 +2020,7 @@ export default function CustomerDashboard() {
                                   type="date"
                                   value={paymentDate}
                                   onChange={e => setPaymentDate(e.target.value)}
+                                  disabled={paymentSubmitting}
                                   required
                                 />
                                 <Input
@@ -2001,6 +2028,7 @@ export default function CustomerDashboard() {
                                   type="time"
                                   value={paymentTime}
                                   onChange={e => setPaymentTime(e.target.value)}
+                                  disabled={paymentSubmitting}
                                   required
                                 />
                               </div>
@@ -2034,9 +2062,10 @@ export default function CustomerDashboard() {
                                   <div className="min-w-0 flex-1">
                                     <input
                                       type="file"
-                                      accept="image/*"
+                                      accept="image/jpeg,image/png,image/webp"
                                       onChange={e => handlePaymentReceiptUpload(e.target.files?.[0] || null)}
-                                      className="block w-full text-xs text-espresso file:mr-3 file:rounded-xl file:border-0 file:bg-espresso file:px-3 file:py-2 file:text-xs file:font-bold file:text-gold"
+                                      disabled={paymentOcrLoading || paymentSubmitting}
+                                      className="block w-full text-xs text-espresso file:mr-3 file:rounded-xl file:border-0 file:bg-espresso file:px-3 file:py-2 file:text-xs file:font-bold file:text-gold disabled:opacity-60"
                                       required
                                     />
                                     <p className="text-[10px] text-espresso/45 mt-1 truncate">
@@ -2059,7 +2088,7 @@ export default function CustomerDashboard() {
                                           <button
                                             type="button"
                                             onClick={() => handlePaymentReceiptUpload(paymentReceipt)}
-                                            disabled={paymentOcrLoading}
+                                            disabled={paymentOcrLoading || paymentSubmitting}
                                             className="shrink-0 rounded-lg border border-current/20 px-2 py-1 text-[9px] font-black uppercase tracking-wider transition-all hover:bg-white/60 disabled:opacity-50"
                                           >
                                             Retry Scan
@@ -2141,7 +2170,7 @@ export default function CustomerDashboard() {
                           size="sm" 
                           onClick={handleBookingSubmit}
                           loading={paymentSubmitting}
-                          disabled={paymentSubmitting || paymentReferenceStatus.exists}
+                          disabled={paymentSubmitting || paymentOcrLoading || paymentReferenceStatus.checking || paymentReferenceStatus.exists}
                           className="px-6 text-xs bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white"
                         >
                           {paymentSubmitting ? 'Securing Your Slot...' : 'Reserve Your Session'}

@@ -46,7 +46,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             'id', 'booking', 'booking_details', 'reference_number', 'amount',
             'paid_at', 'receipt', 'receipt_url', 'status', 'verified_by',
             'verified_by_details', 'verified_at', 'admin_note',
-            'required_down_payment', 'created_at', 'updated_at'
+            'required_down_payment', 'idempotency_key', 'created_at', 'updated_at'
         ]
         read_only_fields = [
             'status', 'verified_by', 'verified_at', 'admin_note',

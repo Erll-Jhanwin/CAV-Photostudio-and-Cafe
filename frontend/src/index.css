@@ -234,6 +234,11 @@
   100% { background-position: 200% 0; }
 }
 
+@keyframes splashProgress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
 .skeleton-shimmer {
   background: linear-gradient(90deg, rgba(46,26,17,0.04) 25%, rgba(46,26,17,0.09) 50%, rgba(46,26,17,0.04) 75%);
   background-size: 200% 100%;

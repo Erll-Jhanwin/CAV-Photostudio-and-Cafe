@@ -3,8 +3,15 @@ import re
 from datetime import datetime
 from io import BytesIO
 
+import requests
+from django.conf import settings
+
 
 LOW_CONFIDENCE = 0.35
+
+
+class OcrApiError(Exception):
+    pass
 
 
 def _clean_text(value):
@@ -188,7 +195,75 @@ def parse_gcash_text(text):
     }
 
 
-def analyze_gcash_receipt(uploaded_file):
+def _read_upload_bytes(uploaded_file):
+    image_bytes = uploaded_file.read()
+    uploaded_file.seek(0)
+    return image_bytes
+
+
+def _extract_ocr_space_text(payload):
+    if not isinstance(payload, dict):
+        raise OcrApiError('OCR API returned an invalid response.')
+    if payload.get('IsErroredOnProcessing'):
+        error_message = payload.get('ErrorMessage') or payload.get('ErrorDetails') or 'OCR API could not process this image.'
+        if isinstance(error_message, list):
+            error_message = ' '.join(str(message) for message in error_message if message)
+        raise OcrApiError(str(error_message))
+    parsed_results = payload.get('ParsedResults') or []
+    text_parts = []
+    for item in parsed_results:
+        if isinstance(item, dict) and item.get('ParsedText'):
+            text_parts.append(str(item.get('ParsedText')))
+    text = '\n'.join(text_parts).strip()
+    if not text:
+        raise OcrApiError('OCR API did not detect readable receipt text.')
+    return text
+
+
+def _analyze_with_ocr_api(uploaded_file):
+    provider = str(getattr(settings, 'OCR_API_PROVIDER', 'ocr_space') or 'ocr_space').strip().lower()
+    api_url = str(getattr(settings, 'OCR_API_URL', '') or '').strip()
+    api_key = str(getattr(settings, 'OCR_API_KEY', '') or '').strip()
+    timeout = int(getattr(settings, 'OCR_API_TIMEOUT', 20) or 20)
+    engine = str(getattr(settings, 'OCR_SPACE_ENGINE', '2') or '2').strip()
+
+    if provider not in {'ocr_space', 'ocrspace'}:
+        raise OcrApiError('Unsupported OCR_API_PROVIDER. Use ocr_space.')
+    if not api_url or not api_key:
+        raise OcrApiError('Receipt scanning API is not configured. Please enter the payment details manually.')
+
+    image_bytes = _read_upload_bytes(uploaded_file)
+    filename = getattr(uploaded_file, 'name', 'receipt.jpg') or 'receipt.jpg'
+    content_type = getattr(uploaded_file, 'content_type', 'application/octet-stream') or 'application/octet-stream'
+    try:
+        response = requests.post(
+            api_url,
+            data={
+                'apikey': api_key,
+                'language': 'eng',
+                'isOverlayRequired': 'false',
+                'detectOrientation': 'true',
+                'scale': 'true',
+                'OCREngine': engine,
+            },
+            files={'file': (filename, image_bytes, content_type)},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except requests.Timeout as exc:
+        raise OcrApiError('OCR API timed out. Please try again or enter the details manually.') from exc
+    except (requests.RequestException, ValueError) as exc:
+        raise OcrApiError('OCR API request failed. Please try again or enter the details manually.') from exc
+
+    result = parse_gcash_text(_extract_ocr_space_text(payload))
+    result['ocr_available'] = True
+    result['ocr_provider'] = 'ocr_space'
+    result['api_used'] = True
+    return result
+
+
+def _analyze_with_tesseract(uploaded_file):
     try:
         from PIL import Image, ImageFilter, ImageOps
         import pytesseract
@@ -199,6 +274,8 @@ def analyze_gcash_receipt(uploaded_file):
             'OCR service is not installed on the server. Install Pillow, pytesseract, and the Tesseract OCR engine to enable automatic extraction.'
         )
         result['ocr_available'] = False
+        result['ocr_provider'] = 'tesseract'
+        result['api_used'] = False
         return result
 
     tesseract_cmd = os.getenv('TESSERACT_CMD')
@@ -208,8 +285,7 @@ def analyze_gcash_receipt(uploaded_file):
     if tesseract_cmd:
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
 
-    image_bytes = uploaded_file.read()
-    uploaded_file.seek(0)
+    image_bytes = _read_upload_bytes(uploaded_file)
     image = Image.open(BytesIO(image_bytes))
     image = ImageOps.grayscale(image)
     image = ImageOps.autocontrast(image)
@@ -231,7 +307,33 @@ def analyze_gcash_receipt(uploaded_file):
             'Tesseract OCR engine was not found. Set TESSERACT_CMD to the installed tesseract.exe path.'
         )
         result['ocr_available'] = False
+        result['ocr_provider'] = 'tesseract'
+        result['api_used'] = False
         return result
     result = parse_gcash_text(text)
     result['ocr_available'] = True
+    result['ocr_provider'] = 'tesseract'
+    result['api_used'] = False
+    return result
+
+
+def analyze_gcash_receipt(uploaded_file):
+    api_error = ''
+    if str(getattr(settings, 'OCR_API_PROVIDER', 'ocr_space') or '').strip().lower() not in {'', 'none', 'local', 'tesseract'}:
+        try:
+            return _analyze_with_ocr_api(uploaded_file)
+        except OcrApiError as exc:
+            api_error = str(exc)
+
+    if getattr(settings, 'OCR_FALLBACK_TESSERACT', True):
+        result = _analyze_with_tesseract(uploaded_file)
+        if api_error:
+            result.setdefault('warnings', []).insert(0, api_error)
+        return result
+
+    result = parse_gcash_text('')
+    result['ocr_available'] = False
+    result['ocr_provider'] = str(getattr(settings, 'OCR_API_PROVIDER', 'ocr_space') or 'ocr_space')
+    result['api_used'] = False
+    result['warnings'].insert(0, api_error or 'Receipt scanning API is not configured. Please enter the payment details manually.')
     return result
