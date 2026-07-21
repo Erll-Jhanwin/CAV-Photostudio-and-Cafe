@@ -48,6 +48,13 @@ const run = (command, args, options = {}) => new Promise((resolve) => {
   });
 });
 
+const cleanPowerShellError = (value) => (
+  String(value || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .find(line => line && !/^(At line:|\+|~|\+ CategoryInfo|\+ FullyQualifiedErrorId)/.test(line))
+);
+
 const listWindowsPrinters = async () => {
   const script = [
     'Get-CimInstance Win32_Printer',
@@ -75,9 +82,44 @@ const listPosixPrinters = async () => {
 };
 
 const printWindows = async ({ printerName, content }) => {
-  const command = printerName
-    ? 'if ($env:PRINTER_NAME) { $input | Out-Printer -Name $env:PRINTER_NAME } else { $input | Out-Printer }'
-    : '$input | Out-Printer';
+  const command = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Drawing
+$content = [Console]::In.ReadToEnd()
+$printerName = $env:PRINTER_NAME
+$doc = New-Object System.Drawing.Printing.PrintDocument
+$doc.DocumentName = 'CAV Receipt'
+$doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController
+$doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
+if ($printerName) {
+  $doc.PrinterSettings.PrinterName = $printerName
+}
+if (-not $doc.PrinterSettings.IsValid) {
+  throw "Printer is not available: $($doc.PrinterSettings.PrinterName)"
+}
+$font = New-Object System.Drawing.Font('Consolas', 8)
+$brush = [System.Drawing.Brushes]::Black
+$lines = ($content -replace "\`r\`n", "\`n" -replace "\`r", "\`n").Split("\`n")
+$script:lineIndex = 0
+$doc.add_PrintPage({
+  param($sender, $eventArgs)
+  $y = [float]0
+  $lineHeight = $font.GetHeight($eventArgs.Graphics)
+  while ($script:lineIndex -lt $lines.Length) {
+    if (($y + $lineHeight) -gt $eventArgs.PageBounds.Height) {
+      $eventArgs.HasMorePages = $true
+      return
+    }
+    $eventArgs.Graphics.DrawString($lines[$script:lineIndex], $font, $brush, 0, $y)
+    $y += $lineHeight
+    $script:lineIndex += 1
+  }
+  $eventArgs.HasMorePages = $false
+})
+$doc.Print()
+$font.Dispose()
+$doc.Dispose()
+`;
   const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command], {
     windowsHide: true,
     env: { ...process.env, PRINTER_NAME: printerName || '' },
@@ -87,7 +129,7 @@ const printWindows = async ({ printerName, content }) => {
   child.stdin.write(content);
   child.stdin.end();
   const code = await new Promise(resolve => child.on('close', resolve));
-  if (code !== 0) throw new Error(stderr || 'Printer command failed.');
+  if (code !== 0) throw new Error(cleanPowerShellError(stderr) || 'Printer command failed.');
 };
 
 const printPosix = async ({ printerName, content }) => {
