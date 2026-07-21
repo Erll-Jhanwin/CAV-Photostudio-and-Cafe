@@ -12,6 +12,15 @@ from sales.models import DailySalesSummary
 
 User = get_user_model()
 
+
+def get_first_or_create(model, defaults=None, **lookup):
+    obj = model.objects.filter(**lookup).order_by('pk').first()
+    if obj:
+        return obj, False
+    params = {**lookup, **(defaults or {})}
+    return model.objects.create(**params), True
+
+
 class Command(BaseCommand):
     help = 'Seeds the database with test accounts, services, packages, products, FAQs, and sales history.'
 
@@ -42,49 +51,37 @@ class Command(BaseCommand):
         self.stdout.write('Creating users...')
         
         # Admin
-        admin, created = User.objects.get_or_create(
-            username='admin',
-            email='admin@test.com',
-            defaults={
-                'role': 'ADMIN',
-                'first_name': 'CAV',
-                'last_name': 'Admin',
-                'is_staff': True,
-                'is_superuser': True
-            }
-        )
-        if created or not admin.check_password('Admin123!'):
+        admin, _ = User.objects.get_or_create(username='admin')
+        admin.email = 'admin@test.com'
+        admin.role = 'ADMIN'
+        admin.first_name = 'CAV'
+        admin.last_name = 'Admin'
+        admin.is_staff = True
+        admin.is_superuser = True
+        if not admin.check_password('Admin123!'):
             admin.set_password('Admin123!')
-            admin.save()
+        admin.save()
 
         # Staff
-        staff, created = User.objects.get_or_create(
-            username='staff',
-            email='staff@test.com',
-            defaults={
-                'role': 'STAFF',
-                'first_name': 'CAV',
-                'last_name': 'Staff',
-                'is_staff': True
-            }
-        )
-        if created or not staff.check_password('Staff123!'):
+        staff, _ = User.objects.get_or_create(username='staff')
+        staff.email = 'staff@test.com'
+        staff.role = 'STAFF'
+        staff.first_name = 'CAV'
+        staff.last_name = 'Staff'
+        staff.is_staff = True
+        if not staff.check_password('Staff123!'):
             staff.set_password('Staff123!')
-            staff.save()
+        staff.save()
 
         # Customer
-        customer_user, created = User.objects.get_or_create(
-            username='customer',
-            email='customer@test.com',
-            defaults={
-                'role': 'CUSTOMER',
-                'first_name': 'CAV',
-                'last_name': 'Customer'
-            }
-        )
-        if created or not customer_user.check_password('Customer123!'):
+        customer_user, _ = User.objects.get_or_create(username='customer')
+        customer_user.email = 'customer@test.com'
+        customer_user.role = 'CUSTOMER'
+        customer_user.first_name = 'CAV'
+        customer_user.last_name = 'Customer'
+        if not customer_user.check_password('Customer123!'):
             customer_user.set_password('Customer123!')
-            customer_user.save()
+        customer_user.save()
 
         # Customer profile
         Customer.objects.get_or_create(
@@ -100,7 +97,8 @@ class Command(BaseCommand):
         self.stdout.write('Creating services and packages...')
         
         # Self-Shoot Service
-        self_shoot, _ = Service.objects.get_or_create(
+        self_shoot, _ = get_first_or_create(
+            Service,
             name='Self-Shoot Studio',
             defaults={
                 'description': 'Enjoy a private studio session with professional cameras, lighting, and trigger buttons.',
@@ -110,7 +108,8 @@ class Command(BaseCommand):
             }
         )
 
-        Package.objects.get_or_create(
+        get_first_or_create(
+            Package,
             service=self_shoot,
             name='Single Session',
             defaults={
@@ -120,7 +119,8 @@ class Command(BaseCommand):
             }
         )
 
-        Package.objects.get_or_create(
+        get_first_or_create(
+            Package,
             service=self_shoot,
             name='Duo Pack',
             defaults={
@@ -131,7 +131,8 @@ class Command(BaseCommand):
         )
 
         # Portrait Service
-        portrait, _ = Service.objects.get_or_create(
+        portrait, _ = get_first_or_create(
+            Service,
             name='Boutique Portrait',
             defaults={
                 'description': 'Professional studio portrait taken by our resident photographer.',
@@ -141,7 +142,8 @@ class Command(BaseCommand):
             }
         )
 
-        Package.objects.get_or_create(
+        get_first_or_create(
+            Package,
             service=portrait,
             name='Solo Premium',
             defaults={
@@ -154,7 +156,8 @@ class Command(BaseCommand):
     def seed_inventory_base(self):
         self.stdout.write('Creating suppliers and categories...')
         
-        self.coffee_supplier, _ = Supplier.objects.get_or_create(
+        self.coffee_supplier, _ = get_first_or_create(
+            Supplier,
             name='Manila Coffee Roasters',
             defaults={
                 'contact_person': 'Juan Dela Cruz',
@@ -164,7 +167,8 @@ class Command(BaseCommand):
             }
         )
 
-        self.paper_supplier, _ = Supplier.objects.get_or_create(
+        self.paper_supplier, _ = get_first_or_create(
+            Supplier,
             name='Studio Paper Supplies Corp',
             defaults={
                 'contact_person': 'Maria Santos',
@@ -174,18 +178,19 @@ class Command(BaseCommand):
             }
         )
 
-        self.cat_beverages, _ = Category.objects.get_or_create(name='Beverages', defaults={'description': 'Espresso-based coffees, teas, and refreshers'})
-        self.cat_snacks, _ = Category.objects.get_or_create(name='Snacks', defaults={'description': 'Freshly baked pastries and sandwiches'})
-        self.cat_supplies, _ = Category.objects.get_or_create(name='Photo Supplies', defaults={'description': 'Studio printing paper, frames, and print assets'})
+        self.cat_beverages, _ = get_first_or_create(Category, name='Beverages', defaults={'description': 'Espresso-based coffees, teas, and refreshers'})
+        self.cat_snacks, _ = get_first_or_create(Category, name='Snacks', defaults={'description': 'Freshly baked pastries and sandwiches'})
+        self.cat_supplies, _ = get_first_or_create(Category, name='Photo Supplies', defaults={'description': 'Studio printing paper, frames, and print assets'})
 
     def seed_products(self):
         self.stdout.write('Creating products...')
         
         # Espresso
-        espresso, created = Product.objects.get_or_create(
-            name='Espresso',
+        espresso, created = get_first_or_create(
+            Product,
+            sku='CAFE-ESP',
             defaults={
-                'sku': 'CAFE-ESP',
+                'name': 'Espresso',
                 'category': self.cat_beverages,
                 'supplier': self.coffee_supplier,
                 'cost': 30.00,
@@ -200,10 +205,11 @@ class Command(BaseCommand):
             StockMovement.objects.create(product=espresso, movement_type='IN', quantity=150, reason='Initial stock seeding')
 
         # Iced Latte
-        latte, created = Product.objects.get_or_create(
-            name='Iced Latte',
+        latte, created = get_first_or_create(
+            Product,
+            sku='CAFE-LAT',
             defaults={
-                'sku': 'CAFE-LAT',
+                'name': 'Iced Latte',
                 'category': self.cat_beverages,
                 'supplier': self.coffee_supplier,
                 'cost': 45.00,
@@ -218,10 +224,11 @@ class Command(BaseCommand):
             StockMovement.objects.create(product=latte, movement_type='IN', quantity=100, reason='Initial stock seeding')
 
         # Chocolate Croissant
-        croissant, created = Product.objects.get_or_create(
-            name='Chocolate Croissant',
+        croissant, created = get_first_or_create(
+            Product,
+            sku='CAFE-CRO',
             defaults={
-                'sku': 'CAFE-CRO',
+                'name': 'Chocolate Croissant',
                 'category': self.cat_snacks,
                 'cost': 35.00,
                 'price': 85.00,
@@ -237,7 +244,8 @@ class Command(BaseCommand):
     def seed_faqs(self):
         self.stdout.write('Creating chatbot FAQs...')
         
-        ChatbotFAQ.objects.get_or_create(
+        get_first_or_create(
+            ChatbotFAQ,
             question="What are your operating hours?",
             defaults={
                 "answer": "CAV Photo Studio and Café is open daily from 9:00 AM to 8:00 PM. The café accepts orders until 7:30 PM, and the last studio session booking is at 7:00 PM.",
@@ -245,7 +253,8 @@ class Command(BaseCommand):
             }
         )
 
-        ChatbotFAQ.objects.get_or_create(
+        get_first_or_create(
+            ChatbotFAQ,
             question="How do I book a studio session?",
             defaults={
                 "answer": "You can book directly from our website! Simply log in, navigate to 'Book Session' from your dashboard, choose your desired Service (Self-Shoot or Boutique Portrait) and Package, select an available date and time, and submit your booking.",
@@ -253,7 +262,8 @@ class Command(BaseCommand):
             }
         )
 
-        ChatbotFAQ.objects.get_or_create(
+        get_first_or_create(
+            ChatbotFAQ,
             question="What packages do you offer for photo studio?",
             defaults={
                 "answer": "We offer 'Self-Shoot Studio' starting at PHP 500 (Duo pack at PHP 800) and 'Boutique Portrait' starting at PHP 1,500. Each package includes specific session lengths, digital soft copies, and physical printouts. You can see full package details in our portal under Packages.",
@@ -261,7 +271,8 @@ class Command(BaseCommand):
             }
         )
 
-        ChatbotFAQ.objects.get_or_create(
+        get_first_or_create(
+            ChatbotFAQ,
             question="Can we walk in for café or photo studio?",
             defaults={
                 "answer": "Yes! The café is open to walk-ins anytime during operating hours. For the photo studio, we accept walk-ins depending on room availability, but we highly recommend booking online in advance to secure your slot.",
@@ -269,7 +280,8 @@ class Command(BaseCommand):
             }
         )
 
-        ChatbotFAQ.objects.get_or_create(
+        get_first_or_create(
+            ChatbotFAQ,
             question="Where is CAV located?",
             defaults={
                 "answer": "We are located at 123 Capstone Drive, Barangay Loyola, Quezon City, Metro Manila. We have free parking spaces in front of the shop!",
