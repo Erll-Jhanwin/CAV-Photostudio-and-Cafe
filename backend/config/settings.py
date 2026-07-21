@@ -106,13 +106,15 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-SUPABASE_DATABASE_URL = 'postgresql://postgres.mfygywucqerckxcyazjz:UBp2smlc1yUcYKbv@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres'
+DATABASE_URL = os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DATABASE_URL')
+if not DATABASE_URL:
+    raise ImproperlyConfigured('DATABASE_URL must be set to the Supabase/PostgreSQL connection string.')
 
 DATABASES = {
     'default': dj_database_url.parse(
-        SUPABASE_DATABASE_URL,
+        DATABASE_URL,
         conn_max_age=600,
-        ssl_require=True,
+        ssl_require=env_bool('DATABASE_SSL_REQUIRE', True),
     )
 }
 
@@ -123,7 +125,8 @@ AUTH_USER_MODEL = 'users.CustomUser'
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 8}},
+    {'NAME': 'users.password_validation.StrongPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]

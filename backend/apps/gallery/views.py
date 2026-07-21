@@ -7,12 +7,12 @@ from gallery.serializers import GalleryImageSerializer
 GALLERY_IMAGES = [
     {
         "id": 1,
-        "title": "Self-Shoot Studio",
+        "title": "Studio Session",
         "category": "STUDIO",
         "category_label": "Studio",
-        "image_url": "https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=1200",
-        "alt_text": "Photo studio camera setup",
-        "caption": "Private studio sessions with professional lights.",
+        "image_url": "/assets/pics/solo/solo%20pic%20landscape.jpg",
+        "alt_text": "CAV studio session sample",
+        "caption": "Studio sessions with professional lights and backdrops.",
         "sort_order": 1,
     },
     {

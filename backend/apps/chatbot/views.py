@@ -16,7 +16,7 @@ FAQ_ACTION = 'FAQ_RECORD'
 DEFAULT_FAQS = [
     {"id": 1, "question": "What are your operating hours?", "answer": "CAV Photo Studio and Cafe is open daily from 9:00 AM to 8:00 PM.", "tags": "hours,schedule,open"},
     {"id": 2, "question": "How do I book a studio session?", "answer": "Log in, open Book Session, choose a package, select an available date and time, then submit your booking.", "tags": "book,booking,session,reserve"},
-    {"id": 3, "question": "What packages do you offer for photo studio?", "answer": "We offer Self-Shoot Studio and Boutique Portrait packages. Package details and prices are shown in the booking page.", "tags": "packages,price,studio,selfshoot,portrait"},
+    {"id": 3, "question": "What packages do you offer for photo studio?", "answer": "We offer Studio Session packages for Solo, Couple, Friends, Family, and Birthday sessions, plus a Standard Event Package. Package details and prices are shown in the booking page.", "tags": "packages,price,studio,solo,couple,friends,family,birthday,event"},
     {"id": 4, "question": "Can we walk in for cafe or photo studio?", "answer": "Cafe walk-ins are welcome. Studio walk-ins depend on room availability, so advance booking is recommended.", "tags": "walkin,cafe,studio"},
     {"id": 5, "question": "Where is CAV located?", "answer": "CAV is located at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.", "tags": "location,address,where,directions"},
 ]

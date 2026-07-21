@@ -2,6 +2,12 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
 from django.utils import timezone
+from uuid import uuid4
+
+
+def profile_picture_upload_path(instance, filename):
+    extension = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'jpg'
+    return f'profile_pictures/user_{instance.pk or "new"}/{uuid4().hex}.{extension}'
 
 class CustomUser(AbstractUser):
     ROLE_CHOICES = (
@@ -12,6 +18,8 @@ class CustomUser(AbstractUser):
     role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='CUSTOMER')
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
+    profile_picture = models.ImageField(upload_to=profile_picture_upload_path, blank=True, null=True)
+    profile_picture_external_url = models.URLField(max_length=500, blank=True)
 
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"

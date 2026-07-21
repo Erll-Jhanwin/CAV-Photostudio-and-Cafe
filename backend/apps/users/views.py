@@ -1,4 +1,5 @@
 from rest_framework import generics, permissions, status, views
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -7,6 +8,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
+from django.core.validators import validate_email as django_validate_email
 from django.db import transaction
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -49,6 +51,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['username'] = self.user.username
         data['email'] = self.user.email
         data['id'] = self.user.id
+        data['profile_picture_url'] = UserSerializer(self.user, context=self.context).data.get('profile_picture_url', '')
         
         # Log login audit
         AuditLog.objects.create(
@@ -96,6 +99,7 @@ def build_auth_payload(user):
         'username': user.username,
         'email': user.email,
         'id': user.id,
+        'profile_picture_url': UserSerializer(user).data.get('profile_picture_url', ''),
     }
 
 def unique_username_from_email(email):
@@ -141,6 +145,7 @@ class GoogleAuthView(views.APIView):
         email = profile.get('email', '').strip().lower()
         if not email or profile.get('email_verified') not in (True, 'true', 'True', '1'):
             return Response({"detail": "Google account email must be verified."}, status=status.HTTP_400_BAD_REQUEST)
+        google_picture_url = (profile.get('picture') or '').strip()
 
         user = User.objects.filter(email__iexact=email).first()
         created = False
@@ -153,6 +158,7 @@ class GoogleAuthView(views.APIView):
                 role='CUSTOMER',
             )
             user.set_unusable_password()
+            user.profile_picture_external_url = google_picture_url[:500]
             user.save()
             Customer.objects.get_or_create(user=user)
             created = True
@@ -164,6 +170,10 @@ class GoogleAuthView(views.APIView):
 
         if user.role == 'CUSTOMER':
             Customer.objects.get_or_create(user=user)
+
+        if google_picture_url and not user.profile_picture and user.profile_picture_external_url != google_picture_url:
+            user.profile_picture_external_url = google_picture_url[:500]
+            user.save(update_fields=['profile_picture_external_url'])
 
         AuditLog.objects.create(
             user=user,
@@ -178,6 +188,7 @@ class GoogleAuthView(views.APIView):
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self):
         return self.request.user
@@ -211,6 +222,11 @@ class StaffListView(generics.ListCreateAPIView):
             
         if User.objects.filter(username__iexact=username).exists():
             return Response({"detail": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        if email:
+            try:
+                django_validate_email(email)
+            except DjangoValidationError:
+                return Response({"email": "Enter a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
         if email and User.objects.filter(email__iexact=email).exists():
             return Response({"email": "Email already exists."}, status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -264,6 +280,11 @@ class StaffDetailView(views.APIView):
 
         if User.objects.filter(username__iexact=username).exclude(pk=user.pk).exists():
             return Response({"detail": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
+        if email:
+            try:
+                django_validate_email(email)
+            except DjangoValidationError:
+                return Response({"email": "Enter a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
         if email and User.objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
             return Response({"email": "Email already exists."}, status=status.HTTP_400_BAD_REQUEST)
         if password:

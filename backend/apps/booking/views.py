@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.db.models import Prefetch
 from rest_framework import generics, permissions, status, filters, views
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
@@ -18,6 +19,7 @@ from audit.models import AuditLog
 User = get_user_model()
 
 IDEMPOTENCY_KEY_MAX_LENGTH = 100
+OBSOLETE_SERVICE_NAMES = ['Self-Shoot Studio', 'Boutique Portrait']
 
 def get_idempotency_key(request):
     value = request.headers.get('Idempotency-Key') or request.headers.get('X-Idempotency-Key') or request.data.get('idempotency_key')
@@ -37,14 +39,21 @@ def apply_limit(queryset, request, default=None, maximum=200):
     return queryset[:limit]
 
 class ServiceListView(generics.ListAPIView):
-    queryset = Service.objects.all().prefetch_related('packages')
     serializer_class = ServiceSerializer
     permission_classes = [permissions.AllowAny]  # Allowed for landing page
 
+    def get_queryset(self):
+        package_queryset = Package.objects.exclude(service__name__in=OBSOLETE_SERVICE_NAMES).order_by('service_id', 'id').distinct()
+        return Service.objects.exclude(name__in=OBSOLETE_SERVICE_NAMES).order_by('id').distinct().prefetch_related(
+            Prefetch('packages', queryset=package_queryset)
+        )
+
 class PackageListView(generics.ListAPIView):
-    queryset = Package.objects.all()
     serializer_class = PackageSerializer
     permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        return Package.objects.exclude(service__name__in=OBSOLETE_SERVICE_NAMES).select_related('service').order_by('service_id', 'id').distinct()
 
 class BookingAvailabilityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -130,7 +139,7 @@ class BookingListCreateView(generics.ListCreateAPIView):
         user = self.request.user
         if user.role in ['STAFF', 'ADMIN']:
             # Staff/Admin see all bookings, filterable by date
-            queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('payments')
+            queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('payments').distinct()
             date_param = self.request.query_params.get('date')
             status_param = self.request.query_params.get('status')
             if date_param:
@@ -139,9 +148,9 @@ class BookingListCreateView(generics.ListCreateAPIView):
                 queryset = queryset.filter(status=status_param)
             if self.request.query_params.get('active') == 'true':
                 queryset = queryset.filter(status__in=['PENDING', 'CONFIRMED', 'CONFIRMED_DP'])
-            return apply_limit(queryset.order_by('scheduled_date', 'scheduled_time'), self.request)
+            return apply_limit(queryset.order_by('scheduled_date', 'scheduled_time', 'id'), self.request)
         # Customers only see their own bookings
-        queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service').prefetch_related('payments').order_by('-scheduled_date')
+        queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service').prefetch_related('payments').distinct().order_by('-scheduled_date', '-created_at', '-id')
         return apply_limit(queryset, self.request)
 
     def create(self, request, *args, **kwargs):
@@ -240,7 +249,7 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('payments')
+        queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('payments').distinct()
         user = self.request.user
         if user.role in ['STAFF', 'ADMIN']:
             return queryset
@@ -405,7 +414,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             'booking__customer',
             'booking__package',
             'verified_by'
-        )
+        ).distinct().order_by('-created_at', '-id')
         status_param = self.request.query_params.get('status')
         if status_param:
             queryset = queryset.filter(status=status_param)
@@ -500,7 +509,7 @@ class BookingPaymentOcrView(views.APIView):
 class BookingPaymentVerifyView(generics.UpdateAPIView):
     serializer_class = BookingPaymentSerializer
     permission_classes = [permissions.IsAuthenticated]
-    queryset = Payment.objects.filter(payment_type=Payment.BOOKING).select_related('booking', 'booking__customer', 'booking__package', 'verified_by')
+    queryset = Payment.objects.filter(payment_type=Payment.BOOKING).select_related('booking', 'booking__customer', 'booking__package', 'verified_by').distinct()
 
     def update(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:

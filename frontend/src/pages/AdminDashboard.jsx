@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client from '../api/client';
 import {
@@ -23,6 +23,18 @@ import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { DataTable as DashboardTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
+import { Avatar } from '../components/ui/Avatar';
+import { PasswordStrength } from '../components/ui/PasswordStrength';
+import {
+  getEmailError,
+  getPasswordError,
+  getRequiredError,
+} from '../utils/validation';
+import {
+  normalizeDashboardAnalytics,
+  normalizePayments,
+  normalizeRowsById,
+} from '../utils/uniqueRecords';
 
 const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
   minimumFractionDigits: 0,
@@ -182,6 +194,9 @@ export default function AdminDashboard() {
   const [staffSaving, setStaffSaving] = useState(false);
   const [creatingStaff, setCreatingStaff] = useState(false);
   const [deletingStaffId, setDeletingStaffId] = useState(null);
+  const [newStaffErrors, setNewStaffErrors] = useState({});
+  const [editStaffErrors, setEditStaffErrors] = useState({});
+  const [faqErrors, setFaqErrors] = useState({});
 
   const [retrainLoading, setRetrainLoading] = useState(false);
   const [datePreset, setDatePreset] = useState('month');
@@ -233,8 +248,11 @@ export default function AdminDashboard() {
   const [systemResetConfirmation, setSystemResetConfirmation] = useState('');
   const [systemResetLoading, setSystemResetLoading] = useState(false);
   const [systemResetError, setSystemResetError] = useState('');
+  const dashboardFetchSeqRef = useRef(0);
 
   const fetchData = useCallback(async ({ background = false } = {}) => {
+    const requestSeq = dashboardFetchSeqRef.current + 1;
+    dashboardFetchSeqRef.current = requestSeq;
     try {
       if (!background) setLoading(true);
       const range = getRangeDates(datePreset, customStart, customEnd);
@@ -246,16 +264,17 @@ export default function AdminDashboard() {
         client.get('/api/bookings/payments/'),
         client.get('/api/pos/end-of-day-reports/')
       ]);
-      setAnalytics(analyticsRes.data);
+      if (requestSeq !== dashboardFetchSeqRef.current) return;
+      setAnalytics(normalizeDashboardAnalytics(analyticsRes.data));
       setForecast(forecastRes.data);
-      setStaffList(staffRes.data);
-      setFaqs(faqRes.data);
-      setBookingPayments(paymentsRes.data);
-      setEndOfDayReports(endOfDayRes.data);
+      setStaffList(normalizeRowsById(staffRes.data, row => row?.username || row?.email));
+      setFaqs(normalizeRowsById(faqRes.data, row => row?.question));
+      setBookingPayments(normalizePayments(paymentsRes.data));
+      setEndOfDayReports(normalizeRowsById(endOfDayRes.data, row => row?.report_number || row?.created_at));
     } catch (err) {
       console.error(err);
     } finally {
-      if (!background) setLoading(false);
+      if (!background && requestSeq === dashboardFetchSeqRef.current) setLoading(false);
     }
   }, [datePreset, customStart, customEnd, chartGrain]);
 
@@ -286,9 +305,42 @@ export default function AdminDashboard() {
     };
   }, [user, fetchData]);
 
+  const validateNewStaffForm = () => {
+    const errors = {
+      username: getRequiredError(newUsername, 'Username'),
+      password: getPasswordError(newPassword),
+      email: getEmailError(newEmail),
+    };
+    return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
+  };
+
+  const validateEditStaffForm = () => {
+    const errors = {
+      username: getRequiredError(editStaffForm.username, 'Username'),
+      email: getEmailError(editStaffForm.email),
+      password: editStaffForm.password.trim() ? getPasswordError(editStaffForm.password, 'New password') : '',
+    };
+    return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
+  };
+
+  const validateFAQForm = () => {
+    const errors = {
+      question: getRequiredError(faqQuestion, 'Question'),
+      answer: getRequiredError(faqAnswer, 'Answer'),
+    };
+    return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
+  };
+
+  const newStaffFormValid = !Object.keys(validateNewStaffForm()).length;
+  const editStaffFormValid = !Object.keys(validateEditStaffForm()).length;
+  const faqFormValid = !Object.keys(validateFAQForm()).length;
+
   const handleCreateStaff = async (e) => {
     e.preventDefault();
     if (creatingStaff) return;
+    const errors = validateNewStaffForm();
+    setNewStaffErrors(errors);
+    if (Object.keys(errors).length) return;
     const confirmed = await confirm({
       title: 'Create Staff Account',
       message: `Create an account for ${newUsername || 'this staff member'}?`,
@@ -302,11 +354,18 @@ export default function AdminDashboard() {
         username: newUsername, password: newPassword,
         email: newEmail, role: newRole
       });
-      setNewUsername(''); setNewPassword(''); setNewEmail(''); setNewRole('STAFF');
+      setNewUsername(''); setNewPassword(''); setNewEmail(''); setNewRole('STAFF'); setNewStaffErrors({});
       fetchData();
       alert('Staff account created successfully.');
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to create staff account.');
+      const payload = err.response?.data || {};
+      setNewStaffErrors(current => ({
+        ...current,
+        username: payload.username || payload.detail || current.username,
+        email: Array.isArray(payload.email) ? payload.email.join(' ') : payload.email || current.email,
+        password: Array.isArray(payload.password) ? payload.password.join(' ') : payload.password || current.password,
+      }));
+      alert(payload.detail || 'Failed to create staff account.');
     } finally {
       setCreatingStaff(false);
     }
@@ -320,11 +379,15 @@ export default function AdminDashboard() {
       password: '',
       role: staff.role || 'STAFF',
     });
+    setEditStaffErrors({});
   };
 
   const handleUpdateStaff = async (e) => {
     e.preventDefault();
     if (!editingStaff || staffSaving) return;
+    const errors = validateEditStaffForm();
+    setEditStaffErrors(errors);
+    if (Object.keys(errors).length) return;
     const confirmed = await confirm({
       title: 'Update Staff Account',
       message: `Save changes to ${editingStaff.username}?`,
@@ -343,12 +406,20 @@ export default function AdminDashboard() {
         payload.password = editStaffForm.password;
       }
       const res = await client.patch(`/api/auth/users/${editingStaff.id}/`, payload);
-      setStaffList(current => current.map(staff => staff.id === editingStaff.id ? res.data : staff));
+      setStaffList(current => normalizeRowsById(current.map(staff => staff.id === editingStaff.id ? res.data : staff), row => row?.username || row?.email));
       setEditingStaff(null);
       setEditStaffForm({ username: '', email: '', password: '', role: 'STAFF' });
+      setEditStaffErrors({});
       alert('Record updated successfully.');
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to update account.');
+      const payload = err.response?.data || {};
+      setEditStaffErrors(current => ({
+        ...current,
+        username: payload.username || payload.detail || current.username,
+        email: Array.isArray(payload.email) ? payload.email.join(' ') : payload.email || current.email,
+        password: Array.isArray(payload.password) ? payload.password.join(' ') : payload.password || current.password,
+      }));
+      alert(payload.detail || 'Failed to update account.');
     } finally {
       setStaffSaving(false);
     }
@@ -379,6 +450,9 @@ export default function AdminDashboard() {
   const handleFAQSubmit = async (e) => {
     e.preventDefault();
     if (faqSaving) return;
+    const errors = validateFAQForm();
+    setFaqErrors(errors);
+    if (Object.keys(errors).length) return;
     const confirmed = await confirm({
       title: editingFaq ? 'Update FAQ' : 'Add FAQ',
       message: editingFaq ? 'Save changes to this FAQ?' : 'Add this FAQ to the chatbot knowledge base?',
@@ -397,7 +471,7 @@ export default function AdminDashboard() {
           question: faqQuestion, answer: faqAnswer, tags: faqTags
         });
       }
-      setFaqQuestion(''); setFaqAnswer(''); setFaqTags(''); setEditingFaq(null);
+      setFaqQuestion(''); setFaqAnswer(''); setFaqTags(''); setEditingFaq(null); setFaqErrors({});
       fetchData();
       alert(editingFaq ? 'Record updated successfully.' : 'Record added successfully.');
     } catch {
@@ -459,11 +533,11 @@ export default function AdminDashboard() {
         if (booking.status === 'COMPLETED') {
           metrics.completed_bookings = Math.max((metrics.completed_bookings || 0) - 1, 0);
         }
-        return {
+        return normalizeDashboardAnalytics({
           ...current,
           metrics,
           recent_bookings: (current.recent_bookings || []).filter(row => row.id !== booking.id),
-        };
+        });
       });
       setBookingPage(page => Math.max(1, Math.min(page, Math.ceil((sortedBookings.length - 1) / bookingPageSize) || 1)));
       alert('Record deleted successfully.');
@@ -487,7 +561,7 @@ export default function AdminDashboard() {
     try {
       setVerifyingPaymentId(payment.id);
       const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
-      setBookingPayments(current => current.map(item => item.id === payment.id ? res.data : item));
+      setBookingPayments(current => normalizePayments(current.map(item => item.id === payment.id ? res.data : item)));
       fetchData({ background: true });
       alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'} successfully.`);
     } catch (err) {
@@ -572,7 +646,7 @@ export default function AdminDashboard() {
         cash_in_out: cashInOut.toFixed(2),
         actual_cash: actualCash.toFixed(2),
       });
-      setEndOfDayReports(current => [res.data, ...current.filter(report => report.id !== res.data.id)]);
+      setEndOfDayReports(current => normalizeRowsById([res.data, ...current.filter(report => report.id !== res.data.id)], row => row?.report_number || row?.created_at));
       setEndOfDayModalOpen(false);
       setEndOfDayActualCash('');
       setEndOfDayOpeningCash('0.00');
@@ -605,7 +679,7 @@ export default function AdminDashboard() {
     try {
       setReceiptPrintError('');
       const res = await client.post(`/api/pos/end-of-day-reports/${report.id}/reprint/`);
-      setEndOfDayReports(current => current.map(item => item.id === report.id ? res.data : item));
+      setEndOfDayReports(current => normalizeRowsById(current.map(item => item.id === report.id ? res.data : item), row => row?.report_number || row?.created_at));
       if (!res.data.receipt_print?.printed) {
         setReceiptPrintError(res.data.receipt_print?.error || 'Report found, but the receipt could not be printed.');
       }
@@ -763,7 +837,7 @@ export default function AdminDashboard() {
       />
 
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} />
+        <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
         <main className={`flex-1 min-h-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${activeTab === 'reports' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           {receiptPrintError && (
@@ -1086,7 +1160,18 @@ export default function AdminDashboard() {
                     rows={bookingPageRows}
                     sort={bookingSort}
                     onSort={(key) => toggleSort(bookingSort, setBookingSort, key)}
-                    renderCell={(row, key) => key === 'amount' ? formatCurrency(row[key]) : key === 'status' ? <StatusBadge status={row[key]} /> : key === 'customer_name' ? <span className="font-black text-espresso">{row[key]}</span> : row[key]}
+                    renderCell={(row, key) => key === 'amount'
+                      ? formatCurrency(row[key])
+                      : key === 'status'
+                      ? <StatusBadge status={row[key]} />
+                      : key === 'customer_name'
+                      ? (
+                        <span className="inline-flex min-w-0 items-center gap-2">
+                          <Avatar user={{ username: row[key], profile_picture_url: row.customer_profile_picture_url }} size="xs" />
+                          <span className="min-w-0 truncate font-black text-espresso">{row[key]}</span>
+                        </span>
+                      )
+                      : row[key]}
                     renderActions={(row) => (
                       <button
                         type="button"
@@ -1295,6 +1380,7 @@ export default function AdminDashboard() {
                           <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr_auto] gap-4 items-start">
                             <div className="space-y-3 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
+                                <Avatar user={{ username: details.customer_name, email: details.customer_email, profile_picture_url: details.customer_profile_picture_url }} size="sm" />
                                 <p className="font-black text-espresso">{details.customer_name || 'N/A'}</p>
                                 <StatusBadge status={payment.status} />
                               </div>
@@ -1306,7 +1392,7 @@ export default function AdminDashboard() {
                                 </div>
                                 <div>
                                   <p className="text-espresso/45 font-black uppercase tracking-wider">Customer Email</p>
-                                  <p className="font-bold text-espresso">{details.customer_email || 'No email'}</p>
+                                  <p className="truncate font-bold text-espresso">{details.customer_email || 'No email'}</p>
                                 </div>
                               </div>
                             </div>
@@ -1366,7 +1452,10 @@ export default function AdminDashboard() {
                               ) : (
                                 <div className="rounded-2xl bg-cream/70 border border-espresso/[0.04] p-3 text-xs text-espresso/60">
                                   <p className="font-black text-espresso">Verified by</p>
-                                  <p>{payment.verified_by_details?.username || 'N/A'}</p>
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <Avatar user={payment.verified_by_details} size="xs" />
+                                    <p>{payment.verified_by_details?.username || 'N/A'}</p>
+                                  </div>
                                   <p>{payment.verified_at ? new Date(payment.verified_at).toLocaleString() : 'No timestamp'}</p>
                                 </div>
                               )}
@@ -1392,9 +1481,35 @@ export default function AdminDashboard() {
                 <Card className="!p-4 md:!p-5 h-full flex flex-col">
                   <CardHeader title="Add Staff User" />
                   <form onSubmit={handleCreateStaff} className="flex min-h-0 flex-1 flex-col gap-4">
-                    <Input label="Username" required value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="username" disabled={creatingStaff} />
-                    <Input label="Password" type="password" required value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="password" disabled={creatingStaff} />
-                    <Input label="Email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="staff@cav.com" disabled={creatingStaff} />
+                    <Input
+                      label="Username"
+                      required
+                      value={newUsername}
+                      onChange={e => { setNewUsername(e.target.value); setNewStaffErrors(current => ({ ...current, username: '' })); }}
+                      placeholder="username"
+                      disabled={creatingStaff}
+                      error={newStaffErrors.username}
+                    />
+                    <Input
+                      label="Password"
+                      type="password"
+                      required
+                      value={newPassword}
+                      onChange={e => { setNewPassword(e.target.value); setNewStaffErrors(current => ({ ...current, password: '' })); }}
+                      placeholder="password"
+                      disabled={creatingStaff}
+                      error={newStaffErrors.password}
+                    />
+                    <PasswordStrength password={newPassword} />
+                    <Input
+                      label="Email"
+                      type="email"
+                      value={newEmail}
+                      onChange={e => { setNewEmail(e.target.value); setNewStaffErrors(current => ({ ...current, email: '' })); }}
+                      placeholder="staff@cav.com"
+                      disabled={creatingStaff}
+                      error={newStaffErrors.email}
+                    />
                     <Select
                       label="Role"
                       value={newRole}
@@ -1406,7 +1521,7 @@ export default function AdminDashboard() {
                         { value: 'CUSTOMER', label: 'Customer Profile' },
                       ]}
                     />
-                    <Button type="submit" variant="primary" className="mt-auto w-full" icon={Plus} loading={creatingStaff} disabled={creatingStaff}>
+                    <Button type="submit" variant="primary" className="mt-auto w-full" icon={Plus} loading={creatingStaff} disabled={creatingStaff || !newStaffFormValid}>
                       Create Staff Access
                     </Button>
                   </form>
@@ -1420,7 +1535,16 @@ export default function AdminDashboard() {
                     <div className="flex min-h-0 flex-1 flex-col">
                     <DashboardTable
                       columns={[
-                        { key: 'username', label: 'Username' },
+                        {
+                          key: 'username',
+                          label: 'Username',
+                          render: st => (
+                            <span className="inline-flex min-w-0 items-center gap-2">
+                              <Avatar user={st} size="xs" />
+                              <span className="min-w-0 truncate">{st.username}</span>
+                            </span>
+                          ),
+                        },
                         { key: 'email', label: 'Email', render: st => st.email || 'N/A' },
                         { key: 'role', label: 'Role', render: st => <StatusBadge status={st.role} /> },
                       ]}
@@ -1468,15 +1592,32 @@ export default function AdminDashboard() {
                 <Card className="!p-4 md:!p-5">
                   <CardHeader title={editingFaq ? 'Update FAQ Entry' : 'Add FAQ Entry'} />
                   <form onSubmit={handleFAQSubmit} className="space-y-4">
-                    <Input label="Question" required value={faqQuestion} onChange={e => setFaqQuestion(e.target.value)} placeholder="e.g. Do you accept credit cards?" disabled={faqSaving} />
-                    <Textarea label="Answer" required value={faqAnswer} onChange={e => setFaqAnswer(e.target.value)} placeholder="e.g. Yes! We accept Mastercard, Visa, and GCash." rows={4} disabled={faqSaving} />
+                    <Input
+                      label="Question"
+                      required
+                      value={faqQuestion}
+                      onChange={e => { setFaqQuestion(e.target.value); setFaqErrors(current => ({ ...current, question: '' })); }}
+                      placeholder="e.g. Do you accept credit cards?"
+                      disabled={faqSaving}
+                      error={faqErrors.question}
+                    />
+                    <Textarea
+                      label="Answer"
+                      required
+                      value={faqAnswer}
+                      onChange={e => { setFaqAnswer(e.target.value); setFaqErrors(current => ({ ...current, answer: '' })); }}
+                      placeholder="e.g. Yes! We accept Mastercard, Visa, and GCash."
+                      rows={4}
+                      disabled={faqSaving}
+                      error={faqErrors.answer}
+                    />
                     <Input label="Tags / Keywords" value={faqTags} onChange={e => setFaqTags(e.target.value)} placeholder="e.g. card, payment, visa" disabled={faqSaving} />
                     <div className="flex gap-2">
-                      <Button type="submit" variant="primary" className="flex-1" icon={Check} loading={faqSaving} disabled={faqSaving}>
+                      <Button type="submit" variant="primary" className="flex-1" icon={Check} loading={faqSaving} disabled={faqSaving || !faqFormValid}>
                         Publish FAQ Answer
                       </Button>
                       {editingFaq && (
-                        <Button variant="outline" onClick={() => { setFaqQuestion(''); setFaqAnswer(''); setFaqTags(''); setEditingFaq(null); }} disabled={faqSaving}>
+                        <Button variant="outline" onClick={() => { setFaqQuestion(''); setFaqAnswer(''); setFaqTags(''); setEditingFaq(null); setFaqErrors({}); }} disabled={faqSaving}>
                           Keep Current FAQ
                         </Button>
                       )}
@@ -1505,7 +1646,7 @@ export default function AdminDashboard() {
                               variant="ghost"
                               size="sm"
                               icon={Edit}
-                              onClick={() => { setEditingFaq(faq); setFaqQuestion(faq.question); setFaqAnswer(faq.answer); setFaqTags(faq.tags || ''); }}
+                              onClick={() => { setEditingFaq(faq); setFaqQuestion(faq.question); setFaqAnswer(faq.answer); setFaqTags(faq.tags || ''); setFaqErrors({}); }}
                             />
                             <Button variant="ghost" size="sm" icon={Trash2} onClick={() => handleDeleteFAQ(faq.id)} loading={deletingFaqId === faq.id} disabled={deletingFaqId === faq.id} className="text-red-500 hover:text-red-700" />
                           </div>
@@ -1647,7 +1788,11 @@ export default function AdminDashboard() {
 
       <Modal
         open={!!editingStaff}
-        onClose={() => !staffSaving && setEditingStaff(null)}
+        onClose={() => {
+          if (staffSaving) return;
+          setEditingStaff(null);
+          setEditStaffErrors({});
+        }}
         title="Edit Staff Account"
         size="md"
       >
@@ -1656,24 +1801,37 @@ export default function AdminDashboard() {
             label="Username"
             required
             value={editStaffForm.username}
-            onChange={e => setEditStaffForm(current => ({ ...current, username: e.target.value }))}
+            onChange={e => {
+              setEditStaffForm(current => ({ ...current, username: e.target.value }));
+              setEditStaffErrors(current => ({ ...current, username: '' }));
+            }}
             disabled={staffSaving}
+            error={editStaffErrors.username}
           />
           <Input
             label="Email"
             type="email"
             value={editStaffForm.email}
-            onChange={e => setEditStaffForm(current => ({ ...current, email: e.target.value }))}
+            onChange={e => {
+              setEditStaffForm(current => ({ ...current, email: e.target.value }));
+              setEditStaffErrors(current => ({ ...current, email: '' }));
+            }}
             disabled={staffSaving}
+            error={editStaffErrors.email}
           />
           <Input
             label="New Password"
             type="password"
             value={editStaffForm.password}
-            onChange={e => setEditStaffForm(current => ({ ...current, password: e.target.value }))}
+            onChange={e => {
+              setEditStaffForm(current => ({ ...current, password: e.target.value }));
+              setEditStaffErrors(current => ({ ...current, password: '' }));
+            }}
             placeholder="Leave blank to keep current password"
             disabled={staffSaving}
+            error={editStaffErrors.password}
           />
+          {editStaffForm.password && <PasswordStrength password={editStaffForm.password} />}
           <Select
             label="Role"
             value={editStaffForm.role}
@@ -1686,10 +1844,10 @@ export default function AdminDashboard() {
             ]}
           />
           <div className="flex flex-col sm:flex-row gap-2 pt-2">
-            <Button type="submit" variant="primary" className="flex-1" loading={staffSaving} icon={Check}>
+            <Button type="submit" variant="primary" className="flex-1" loading={staffSaving} disabled={staffSaving || !editStaffFormValid} icon={Check}>
               Update Account
             </Button>
-            <Button type="button" variant="outline" onClick={() => setEditingStaff(null)} disabled={staffSaving}>
+            <Button type="button" variant="outline" onClick={() => { setEditingStaff(null); setEditStaffErrors({}); }} disabled={staffSaving}>
               Keep Current Details
             </Button>
           </div>

@@ -13,6 +13,20 @@ import { MobileHeader } from '../components/ui/MobileHeader';
 import { Modal } from '../components/ui/Modal';
 import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
+import { Avatar, getAvatarUrl } from '../components/ui/Avatar';
+import {
+  normalizeBooking,
+  normalizeBookings,
+  normalizeGalleryImages,
+  normalizeServices,
+  recordKey,
+  uniqueBy,
+} from '../utils/uniqueRecords';
+import {
+  decorateServicesWithAssets,
+  getPackageGalleryImages,
+  localGalleryImages,
+} from '../utils/cavAssets';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -64,36 +78,7 @@ const getPackageGalleryCategory = (pkg, service) => {
   return 'STUDIO';
 };
 
-const packageSampleFallbacks = [
-  {
-    id: 'sample-studio-portrait',
-    category: 'STUDIO',
-    title: 'Studio Portrait Sample',
-    image_url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=900',
-    alt_text: 'Studio portrait sample',
-  },
-  {
-    id: 'sample-studio-setup',
-    category: 'STUDIO',
-    title: 'Studio Lighting Setup',
-    image_url: 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=900',
-    alt_text: 'Studio lighting and camera setup',
-  },
-  {
-    id: 'sample-studio-family',
-    category: 'STUDIO',
-    title: 'Family Session Sample',
-    image_url: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?q=80&w=900',
-    alt_text: 'Family photo session sample',
-  },
-  {
-    id: 'sample-event',
-    category: 'EVENTS',
-    title: 'Event Session Sample',
-    image_url: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?q=80&w=900',
-    alt_text: 'Event photography sample',
-  },
-];
+const packageSampleFallbacks = localGalleryImages;
 
 const bookingFlowSteps = ['Booked', 'Confirmed', 'Payment', 'Completed'];
 
@@ -171,48 +156,6 @@ const formatPeso = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', 
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
 })}`;
-
-const normalizeId = (value) => String(value ?? '').trim();
-
-const uniqueBy = (rows, getKey) => {
-  const seen = new Set();
-  return (Array.isArray(rows) ? rows : []).filter(row => {
-    const key = normalizeId(getKey(row));
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-};
-
-const mergeBookingItems = (items) => {
-  const merged = new Map();
-  (Array.isArray(items) ? items : []).forEach(item => {
-    const name = String(item?.name || '').trim();
-    if (!name) return;
-    const key = name.toLowerCase();
-    const quantity = Math.max(Number(item?.quantity || 1), 1);
-    const existing = merged.get(key);
-    if (existing) {
-      existing.quantity += quantity;
-      return;
-    }
-    merged.set(key, { ...item, name, quantity });
-  });
-  return Array.from(merged.values());
-};
-
-const normalizeBooking = (booking) => ({
-  ...booking,
-  items: mergeBookingItems(booking?.items),
-  payments: uniqueBy(booking?.payments, payment => payment.id || `${payment.reference_number}-${payment.created_at}`),
-});
-
-const normalizeBookings = (rows) => uniqueBy(rows, row => row.id).map(normalizeBooking);
-
-const normalizeServices = (rows) => uniqueBy(rows, row => row.id || row.name).map(service => ({
-  ...service,
-  packages: uniqueBy(service.packages, pkg => pkg.id || `${pkg.service}-${pkg.name}`),
-}));
 
 const createIdempotencyKey = (prefix) => {
   const random = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -334,9 +277,10 @@ function CustomerSkeleton() {
 }
 
 export default function CustomerDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateStoredUser } = useAuth();
   const navigate = useNavigate();
   const confirm = useStyledConfirm();
+  const userId = user?.id;
   const [activeTab, setActiveTab] = useState('book');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
@@ -354,6 +298,10 @@ export default function CustomerDashboard() {
   const [points, setPoints] = useState(0);
   const [loyaltyTier, setLoyaltyTier] = useState('Bronze');
   const [profileSaving, setProfileSaving] = useState(false);
+  const [profilePictureFile, setProfilePictureFile] = useState(null);
+  const [profilePicturePreview, setProfilePicturePreview] = useState('');
+  const [profilePictureRemove, setProfilePictureRemove] = useState(false);
+  const [profileErrors, setProfileErrors] = useState({});
 
   const [selectedService, setSelectedService] = useState(null);
   const [selectedPackage, setSelectedPackage] = useState(null);
@@ -404,6 +352,7 @@ export default function CustomerDashboard() {
   const bookingSubmitClickRef = useRef(0);
   const bookingIdempotencyKeyRef = useRef('');
   const paymentIdempotencyKeyRef = useRef('');
+  const dashboardFetchSeqRef = useRef(0);
 
   useEffect(() => {
     const handleResize = () => setCardsPerSlide(window.innerWidth < 640 ? 1 : 2);
@@ -425,6 +374,12 @@ export default function CustomerDashboard() {
     };
   }, [paymentReceiptPreview]);
 
+  useEffect(() => {
+    return () => {
+      if (profilePicturePreview) URL.revokeObjectURL(profilePicturePreview);
+    };
+  }, [profilePicturePreview]);
+
   const allPackages = uniqueBy(services.flatMap(service => (
     (service.packages || []).map(pkg => ({
       ...pkg,
@@ -434,6 +389,27 @@ export default function CustomerDashboard() {
       serviceImageUrl: service.image_url,
     }))
   )), pkg => pkg.id || `${pkg.service}-${pkg.name}`);
+
+  useEffect(() => {
+    if (!selectedService) return;
+    const currentService = services.find(service => recordKey(service, service.name) === recordKey(selectedService, selectedService.name));
+    if (!currentService) {
+      setSelectedService(null);
+      setSelectedPackage(null);
+      setSelectedDate('');
+      setSelectedTime('');
+      setDayAvailability(null);
+      setPackageSlide(0);
+      return;
+    }
+    if (currentService !== selectedService) {
+      setSelectedService(currentService);
+      if (selectedPackage) {
+        const currentPackage = (currentService.packages || []).find(pkg => recordKey(pkg, pkg.name) === recordKey(selectedPackage, selectedPackage.name));
+        setSelectedPackage(currentPackage || null);
+      }
+    }
+  }, [services, selectedService, selectedPackage]);
 
   const [chatMessages, setChatMessages] = useState([
     { role: 'assistant', content: 'Hello! I am your CAV AI assistant. How can I help you today? You can ask me about studio rooms, slots, packages, or coffee!' }
@@ -461,6 +437,17 @@ export default function CustomerDashboard() {
     if (currentStep === 4) return true;
     return false;
   }, [currentStep, selectedService, selectedPackage, selectedDate, selectedTime, firstName, lastName, bookingEmail, phone]);
+
+  const validateProfileForm = () => {
+    const errors = {
+      firstName: firstName.trim() ? '' : 'First name is required.',
+      lastName: lastName.trim() ? '' : 'Last name is required.',
+      phone: phone.trim() ? (isValidPhone(phone) ? '' : 'Enter a valid phone number.') : 'Phone number is required.',
+    };
+    return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
+  };
+
+  const profileFormValid = !Object.keys(validateProfileForm()).length;
 
   useEffect(() => {
     if (chatOpen) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -490,32 +477,48 @@ export default function CustomerDashboard() {
   useEffect(() => {
     client.get('/api/chatbot/faqs/')
       .then(res => {
-        const prompts = res.data.map(faq => faq.question).filter(Boolean).slice(0, 6);
+        const prompts = uniqueBy(res.data.map(faq => faq.question).filter(Boolean), question => question.toLowerCase()).slice(0, 6);
         if (prompts.length) setChatFaqPrompts(prompts);
       })
       .catch(() => {});
   }, []);
 
   const fetchDashboardData = useCallback(async () => {
+    const requestSeq = dashboardFetchSeqRef.current + 1;
+    dashboardFetchSeqRef.current = requestSeq;
     try {
       setLoading(true);
-      const [servicesRes, bookingsRes, profileRes, galleryRes] = await Promise.all([
+      const [servicesRes, bookingsRes, profileRes] = await Promise.all([
         client.get('/api/bookings/services/'),
         client.get('/api/bookings/'),
-        client.get('/api/auth/profile/'),
-        client.get('/api/gallery/images/').catch(() => ({ data: [] }))
+        client.get('/api/auth/profile/')
       ]);
-      const uniqueServices = normalizeServices(servicesRes.data);
+      const uniqueServices = decorateServicesWithAssets(normalizeServices(servicesRes.data));
       const uniqueBookings = normalizeBookings(bookingsRes.data);
+      if (requestSeq !== dashboardFetchSeqRef.current) return;
       setServices(uniqueServices);
       setBookings(uniqueBookings);
-      setGalleryImages(Array.isArray(galleryRes.data) ? galleryRes.data : []);
+      setGalleryImages(normalizeGalleryImages(localGalleryImages));
       const p = profileRes.data;
       setFirstName(p.first_name || '');
       setLastName(p.last_name || '');
       setBookingEmail(p.email || user?.email || '');
       setPhone(p.phone_number || '');
       setAddress(p.address || '');
+      updateStoredUser?.({
+        username: p.username,
+        email: p.email,
+        role: p.role,
+        first_name: p.first_name,
+        last_name: p.last_name,
+        profile_picture_url: p.profile_picture_url,
+      });
+      setProfilePictureFile(null);
+      setProfilePictureRemove(false);
+      setProfilePicturePreview(current => {
+        if (current) URL.revokeObjectURL(current);
+        return '';
+      });
       if (p.customer_profile) {
         setPoints(p.customer_profile.points || 0);
         setLoyaltyTier(p.customer_profile.loyalty_tier || 'Bronze');
@@ -536,18 +539,49 @@ export default function CustomerDashboard() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (requestSeq === dashboardFetchSeqRef.current) setLoading(false);
     }
-  }, [user?.email]);
+  }, [user?.email, updateStoredUser]);
+
+  const handleProfilePictureChange = (file) => {
+    if (!file) return;
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Profile picture must be a JPG, PNG, or WEBP image.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Profile picture must be 2MB or smaller.');
+      return;
+    }
+    setProfilePictureFile(file);
+    setProfilePictureRemove(false);
+    setProfilePicturePreview(current => {
+      if (current) URL.revokeObjectURL(current);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const clearSelectedProfilePicture = () => {
+    setProfilePictureFile(null);
+    setProfilePictureRemove(true);
+    setProfilePicturePreview(current => {
+      if (current) URL.revokeObjectURL(current);
+      return '';
+    });
+  };
 
   useEffect(() => {
-    if (!user) { navigate('/login'); return; }
+    if (!userId) { navigate('/login'); return; }
     fetchDashboardData();
-  }, [user, navigate, fetchDashboardData]);
+  }, [userId, navigate, fetchDashboardData]);
 
   const handleProfileUpdate = async (e) => {
     e.preventDefault();
     if (profileSaving) return;
+    const errors = validateProfileForm();
+    setProfileErrors(errors);
+    if (Object.keys(errors).length) return;
     const confirmed = await confirm({
       title: 'Update Profile',
       message: 'Save changes to your profile?',
@@ -557,10 +591,33 @@ export default function CustomerDashboard() {
     if (!confirmed) return;
     try {
       setProfileSaving(true);
-      await client.patch('/api/auth/profile/', {
-        first_name: firstName, last_name: lastName,
-        phone_number: phone, address
+      const formData = new FormData();
+      formData.append('first_name', firstName);
+      formData.append('last_name', lastName);
+      formData.append('phone_number', phone);
+      formData.append('address', address);
+      if (profilePictureFile) formData.append('profile_picture', profilePictureFile);
+      if (profilePictureRemove) formData.append('remove_profile_picture', 'true');
+
+      const res = await client.patch('/api/auth/profile/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
+      const updatedUser = res.data || {};
+      updateStoredUser?.({
+        username: updatedUser.username,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        first_name: updatedUser.first_name,
+        last_name: updatedUser.last_name,
+        profile_picture_url: updatedUser.profile_picture_url,
+      });
+      setProfilePictureFile(null);
+      setProfilePictureRemove(false);
+      setProfilePicturePreview(current => {
+        if (current) URL.revokeObjectURL(current);
+        return '';
+      });
+      setProfileErrors({});
       fetchDashboardData();
       alert('Profile updated successfully.');
     } catch {
@@ -1119,6 +1176,12 @@ export default function CustomerDashboard() {
   const pageTitles = { book: 'Book a Session', history: 'Booking History', profile: 'My Profile', notifications: 'Notifications' };
 
   const customerFullName = `${firstName} ${lastName}`.trim();
+  const profileAvatarUser = {
+    ...user,
+    first_name: firstName,
+    last_name: lastName,
+    profile_picture_url: profilePictureRemove ? '' : (profilePicturePreview || user?.profile_picture_url || ''),
+  };
   const handleCustomerFullNameChange = (value) => {
     const cleanValue = value.replace(/\s+/g, ' ').trimStart();
     const parts = cleanValue.trim().split(' ').filter(Boolean);
@@ -1139,7 +1202,8 @@ export default function CustomerDashboard() {
   const detailInclusions = splitPackageText(detailPackage?.inclusions);
   const detailOutputs = getPackagePhotoOutputs(detailPackage);
   const detailGalleryCategory = getPackageGalleryCategory(detailPackage, detailService);
-  const detailGallerySource = galleryImages.length ? galleryImages : packageSampleFallbacks;
+  const packageSpecificImages = detailPackage ? getPackageGalleryImages(detailPackage, detailService) : [];
+  const detailGallerySource = packageSpecificImages.length ? packageSpecificImages : (galleryImages.length ? galleryImages : packageSampleFallbacks);
   const detailGalleryImages = detailGallerySource
     .filter(item => item.image_url && item.category === detailGalleryCategory)
     .slice(0, 4);
@@ -1232,7 +1296,7 @@ export default function CustomerDashboard() {
       />
 
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} />
+        <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
           {/* BOOK SESSION */}
@@ -1344,7 +1408,7 @@ export default function CustomerDashboard() {
                           <div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {services.map(svc => (
-                                <button key={svc.id}
+                                <button key={recordKey(svc, svc.name)}
                                   type="button"
                                   onClick={() => { 
                                     setSelectedService(svc); 
@@ -1362,9 +1426,9 @@ export default function CustomerDashboard() {
                                   aria-pressed={selectedService?.id === svc.id}
                                 >
                                   {/* Hero image */}
-                                  <div className="relative w-full h-28 bg-cream overflow-hidden shrink-0">
+                                  <div className="relative w-full aspect-[4/3] bg-cream overflow-hidden shrink-0">
                                     {svc.image_url ? (
-                                      <img src={svc.image_url} alt={svc.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                      <img src={svc.image_url} alt={svc.name} style={{ objectPosition: svc.image_position || '50% 34%' }} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                         onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
                                     ) : null}
                                     <div className="w-full h-full flex items-center justify-center text-4xl text-espresso/20"
@@ -1463,12 +1527,12 @@ export default function CustomerDashboard() {
                                           }}
                                         >
                                           {slides.map((slidePkgs, si) => (
-                                            <div key={si} className="flex shrink-0 w-full" style={{ flex: '0 0 100%' }}>
+                                            <div key={slidePkgs.map(pkg => recordKey(pkg, pkg.name)).join('-') || si} className="flex shrink-0 w-full" style={{ flex: '0 0 100%' }}>
                                               {slidePkgs.map(pkg => {
                                                 const parsed = parseDescription(pkg.description);
                                                 const isSelected = selectedPackage?.id === pkg.id;
                                                 return (
-                                                  <div key={pkg.id} style={{ flex: `0 0 ${100 / cardsPerSlide}%` }} className="p-1.5">
+                                                  <div key={recordKey(pkg, `${selectedService.id}-${pkg.name}`)} style={{ flex: `0 0 ${100 / cardsPerSlide}%` }} className="p-1.5">
                                                     <div
                                                       className={`w-full rounded-2xl border-2 text-left flex flex-col transition-all duration-300 h-full group/card relative ${
                                                         isSelected 
@@ -1476,6 +1540,17 @@ export default function CustomerDashboard() {
                                                           : 'border-espresso/10 hover:border-espresso/30 bg-white hover:shadow-sm'
                                                       }`}
                                                     >
+                                                      {pkg.image_url && (
+                                                        <div className="aspect-[4/3] overflow-hidden rounded-t-[14px] bg-cream">
+                                                          <img
+                                                            src={pkg.image_url}
+                                                            alt={`${pkg.name} sample`}
+                                                            loading="lazy"
+                                                            style={{ objectPosition: pkg.image_position || '50% 34%' }}
+                                                            className="h-full w-full object-cover transition-transform duration-500 group-hover/card:scale-105"
+                                                          />
+                                                        </div>
+                                                      )}
                                                       <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                                                         {/* Top row: Icon and Title */}
                                                         <div className="flex items-start gap-2.5">
@@ -2167,7 +2242,7 @@ export default function CustomerDashboard() {
               {bookings.length > 0 ? (
                 <div className="space-y-6 md:space-y-8">
                   {bookings.map((b, i) => (
-                      <div key={b.id} className="group rounded-[20px] bg-white/85 backdrop-blur-xl border border-espresso/[0.07] shadow-[0_18px_44px_rgba(46,26,17,0.075),0_3px_12px_rgba(46,26,17,0.04)] hover:shadow-[0_28px_70px_rgba(46,26,17,0.12),0_8px_18px_rgba(46,26,17,0.05)] hover:-translate-y-0.5 transition-all duration-300 p-4 md:p-5 animate-in-up" style={{ animationDelay: `${i * 45}ms` }}>
+                      <div key={recordKey(b, `${b.scheduled_date}-${b.scheduled_time}`)} className="group rounded-[20px] bg-white/85 backdrop-blur-xl border border-espresso/[0.07] shadow-[0_18px_44px_rgba(46,26,17,0.075),0_3px_12px_rgba(46,26,17,0.04)] hover:shadow-[0_28px_70px_rgba(46,26,17,0.12),0_8px_18px_rgba(46,26,17,0.05)] hover:-translate-y-0.5 transition-all duration-300 p-4 md:p-5 animate-in-up" style={{ animationDelay: `${i * 45}ms` }}>
                         {(() => {
                           const statusMeta = getStatusMeta(b.status);
                           const StatusIcon = statusMeta.icon;
@@ -2177,9 +2252,7 @@ export default function CustomerDashboard() {
                           return (
                             <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,1.1fr)_minmax(300px,1fr)_240px] gap-4 md:gap-5 items-stretch">
                               <div className="flex gap-4 min-w-0">
-                                <div className="w-20 h-20 md:w-24 md:h-24 rounded-[18px] bg-gradient-to-br from-cream-dark to-white border border-espresso/[0.06] shadow-inner overflow-hidden shrink-0 flex items-center justify-center">
-                                  <Camera className="w-8 h-8 text-gold-dark/70" />
-                                </div>
+                                <Avatar user={b.customer || profileAvatarUser} size="lg" className="h-20 w-20 rounded-[18px] md:h-24 md:w-24" />
                                 <div className="min-w-0 flex-1 space-y-2">
                                   <div className="flex items-start gap-2 flex-wrap">
                                     <h3 className="text-base md:text-lg font-black text-espresso leading-snug">{getBookingCustomerName(b)}</h3>
@@ -2263,7 +2336,7 @@ export default function CustomerDashboard() {
                                 <div className="flex flex-wrap gap-2">
                                   {b.items?.length > 0 ? (
                                     b.items.map((item) => (
-                                      <span key={`${item.name}-${item.id}`} className="inline-flex items-center rounded-full bg-white/80 border border-espresso/[0.06] px-3 py-1 text-[10px] font-bold text-espresso/70 shadow-sm">
+                                      <span key={recordKey(item, item.name)} className="inline-flex items-center rounded-full bg-white/80 border border-espresso/[0.06] px-3 py-1 text-[10px] font-bold text-espresso/70 shadow-sm">
                                         {item.name}{item.quantity > 1 ? ` x${item.quantity}` : ''}
                                       </span>
                                     ))
@@ -2342,15 +2415,65 @@ export default function CustomerDashboard() {
                   <Card>
                     <CardHeader title="Personal Information" />
                     <form onSubmit={handleProfileUpdate} className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <Input label="First Name" value={firstName} onChange={e => setFirstName(e.target.value)} disabled={profileSaving} />
-                        <Input label="Last Name" value={lastName} onChange={e => setLastName(e.target.value)} disabled={profileSaving} />
+                      <div className="flex flex-col gap-4 rounded-2xl border border-espresso/[0.06] bg-cream/60 p-4 sm:flex-row sm:items-center">
+                        <Avatar user={profileAvatarUser} size="xl" />
+                        <div className="min-w-0 flex-1 space-y-3">
+                          <div>
+                            <p className="text-sm font-black text-espresso">Profile Picture</p>
+                            <p className="mt-1 text-xs font-semibold leading-relaxed text-espresso/52">
+                              Upload a square-friendly JPG, PNG, or WEBP image up to 2MB.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <label className={`inline-flex min-h-9 cursor-pointer items-center justify-center rounded-xl bg-espresso px-3.5 py-2 text-xs font-bold text-cream shadow-[0_14px_34px_rgba(46,26,17,0.18)] transition-all hover:-translate-y-0.5 hover:bg-espresso-light ${profileSaving ? 'pointer-events-none opacity-55' : ''}`}>
+                              Upload Photo
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                className="sr-only"
+                                disabled={profileSaving}
+                                onChange={e => handleProfilePictureChange(e.target.files?.[0])}
+                              />
+                            </label>
+                            {(getAvatarUrl(user) || profilePicturePreview) && (
+                              <Button type="button" variant="outline" size="sm" onClick={clearSelectedProfilePicture} disabled={profileSaving}>
+                                Remove Photo
+                              </Button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <Input label="Phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)} disabled={profileSaving} />
+                      <div className="grid grid-cols-2 gap-4">
+                        <Input
+                          label="First Name"
+                          required
+                          value={firstName}
+                          onChange={e => { setFirstName(e.target.value); setProfileErrors(current => ({ ...current, firstName: '' })); }}
+                          disabled={profileSaving}
+                          error={profileErrors.firstName}
+                        />
+                        <Input
+                          label="Last Name"
+                          required
+                          value={lastName}
+                          onChange={e => { setLastName(e.target.value); setProfileErrors(current => ({ ...current, lastName: '' })); }}
+                          disabled={profileSaving}
+                          error={profileErrors.lastName}
+                        />
+                      </div>
+                      <Input
+                        label="Phone"
+                        type="tel"
+                        required
+                        value={phone}
+                        onChange={e => { setPhone(e.target.value); setProfileErrors(current => ({ ...current, phone: '' })); }}
+                        disabled={profileSaving}
+                        error={profileErrors.phone}
+                      />
                       <Textarea label="Address" value={address} onChange={e => setAddress(e.target.value)} rows={3} disabled={profileSaving} />
                       <div className="flex items-center gap-3 pt-2">
-                        <Button type="submit" variant="primary" loading={profileSaving} disabled={profileSaving}>Update My Profile</Button>
-                        <Button type="button" variant="outline" size="sm" onClick={fetchDashboardData} disabled={profileSaving}>Restore Saved Info</Button>
+                        <Button type="submit" variant="primary" loading={profileSaving} disabled={profileSaving || !profileFormValid}>Update My Profile</Button>
+                        <Button type="button" variant="outline" size="sm" onClick={() => { setProfileErrors({}); fetchDashboardData(); }} disabled={profileSaving}>Restore Saved Info</Button>
                       </div>
                     </form>
                   </Card>
@@ -2366,9 +2489,12 @@ export default function CustomerDashboard() {
                     <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full blur-2xl" />
                     <div className="relative z-10 space-y-5">
                       <div className="flex justify-between items-start">
-                        <div>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Avatar user={profileAvatarUser} size="md" className="border-white/10 bg-white/10 text-cream" />
+                          <div className="min-w-0">
                           <p className="text-[9px] uppercase tracking-widest text-gold font-bold">Loyalty Card</p>
-                          <h4 className="font-sans text-xl font-extrabold mt-1 text-white">{user?.username}</h4>
+                          <h4 className="mt-1 truncate font-sans text-xl font-extrabold text-white">{user?.username}</h4>
+                          </div>
                         </div>
                         <span className="bg-gold/10 text-gold border border-gold/20 rounded-lg px-2.5 py-0.5 text-xs font-bold uppercase">{loyaltyTier}</span>
                       </div>
@@ -2502,6 +2628,7 @@ export default function CustomerDashboard() {
                           src={image.image_url}
                           alt={image.alt_text || image.title || detailPackage.name}
                           loading="lazy"
+                          style={{ objectPosition: image.object_position || '50% 34%' }}
                           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />
                         <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-espresso-dark/80 to-transparent p-2 text-[9px] font-bold text-white opacity-0 transition-opacity duration-300 group-hover:opacity-100">
@@ -2619,7 +2746,7 @@ export default function CustomerDashboard() {
                     >
                       <option value="">Select package</option>
                       {allPackages.map(pkg => (
-                        <option key={pkg.id} value={pkg.id}>
+                        <option key={recordKey(pkg, `${pkg.serviceName}-${pkg.name}`)} value={pkg.id}>
                           {pkg.serviceName} - {pkg.name} ({formatPeso(pkg.price)})
                         </option>
                       ))}
@@ -2872,7 +2999,7 @@ export default function CustomerDashboard() {
                 {selectedBookingDetails.items?.length > 0 ? (
                   <div className="space-y-2">
                     {selectedBookingDetails.items.map((item) => (
-                      <div key={`${item.id}-${item.name}`} className="flex justify-between gap-3 text-espresso/70">
+                      <div key={recordKey(item, item.name)} className="flex justify-between gap-3 text-espresso/70">
                         <span>{item.name} x{item.quantity}</span>
                         <span className="font-bold text-espresso">{formatPeso(Number(item.price) * Number(item.quantity || 1))}</span>
                       </div>

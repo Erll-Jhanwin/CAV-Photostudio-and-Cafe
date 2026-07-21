@@ -158,6 +158,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
         discount_data = request.data.get('discount') or {}
         booking_id = request.data.get('booking_id')
         order_type = request.data.get('order_type', 'WALK_IN')
+        should_print_receipt = str(request.data.get('print_receipt', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
 
         if not items_data or not isinstance(items_data, list):
             return Response({"detail": "Cart items must be a non-empty list."}, status=status.HTTP_400_BAD_REQUEST)
@@ -299,11 +300,20 @@ class OrderListCreateView(generics.ListCreateAPIView):
             AuditLog.objects.create(user=request.user, action="POS_ORDER", description=f"Processed POS transaction {order.transaction_id or '#' + str(order.id)} for PHP {order.total} (Status: {order.payment_status}).")
 
         receipt_payload = build_receipt_payload(order, payment, request.user.username, amount_paid)
-        receipt_payload["receipt_print"] = print_receipt(receipt_payload) if receipt_payload["payment_status"] == "PAID" else {
-            "printed": False,
-            "printer": None,
-            "error": "Receipt was not printed because the order is not fully paid.",
-        }
+        if receipt_payload["payment_status"] == "PAID" and should_print_receipt:
+            receipt_payload["receipt_print"] = print_receipt(receipt_payload)
+        elif receipt_payload["payment_status"] == "PAID":
+            receipt_payload["receipt_print"] = {
+                "printed": False,
+                "printer": None,
+                "error": "Receipt printing was skipped for this synced transaction.",
+            }
+        else:
+            receipt_payload["receipt_print"] = {
+                "printed": False,
+                "printer": None,
+                "error": "Receipt was not printed because the order is not fully paid.",
+            }
         return Response(receipt_payload, status=status.HTTP_201_CREATED)
 
 

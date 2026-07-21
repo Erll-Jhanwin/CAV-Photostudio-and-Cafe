@@ -44,28 +44,31 @@ class Command(BaseCommand):
                 Customer.objects.get_or_create(user=user, defaults={'points': 150, 'loyalty_tier': 'Bronze', 'notes': 'Demo customer account.'})
 
     def seed_booking_services(self):
-        self_shoot, _ = Service.objects.get_or_create(
-            name='Self-Shoot Studio',
+        studio, _ = Service.objects.get_or_create(
+            name='Studio Session',
             defaults={
-                'description': 'Enjoy a private studio session with professional cameras, lighting, and trigger buttons.',
-                'duration_minutes': 30,
-                'base_price': 500.00,
-                'image_url': 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=600',
+                'description': 'Standard studio photo session packages for solo, couple, friends, family, and birthdays.',
+                'duration_minutes': 60,
+                'base_price': 1000.00,
+                'image_url': '/assets/pics/solo/solo%20pic%20landscape.jpg',
             },
         )
-        portrait, _ = Service.objects.get_or_create(
-            name='Boutique Portrait',
+        events, _ = Service.objects.get_or_create(
+            name='Photo Service Booking',
             defaults={
-                'description': 'Professional studio portrait taken by our resident photographer.',
-                'duration_minutes': 60,
-                'base_price': 1200.00,
-                'image_url': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=600',
+                'description': 'Full-service booking process for events and extended photoshoots.',
+                'duration_minutes': 120,
+                'base_price': 2500.00,
+                'image_url': '/assets/pics/events/standard%20event%20package.jpg',
             },
         )
         for service, name, price, description, inclusions in [
-            (self_shoot, 'Single Session', 500.00, 'Perfect for solo shoots.', '30 mins studio shoot, 15 mins photo selection, 1 digital soft copy'),
-            (self_shoot, 'Duo Pack', 800.00, 'Bring a friend or partner.', '45 mins studio shoot, 15 mins photo selection, 2 digital soft copies, 2 premium prints'),
-            (portrait, 'Solo Premium', 1500.00, 'Executive, business, or premium graduation portrait.', '60 mins shoot by photographer, professional editing, 5 soft copies, 2 premium physical prints'),
+            (studio, 'Solo Package', 1000.00, '1 person / 5 shots', '1 person, 5 shots, studio lighting, backdrop selection, basic retouching, digital soft copies'),
+            (studio, 'Mr. & Ms. / Couple Package', 1000.00, '2 persons / 10 shots', '2 persons, 10 shots, studio lighting, backdrop selection, basic retouching, digital soft copies'),
+            (studio, 'Mr. & Ms. Friends Package', 1000.00, '3-5 persons / 15 shots', '3-5 persons, 15 shots, studio lighting, backdrop selection, basic retouching, digital soft copies'),
+            (studio, 'Family Package', 1500.00, '2-6 persons / 15 shots', '2-6 persons, 15 shots, studio lighting, backdrop selection, basic retouching, digital soft copies'),
+            (studio, 'Birthday Package', 1500.00, '1-4 persons / 15 shots', '1-4 persons, 15 shots, studio lighting, backdrop selection, basic retouching, digital soft copies, birthday props'),
+            (events, 'Standard Event Package', 2500.00, '2 hours event/program photoshoot', '2 hours coverage, availability validation, layout setup, printing coordination, final digital file record'),
         ]:
             Package.objects.get_or_create(service=service, name=name, defaults={'price': price, 'description': description, 'inclusions': inclusions})
 

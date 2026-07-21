@@ -77,10 +77,30 @@ class IngredientSerializer(serializers.ModelSerializer):
         minimum = attrs.get('minimum_stock_level', getattr(self.instance, 'minimum_stock_level', 0))
         maximum = attrs.get('maximum_stock_level', getattr(self.instance, 'maximum_stock_level', 0))
         quantity = attrs.get('stock_quantity', getattr(self.instance, 'stock_quantity', 0))
+        required = {
+            'name': 'Ingredient name is required.',
+            'category': 'Category is required.',
+            'supplier': 'Supplier is required.',
+            'base_unit': 'Base unit is required.',
+            'purchase_date': 'Purchase date is required.',
+            'batch_number': 'Batch number is required.',
+            'storage_location': 'Storage location is required.',
+        }
+        field_errors = {}
+        for field, message in required.items():
+            value = attrs.get(field, getattr(self.instance, field, None))
+            if value in (None, ''):
+                field_errors[field] = message
         if minimum < 0 or maximum < 0 or quantity < 0:
-            raise serializers.ValidationError("Stock quantities cannot be negative.")
+            field_errors['stock_quantity'] = "Stock quantities cannot be negative."
         if maximum and maximum < minimum:
-            raise serializers.ValidationError({"maximum_stock_level": "Maximum Stock Level must be greater than or equal to Minimum Stock Level."})
+            field_errors["maximum_stock_level"] = "Maximum Stock Level must be greater than or equal to Minimum Stock Level."
+        purchase_date = attrs.get('purchase_date', getattr(self.instance, 'purchase_date', None))
+        expiration_date = attrs.get('expiration_date', getattr(self.instance, 'expiration_date', None))
+        if purchase_date and expiration_date and expiration_date < purchase_date:
+            field_errors['expiration_date'] = "Expiration date cannot be before purchase date."
+        if field_errors:
+            raise serializers.ValidationError(field_errors)
         return attrs
 
     def create(self, validated_data):

@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useCallback, useState, useEffect, useContext } from 'react';
 import client from '../api/client';
 
 const AuthContext = createContext(null);
@@ -21,9 +21,9 @@ export const AuthProvider = ({ children }) => {
   const login = async (username, password) => {
     try {
       const response = await client.post('/api/auth/login/', { username, password });
-      const { access, refresh, role, email, id } = response.data;
+      const { access, refresh, role, email, id, profile_picture_url } = response.data;
       
-      const userData = { id, username, email, role };
+      const userData = { id, username, email, role, profile_picture_url };
       
       localStorage.setItem('access_token', access);
       localStorage.setItem('refresh_token', refresh);
@@ -41,9 +41,9 @@ export const AuthProvider = ({ children }) => {
   const loginWithGoogle = async (credential) => {
     try {
       const response = await client.post('/api/auth/google/', { credential });
-      const { access, refresh, role, username, email, id } = response.data;
+      const { access, refresh, role, username, email, id, profile_picture_url } = response.data;
 
-      const userData = { id, username, email, role };
+      const userData = { id, username, email, role, profile_picture_url };
 
       localStorage.setItem('access_token', access);
       localStorage.setItem('refresh_token', refresh);
@@ -71,6 +71,17 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const updateStoredUser = useCallback((updates) => {
+    setUser(current => {
+      const nextUser = { ...(current || {}), ...(updates || {}) };
+      const currentString = JSON.stringify(current || {});
+      const nextString = JSON.stringify(nextUser);
+      if (currentString === nextString) return current;
+      localStorage.setItem('user', JSON.stringify(nextUser));
+      return nextUser;
+    });
+  }, []);
+
   const register = async (registerData) => {
     try {
       const response = await client.post('/api/auth/register/', registerData);
@@ -83,7 +94,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, logout, register }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, logout, register, updateStoredUser }}>
       {children}
     </AuthContext.Provider>
   );

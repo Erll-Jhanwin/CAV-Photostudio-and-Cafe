@@ -21,6 +21,8 @@
   },
   "scripts": {
     "start": "node ./node_modules/react-scripts/bin/react-scripts.js start",
+    "print-bridge": "node local-print-bridge.js",
+    "local-console": "node serve-build.js",
     "build": "node ./node_modules/react-scripts/bin/react-scripts.js build",
     "cap": "cap",
     "cap:add:android": "cap add android",

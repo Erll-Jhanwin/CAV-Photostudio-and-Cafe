@@ -1,6 +1,11 @@
+import { useState } from 'react';
 import { LogOut } from 'lucide-react';
 import { Button } from './Button';
 import { Modal } from './Modal';
+import client from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
+import { Avatar, getAvatarUrl } from './Avatar';
+import { useStyledConfirm } from './StyledAlert';
 
 export function Sidebar({
   brand,
@@ -15,6 +20,60 @@ export function Sidebar({
   onSignOutCancel,
   onSignOutConfirm,
 }) {
+  const { updateStoredUser } = useAuth();
+  const confirm = useStyledConfirm();
+  const [photoSaving, setPhotoSaving] = useState(false);
+
+  const updateProfilePhoto = async ({ file, remove = false }) => {
+    if (photoSaving) return;
+    if (!file && !remove) return;
+    if (file) {
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+      if (!allowedTypes.includes(file.type)) {
+        alert('Profile picture must be a JPG, PNG, or WEBP image.');
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        alert('Profile picture must be 2MB or smaller.');
+        return;
+      }
+    }
+    const confirmed = await confirm({
+      title: remove ? 'Remove Profile Picture' : 'Update Profile Picture',
+      message: remove ? 'Remove your current profile picture?' : 'Upload this profile picture?',
+      confirmLabel: remove ? 'Remove Photo' : 'Update Photo',
+      type: remove ? 'error' : 'success',
+    });
+    if (!confirmed) return;
+
+    try {
+      setPhotoSaving(true);
+      const formData = new FormData();
+      if (file) formData.append('profile_picture', file);
+      if (remove) formData.append('remove_profile_picture', 'true');
+      const res = await client.patch('/api/auth/profile/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      updateStoredUser?.({
+        username: res.data.username,
+        email: res.data.email,
+        role: res.data.role,
+        first_name: res.data.first_name,
+        last_name: res.data.last_name,
+        profile_picture_url: res.data.profile_picture_url,
+      });
+      alert(remove ? 'Profile picture removed successfully.' : 'Profile picture updated successfully.');
+    } catch (err) {
+      const data = err.response?.data;
+      const message = data && typeof data === 'object'
+        ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
+        : 'Failed to update profile picture.';
+      alert(message);
+    } finally {
+      setPhotoSaving(false);
+    }
+  };
+
   const handleConfirmSignOut = () => {
     onMobileClose?.();
     onSignOutConfirm?.();
@@ -80,10 +139,37 @@ export function Sidebar({
 
         <div className="space-y-3 pt-4 border-t border-white/10">
           {user && (
-            <div className="bg-white/5 rounded-xl p-3.5 border border-white/5 text-xs space-y-1">
-              <div className="text-[9px] uppercase font-bold text-gold tracking-wider">Signed in as</div>
-              <div className="font-bold text-white">{user.username}</div>
-              <div className="text-cream/50 text-[10px] capitalize">{user.role?.toLowerCase()}</div>
+            <div className="space-y-3 rounded-xl border border-white/5 bg-white/5 p-3.5 text-xs">
+              <div className="flex items-center gap-3">
+              <Avatar user={user} size="sm" className="border-white/10 bg-white/10 text-cream" />
+              <div className="min-w-0 space-y-1">
+                <div className="text-[9px] uppercase font-bold text-gold tracking-wider">Signed in as</div>
+                <div className="truncate font-bold text-white">{user.username}</div>
+                <div className="text-cream/50 text-[10px] capitalize">{user.role?.toLowerCase()}</div>
+              </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <label className={`cursor-pointer rounded-lg bg-white/10 px-2.5 py-1.5 text-[10px] font-black text-cream/80 transition-colors hover:bg-white/15 hover:text-white ${photoSaving ? 'pointer-events-none opacity-50' : ''}`}>
+                  {photoSaving ? 'Saving...' : 'Change Photo'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="sr-only"
+                    disabled={photoSaving}
+                    onChange={e => updateProfilePhoto({ file: e.target.files?.[0] })}
+                  />
+                </label>
+                {getAvatarUrl(user) && (
+                  <button
+                    type="button"
+                    onClick={() => updateProfilePhoto({ remove: true })}
+                    disabled={photoSaving}
+                    className="rounded-lg px-2.5 py-1.5 text-[10px] font-black text-red-200 transition-colors hover:bg-red-500/10 hover:text-red-100 disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
             </div>
           )}
           <Button

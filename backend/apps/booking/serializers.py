@@ -62,6 +62,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             'scheduled_time': booking.scheduled_time,
             'customer_name': booking.customer.get_full_name() or booking.customer.username,
             'customer_email': booking.customer.email,
+            'customer_profile_picture_url': UserSerializer(booking.customer, context=self.context).data.get('profile_picture_url', ''),
             'package_name': booking.package.name,
             'package_price': booking.package.price,
         }

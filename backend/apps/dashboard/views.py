@@ -85,7 +85,7 @@ class DashboardAnalyticsView(views.APIView):
         total_items_sold = sum(sum(int(item.get('quantity') or 0) for item in order.line_items or []) for order in paid_pos_orders)
         avg_transaction = money(pos_rev) / total_tx if total_tx else 0
 
-        bookings_in_range = Booking.objects.filter(created_at__range=(start_dt, end_dt))
+        bookings_in_range = Booking.objects.filter(created_at__range=(start_dt, end_dt)).distinct()
         booking_status_counts = {
             'pending': bookings_in_range.filter(status='PENDING').count(),
             'confirmed': bookings_in_range.filter(status__in=['CONFIRMED', 'CONFIRMED_DP']).count(),
@@ -126,10 +126,11 @@ class DashboardAnalyticsView(views.APIView):
                     'suggested_action': ingredient.suggested_action,
                 })
 
-        recent_bookings = bookings_in_range.select_related('customer', 'package').order_by('-created_at')[:10]
+        recent_bookings = bookings_in_range.select_related('customer', 'package').order_by('-created_at', '-id')[:10]
         bookings_list = [{
             'id': b.id,
             'customer_name': b.customer.get_full_name() or b.customer.username,
+            'customer_profile_picture_url': request.build_absolute_uri(b.customer.profile_picture.url) if b.customer.profile_picture else '',
             'package_name': b.package.name,
             'scheduled_date': b.scheduled_date.strftime('%Y-%m-%d'),
             'scheduled_time': b.scheduled_time.strftime('%H:%M'),

@@ -11,6 +11,8 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
 import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
+import { normalizeGalleryImages, normalizeRowsById, normalizeServices, recordKey, uniqueBy } from '../utils/uniqueRecords';
+import { brandAssets, businessAssets, decorateServicesWithAssets, localGalleryImages } from '../utils/cavAssets';
 
 function LandingSkeleton() {
   return (
@@ -301,13 +303,20 @@ function CafeCarousel({ items = [] }) {
                     }`}
                   />
                   <div className="aspect-[4/3] rounded-2xl overflow-hidden mb-4 bg-charcoal-dark">
-                    <img
-                      src={item.image_url}
-                      alt={item.name}
-                      loading="lazy"
-                      draggable="false"
-                      className="w-full h-full object-cover transition-transform duration-500 ease-in-out group-hover:scale-105"
-                    />
+                    {item.image_url ? (
+                      <img
+                        src={item.image_url}
+                        alt={item.name}
+                        loading="lazy"
+                        draggable="false"
+                        style={{ objectPosition: item.image_position || item.object_position || '50% 34%' }}
+                        className="w-full h-full object-cover transition-transform duration-500 ease-in-out group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-espresso text-gold">
+                        <Coffee className="h-12 w-12" />
+                      </div>
+                    )}
                   </div>
                   <div className="relative flex flex-col gap-2 mb-4">
                     <h3 className="font-sans text-sm sm:text-base md:text-lg font-bold text-cream leading-tight">{item.name}</h3>
@@ -373,68 +382,16 @@ const GALLERY_CATEGORIES = [
   { label: 'Behind the Scenes', value: 'BEHIND_THE_SCENES' },
 ];
 
-const fallbackGalleryImages = [
-  {
-    id: 'fallback-studio',
-    title: 'Studio Portrait Setup',
-    category: 'STUDIO',
-    category_label: 'Studio',
-    image_url: 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=1200',
-    alt_text: 'Professional studio setup with camera and lighting equipment',
-    caption: 'Studio-ready lighting and backdrops for polished sessions.',
-  },
-  {
-    id: 'fallback-cafe',
-    title: 'Café Counter',
-    category: 'CAFE',
-    category_label: 'Café',
-    image_url: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?q=80&w=1200',
-    alt_text: 'Warm café counter with espresso service',
-    caption: 'Fresh coffee and pastries served alongside every shoot.',
-  },
-  {
-    id: 'fallback-events',
-    title: 'Completed Event Session',
-    category: 'EVENTS',
-    category_label: 'Events',
-    image_url: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?q=80&w=1200',
-    alt_text: 'Guests gathered during a celebration event',
-    caption: 'Event coverage for birthdays, milestones, and gatherings.',
-  },
-  {
-    id: 'fallback-behind-scenes',
-    title: 'Behind the Scenes',
-    category: 'BEHIND_THE_SCENES',
-    category_label: 'Behind the Scenes',
-    image_url: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=1200',
-    alt_text: 'Camera operator preparing a professional shoot',
-    caption: 'Careful setup before each client session.',
-  },
-  {
-    id: 'fallback-customers',
-    title: 'Customer Session',
-    category: 'STUDIO',
-    category_label: 'Studio',
-    image_url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=1200',
-    alt_text: 'Portrait client posing in a studio session',
-    caption: 'Guided sessions that keep customers comfortable on camera.',
-  },
-  {
-    id: 'fallback-menu',
-    title: 'Coffee Break',
-    category: 'CAFE',
-    category_label: 'Café',
-    image_url: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?q=80&w=1200',
-    alt_text: 'Iced latte served on a café table',
-    caption: 'Café favorites for before or after your shoot.',
-  },
-];
+const fallbackGalleryImages = localGalleryImages;
 
 function GallerySection({ images = [] }) {
   const [activeCategory, setActiveCategory] = useState('ALL');
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const touchStartRef = useRef(null);
   const galleryImages = (images.length ? images : fallbackGalleryImages).filter(item => item.image_url);
+  const availableCategories = GALLERY_CATEGORIES.filter(category => (
+    category.value === 'ALL' || galleryImages.some(item => item.category === category.value)
+  ));
   const filteredImages = activeCategory === 'ALL'
     ? galleryImages
     : galleryImages.filter(item => item.category === activeCategory);
@@ -504,7 +461,7 @@ function GallerySection({ images = [] }) {
           </div>
 
           <div className="flex flex-wrap gap-2 lg:justify-end" aria-label="Gallery category filters">
-            {GALLERY_CATEGORIES.map(category => (
+            {availableCategories.map(category => (
               <button
                 key={category.value}
                 type="button"
@@ -536,6 +493,7 @@ function GallerySection({ images = [] }) {
                   src={item.image_url}
                   alt={item.alt_text || item.title}
                   loading="lazy"
+                  style={{ objectPosition: item.object_position || '50% 34%' }}
                   className="w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.08]"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-espresso-dark/84 via-espresso-dark/18 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -666,17 +624,17 @@ export default function LandingPage() {
           axios.get(`${API_BASE_URL}/api/bookings/services/`),
           axios.get(`${API_BASE_URL}/api/inventory/products/`)
         ]);
-        setServices(servicesRes.data);
-        setCafeItems(productsRes.data.filter(p => p.is_cafe_item));
+        setServices(decorateServicesWithAssets(normalizeServices(servicesRes.data)));
+        setCafeItems(normalizeRowsById(productsRes.data.filter(p => p.is_cafe_item)));
       } catch {
-        setServices([
+        setServices(decorateServicesWithAssets(normalizeServices([
           {
             id: 1,
             name: 'Studio Session',
             description: 'Standard studio photo session packages. Good for solo, couple, family, birthdays, and quick studio shoots.',
             duration_minutes: 60,
             base_price: '1000.00',
-            image_url: 'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=600',
+            image_url: businessAssets.hero,
             packages: [
               { id: 1, name: 'Solo Package', price: '1000.00', description: '1 person / 5 shots', inclusions: '1 person, 5 shots, studio lighting, backdrop selection, basic retouching, digital soft copies' },
               { id: 2, name: 'Mr. & Ms. / Couple Package', price: '1000.00', description: '2 persons / 10 shots', inclusions: '2 persons, 10 shots, studio lighting, backdrop selection, basic retouching, digital soft copies' },
@@ -691,27 +649,21 @@ export default function LandingPage() {
             description: 'Full-service booking process for events and extended photoshoots. Includes event/program, booking confirmation, availability, shoot layout, setup, printing, and final file record.',
             duration_minutes: 120,
             base_price: '2500.00',
-            image_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=600',
+            image_url: businessAssets.store,
             packages: [
               { id: 6, name: 'Standard Event Package', price: '2500.00', description: '2 hours event/program photoshoot', inclusions: '2 hours coverage, availability validation, layout setup, printing coordination, final digital file record' }
             ]
           },
-        ]);
-        setCafeItems([
-          { id: 1, name: 'Espresso', price: '90.00', image_url: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?q=80&w=400' },
-          { id: 2, name: 'Iced Latte', price: '130.00', image_url: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?q=80&w=400' },
-          { id: 3, name: 'Chocolate Croissant', price: '85.00', image_url: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?q=80&w=400' },
-        ]);
+        ])));
+        setCafeItems(normalizeRowsById([
+          { id: 1, name: 'Espresso', price: '90.00' },
+          { id: 2, name: 'Iced Latte', price: '130.00' },
+          { id: 3, name: 'Chocolate Croissant', price: '85.00' },
+        ]));
       }
 
-      try {
-        const galleryRes = await axios.get(`${API_BASE_URL}/api/gallery/images/`);
-        setGalleryImages(galleryRes.data);
-      } catch {
-        setGalleryImages([]);
-      } finally {
-        setLoaded(true);
-      }
+      setGalleryImages(normalizeGalleryImages(localGalleryImages));
+      setLoaded(true);
     }
     fetchData();
   }, []);
@@ -719,11 +671,22 @@ export default function LandingPage() {
   useEffect(() => {
     axios.get(`${API_BASE_URL}/api/chatbot/faqs/`)
       .then(res => {
-        const prompts = res.data.map(faq => faq.question).filter(Boolean).slice(0, 6);
+        const prompts = uniqueBy(res.data.map(faq => faq.question).filter(Boolean), question => question.toLowerCase()).slice(0, 6);
         if (prompts.length) setChatFaqPrompts(prompts);
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!landingSelectedService) return;
+    const currentService = services.find(service => recordKey(service, service.name) === recordKey(landingSelectedService, landingSelectedService.name));
+    if (!currentService) {
+      setLandingSelectedService(null);
+      setLandingPackageSlide(0);
+    } else if (currentService !== landingSelectedService) {
+      setLandingSelectedService(currentService);
+    }
+  }, [services, landingSelectedService]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -779,7 +742,7 @@ export default function LandingPage() {
           <div className="flex h-16 items-center justify-between gap-4 md:h-[72px]">
             <Link to="/" className="flex min-w-0 items-center gap-3 rounded-2xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-espresso text-gold shadow-[0_8px_18px_rgba(46,26,17,0.14)]">
-                <Camera className="w-5 h-5" />
+                <img src={brandAssets.logo} alt="CAV logo" className="h-7 w-7 rounded-xl object-cover" />
               </div>
               <div className="min-w-0">
                 <span className="block truncate font-sans text-lg font-black leading-tight text-espresso md:text-xl">CAV</span>
@@ -864,42 +827,45 @@ export default function LandingPage() {
       <section id="hero" className="relative flex-grow flex items-center min-h-[calc(100vh-4rem)] premium-section bg-gradient-to-br from-espresso-dark via-espresso to-espresso-light text-cream overflow-hidden">
         <div className="absolute inset-0 opacity-[0.07] bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-gold via-transparent to-transparent" />
         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(28,15,10,0.22),transparent_45%,rgba(212,175,55,0.05))]" />
-        <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-20 items-center relative z-10">
-          <div className="lg:col-span-7 space-y-8 md:space-y-10">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gold/[0.12] border border-gold/20 text-gold text-sm font-semibold shadow-[0_14px_34px_rgba(212,175,55,0.10)] animate-in-up">
-              <Coffee className="w-4 h-4" /> Co-working, Coffee &amp; Creative Self-Shoots
+        <div className="relative z-10 mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 lg:grid-cols-12 lg:gap-20">
+          <div className="min-w-0 space-y-8 md:space-y-10 lg:col-span-7">
+            <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-gold/20 bg-gold/[0.12] px-4 py-2 text-sm font-semibold leading-snug text-gold shadow-[0_14px_34px_rgba(212,175,55,0.10)] animate-in-up">
+              <Coffee className="h-4 w-4 shrink-0" />
+              <span className="min-w-0">Coffee &amp; Creative Studio Sessions</span>
             </div>
-            <h1 className="font-sans text-5xl md:text-6xl lg:text-7xl font-black leading-[0.98] tracking-tight text-white text-balance">
+            <h1 className="font-sans text-5xl font-black leading-[0.98] tracking-tight text-white text-balance md:text-6xl lg:text-7xl">
                Capture the <span className="text-gold italic">moment</span>,<br />
                savor the <span className="text-gold italic">flavor</span>.
              </h1>
-            <p className="text-lg md:text-xl text-cream/78 max-w-2xl font-light leading-relaxed">
+            <p className="max-w-2xl text-lg font-light leading-relaxed text-cream/78 md:text-xl">
               CAV combines a premium, fully-equipped photography studio with a curated boutique café.
               Express yourself in front of the lens while enjoying rich artisanal coffees.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 pt-2">
+            <div className="flex max-w-full flex-col gap-4 pt-2 sm:flex-row">
               <Button variant="gold" size="xl" onClick={handleBookNow} className="group">
-                Start Your Studio Session <ArrowRight className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1" />
+                Start Your Studio Session
+                <ArrowRight className="h-5 w-5 shrink-0 transition-transform duration-300 group-hover:translate-x-1" />
               </Button>
-              <a href="#cafe" className="inline-flex items-center justify-center gap-2 border border-cream/20 hover:border-cream/45 hover:bg-white/8 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] font-semibold px-6 md:px-8 py-4 rounded-[20px] transition-all duration-300 ease-out text-sm text-cream shadow-[0_12px_30px_rgba(0,0,0,0.10)] hover:shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
+              <a href="#cafe" className="inline-flex items-center justify-center gap-2 rounded-[20px] border border-cream/20 px-6 py-4 text-sm font-semibold text-cream shadow-[0_12px_30px_rgba(0,0,0,0.10)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-cream/45 hover:bg-white/8 hover:shadow-[0_16px_36px_rgba(0,0,0,0.16)] active:translate-y-0 active:scale-[0.98] md:px-8">
                 Explore Café Favorites
               </a>
             </div>
           </div>
-          <div className="lg:col-span-5">
-            <div className="relative mx-auto w-full max-w-[430px] aspect-[4/5] rounded-[24px] overflow-hidden shadow-[0_34px_90px_rgba(0,0,0,0.34)] border border-white/10 group">
+          <div className="min-w-0 lg:col-span-5">
+            <div className="group relative mx-auto aspect-[4/5] w-full max-w-[430px] overflow-hidden rounded-[24px] border border-white/10 shadow-[0_34px_90px_rgba(0,0,0,0.34)]">
               <img
-                src="https://images.unsplash.com/photo-1542038784456-1ea8e935640e?q=80&w=600"
+                src={businessAssets.hero}
                 alt="Professional studio setup with camera and lighting equipment"
                 loading="lazy"
+                style={{ objectPosition: '50% 32%' }}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-espresso-dark/92 via-espresso-dark/10 to-transparent flex flex-col justify-end p-6 md:p-8">
-                <div className="flex items-center gap-1 text-gold mb-2">
-                  {[...Array(5)].map((_, i) => <Star key={i} className="w-4 h-4 fill-current" />)}
+              <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-espresso-dark/92 via-espresso-dark/10 to-transparent p-6 md:p-8">
+                <div className="mb-2 flex items-center gap-1 text-gold">
+                  {[...Array(5)].map((_, i) => <Star key={i} className="h-4 w-4 fill-current" />)}
                 </div>
-                <p className="italic font-light text-sm mb-1">&ldquo;The self-shoot is extremely fun and easy, and their latte is the best in town!&rdquo;</p>
-                <p className="text-[10px] uppercase font-bold tracking-wider text-gold">- Angela C., Studio Client</p>
+                <p className="mb-1 text-sm font-light italic">&ldquo;Fun studio sessions and excellent coffee.&rdquo;</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gold">- Angela C., Studio Client</p>
               </div>
             </div>
           </div>
@@ -922,7 +888,7 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
             {services.map((svc) => (
               <button
-                key={svc.id}
+                key={recordKey(svc, svc.name)}
                 type="button"
                 onClick={() => {
                   setLandingSelectedService(svc);
@@ -935,11 +901,12 @@ export default function LandingPage() {
                 }`}
               >
                 {/* Hero Image */}
-                <div className="relative w-full h-52 overflow-hidden shrink-0">
+                <div className="relative w-full aspect-[4/3] overflow-hidden shrink-0">
                   <img
                     src={svc.image_url}
                     alt={svc.name}
                     loading="lazy"
+                    style={{ objectPosition: svc.image_position || '50% 34%' }}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     onError={e => { e.target.style.display = 'none'; }}
                   />
@@ -1062,15 +1029,26 @@ export default function LandingPage() {
                     }}
                   >
                     {slides.map((slidePkgs, si) => (
-                      <div key={si} className="flex shrink-0 w-full gap-4" style={{ flex: '0 0 100%' }}>
+                      <div key={slidePkgs.map(pkg => recordKey(pkg, pkg.name)).join('-') || si} className="flex shrink-0 w-full gap-4" style={{ flex: '0 0 100%' }}>
                         {slidePkgs.map(pkg => {
                           const parsed = parseDescription(pkg.description);
                           return (
                             <div
-                              key={pkg.id}
+                              key={recordKey(pkg, `${svc.id}-${pkg.name}`)}
                               style={{ flex: `0 0 calc(${100 / landingCardsPerSlide}% - ${landingCardsPerSlide > 1 ? '8px' : '0px'})` }}
                               className="bg-cream rounded-[22px] border border-espresso/[0.06] p-5 flex flex-col gap-4 shadow-[0_12px_30px_rgba(46,26,17,0.05)]"
                             >
+                              {pkg.image_url && (
+                                <div className="aspect-[4/3] overflow-hidden rounded-[18px] bg-white">
+                                  <img
+                                    src={pkg.image_url}
+                                    alt={`${pkg.name} sample`}
+                                    loading="lazy"
+                                    style={{ objectPosition: pkg.image_position || '50% 34%' }}
+                                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                  />
+                                </div>
+                              )}
                               {/* Top row */}
                               <div className="flex items-start gap-3">
                                 <div className="p-2.5 rounded-[16px] bg-gold/10 text-gold shrink-0">
@@ -1194,8 +1172,8 @@ export default function LandingPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4 md:gap-5">
-            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=600" alt="Coffee roasting" loading="lazy" className="rounded-[24px] h-44 md:h-60 w-full object-cover shadow-[0_24px_70px_rgba(0,0,0,0.28)]" />
-            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=600" alt="Photography session" loading="lazy" className="rounded-[24px] h-44 md:h-60 w-full object-cover shadow-[0_24px_70px_rgba(0,0,0,0.28)] mt-6 md:mt-10" />
+            <img src={businessAssets.store} alt="CAV storefront" loading="lazy" style={{ objectPosition: '50% 42%' }} className="rounded-[24px] h-44 md:h-60 w-full object-cover shadow-[0_24px_70px_rgba(0,0,0,0.28)]" />
+            <img src={businessAssets.hero} alt="CAV studio interior" loading="lazy" style={{ objectPosition: '50% 32%' }} className="rounded-[24px] h-44 md:h-60 w-full object-cover shadow-[0_24px_70px_rgba(0,0,0,0.28)] mt-6 md:mt-10" />
           </div>
         </div>
       </section>

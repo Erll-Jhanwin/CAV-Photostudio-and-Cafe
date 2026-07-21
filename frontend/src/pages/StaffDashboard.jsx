@@ -4,7 +4,7 @@ import client from '../api/client';
 import {
   ShoppingBag, Package, DollarSign, Search, Plus,
   Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
-  PackageCheck, Clock, CalendarOff, Archive
+  PackageCheck, Clock, CalendarOff, Archive, Printer
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -18,6 +18,10 @@ import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { DataTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
+import { Avatar } from '../components/ui/Avatar';
+import { getLocalPrinters, printLocalReceipt } from '../utils/localPrinting';
+import { brandAssets } from '../utils/cavAssets';
+import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 
 function StaffSkeleton() {
   return (
@@ -62,12 +66,14 @@ const PRODUCT_PAGE_SIZE = 12;
 const TABLE_PAGE_SIZE = 10;
 const DISCOUNT_OPTIONS = [10, 20, 30];
 const RECEIPT_BUSINESS = {
-  logoUrl: '/cavlogo.jpg',
+  logoUrl: brandAssets.logo,
   logoText: 'CAV',
   name: 'CAV PHOTO STUDIO & CAFE',
   address: '028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas',
   contactNumber: '+639171234567',
 };
+const LOCAL_PRINTING_ENABLED_KEY = 'staff:localPrintingEnabled';
+const LOCAL_PRINTING_PRINTER_KEY = 'staff:localPrintingPrinter';
 
 const formatReceiptCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
   minimumFractionDigits: 2,
@@ -196,6 +202,12 @@ export default function StaffDashboard() {
   const [showCheckoutLoading, setShowCheckoutLoading] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState(null);
   const [receiptPrintError, setReceiptPrintError] = useState('');
+  const [receiptPrintFallbackOrder, setReceiptPrintFallbackOrder] = useState(null);
+  const [localPrintingEnabled, setLocalPrintingEnabled] = useState(() => localStorage.getItem(LOCAL_PRINTING_ENABLED_KEY) === 'true');
+  const [localPrinters, setLocalPrinters] = useState([]);
+  const [selectedLocalPrinter, setSelectedLocalPrinter] = useState(() => localStorage.getItem(LOCAL_PRINTING_PRINTER_KEY) || '');
+  const [localPrintStatus, setLocalPrintStatus] = useState('');
+  const [localPrinterLoading, setLocalPrinterLoading] = useState(false);
   const checkoutInFlightRef = useRef(false);
 
   const [posSearch, setPosSearch] = useState('');
@@ -223,28 +235,34 @@ export default function StaffDashboard() {
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [productForm, setProductForm] = useState(emptyProductForm());
   const [productSaving, setProductSaving] = useState(false);
+  const [productErrors, setProductErrors] = useState({});
+  const [editIngredientErrors, setEditIngredientErrors] = useState({});
+  const tabLoadInFlightRef = useRef(new Set());
 
   const loadStaticInventoryOptions = useCallback(async (force = false) => {
     const cachedCategories = !force ? readStaffCache('categories') : null;
     const cachedSuppliers = !force ? readStaffCache('suppliers') : null;
-    if (cachedCategories) setCategories(cachedCategories);
-    if (cachedSuppliers) setSuppliers(cachedSuppliers);
+    if (cachedCategories) setCategories(normalizeRowsById(cachedCategories, row => row?.name));
+    if (cachedSuppliers) setSuppliers(normalizeRowsById(cachedSuppliers, row => row?.name));
     if (cachedCategories && cachedSuppliers && !force) return;
 
     const [categoriesRes, suppliersRes] = await Promise.all([
       client.get('/api/inventory/categories/'),
       client.get('/api/inventory/suppliers/')
     ]);
-    setCategories(categoriesRes.data);
-    setSuppliers(suppliersRes.data);
-    writeStaffCache('categories', categoriesRes.data);
-    writeStaffCache('suppliers', suppliersRes.data);
+    const uniqueCategories = normalizeRowsById(categoriesRes.data, row => row?.name);
+    const uniqueSuppliers = normalizeRowsById(suppliersRes.data, row => row?.name);
+    setCategories(uniqueCategories);
+    setSuppliers(uniqueSuppliers);
+    writeStaffCache('categories', uniqueCategories);
+    writeStaffCache('suppliers', uniqueSuppliers);
   }, []);
 
   const refreshProducts = useCallback(async () => {
     const productsRes = await client.get('/api/inventory/products/', { params: { limit: 240 } });
-    setProducts(productsRes.data);
-    writeStaffCache('products', productsRes.data);
+    const uniqueProducts = normalizeRowsById(productsRes.data, row => row?.name);
+    setProducts(uniqueProducts);
+    writeStaffCache('products', uniqueProducts);
   }, []);
 
   const ensureDefaultRecipesOnce = useCallback(async () => {
@@ -261,7 +279,8 @@ export default function StaffDashboard() {
   }, [refreshProducts]);
 
   const loadTabData = useCallback(async (tab = activeTab, force = false) => {
-    if (!force && loadedTabs[tab]) return;
+    if (!force && (loadedTabs[tab] || tabLoadInFlightRef.current.has(tab))) return;
+    tabLoadInFlightRef.current.add(tab);
     try {
       setError('');
       setLoadingResources(current => ({ ...current, [tab]: true }));
@@ -269,29 +288,31 @@ export default function StaffDashboard() {
       if (tab === 'pos') {
         const cachedProducts = !force ? readStaffCache('products') : null;
         if (cachedProducts?.length) {
-          setProducts(cachedProducts);
+          setProducts(normalizeRowsById(cachedProducts, row => row?.name));
           setLoading(false);
         }
         const productsRes = await client.get('/api/inventory/products/', { params: { limit: 240 } });
-        setProducts(productsRes.data);
-        writeStaffCache('products', productsRes.data);
+        const uniqueProducts = normalizeRowsById(productsRes.data, row => row?.name);
+        setProducts(uniqueProducts);
+        writeStaffCache('products', uniqueProducts);
         ensureDefaultRecipesOnce();
       } else if (tab === 'payments') {
         const paymentsRes = await client.get('/api/bookings/payments/', { params: { limit: 100 } });
-        setBookingPayments(paymentsRes.data);
+        setBookingPayments(normalizePayments(paymentsRes.data));
       } else if (tab === 'inventory') {
         await loadStaticInventoryOptions(force);
         const ingredientsRes = await client.get('/api/inventory/ingredients/', { params: { limit: 300 } });
-        setIngredients(ingredientsRes.data);
+        setIngredients(normalizeRowsById(ingredientsRes.data, row => row?.name));
       } else if (tab === 'sales') {
         const ordersRes = await client.get('/api/pos/orders/', { params: { limit: 100 } });
-        setOrders(ordersRes.data);
+        setOrders(normalizeRowsById(ordersRes.data, row => row?.transaction_id || row?.created_at));
       }
 
       setLoadedTabs(current => ({ ...current, [tab]: true }));
     } catch {
       setError('Failed to load dashboard data. Make sure the server is running.');
     } finally {
+      tabLoadInFlightRef.current.delete(tab);
       setLoadingResources(current => ({ ...current, [tab]: false }));
       setLoading(false);
     }
@@ -309,6 +330,15 @@ export default function StaffDashboard() {
   useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
   useEffect(() => { setInventoryPage(1); }, [invSearch, inventoryFilter]);
   useEffect(() => { setSalesPage(1); }, [salesPaymentFilter, salesStartDate, salesEndDate]);
+
+  useEffect(() => {
+    localStorage.setItem(LOCAL_PRINTING_ENABLED_KEY, String(localPrintingEnabled));
+  }, [localPrintingEnabled]);
+
+  useEffect(() => {
+    if (selectedLocalPrinter) localStorage.setItem(LOCAL_PRINTING_PRINTER_KEY, selectedLocalPrinter);
+    else localStorage.removeItem(LOCAL_PRINTING_PRINTER_KEY);
+  }, [selectedLocalPrinter]);
 
   const addToCart = (product) => {
     const availableServings = getProductAvailable(product);
@@ -366,6 +396,80 @@ export default function StaffDashboard() {
     address: order?.business_address || RECEIPT_BUSINESS.address,
     contactNumber: order?.business_contact_number || RECEIPT_BUSINESS.contactNumber,
   });
+
+  const refreshLocalPrinters = useCallback(async ({ silent = false } = {}) => {
+    try {
+      setLocalPrinterLoading(true);
+      const printers = await getLocalPrinters();
+      setLocalPrinters(printers);
+      const defaultPrinter = printers.find(printer => printer.default) || printers[0];
+      if (!selectedLocalPrinter && defaultPrinter) {
+        setSelectedLocalPrinter(defaultPrinter.name);
+      }
+      if (!silent) {
+        setLocalPrintStatus(printers.length
+          ? `${printers.length} local printer${printers.length === 1 ? '' : 's'} detected.`
+          : 'Local print bridge is running, but no printers were found.');
+      }
+      return printers;
+    } catch (err) {
+      if (!silent) {
+        setLocalPrintStatus('Local printer service not found. On the cashier PC, use http://127.0.0.1:3001 from "Start Local Staff Console.cmd", or double-click "Start Local Print Bridge.cmd" for the online site.');
+      }
+      setLocalPrinters([]);
+      return [];
+    } finally {
+      setLocalPrinterLoading(false);
+    }
+  }, [selectedLocalPrinter]);
+
+  useEffect(() => {
+    if (localPrintingEnabled) {
+      refreshLocalPrinters({ silent: true });
+    }
+  }, [localPrintingEnabled, refreshLocalPrinters]);
+
+  const getReceiptFallbackMessage = (printStatus) => {
+    const error = printStatus?.error || '';
+    if (/No printer command|no receipt printer is available|no default or available printer/i.test(error)) {
+      return 'Payment saved. This server cannot access a receipt printer. Open the receipt preview and print from the browser, or run the backend on the cashier PC with a default 58mm printer installed.';
+    }
+    return error || 'Payment saved, but the receipt could not be printed. Open the receipt preview and print from the browser.';
+  };
+
+  const handleBrowserPrintReceipt = () => {
+    window.setTimeout(() => window.print(), 150);
+  };
+
+  const handleLocalPrintOrder = async (order) => {
+    if (!localPrintingEnabled) {
+      setLocalPrintStatus('Local Printing Mode is off. Transaction saved without printing.');
+      return;
+    }
+
+    const printers = localPrinters.length ? localPrinters : await refreshLocalPrinters({ silent: true });
+    if (!printers.length) {
+      setLocalPrintStatus('No local receipt printer detected. Transaction saved without printing.');
+      setReceiptPrintFallbackOrder(order);
+      return;
+    }
+
+    const printer = printers.find(item => item.name === selectedLocalPrinter) || printers.find(item => item.default) || printers[0];
+    try {
+      const result = await printLocalReceipt({
+        order,
+        business: getReceiptBusiness(order),
+        user,
+        printerName: printer?.name || '',
+      });
+      setLocalPrintStatus(`Receipt printed locally${result.printer ? ` on ${result.printer}` : ''}.`);
+    } catch (err) {
+      setLocalPrintStatus(`Local print failed: ${err.message}`);
+      setReceiptPrintError(`Payment saved. Local printing failed: ${err.message}`);
+      setReceiptPrintFallbackOrder(order);
+    }
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0 || checkoutInFlightRef.current) return;
     const total = getCartTotal();
@@ -394,10 +498,12 @@ export default function StaffDashboard() {
       checkoutInFlightRef.current = true;
       setCheckoutLoading(true);
       setReceiptPrintError('');
+      setReceiptPrintFallbackOrder(null);
       loadingTimer = setTimeout(() => setShowCheckoutLoading(true), 450);
       const payload = {
         items: cart.map(item => ({ product_id: item.id, quantity: item.quantity })),
         order_type: 'WALK_IN',
+        print_receipt: false,
         discount: { type: 'PERCENT', value: discountNumber },
         payment: { amount: cashReceived, method: paymentMethod, transaction_id: transactionId }
       };
@@ -408,15 +514,20 @@ export default function StaffDashboard() {
         change_amount: res.data.change_amount || Math.max(cashReceived - total, 0),
       };
       if (!res.data.receipt_print?.printed) {
-        setReceiptPrintError(res.data.receipt_print?.error || 'Payment saved, but the receipt could not be printed. Check the default receipt printer driver.');
+        const printError = res.data.receipt_print?.error || '';
+        if (printError && !/skipped/i.test(printError)) {
+          setReceiptPrintError(getReceiptFallbackMessage(res.data.receipt_print));
+          setReceiptPrintFallbackOrder(savedOrder);
+        }
       }
-      setOrders(current => [savedOrder, ...current]);
-      setProducts(current => current.map(product => {
+      await handleLocalPrintOrder(savedOrder);
+      setOrders(current => normalizeRowsById([savedOrder, ...current], row => row?.transaction_id || row?.created_at));
+      setProducts(current => normalizeRowsById(current.map(product => {
         const cartItem = cart.find(item => item.id === product.id);
         if (!cartItem) return product;
         return updateProductRecipeStock(product, cartItem.quantity);
-      }));
-      setIngredients(current => current.map(ingredient => {
+      }), row => row?.name));
+      setIngredients(current => normalizeRowsById(current.map(ingredient => {
         const usedQuantity = cart.reduce((total, cartItem) => {
           const recipeItem = cartItem.recipe_items?.find(item => item.ingredient === ingredient.id);
           return total + (recipeItem ? Number(recipeItem.quantity || 0) * cartItem.quantity : 0);
@@ -431,7 +542,7 @@ export default function StaffDashboard() {
           stock_level: updatedIngredient.stock_quantity,
           reorder_point: updatedIngredient.minimum_stock_level,
         }) };
-      }));
+      }), row => row?.name));
       setCart([]);
       setTransactionId('');
       setAmountReceived('');
@@ -460,7 +571,7 @@ export default function StaffDashboard() {
     try {
       setVerifyingPaymentId(payment.id);
       const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
-      setBookingPayments(current => current.map(item => item.id === payment.id ? res.data : item));
+      setBookingPayments(current => normalizePayments(current.map(item => item.id === payment.id ? res.data : item)));
       alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'} successfully.`);
     } catch (err) {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
@@ -495,7 +606,7 @@ export default function StaffDashboard() {
       });
       const unitMultiplier = adjUnit === 'KG' || adjUnit === 'L' ? 1000 : 1;
       const baseQuantity = Number(adjQty || 0) * unitMultiplier;
-      setIngredients(current => current.map(ingredient => {
+      setIngredients(current => normalizeRowsById(current.map(ingredient => {
         if (ingredient.id !== manualAdjIngredient.id) return ingredient;
         const nextQuantity = adjMovementType === 'IN'
           ? Number(ingredient.stock_quantity || 0) + baseQuantity
@@ -506,8 +617,8 @@ export default function StaffDashboard() {
           stock_level: updatedIngredient.stock_quantity,
           reorder_point: updatedIngredient.minimum_stock_level,
         }) };
-      }));
-      setProducts(current => current.map(product => {
+      }), row => row?.name));
+      setProducts(current => normalizeRowsById(current.map(product => {
         const recipeItems = product.recipe_items?.map(item => {
           if (item.ingredient !== manualAdjIngredient.id || !item.ingredient_details) return item;
           const nextQuantity = adjMovementType === 'IN'
@@ -520,7 +631,7 @@ export default function StaffDashboard() {
         });
         const updatedProduct = { ...product, recipe_items: recipeItems };
         return { ...updatedProduct, available_servings: getProductAvailable(updatedProduct) };
-      }));
+      }), row => row?.name));
       setManualAdjIngredient(null);
       alert(isAdding ? 'Stock added successfully.' : 'Stock adjusted successfully.');
     } catch {
@@ -532,7 +643,50 @@ export default function StaffDashboard() {
 
   const handleProductFieldChange = (field, value) => {
     setProductForm(current => ({ ...current, [field]: value }));
+    setProductErrors(current => ({ ...current, [field]: '' }));
   };
+
+  const validateIngredientForm = (form) => {
+    const errors = {};
+    const requiredFields = [
+      ['name', 'Ingredient name'],
+      ['batch_number', 'Batch number'],
+      ['category', 'Category'],
+      ['supplier', 'Supplier'],
+      ['unit', 'Base unit'],
+      ['stock_level', 'Quantity'],
+      ['reorder_point', 'Minimum stock level'],
+      ['maximum_stock_level', 'Maximum stock level'],
+      ['purchase_date', 'Purchase date'],
+      ['storage_location', 'Storage location'],
+    ];
+
+    requiredFields.forEach(([field, label]) => {
+      if (!String(form[field] ?? '').trim()) errors[field] = `${label} is required.`;
+    });
+
+    ['stock_level', 'reorder_point', 'maximum_stock_level'].forEach(field => {
+      const value = Number(form[field]);
+      if (String(form[field] ?? '').trim() && (!Number.isFinite(value) || value < 0)) {
+        errors[field] = 'Enter a valid non-negative number.';
+      }
+    });
+
+    const minStock = Number(form.reorder_point);
+    const maxStock = Number(form.maximum_stock_level);
+    if (Number.isFinite(minStock) && Number.isFinite(maxStock) && maxStock < minStock) {
+      errors.maximum_stock_level = 'Maximum stock level must be greater than or equal to minimum stock level.';
+    }
+
+    if (form.expiration_date && form.purchase_date && new Date(form.expiration_date) < new Date(form.purchase_date)) {
+      errors.expiration_date = 'Expiration date cannot be before purchase date.';
+    }
+
+    return errors;
+  };
+
+  const productFormValid = !Object.keys(validateIngredientForm(productForm)).length;
+  const editIngredientFormValid = !Object.keys(validateIngredientForm(editIngredientForm)).length;
 
   const ingredientToForm = (ingredient) => ({
     name: ingredient?.name || '',
@@ -551,15 +705,20 @@ export default function StaffDashboard() {
   const openEditIngredientModal = (ingredient) => {
     setEditingIngredient(ingredient);
     setEditIngredientForm(ingredientToForm(ingredient));
+    setEditIngredientErrors({});
   };
 
   const handleEditIngredientFieldChange = (field, value) => {
     setEditIngredientForm(current => ({ ...current, [field]: value }));
+    setEditIngredientErrors(current => ({ ...current, [field]: '' }));
   };
 
   const handleUpdateIngredient = async (e) => {
     e.preventDefault();
     if (!editingIngredient || editIngredientSaving) return;
+    const errors = validateIngredientForm(editIngredientForm);
+    setEditIngredientErrors(errors);
+    if (Object.keys(errors).length) return;
     const confirmed = await confirm({
       title: 'Update Stock Record',
       message: `Save changes to ${editingIngredient.name}?`,
@@ -583,8 +742,8 @@ export default function StaffDashboard() {
         storage_location: editIngredientForm.storage_location,
       };
       const res = await client.patch(`/api/inventory/ingredients/${editingIngredient.id}/`, payload);
-      setIngredients(current => current.map(ingredient => ingredient.id === res.data.id ? res.data : ingredient));
-      setProducts(current => current.map(product => {
+      setIngredients(current => normalizeRowsById(current.map(ingredient => ingredient.id === res.data.id ? res.data : ingredient), row => row?.name));
+      setProducts(current => normalizeRowsById(current.map(product => {
         const recipeItems = product.recipe_items?.map(item => (
           item.ingredient === res.data.id
             ? { ...item, ingredient_details: res.data, base_unit: res.data.base_unit, ingredient_name: res.data.name }
@@ -592,9 +751,10 @@ export default function StaffDashboard() {
         ));
         const updatedProduct = { ...product, recipe_items: recipeItems };
         return { ...updatedProduct, available_servings: getProductAvailable(updatedProduct) };
-      }));
+      }), row => row?.name));
       setEditingIngredient(null);
       setEditIngredientForm(emptyProductForm());
+      setEditIngredientErrors({});
       alert('Record updated successfully.');
     } catch (err) {
       const data = err.response?.data;
@@ -610,6 +770,9 @@ export default function StaffDashboard() {
   const handleCreateProduct = async (e) => {
     e.preventDefault();
     if (productSaving) return;
+    const errors = validateIngredientForm(productForm);
+    setProductErrors(errors);
+    if (Object.keys(errors).length) return;
     const confirmed = await confirm({
       title: 'Add Stock Item',
       message: `Add ${productForm.name || 'this stock item'} to inventory?`,
@@ -633,8 +796,9 @@ export default function StaffDashboard() {
         storage_location: productForm.storage_location,
       };
       const res = await client.post('/api/inventory/ingredients/', payload);
-      setIngredients(current => [res.data, ...current]);
+      setIngredients(current => normalizeRowsById([res.data, ...current], row => row?.name));
       setProductForm(emptyProductForm());
+      setProductErrors({});
       setProductModalOpen(false);
       alert('Stock added successfully.');
     } catch (err) {
@@ -721,7 +885,7 @@ export default function StaffDashboard() {
       />
 
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} />
+        <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
           {error && (
@@ -736,15 +900,29 @@ export default function StaffDashboard() {
           )}
 
           {receiptPrintError && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl mb-6 flex flex-col gap-3 shadow-sm sm:flex-row sm:items-start">
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h4 className="font-bold text-sm">Receipt Not Printed</h4>
                 <p className="text-xs text-amber-700/90 mt-1">{receiptPrintError}</p>
               </div>
-              <button type="button" onClick={() => setReceiptPrintError('')} className="text-amber-700/70 hover:text-amber-900">
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {receiptPrintFallbackOrder && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    icon={Printer}
+                    onClick={() => setReceiptOrder(receiptPrintFallbackOrder)}
+                    className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+                  >
+                    Open Receipt
+                  </Button>
+                )}
+                <button type="button" onClick={() => setReceiptPrintError('')} className="rounded-lg p-1 text-amber-700/70 hover:bg-amber-100 hover:text-amber-900" aria-label="Dismiss receipt warning">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           )}
 
@@ -762,6 +940,64 @@ export default function StaffDashboard() {
                   <div>
                     <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">POS Terminal</h1>
                     <p className="text-xs text-espresso/50 mt-1">Build customer orders for walk-ins or cafe purchases.</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-espresso/[0.06] bg-white p-4 shadow-sm">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${localPrintingEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-cream text-espresso/55'}`}>
+                        <Printer className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-espresso">Local Printing Mode</p>
+                        <p className="mt-1 text-xs leading-relaxed text-espresso/55">
+                          Saves transactions online, then prints only from this cashier computer through the local print bridge.
+                        </p>
+                        {localPrintStatus && (
+                          <p className={`mt-2 text-[11px] font-bold ${/failed|not found|no local|no printer/i.test(localPrintStatus) ? 'text-amber-700' : 'text-emerald-700'}`}>
+                            {localPrintStatus}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-[auto_minmax(180px,1fr)_auto] lg:w-[520px]">
+                      <button
+                        type="button"
+                        onClick={() => setLocalPrintingEnabled(value => !value)}
+                        className={`inline-flex min-h-10 items-center justify-center rounded-xl border px-3 text-xs font-black transition-all ${
+                          localPrintingEnabled
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                            : 'border-espresso/10 bg-cream text-espresso/60 hover:bg-cream-dark'
+                        }`}
+                      >
+                        {localPrintingEnabled ? 'Enabled' : 'Disabled'}
+                      </button>
+                      <Select
+                        aria-label="Local receipt printer"
+                        value={selectedLocalPrinter}
+                        onChange={e => setSelectedLocalPrinter(e.target.value)}
+                        disabled={!localPrintingEnabled || localPrinterLoading || !localPrinters.length}
+                        options={[
+                          { value: '', label: localPrinters.length ? 'Use default printer' : 'No printers detected' },
+                          ...localPrinters.map(printer => ({
+                            value: printer.name,
+                            label: `${printer.name}${printer.default ? ' (Default)' : ''}`,
+                          })),
+                        ]}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        icon={RefreshCw}
+                        onClick={() => refreshLocalPrinters()}
+                        loading={localPrinterLoading}
+                        disabled={!localPrintingEnabled || localPrinterLoading}
+                      >
+                        Detect
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
@@ -1011,6 +1247,7 @@ export default function StaffDashboard() {
                         <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr_auto] gap-4 items-start">
                           <div className="space-y-2">
                             <div className="flex items-center gap-3 flex-wrap">
+                              <Avatar user={{ username: details.customer_name, profile_picture_url: details.customer_profile_picture_url }} size="sm" />
                               <span className="font-sans text-lg font-extrabold text-espresso">{details.customer_name || 'N/A'}</span>
                               <StatusBadge status={payment.status} />
                             </div>
@@ -1072,7 +1309,10 @@ export default function StaffDashboard() {
                             ) : (
                               <div className="rounded-xl bg-cream border border-espresso/5 p-3 text-xs text-espresso/60">
                                 <p className="font-black text-espresso">Verified by</p>
-                                <p>{payment.verified_by_details?.username || 'N/A'}</p>
+                                <div className="mt-2 flex items-center gap-2">
+                                  <Avatar user={payment.verified_by_details} size="xs" />
+                                  <p>{payment.verified_by_details?.username || 'N/A'}</p>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -1338,17 +1578,18 @@ export default function StaffDashboard() {
       </div>
 
       {/* Add Ingredient Modal */}
-      <Modal open={productModalOpen} onClose={() => setProductModalOpen(false)} title="Add Ingredient Stock" size="3xl">
+      <Modal open={productModalOpen} onClose={() => { setProductModalOpen(false); setProductErrors({}); }} title="Add Ingredient Stock" size="3xl">
         <form onSubmit={handleCreateProduct} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input label="Ingredient Name" required value={productForm.name} onChange={e => handleProductFieldChange('name', e.target.value)} />
-            <Input label="Batch Number" required value={productForm.batch_number} onChange={e => handleProductFieldChange('batch_number', e.target.value)} />
+            <Input label="Ingredient Name" required value={productForm.name} onChange={e => handleProductFieldChange('name', e.target.value)} error={productErrors.name} />
+            <Input label="Batch Number" required value={productForm.batch_number} onChange={e => handleProductFieldChange('batch_number', e.target.value)} error={productErrors.batch_number} />
             <Select
               label="Category"
               required
               value={productForm.category}
               onChange={e => handleProductFieldChange('category', e.target.value)}
               options={[{ value: '', label: 'Select category' }, ...categories.map(category => ({ value: category.id, label: category.name }))]}
+              error={productErrors.category}
             />
             <Select
               label="Supplier"
@@ -1356,6 +1597,7 @@ export default function StaffDashboard() {
               value={productForm.supplier}
               onChange={e => handleProductFieldChange('supplier', e.target.value)}
               options={[{ value: '', label: 'Select supplier' }, ...suppliers.map(supplier => ({ value: supplier.id, label: supplier.name }))]}
+              error={productErrors.supplier}
             />
             <Select
               label="Base Unit"
@@ -1366,19 +1608,20 @@ export default function StaffDashboard() {
                 { value: 'ML', label: 'mL' },
                 { value: 'G', label: 'g' },
               ]}
+              error={productErrors.unit}
             />
-            <Input label="Quantity" required type="number" min="0" value={productForm.stock_level} onChange={e => handleProductFieldChange('stock_level', e.target.value)} />
-            <Input label="Minimum Stock Level" required type="number" min="0" value={productForm.reorder_point} onChange={e => handleProductFieldChange('reorder_point', e.target.value)} />
-            <Input label="Maximum Stock Level" required type="number" min="0" value={productForm.maximum_stock_level} onChange={e => handleProductFieldChange('maximum_stock_level', e.target.value)} />
-            <Input label="Purchase Date" required type="date" value={productForm.purchase_date} onChange={e => handleProductFieldChange('purchase_date', e.target.value)} />
-            <Input label="Expiration Date" type="date" value={productForm.expiration_date} onChange={e => handleProductFieldChange('expiration_date', e.target.value)} />
-            <Input label="Storage Location" required value={productForm.storage_location} onChange={e => handleProductFieldChange('storage_location', e.target.value)} />
+            <Input label="Quantity" required type="number" min="0" value={productForm.stock_level} onChange={e => handleProductFieldChange('stock_level', e.target.value)} error={productErrors.stock_level} />
+            <Input label="Minimum Stock Level" required type="number" min="0" value={productForm.reorder_point} onChange={e => handleProductFieldChange('reorder_point', e.target.value)} error={productErrors.reorder_point} />
+            <Input label="Maximum Stock Level" required type="number" min="0" value={productForm.maximum_stock_level} onChange={e => handleProductFieldChange('maximum_stock_level', e.target.value)} error={productErrors.maximum_stock_level} />
+            <Input label="Purchase Date" required type="date" value={productForm.purchase_date} onChange={e => handleProductFieldChange('purchase_date', e.target.value)} error={productErrors.purchase_date} />
+            <Input label="Expiration Date" type="date" value={productForm.expiration_date} onChange={e => handleProductFieldChange('expiration_date', e.target.value)} error={productErrors.expiration_date} />
+            <Input label="Storage Location" required value={productForm.storage_location} onChange={e => handleProductFieldChange('storage_location', e.target.value)} error={productErrors.storage_location} />
           </div>
           <div className="sticky bottom-0 bg-white/95 flex flex-col sm:flex-row gap-2 pt-4 pb-1 border-t border-espresso/[0.06]">
-            <Button type="submit" variant="primary" className="flex-1" loading={productSaving} disabled={productSaving}>
+            <Button type="submit" variant="primary" className="flex-1" loading={productSaving} disabled={productSaving || !productFormValid}>
               Add to Inventory
             </Button>
-            <Button type="button" variant="outline" onClick={() => setProductModalOpen(false)} disabled={productSaving}>
+            <Button type="button" variant="outline" onClick={() => { setProductModalOpen(false); setProductErrors({}); }} disabled={productSaving}>
               Keep Inventory As Is
             </Button>
           </div>
@@ -1386,7 +1629,16 @@ export default function StaffDashboard() {
       </Modal>
 
       {/* Edit Ingredient Modal */}
-      <Modal open={!!editingIngredient} onClose={() => !editIngredientSaving && setEditingIngredient(null)} title="Edit Raw Ingredient" size="3xl">
+      <Modal
+        open={!!editingIngredient}
+        onClose={() => {
+          if (editIngredientSaving) return;
+          setEditingIngredient(null);
+          setEditIngredientErrors({});
+        }}
+        title="Edit Raw Ingredient"
+        size="3xl"
+      >
         <form onSubmit={handleUpdateIngredient} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
@@ -1395,6 +1647,7 @@ export default function StaffDashboard() {
               value={editIngredientForm.name}
               onChange={e => handleEditIngredientFieldChange('name', e.target.value)}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.name}
             />
             <Input
               label="Batch Number"
@@ -1402,6 +1655,7 @@ export default function StaffDashboard() {
               value={editIngredientForm.batch_number}
               onChange={e => handleEditIngredientFieldChange('batch_number', e.target.value)}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.batch_number}
             />
             <Select
               label="Category"
@@ -1410,6 +1664,7 @@ export default function StaffDashboard() {
               onChange={e => handleEditIngredientFieldChange('category', e.target.value)}
               options={[{ value: '', label: 'Select category' }, ...categories.map(category => ({ value: category.id, label: category.name }))]}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.category}
             />
             <Select
               label="Supplier"
@@ -1418,6 +1673,7 @@ export default function StaffDashboard() {
               onChange={e => handleEditIngredientFieldChange('supplier', e.target.value)}
               options={[{ value: '', label: 'Select supplier' }, ...suppliers.map(supplier => ({ value: supplier.id, label: supplier.name }))]}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.supplier}
             />
             <Select
               label="Base Unit"
@@ -1429,6 +1685,7 @@ export default function StaffDashboard() {
                 { value: 'G', label: 'g' },
               ]}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.unit}
             />
             <Input
               label="Stock Quantity"
@@ -1439,6 +1696,7 @@ export default function StaffDashboard() {
               value={editIngredientForm.stock_level}
               onChange={e => handleEditIngredientFieldChange('stock_level', e.target.value)}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.stock_level}
             />
             <Input
               label="Minimum Stock Level"
@@ -1449,6 +1707,7 @@ export default function StaffDashboard() {
               value={editIngredientForm.reorder_point}
               onChange={e => handleEditIngredientFieldChange('reorder_point', e.target.value)}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.reorder_point}
             />
             <Input
               label="Maximum Stock Level"
@@ -1459,6 +1718,7 @@ export default function StaffDashboard() {
               value={editIngredientForm.maximum_stock_level}
               onChange={e => handleEditIngredientFieldChange('maximum_stock_level', e.target.value)}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.maximum_stock_level}
             />
             <Input
               label="Purchase Date"
@@ -1467,6 +1727,7 @@ export default function StaffDashboard() {
               value={editIngredientForm.purchase_date}
               onChange={e => handleEditIngredientFieldChange('purchase_date', e.target.value)}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.purchase_date}
             />
             <Input
               label="Expiry Date"
@@ -1474,6 +1735,7 @@ export default function StaffDashboard() {
               value={editIngredientForm.expiration_date}
               onChange={e => handleEditIngredientFieldChange('expiration_date', e.target.value)}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.expiration_date}
             />
             <Input
               label="Stock Location / Position"
@@ -1481,13 +1743,14 @@ export default function StaffDashboard() {
               value={editIngredientForm.storage_location}
               onChange={e => handleEditIngredientFieldChange('storage_location', e.target.value)}
               disabled={editIngredientSaving}
+              error={editIngredientErrors.storage_location}
             />
           </div>
           <div className="sticky bottom-0 bg-white/95 flex flex-col sm:flex-row gap-2 pt-4 pb-1 border-t border-espresso/[0.06]">
-            <Button type="submit" variant="primary" className="flex-1" loading={editIngredientSaving}>
+            <Button type="submit" variant="primary" className="flex-1" loading={editIngredientSaving} disabled={editIngredientSaving || !editIngredientFormValid}>
               Update Stock Details
             </Button>
-            <Button type="button" variant="outline" onClick={() => setEditingIngredient(null)} disabled={editIngredientSaving}>
+            <Button type="button" variant="outline" onClick={() => { setEditingIngredient(null); setEditIngredientErrors({}); }} disabled={editIngredientSaving}>
               Keep Current Details
             </Button>
           </div>
@@ -1640,7 +1903,10 @@ export default function StaffDashboard() {
             </div>
           );
         })()}
-        <div className="flex gap-3 mt-4">
+        <div className="flex flex-col gap-3 mt-4 sm:flex-row">
+          <Button variant="gold" className="flex-1" icon={Printer} onClick={handleBrowserPrintReceipt}>
+            Print Receipt
+          </Button>
           <Button variant="outline" className="flex-1" onClick={() => setReceiptOrder(null)}>Back to Sales Log</Button>
         </div>
       </Modal>

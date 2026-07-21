@@ -17,7 +17,16 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input, Textarea } from '../components/ui/Input';
+import { PasswordStrength } from '../components/ui/PasswordStrength';
 import client from '../api/client';
+import {
+  getConfirmPasswordError,
+  getEmailError,
+  getPasswordError,
+  getPhoneError,
+  getRequiredError,
+  isBlank,
+} from '../utils/validation';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -40,15 +49,60 @@ export default function LoginPage() {
   const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
+  const [forgotErrors, setForgotErrors] = useState({});
   const googleButtonRef = useRef(null);
   const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 
   const [form, setForm] = useState({
-    username: '', password: '', email: '',
+    username: '', password: '', passwordConfirm: '', email: '',
     firstName: '', lastName: '', phone: '', address: '',
   });
 
-  const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  const update = (field) => (e) => {
+    const value = e.target.value;
+    setForm((f) => ({ ...f, [field]: value }));
+    setFormErrors((current) => ({ ...current, [field]: '' }));
+  };
+
+  const validateLoginForm = (values = form) => {
+    const errors = {
+      username: getRequiredError(values.username, 'Username'),
+      password: getRequiredError(values.password, 'Password'),
+    };
+    return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
+  };
+
+  const validateRegisterForm = (values = form) => {
+    const errors = {
+      username: getRequiredError(values.username, 'Username'),
+      email: getEmailError(values.email, { required: true }),
+      phone: getPhoneError(values.phone),
+      password: getPasswordError(values.password),
+      passwordConfirm: getConfirmPasswordError(values.password, values.passwordConfirm),
+    };
+    return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
+  };
+
+  const validateForgotForm = () => {
+    if (forgotStep === 'email') {
+      const email = getEmailError(forgotEmail, { required: true, label: 'Registered email' });
+      return email ? { email } : {};
+    }
+    if (forgotStep === 'otp') {
+      const otp = forgotOtp.length === 6 ? '' : 'Enter the 6-digit OTP.';
+      return otp ? { otp } : {};
+    }
+    const errors = {
+      password: getPasswordError(forgotPassword, 'New password'),
+      passwordConfirm: getConfirmPasswordError(forgotPassword, forgotPasswordConfirm),
+    };
+    return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
+  };
+
+  const isLoginValid = !isBlank(form.username) && !isBlank(form.password);
+  const isRegisterValid = !Object.keys(validateRegisterForm()).length;
+  const isForgotValid = !Object.keys(validateForgotForm()).length;
 
   const navigateAfterAuth = useCallback((authUser) => {
     if (redirect === 'book') { navigate('/customer'); return; }
@@ -123,6 +177,9 @@ export default function LoginPage() {
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const errors = validateLoginForm();
+    setFormErrors(errors);
+    if (Object.keys(errors).length) return;
     setLoading(true);
     const res = await login(form.username, form.password);
     setLoading(false);
@@ -138,6 +195,9 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setSuccess('');
+    const errors = validateRegisterForm();
+    setFormErrors(errors);
+    if (Object.keys(errors).length) return;
     setLoading(true);
     const regData = {
       username: form.username, password: form.password, email: form.email,
@@ -149,11 +209,21 @@ export default function LoginPage() {
     if (res.success) {
       setSuccess('Account created successfully! Please log in.');
       setIsRegister(false);
-      setForm((f) => ({ ...f, password: '' }));
+      setForm((f) => ({ ...f, password: '', passwordConfirm: '' }));
+      setFormErrors({});
     } else {
-      const errorMsg = typeof res.errors === 'object'
-        ? Object.entries(res.errors).map(([k, v]) => `${k}: ${v}`).join(', ')
-        : res.errors?.detail || 'Registration failed.';
+      const apiErrors = res.errors || {};
+      if (typeof apiErrors === 'object' && !Array.isArray(apiErrors)) {
+        setFormErrors(current => ({
+          ...current,
+          username: apiErrors.username?.join?.(' ') || current.username,
+          email: apiErrors.email?.join?.(' ') || current.email,
+          password: apiErrors.password?.join?.(' ') || current.password,
+        }));
+      }
+      const errorMsg = typeof apiErrors === 'object'
+        ? Object.entries(apiErrors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' ') : v}`).join(', ')
+        : apiErrors?.detail || 'Registration failed.';
       setError(errorMsg);
     }
   };
@@ -168,6 +238,7 @@ export default function LoginPage() {
     setForgotPasswordConfirm('');
     setShowForgotNewPassword(false);
     setForgotResult(null);
+    setForgotErrors({});
   };
 
   const useDifferentResetEmail = () => {
@@ -177,12 +248,16 @@ export default function LoginPage() {
     setForgotPassword('');
     setForgotPasswordConfirm('');
     setForgotResult(null);
+    setForgotErrors({});
   };
 
   const handleForgotSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setForgotResult(null);
+    const errors = validateForgotForm();
+    setForgotErrors(errors);
+    if (Object.keys(errors).length) return;
     setForgotLoading(true);
 
     try {
@@ -201,11 +276,6 @@ export default function LoginPage() {
         setForgotResetToken(res.data?.reset_token || '');
         setForgotResult({ detail: res.data?.detail || 'OTP verified. You can now set a new password.' });
         setForgotStep('password');
-        return;
-      }
-
-      if (forgotPassword !== forgotPasswordConfirm) {
-        setForgotResult({ detail: 'Passwords do not match.', error: true });
         return;
       }
 
@@ -246,6 +316,8 @@ export default function LoginPage() {
   const clearModeMessages = () => {
     setError('');
     setSuccess('');
+    setFormErrors({});
+    setForgotErrors({});
   };
 
   const formTitle = isRegister ? 'Join CAV today' : showForgotPassword ? 'Reset password' : 'Sign in to CAV';
@@ -362,25 +434,49 @@ export default function LoginPage() {
                   <p className="text-[10px] font-bold uppercase tracking-wider text-espresso/45">Quick Login Accounts</p>
                   <span className="rounded-full bg-gold/10 px-2.5 py-1 text-[10px] font-black text-gold-dark">Click to sign in</span>
                 </div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   {[
-                    { label: 'Customer Account', user: 'customer', pass: 'Customer123!', icon: User, helper: 'Open customer dashboard' },
-                    { label: 'Staff Account', user: 'staff', pass: 'Staff123!', icon: Coffee, helper: 'Open staff workspace' },
-                    { label: 'Admin Account', user: 'admin', pass: 'Admin123!', icon: ShieldAlert, helper: 'Open admin console' },
-                  ].map(({ label, user, pass, icon: Icon, helper }) => (
+                    {
+                      label: 'Customer',
+                      user: 'customer',
+                      pass: 'Customer123!',
+                      icon: User,
+                      helper: 'Bookings and rewards',
+                      accent: 'text-emerald-700 bg-emerald-50 border-emerald-200 group-hover:bg-emerald-100',
+                      ring: 'group-hover:border-emerald-300 group-hover:shadow-[0_18px_36px_rgba(5,150,105,0.12)]',
+                    },
+                    {
+                      label: 'Staff',
+                      user: 'staff',
+                      pass: 'Staff123!',
+                      icon: Coffee,
+                      helper: 'POS and inventory',
+                      accent: 'text-gold-dark bg-gold/10 border-gold/30 group-hover:bg-gold/20',
+                      ring: 'group-hover:border-gold/45 group-hover:shadow-[0_18px_36px_rgba(212,175,55,0.16)]',
+                    },
+                    {
+                      label: 'Admin',
+                      user: 'admin',
+                      pass: 'Admin123!',
+                      icon: ShieldAlert,
+                      helper: 'System controls',
+                      accent: 'text-red-700 bg-red-50 border-red-200 group-hover:bg-red-100',
+                      ring: 'group-hover:border-red-200 group-hover:shadow-[0_18px_36px_rgba(220,38,38,0.12)]',
+                    },
+                  ].map(({ label, user, pass, icon: Icon, helper, accent, ring }) => (
                     <button
                       key={label}
                       type="button"
                       onClick={() => quickLogin(user, pass)}
                       disabled={loading}
-                      className="group flex min-h-[86px] items-center gap-3 rounded-[18px] border border-espresso/[0.06] bg-cream px-3.5 py-3 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-gold/40 hover:bg-cream-dark hover:shadow-[0_14px_30px_rgba(46,26,17,0.08)] disabled:opacity-50"
+                      className={`group flex min-h-[148px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-espresso/[0.07] bg-cream px-3 py-4 text-center transition-all duration-300 hover:-translate-y-1 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${ring}`}
                     >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-gold-dark shadow-[0_8px_18px_rgba(46,26,17,0.06)] transition-colors group-hover:bg-gold group-hover:text-espresso">
-                        <Icon className="h-4 w-4" />
+                      <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border shadow-[0_10px_22px_rgba(46,26,17,0.07)] transition-colors ${accent}`}>
+                        <Icon className="h-6 w-6" />
                       </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-black text-espresso">{label}</span>
-                        <span className="mt-0.5 block text-[11px] font-semibold text-espresso/52">{helper}</span>
+                      <span className="flex min-w-0 flex-col items-center gap-1">
+                        <span className="block text-sm font-black leading-tight text-espresso">{label}</span>
+                        <span className="block max-w-[8.5rem] text-[11px] font-semibold leading-snug text-espresso/52">{helper}</span>
                       </span>
                     </button>
                   ))}
@@ -465,8 +561,12 @@ export default function LoginPage() {
                       type="email"
                       required
                       value={forgotEmail}
-                      onChange={(e) => setForgotEmail(e.target.value)}
+                      onChange={(e) => {
+                        setForgotEmail(e.target.value);
+                        setForgotErrors(current => ({ ...current, email: '' }));
+                      }}
                       placeholder="name@example.com"
+                      error={forgotErrors.email}
                     />
                   )}
 
@@ -481,9 +581,13 @@ export default function LoginPage() {
                         maxLength={6}
                         required
                         value={forgotOtp}
-                        onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        onChange={(e) => {
+                          setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6));
+                          setForgotErrors(current => ({ ...current, otp: '' }));
+                        }}
                         placeholder="000000"
                         className="text-center font-mono text-lg tracking-[0.24em]"
+                        error={forgotErrors.otp}
                       />
                       <button
                         type="button"
@@ -503,8 +607,12 @@ export default function LoginPage() {
                         type={showForgotNewPassword ? 'text' : 'password'}
                         required
                         value={forgotPassword}
-                        onChange={(e) => setForgotPassword(e.target.value)}
+                        onChange={(e) => {
+                          setForgotPassword(e.target.value);
+                          setForgotErrors(current => ({ ...current, password: '', passwordConfirm: '' }));
+                        }}
                         placeholder="Enter a new password"
+                        error={forgotErrors.password}
                         suffix={
                           <button
                             type="button"
@@ -523,9 +631,14 @@ export default function LoginPage() {
                         type={showForgotNewPassword ? 'text' : 'password'}
                         required
                         value={forgotPasswordConfirm}
-                        onChange={(e) => setForgotPasswordConfirm(e.target.value)}
+                        onChange={(e) => {
+                          setForgotPasswordConfirm(e.target.value);
+                          setForgotErrors(current => ({ ...current, passwordConfirm: '' }));
+                        }}
                         placeholder="Re-enter new password"
+                        error={forgotErrors.passwordConfirm}
                       />
+                      <PasswordStrength password={forgotPassword} />
                       <button
                         type="button"
                         onClick={useDifferentResetEmail}
@@ -536,7 +649,7 @@ export default function LoginPage() {
                     </div>
                   )}
 
-                  <Button type="submit" variant="gold" size="lg" loading={forgotLoading} className="w-full">
+                  <Button type="submit" variant="gold" size="lg" loading={forgotLoading} disabled={forgotLoading || !isForgotValid} className="w-full">
                     {forgotStepInfo[forgotStep].button}
                   </Button>
 
@@ -560,6 +673,7 @@ export default function LoginPage() {
                     value={form.username}
                     onChange={update('username')}
                     placeholder="Enter username"
+                    error={formErrors.username}
                   />
 
                   {isRegister && (
@@ -572,6 +686,7 @@ export default function LoginPage() {
                         value={form.email}
                         onChange={update('email')}
                         placeholder="name@example.com"
+                        error={formErrors.email}
                       />
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <Input
@@ -593,6 +708,7 @@ export default function LoginPage() {
                         value={form.phone}
                         onChange={update('phone')}
                         placeholder="+63 917 123 4567"
+                        error={formErrors.phone}
                       />
                       <Textarea
                         label="Address"
@@ -612,6 +728,7 @@ export default function LoginPage() {
                     value={form.password}
                     onChange={update('password')}
                     placeholder="Enter password"
+                    error={formErrors.password}
                     suffix={
                       <button
                         type="button"
@@ -625,6 +742,22 @@ export default function LoginPage() {
                     }
                   />
 
+                  {isRegister && (
+                    <>
+                      <Input
+                        label="Confirm Password"
+                        icon={Key}
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        value={form.passwordConfirm}
+                        onChange={update('passwordConfirm')}
+                        placeholder="Re-enter password"
+                        error={formErrors.passwordConfirm}
+                      />
+                      <PasswordStrength password={form.password} />
+                    </>
+                  )}
+
                   {!isRegister && (
                     <div className="-mt-2 text-right">
                       <button
@@ -637,7 +770,14 @@ export default function LoginPage() {
                     </div>
                   )}
 
-                  <Button type="submit" variant="gold" size="lg" loading={loading} className="mt-1 w-full">
+                  <Button
+                    type="submit"
+                    variant="gold"
+                    size="lg"
+                    loading={loading}
+                    disabled={loading || (isRegister ? !isRegisterValid : !isLoginValid)}
+                    className="mt-1 w-full"
+                  >
                     {isRegister ? 'Create My CAV Account' : 'Enter My Dashboard'}
                   </Button>
                 </form>
