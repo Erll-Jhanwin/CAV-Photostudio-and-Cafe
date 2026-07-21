@@ -50,17 +50,17 @@ const run = (command, args, options = {}) => new Promise((resolve) => {
 
 const listWindowsPrinters = async () => {
   const script = [
-    'Get-Printer',
-    "Select-Object Name,@{Name='Default';Expression={$false}},PrinterStatus",
+    'Get-CimInstance Win32_Printer',
+    'Select-Object Name,Default,PrinterStatus,WorkOffline,PortName',
     'ConvertTo-Json -Compress',
   ].join(' | ');
-  const result = await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script]);
+  const result = await run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeoutMs: 20000 });
   if (result.code !== 0) throw new Error(result.stderr || 'Could not read installed printers.');
   const parsed = result.stdout.trim() ? JSON.parse(result.stdout.trim()) : [];
   return (Array.isArray(parsed) ? parsed : [parsed]).filter(Boolean).map(printer => ({
     name: printer.Name,
     default: !!printer.Default,
-    status: printer.PrinterStatus,
+    status: printer.WorkOffline ? 'offline' : printer.PrinterStatus,
   }));
 };
 

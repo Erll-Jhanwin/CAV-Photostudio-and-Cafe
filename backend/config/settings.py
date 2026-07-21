@@ -215,6 +215,8 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS', [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
     'http://localhost:8100',
     'http://127.0.0.1:8100',
     'https://localhost',

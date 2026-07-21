@@ -2121,13 +2121,6 @@ export default function CustomerDashboard() {
                                       {paymentOcrResult && (
                                         <div className="mt-2 border-t border-current/10 pt-2">
                                           <p className="font-black text-espresso">Review and correct any field before submitting.</p>
-                                          <div className="mt-1 grid grid-cols-2 gap-1">
-                                            {Object.entries(paymentOcrResult.fields || {}).map(([key, field]) => (
-                                              <span key={key} className={field.confidence < 0.35 ? 'font-bold text-amber-700' : ''}>
-                                                {key.replace(/_/g, ' ')}: {Math.round((field.confidence || 0) * 100)}%
-                                              </span>
-                                            ))}
-                                          </div>
                                         </div>
                                       )}
                                     </div>

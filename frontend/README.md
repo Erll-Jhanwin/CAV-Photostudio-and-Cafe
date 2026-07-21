@@ -2,6 +2,20 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+## Google Sign-In Setup
+
+Google Sign-In uses `REACT_APP_GOOGLE_CLIENT_ID` in `frontend/.env` and the backend verifies the same client ID with `GOOGLE_CLIENT_ID` in `backend/.env`. Use the same Web application OAuth client ID in both files.
+
+In Google Cloud Console, open APIs & Services > Credentials > your Web application OAuth client. Add every frontend URL you use under Authorized JavaScript origins:
+
+- `http://localhost:3000`
+- `http://127.0.0.1:3000`
+- `http://localhost:3001`
+- `http://127.0.0.1:3001`
+- your deployed frontend origin, for example `https://your-frontend-domain.example`
+
+Origins must be scheme + host + optional port only. Do not include paths such as `/login`.
+
 ## Available Scripts
 
 In the project directory, you can run:
