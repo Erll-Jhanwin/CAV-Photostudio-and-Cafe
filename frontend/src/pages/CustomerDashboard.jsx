@@ -27,6 +27,7 @@ import {
   getPackageGalleryImages,
   localGalleryImages,
 } from '../utils/cavAssets';
+import { formatManilaDateTime, getManilaDateInputValue, getManilaMonthValue, getManilaTimeInputValue } from '../utils/dateTime';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -195,19 +196,15 @@ function BookingStepHeader({ step, title, description, className = '' }) {
 }
 
 const getDateInputValue = (date = new Date()) => {
-  const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
-  return localDate.toISOString().slice(0, 10);
+  return getManilaDateInputValue(date);
 };
 
 const getTimeInputValue = (date = new Date()) => {
-  const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
-  return localDate.toISOString().slice(11, 16);
+  return getManilaTimeInputValue(date);
 };
 
 const getMonthValue = (date = new Date()) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
+  return getManilaMonthValue(date);
 };
 
 const getMonthLabel = (monthValue) => {
@@ -2990,7 +2987,7 @@ export default function CustomerDashboard() {
                 </div>
                 <div className="rounded-2xl border border-espresso/5 bg-white p-4">
                   <p className="text-espresso/45 font-black uppercase tracking-wider">Booked On</p>
-                  <p className="font-bold text-espresso mt-1">{new Date(selectedBookingDetails.created_at).toLocaleString()}</p>
+                  <p className="font-bold text-espresso mt-1">{formatManilaDateTime(selectedBookingDetails.created_at)}</p>
                 </div>
               </div>
 
@@ -3028,7 +3025,7 @@ export default function CustomerDashboard() {
                           <span className="font-black text-gold-dark">{formatPeso(payment.amount)}</span>
                         </div>
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-espresso/55">
-                          <span>{new Date(payment.paid_at).toLocaleString()}</span>
+                          <span>{formatManilaDateTime(payment.paid_at)}</span>
                           <span className="font-bold">{formatStatusLabel(payment.status)}</span>
                         </div>
                         {payment.receipt_url && (
@@ -3053,7 +3050,7 @@ export default function CustomerDashboard() {
                       <div key={change.id} className="rounded-xl bg-cream/60 border border-espresso/5 p-3 space-y-2">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                           <span className="font-bold text-espresso">{change.reason || 'Booking updated'}</span>
-                          <span className="text-espresso/45">{new Date(change.created_at).toLocaleString()}</span>
+                          <span className="text-espresso/45">{formatManilaDateTime(change.created_at)}</span>
                         </div>
                         <p className="text-espresso/55">By {change.changed_by_name}</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

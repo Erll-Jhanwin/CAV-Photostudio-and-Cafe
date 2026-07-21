@@ -22,6 +22,7 @@ import { Avatar } from '../components/ui/Avatar';
 import { getLocalPrinters, getLocalPrintingSetupMessage, isLocalStaffConsole, openLocalStaffConsole, printLocalReceipt } from '../utils/localPrinting';
 import { brandAssets } from '../utils/cavAssets';
 import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
+import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
 
 function StaffSkeleton() {
   return (
@@ -56,7 +57,7 @@ const inventoryStatuses = [
 
 const getInventoryStatusMeta = (status) => inventoryStatuses.find(item => item.key === status) || inventoryStatuses[0];
 
-const todayValue = () => new Date().toISOString().split('T')[0];
+const todayValue = () => getManilaDateInputValue();
 const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
@@ -386,8 +387,8 @@ export default function StaffDashboard() {
   );
   const getReceiptDateTime = (order) => {
     if (order?.created_at_display) return order.created_at_display;
-    if (order?.completed_at) return new Date(order.completed_at).toLocaleString();
-    return order?.created_at ? new Date(order.created_at).toLocaleString() : '';
+    if (order?.completed_at) return formatManilaDateTime(order.completed_at);
+    return formatManilaDateTime(order?.created_at);
   };
   const getReceiptBusiness = (order) => ({
     logoUrl: order?.business_logo_url || RECEIPT_BUSINESS.logoUrl,
@@ -1280,7 +1281,7 @@ export default function StaffDashboard() {
                             </div>
                             <div className="bg-cream p-3 rounded-xl border border-espresso/5 col-span-2">
                               <p className="text-espresso/45 font-black uppercase tracking-wider">Paid At</p>
-                              <p className="font-black text-espresso">{new Date(payment.paid_at).toLocaleString()}</p>
+                              <p className="font-black text-espresso">{formatManilaDateTime(payment.paid_at)}</p>
                             </div>
                           </div>
 

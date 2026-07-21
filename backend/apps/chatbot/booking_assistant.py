@@ -11,7 +11,7 @@ from booking.availability import (
     get_available_slots,
     parse_time_value,
 )
-from booking.models import Booking, Package
+from booking.models import Booking, Package, Service
 
 
 TAGALOG_MARKERS = {
@@ -29,6 +29,7 @@ BOOKING_TERMS = {
     'scheduled', 'slot', 'slots', 'time', 'times', 'unavailable',
     'oras', 'bukas', 'sarado', 'iskedyul', 'petsa', 'pakete', 'bakante',
     'libre', 'available', 'availability', 'reserba',
+    'service', 'services',
 }
 
 PACKAGE_STOPWORDS = {
@@ -37,6 +38,8 @@ PACKAGE_STOPWORDS = {
     'sa', 'schedule', 'service', 'session', 'slot', 'slots', 'studio',
     'the', 'time',
 }
+
+OBSOLETE_SERVICE_NAMES = ['Self-Shoot Studio', 'Boutique Portrait']
 
 WEEKDAYS = {
     'monday': 0, 'mon': 0,
@@ -89,8 +92,8 @@ def business_hours_text(lang):
     close_text = format_time(BUSINESS_CLOSE_TIME)
     last_text = format_time(max(BOOKING_SLOT_TIMES))
     if lang == 'tl':
-        return f"Open kami araw-araw mula {open_text} hanggang {close_text}. Ang huling regular booking slot ay {last_text}."
-    return f"We are open daily from {open_text} to {close_text}. The last regular booking slot starts at {last_text}."
+        return f"Open kami araw-araw mula {open_text} hanggang {close_text} Philippine time (Asia/Manila, UTC+8). Ang huling regular one-hour booking slot ay {last_text}."
+    return f"We are open daily from {open_text} to {close_text} Philippine time (Asia/Manila, UTC+8). The last regular one-hour booking slot starts at {last_text}."
 
 
 def parse_requested_date(question):
@@ -191,7 +194,11 @@ def parse_requested_time(question):
 def get_matching_packages(question):
     q = normalize_text(question)
     query_words = set(q.split()) - PACKAGE_STOPWORDS
-    packages = list(Package.objects.select_related('service').order_by('service__name', 'name'))
+    packages = list(
+        Package.objects.select_related('service')
+        .exclude(service__name__in=OBSOLETE_SERVICE_NAMES)
+        .order_by('service__name', 'name')
+    )
     matches = []
 
     for package in packages:
@@ -219,6 +226,27 @@ def format_package_list(packages, lang, limit=8):
     rows = []
     for package in packages[:limit]:
         rows.append(f"- {package.name} ({package.service.name}): PHP {package.price}")
+    return "\n".join(rows)
+
+
+def get_live_services():
+    return list(
+        Service.objects.exclude(name__in=OBSOLETE_SERVICE_NAMES)
+        .prefetch_related('packages')
+        .order_by('name')
+    )
+
+
+def format_service_list(services, lang, limit=8):
+    if not services:
+        return "Wala pang services sa database." if lang == 'tl' else "There are no services in the database yet."
+    rows = []
+    for service in services[:limit]:
+        package_count = len([package for package in service.packages.all() if package.service_id == service.id])
+        rows.append(
+            f"- {service.name}: starts at PHP {service.base_price}, "
+            f"{service.duration_minutes} minutes, {package_count} package{'s' if package_count != 1 else ''}"
+        )
     return "\n".join(rows)
 
 
@@ -351,6 +379,20 @@ def asks_for_packages(question):
     )
 
 
+def asks_for_services(question):
+    q = normalize_text(question)
+    return any(term in q for term in ['service', 'services']) and not any(
+        term in q for term in ['slot', 'slots', 'available', 'availability', 'schedule', 'time', 'date', 'petsa', 'oras', 'bakante']
+    )
+
+
+def asks_how_to_book(question):
+    q = normalize_text(question)
+    procedural = any(term in q for term in ['how do i book', 'how to book', 'how can i book', 'paano mag book', 'paano magbook'])
+    availability_terms = ['slot', 'slots', 'available', 'availability', 'schedule', 'time', 'date', 'petsa', 'oras', 'bakante']
+    return procedural and not any(term in q for term in availability_terms)
+
+
 def build_booking_chatbot_response(question, user=None):
     if not is_booking_related(question):
         return None
@@ -360,7 +402,22 @@ def build_booking_chatbot_response(question, user=None):
     day = parse_requested_date(question)
     requested_time = parse_requested_time(question)
     packages = get_matching_packages(question)
-    all_packages = list(Package.objects.select_related('service').order_by('service__name', 'name'))
+    all_packages = list(
+        Package.objects.select_related('service')
+        .exclude(service__name__in=OBSOLETE_SERVICE_NAMES)
+        .order_by('service__name', 'name')
+    )
+
+    if asks_how_to_book(question):
+        if lang == 'tl':
+            return (
+                "Para mag-book, mag-log in muna, buksan ang Book a Session, piliin ang service at package, "
+                "pumili ng available date at time, ilagay ang customer details, at i-submit ang booking."
+            )
+        return (
+            "To book, log in, open Book a Session, choose a service and package, select an available date and time, "
+            "enter the customer details, then submit the booking."
+        )
 
     if any(term in q for term in ['hour', 'hours', 'open', 'closing', 'sarado', 'bukas ba', 'oras']):
         if not any(term in q for term in ['slot', 'available', 'availability', 'schedule', 'booked', 'date']):
@@ -368,6 +425,10 @@ def build_booking_chatbot_response(question, user=None):
 
     if asks_for_own_bookings(question):
         return format_user_bookings(user, lang)
+
+    if asks_for_services(question):
+        prefix = "Live services from the database:" if lang == 'en' else "Mga live service mula sa database:"
+        return f"{prefix}\n{format_service_list(get_live_services(), lang)}\n\n{business_hours_text(lang)}"
 
     if asks_for_packages(question):
         prefix = "Available packages from the live database:" if lang == 'en' else "Mga package na nasa live database:"

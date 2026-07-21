@@ -103,7 +103,7 @@ class Command(BaseCommand):
 
     def seed_faqs(self):
         faqs = [
-            ("What are your operating hours?", "CAV Photo Studio and Cafe is open daily from 9:00 AM to 8:00 PM.", "hours,schedule,open"),
+            ("What are your operating hours?", "CAV Photo Studio and Cafe is open daily from 9:00 AM to 7:00 PM Philippine time (Asia/Manila, UTC+8).", "hours,schedule,open"),
             ("How do I book a studio session?", "Log in, open Book Session, choose a package, select a date and time, then submit your booking.", "book,booking,session,reserve"),
             ("Where is CAV located?", "CAV is located at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.", "location,address,where,directions"),
         ]

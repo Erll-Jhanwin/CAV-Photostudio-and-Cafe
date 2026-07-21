@@ -1,3 +1,5 @@
+import { formatManilaDateTime } from './dateTime';
+
 const EXTERNAL_BRIDGE_URL = process.env.REACT_APP_LOCAL_PRINT_BRIDGE_URL || 'http://127.0.0.1:8765';
 const SAME_ORIGIN_BRIDGE_URL = '/local-print';
 export const LOCAL_STAFF_CONSOLE_URL = 'http://127.0.0.1:3001/staff';
@@ -73,7 +75,7 @@ export const buildReceiptText = (order, business, user) => {
   const amountReceived = Number(payment.amount || order?.amount_received || order?.total || 0);
   const change = Number(order?.change_amount ?? Math.max(amountReceived - Number(order?.total || 0), 0));
   const transactionNumber = order?.transaction_id || order?.transaction_number || payment.transaction_id || `POS-${order?.id || ''}`;
-  const dateText = order?.created_at_display || (order?.created_at ? new Date(order.created_at).toLocaleString() : '');
+  const dateText = order?.created_at_display || formatManilaDateTime(order?.created_at);
 
   const rows = [
     center(business.logoText || 'CAV'),

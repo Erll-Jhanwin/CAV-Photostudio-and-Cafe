@@ -702,9 +702,9 @@ export default function LandingPage() {
       const res = await axios.post(`${API_BASE_URL}/api/chatbot/query/`, { question: msg });
       setChatMessages(p => [...p, { role: 'assistant', content: res.data.response }]);
     } catch {
-      let answer = 'Thanks for asking!\n\nWe are open daily from 9:00 AM to 8:00 PM at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.';
+      let answer = 'Thanks for asking!\n\nWe are open daily from 9:00 AM to 7:00 PM Philippine time (Asia/Manila, UTC+8) at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.';
       const q = msg.toLowerCase();
-      if (q.includes('hour') || q.includes('time')) answer = 'CAV Photo Studio and Cafe is open daily from 9:00 AM to 8:00 PM.';
+      if (q.includes('hour') || q.includes('time')) answer = 'CAV Photo Studio and Cafe is open daily from 9:00 AM to 7:00 PM Philippine time (Asia/Manila, UTC+8).';
       else if (q.includes('price') || q.includes('package')) answer = 'Our packages include:\n- Solo, Couple, and Friends packages: PHP 1,000\n- Family and Birthday packages: PHP 1,500\n- Standard Event Package: PHP 2,500';
       else if (q.includes('location') || q.includes('where')) answer = 'We are located at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.';
       else if (q.includes('email') || q.includes('contact')) answer = 'You can reach us at cav.photostudio.cafe@gmail.com or find us on Facebook and Instagram as CAV Photo Studio & Cafe.';
@@ -1188,7 +1188,7 @@ export default function LandingPage() {
           <div className="hidden sm:block w-px h-4 bg-espresso/10" />
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-gold" />
-            <span>Daily: 9:00 AM – 8:00 PM</span>
+            <span>Daily: 9:00 AM - 7:00 PM PHT</span>
           </div>
           <div className="hidden sm:block w-px h-4 bg-espresso/10" />
           <div className="flex items-center gap-2">

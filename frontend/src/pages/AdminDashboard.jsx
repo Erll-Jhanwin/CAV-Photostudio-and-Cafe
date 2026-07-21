@@ -35,6 +35,7 @@ import {
   normalizePayments,
   normalizeRowsById,
 } from '../utils/uniqueRecords';
+import { formatManilaDateTime, MANILA_TIME_ZONE } from '../utils/dateTime';
 
 const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
   minimumFractionDigits: 0,
@@ -86,7 +87,7 @@ const formatChartDate = (value) => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('en-PH', { timeZone: MANILA_TIME_ZONE, month: 'short', day: 'numeric' });
 };
 
 function SalesForecastTooltip({ active, payload, label }) {
@@ -1287,7 +1288,7 @@ export default function AdminDashboard() {
                             </span>
                             {report.printed_at && (
                               <span className="rounded-full bg-cream px-2.5 py-1 text-[10px] font-black text-espresso/55">
-                                Printed {new Date(report.printed_at).toLocaleString()}
+                                Printed {formatManilaDateTime(report.printed_at)}
                               </span>
                             )}
                           </div>
@@ -1412,7 +1413,7 @@ export default function AdminDashboard() {
                               </div>
                               <div className="rounded-2xl bg-cream/70 border border-espresso/[0.04] p-3">
                                 <p className="text-espresso/45 font-black uppercase tracking-wider">Paid At</p>
-                                <p className="font-black text-espresso">{new Date(payment.paid_at).toLocaleString()}</p>
+                                <p className="font-black text-espresso">{formatManilaDateTime(payment.paid_at)}</p>
                               </div>
                             </div>
 
@@ -1456,7 +1457,7 @@ export default function AdminDashboard() {
                                     <Avatar user={payment.verified_by_details} size="xs" />
                                     <p>{payment.verified_by_details?.username || 'N/A'}</p>
                                   </div>
-                                  <p>{payment.verified_at ? new Date(payment.verified_at).toLocaleString() : 'No timestamp'}</p>
+                                  <p>{payment.verified_at ? formatManilaDateTime(payment.verified_at) : 'No timestamp'}</p>
                                 </div>
                               )}
                             </div>

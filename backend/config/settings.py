@@ -12,6 +12,7 @@ from pathlib import Path
 import dj_database_url
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
+from django.db.backends.signals import connection_created
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -39,6 +40,7 @@ if not SECRET_KEY:
         raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false.')
     SECRET_KEY = 'django-insecure-local-development-only-change-me'
 
+APP_TIME_ZONE = os.environ.get('TIME_ZONE', 'Asia/Manila')
 ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS', ['localhost', '127.0.0.1', '[::1]', 'testserver'])
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
 PASSWORD_RESET_OTP_TTL_MINUTES = int(os.environ.get('PASSWORD_RESET_OTP_TTL_MINUTES', '10'))
@@ -117,6 +119,19 @@ DATABASES = {
         ssl_require=env_bool('DATABASE_SSL_REQUIRE', True),
     )
 }
+DATABASES['default'].setdefault('OPTIONS', {})
+DATABASES['default']['OPTIONS']['options'] = f"-c timezone={os.environ.get('DATABASE_TIME_ZONE', APP_TIME_ZONE)}"
+
+
+def set_database_session_timezone(sender, connection, **kwargs):
+    if connection.vendor != 'postgresql':
+        return
+    db_timezone = os.environ.get('DATABASE_TIME_ZONE', APP_TIME_ZONE)
+    with connection.connection.cursor() as cursor:
+        cursor.execute('SET TIME ZONE %s', [db_timezone])
+
+
+connection_created.connect(set_database_session_timezone)
 
 
 
@@ -132,7 +147,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+TIME_ZONE = APP_TIME_ZONE
 USE_I18N = True
 USE_TZ = True
 
