@@ -5,7 +5,7 @@ import {
   TrendingUp, BarChart2, Users, MessageSquare, Play, Package,
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
   X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
-  ArrowDownRight, Eye, ChevronLeft, ChevronRight, Camera, Printer
+  ArrowDownRight, Eye, Camera, Printer
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -21,6 +21,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Skeleton, SkeletonChart, SkeletonStatsCard, SkeletonTable, SkeletonProfileCard } from '../components/ui/Skeleton';
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
+import { DataTable as DashboardTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 
 const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
   minimumFractionDigits: 0,
@@ -62,119 +63,6 @@ const getRangeDates = (preset, customStart, customEnd) => {
   }
 
   return { start: formatDateValue(start), end: formatDateValue(end) };
-};
-
-function DashboardTable({ columns, rows, sort, onSort, renderCell, renderActions }) {
-  if (!rows?.length) {
-    return <EmptyState icon={BarChart2} title="No records found" description="No data exists for the selected date range." />;
-  }
-  return (
-    <div className="w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/70 scrollbar-thin">
-      <table className="min-w-[760px] w-full table-fixed text-xs">
-        <thead className="sticky top-0 z-10 bg-cream">
-          <tr className="border-b border-espresso/[0.08] text-espresso/55 uppercase tracking-wider">
-            {columns.map(([key, label], index) => (
-              <th key={key} className={`${index === 0 ? 'w-[26%]' : ''} px-4 py-3 text-left align-bottom`}>
-                <button type="button" onClick={() => onSort(key)} className="inline-flex max-w-full items-center gap-1 whitespace-normal break-words text-left font-black leading-snug hover:text-espresso focus-visible:outline-gold">
-                  {label}
-                  {sort.key === key && <span className="shrink-0">{sort.dir === 'asc' ? '↑' : '↓'}</span>}
-                </button>
-              </th>
-            ))}
-            <th className="w-[132px] px-4 py-3 text-right align-bottom">
-              <span className="font-black leading-snug">Action</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={row.id || i} className="border-b border-espresso/[0.04] hover:bg-cream/45 transition-colors">
-              {columns.map(([key], index) => (
-                <td key={key} className={`${index === 0 ? 'font-bold text-espresso' : 'font-semibold text-espresso/75'} px-4 py-3.5 align-middle leading-relaxed whitespace-normal break-words`}>
-                  <div className="min-w-0 max-w-full">
-                    {renderCell(row, key)}
-                  </div>
-                </td>
-              ))}
-              <td className="px-4 py-3.5 text-right align-middle">
-                <div className="flex justify-end">
-                  {renderActions ? renderActions(row) : (
-                    <button type="button" className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-cream px-3 py-2 text-[10px] font-black text-espresso hover:bg-gold transition-all">
-                      <Eye className="w-3 h-3 shrink-0" />
-                      <span>Open Details</span>
-                    </button>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function PaginationControls({ page, setPage, total, pageSize, setPageSize, pageSizeOptions = [5, 10, 25, 50] }) {
-  const pages = Math.max(Math.ceil(total / pageSize), 1);
-  const safePage = Math.min(Math.max(page, 1), pages);
-  const start = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
-  const end = Math.min(total, safePage * pageSize);
-  const firstPage = Math.max(1, Math.min(safePage - 2, pages - 4));
-  const visiblePages = Array.from({ length: Math.min(5, pages) }, (_, i) => firstPage + i).filter(value => value <= pages);
-
-  return (
-    <div className="mt-3 flex flex-col gap-3 border-t border-espresso/[0.06] pt-3 text-xs text-espresso/60 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-bold text-espresso/70">
-          Showing {start}-{end} of {total}
-        </span>
-        {setPageSize && (
-          <label className="inline-flex items-center gap-2 rounded-xl bg-cream/70 px-2.5 py-1.5 font-bold">
-            <span>Rows</span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setPage(1);
-              }}
-              className="bg-transparent text-espresso focus:outline-none"
-              aria-label="Rows per page"
-            >
-              {pageSizeOptions.map(option => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </label>
-        )}
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <button type="button" disabled={safePage <= 1} onClick={() => setPage(Math.max(1, safePage - 1))} className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-cream disabled:opacity-40 hover:bg-cream-dark transition-colors" aria-label="Previous page">
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        {visiblePages.map(pageNumber => (
-          <button
-            key={pageNumber}
-            type="button"
-            onClick={() => setPage(pageNumber)}
-            className={`h-8 min-w-8 rounded-xl px-2 font-black transition-colors ${
-              pageNumber === safePage ? 'bg-espresso text-gold' : 'bg-cream text-espresso/65 hover:bg-cream-dark hover:text-espresso'
-            }`}
-            aria-current={pageNumber === safePage ? 'page' : undefined}
-          >
-            {pageNumber}
-          </button>
-        ))}
-        <button type="button" disabled={safePage >= pages} onClick={() => setPage(Math.min(pages, safePage + 1))} className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-cream disabled:opacity-40 hover:bg-cream-dark transition-colors" aria-label="Next page">
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const paginateRows = (rows, page, pageSize) => {
-  const source = rows || [];
-  const pages = Math.max(Math.ceil(source.length / pageSize), 1);
-  const safePage = Math.min(Math.max(page, 1), pages);
-  return source.slice((safePage - 1) * pageSize, safePage * pageSize);
 };
 
 const sumBy = (rows, key) => rows.reduce((total, row) => total + Number(row?.[key] || 0), 0);
@@ -320,6 +208,8 @@ export default function AdminDashboard() {
   const [faqPageSize, setFaqPageSize] = useState(10);
   const [bookingSort, setBookingSort] = useState({ key: 'created_at', dir: 'desc' });
   const [posSort, setPosSort] = useState({ key: 'date', dir: 'desc' });
+  const [reorderSort, setReorderSort] = useState({ key: 'projected_stock', dir: 'asc' });
+  const [staffSort, setStaffSort] = useState({ key: 'username', dir: 'asc' });
   const [deletingBookingId, setDeletingBookingId] = useState(null);
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
@@ -701,13 +591,6 @@ export default function AdminDashboard() {
     { label: 'Cancelled', value: metrics.cancelled || 0, color: '#EF4444' },
   ];
   const revenueTotal = Number(metrics.pos_revenue || 0) + Number(metrics.booking_revenue || 0);
-  const sortRows = (rows, sort) => [...(rows || [])].sort((a, b) => {
-    const av = a[sort.key] ?? '';
-    const bv = b[sort.key] ?? '';
-    if (av < bv) return sort.dir === 'asc' ? -1 : 1;
-    if (av > bv) return sort.dir === 'asc' ? 1 : -1;
-    return 0;
-  });
   const toggleSort = (current, setter, key) => {
     setter(current.key === key ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
   };
@@ -748,7 +631,8 @@ export default function AdminDashboard() {
   const topProductRows = paginateRows(topProducts, topProductsPage, topProductsPageSize);
   const topPackageRows = paginateRows(topPackages, topPackagesPage, topPackagesPageSize);
   const reorderRows = forecast?.reorder_recommendations || [];
-  const reorderPageRows = paginateRows(reorderRows, reorderPage, reorderPageSize);
+  const sortedReorderRows = sortRows(reorderRows, reorderSort);
+  const reorderPageRows = paginateRows(sortedReorderRows, reorderPage, reorderPageSize);
   const inventoryCounts = analytics?.inventory_status_counts || {};
   const inventorySummary = Object.entries(inventoryStatusMeta).map(([key, meta]) => ({
     key,
@@ -760,7 +644,8 @@ export default function AdminDashboard() {
   ));
   const paymentPageRows = paginateRows(filteredBookingPayments, paymentPage, paymentPageSize);
   const reportPageRows = paginateRows(endOfDayReports, reportsPage, reportsPageSize);
-  const staffPageRows = paginateRows(staffList, staffPage, staffPageSize);
+  const sortedStaffList = sortRows(staffList, staffSort);
+  const staffPageRows = paginateRows(sortedStaffList, staffPage, staffPageSize);
   const faqPageRows = paginateRows(faqs, faqPage, faqPageSize);
   const paymentStatusCounts = bookingPayments.reduce((acc, payment) => {
     acc[payment.status] = (acc[payment.status] || 0) + 1;
@@ -1054,44 +939,37 @@ export default function AdminDashboard() {
               <div className="animate-in-up">
                   <Card className="!p-4 md:!p-5">
                     <CardHeader title="Estimated Stock Depletions &amp; Reorders" subtitle="Based on the active demand forecast." />
-                    <div className="w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/70 scrollbar-thin">
-                      <table className="min-w-[860px] w-full table-fixed text-xs">
-                        <thead className="sticky top-0 z-10 bg-cream">
-                          <tr className="border-b border-espresso/[0.08] text-espresso/55 font-black uppercase tracking-wider">
-                            <th className="w-[28%] px-4 py-3 text-left align-bottom leading-snug">Product</th>
-                            <th className="w-[12%] px-4 py-3 text-center align-bottom leading-snug">Stock</th>
-                            <th className="w-[15%] px-4 py-3 text-center align-bottom leading-snug">7-Day Demand</th>
-                            <th className="w-[12%] px-4 py-3 text-center align-bottom leading-snug">Balance</th>
-                            <th className="w-[13%] px-4 py-3 text-center align-bottom leading-snug">Order Qty</th>
-                            <th className="w-[20%] px-4 py-3 text-left align-bottom leading-snug">Supplier</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {reorderRows.length > 0 ? reorderPageRows.map((rec, i) => (
-                            <tr key={`${rec.product_name}-${i}`} className="border-b border-espresso/[0.04] hover:bg-cream/45 transition-colors">
-                              <td className="px-4 py-3.5 align-middle font-bold leading-relaxed text-espresso whitespace-normal break-words">{rec.product_name}</td>
-                              <td className="px-4 py-3.5 text-center align-middle font-bold leading-relaxed">{rec.current_stock}</td>
-                              <td className="px-4 py-3.5 text-center align-middle font-bold leading-relaxed text-gold-dark">{rec["7_day_forecasted_demand"]}</td>
-                              <td className={`px-4 py-3.5 text-center align-middle font-bold leading-relaxed ${rec.projected_stock <= 0 ? 'text-red-600' : 'text-espresso/60'}`}>
-                                {rec.projected_stock}
-                              </td>
-                              <td className="px-4 py-3.5 text-center align-middle">
-                                <span className="inline-flex justify-center rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold leading-none text-amber-700">
-                                  +{rec.recommended_order_quantity}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3.5 align-middle font-semibold leading-relaxed text-espresso/65 whitespace-normal break-words">{rec.supplier_name}</td>
-                            </tr>
-                          )) : (
-                            <tr>
-                              <td colSpan={6}>
-                                <EmptyState icon={Package} title="All stocks optimal" description="No reorder actions needed at this time." />
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                    <DashboardTable
+                      columns={[
+                        { key: 'product_name', label: 'Product' },
+                        { key: 'current_stock', label: 'Stock', align: 'center' },
+                        { key: '7_day_forecasted_demand', label: '7-Day Demand', align: 'center', render: rec => <span className="text-gold-dark">{rec["7_day_forecasted_demand"]}</span> },
+                        {
+                          key: 'projected_stock',
+                          label: 'Balance',
+                          align: 'center',
+                          render: rec => <span className={rec.projected_stock <= 0 ? 'text-red-600' : 'text-espresso/60'}>{rec.projected_stock}</span>,
+                        },
+                        {
+                          key: 'recommended_order_quantity',
+                          label: 'Order Qty',
+                          align: 'center',
+                          render: rec => (
+                            <span className="inline-flex justify-center rounded-lg bg-amber-50 px-2.5 py-1 text-[10px] font-bold leading-none text-amber-700">
+                              +{rec.recommended_order_quantity}
+                            </span>
+                          ),
+                        },
+                        { key: 'supplier_name', label: 'Supplier' },
+                      ]}
+                      rows={reorderPageRows}
+                      sort={reorderSort}
+                      onSort={(key) => toggleSort(reorderSort, setReorderSort, key)}
+                      emptyIcon={Package}
+                      emptyTitle="All stocks optimal"
+                      emptyDescription="No reorder actions needed at this time."
+                      minWidth={860}
+                    />
                     {reorderRows.length > 0 && (
                       <PaginationControls page={reorderPage} setPage={setReorderPage} total={reorderRows.length} pageSize={reorderPageSize} setPageSize={setReorderPageSize} />
                     )}
@@ -1446,49 +1324,39 @@ export default function AdminDashboard() {
                   <CardHeader title="Existing Accounts" />
                   {staffList.length > 0 ? (
                     <div className="flex min-h-0 flex-1 flex-col">
-                    <div className="min-h-0 flex-1 w-full overflow-hidden rounded-2xl border border-espresso/[0.06] bg-white/70">
-                      <table className="w-full table-fixed text-xs">
-                        <thead className="sticky top-0 z-10 bg-cream">
-                          <tr className="border-b border-espresso/[0.08] text-espresso/55 font-black uppercase tracking-wider">
-                            <th className="w-[26%] px-4 py-3 text-left align-bottom leading-snug">Username</th>
-                            <th className="w-[38%] px-4 py-3 text-left align-bottom leading-snug">Email</th>
-                            <th className="w-[20%] px-4 py-3 text-left align-bottom leading-snug">Role</th>
-                            <th className="w-[16%] px-4 py-3 text-right align-bottom leading-snug">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {staffPageRows.map((st, i) => (
-                            <tr key={st.id} className="border-b border-espresso/5 hover:bg-espresso/[0.02] transition-colors animate-in-up" style={{ animationDelay: `${i * 30}ms` }}>
-                              <td className="px-4 py-3.5 align-middle font-bold leading-relaxed text-espresso whitespace-normal break-words">{st.username}</td>
-                              <td className="px-4 py-3.5 align-middle font-semibold leading-relaxed text-espresso/65 whitespace-normal break-words">{st.email || 'N/A'}</td>
-                              <td className="px-4 py-3.5 align-middle"><StatusBadge status={st.role} /></td>
-                              <td className="px-4 py-3.5 align-middle">
-                                <div className="flex justify-end gap-1.5">
-                                  <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    icon={Edit}
-                                    title={`Edit ${st.username}`}
-                                    aria-label={`Edit ${st.username}`}
-                                    onClick={() => openStaffEditModal(st)}
-                                  />
-                                  <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    icon={Trash2}
-                                    title={`Delete ${st.username}`}
-                                    aria-label={`Delete ${st.username}`}
-                                    onClick={() => handleDeleteStaff(st)}
-                                    disabled={deletingStaffId === st.id || st.id === user?.id}
-                                    className="text-red-500 hover:text-red-700"
-                                  />
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <DashboardTable
+                      columns={[
+                        { key: 'username', label: 'Username' },
+                        { key: 'email', label: 'Email', render: st => st.email || 'N/A' },
+                        { key: 'role', label: 'Role', render: st => <StatusBadge status={st.role} /> },
+                      ]}
+                      rows={staffPageRows}
+                      sort={staffSort}
+                      onSort={(key) => toggleSort(staffSort, setStaffSort, key)}
+                      renderActions={st => (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            icon={Edit}
+                            title={`Edit ${st.username}`}
+                            aria-label={`Edit ${st.username}`}
+                            onClick={() => openStaffEditModal(st)}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            icon={Trash2}
+                            title={`Delete ${st.username}`}
+                            aria-label={`Delete ${st.username}`}
+                            onClick={() => handleDeleteStaff(st)}
+                            disabled={deletingStaffId === st.id || st.id === user?.id}
+                            className="text-red-500 hover:text-red-700"
+                          />
+                        </>
+                      )}
+                      minWidth={680}
+                    />
                     <PaginationControls page={staffPage} setPage={setStaffPage} total={staffList.length} pageSize={staffPageSize} setPageSize={setStaffPageSize} />
                     </div>
                   ) : (

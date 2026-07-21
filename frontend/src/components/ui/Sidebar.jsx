@@ -26,6 +26,7 @@ export function Sidebar({
         <div
           className="fixed inset-0 bg-espresso-dark/50 z-20 md:hidden animate-in"
           onClick={onMobileClose}
+          role="presentation"
         />
       )}
 
@@ -51,6 +52,7 @@ export function Sidebar({
             const Icon = item.icon;
             return (
               <button
+                type="button"
                 key={item.key}
                 onClick={() => { item.onClick?.(); onMobileClose?.(); }}
                 className={`
@@ -64,7 +66,7 @@ export function Sidebar({
                 `}
                 aria-current={item.active ? 'page' : undefined}
               >
-                <Icon className="w-4 h-4 shrink-0" />
+                <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <span>{item.label}</span>
                 {item.badge != null && (
                   <span className="ml-auto bg-gold-dark text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none">

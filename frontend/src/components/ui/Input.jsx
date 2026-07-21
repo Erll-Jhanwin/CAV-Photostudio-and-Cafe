@@ -23,7 +23,7 @@ export const Input = forwardRef(({ label, icon: Icon, suffix, error, className =
           ref={ref}
           id={id}
           className={`
-            w-full bg-white/90 border rounded-[18px] px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)]
+            w-full bg-white/90 border rounded-xl px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)]
             placeholder:text-espresso/40
             transition-all duration-300 ease-out
             focus:outline-none focus:border-gold focus:ring-4 focus:ring-gold/15 focus:bg-white
@@ -69,7 +69,7 @@ export const Select = forwardRef(({ label, icon: Icon, error, options = [], clas
           ref={ref}
           id={id}
           className={`
-            w-full bg-white/90 border rounded-[18px] px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)]
+            w-full bg-white/90 border rounded-xl px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)]
             transition-all duration-300 ease-out
             focus:outline-none focus:border-gold focus:ring-4 focus:ring-gold/15 focus:bg-white
             disabled:opacity-50 disabled:cursor-not-allowed
@@ -107,7 +107,7 @@ export const Textarea = forwardRef(({ label, error, className = '', ...props }, 
         ref={ref}
         id={id}
         className={`
-          w-full bg-white/90 border rounded-[18px] px-4 py-3 text-sm text-espresso
+          w-full bg-white/90 border rounded-xl px-4 py-3 text-sm text-espresso
           placeholder:text-espresso/40 resize-none shadow-[0_10px_26px_rgba(46,26,17,0.04)]
           transition-all duration-300 ease-out
           focus:outline-none focus:border-gold focus:ring-4 focus:ring-gold/15 focus:bg-white

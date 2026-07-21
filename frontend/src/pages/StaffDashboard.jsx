@@ -16,6 +16,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Skeleton, SkeletonTable, SkeletonProfileCard } from '../components/ui/Skeleton';
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
+import { DataTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 
 function StaffSkeleton() {
   return (
@@ -35,24 +36,6 @@ function StaffSkeleton() {
           <div className="lg:col-span-4"><SkeletonTable rows={4} cols={2} /></div>
         </div>
       </main>
-    </div>
-  );
-}
-
-function PaginationControls({ page, setPage, total, pageSize }) {
-  const totalPages = Math.max(Math.ceil(total / pageSize), 1);
-  if (totalPages <= 1) return null;
-  return (
-    <div className="flex items-center justify-between gap-3 pt-3 text-xs text-espresso/55">
-      <span>Page {page} of {totalPages}</span>
-      <div className="flex gap-2">
-        <button type="button" disabled={page <= 1} onClick={() => setPage(current => Math.max(1, current - 1))} className="rounded-xl border border-espresso/10 bg-white px-3 py-1.5 font-bold disabled:opacity-40">
-          Previous
-        </button>
-        <button type="button" disabled={page >= totalPages} onClick={() => setPage(current => Math.min(totalPages, current + 1))} className="rounded-xl border border-espresso/10 bg-white px-3 py-1.5 font-bold disabled:opacity-40">
-          Next
-        </button>
-      </div>
     </div>
   );
 }
@@ -232,6 +215,8 @@ export default function StaffDashboard() {
   const [paymentPage, setPaymentPage] = useState(1);
   const [inventoryPage, setInventoryPage] = useState(1);
   const [salesPage, setSalesPage] = useState(1);
+  const [inventorySort, setInventorySort] = useState({ key: 'name', dir: 'asc' });
+  const [salesSort, setSalesSort] = useState({ key: 'created_at', dir: 'desc' });
   const [productModalOpen, setProductModalOpen] = useState(false);
   const [productForm, setProductForm] = useState(emptyProductForm());
 
@@ -628,14 +613,20 @@ export default function StaffDashboard() {
 
   const pageTitles = { pos: 'POS Terminal', payments: 'Payment Booking Verification', inventory: 'Live Inventory', sales: 'Daily Sales Logs' };
   const isCurrentTabLoading = !!loadingResources[activeTab];
+  const toggleSort = (current, setter, key, column = {}) => {
+    setter(current.key === key
+      ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc', accessor: column.sortAccessor }
+      : { key, dir: 'asc', accessor: column.sortAccessor });
+  };
   const filteredProducts = products.filter(product => product.name.toLowerCase().includes(posSearch.toLowerCase()));
-  const pagedProducts = filteredProducts.slice((productPage - 1) * PRODUCT_PAGE_SIZE, productPage * PRODUCT_PAGE_SIZE);
+  const pagedProducts = paginateRows(filteredProducts, productPage, PRODUCT_PAGE_SIZE);
   const visibleInventory = ingredients.filter(ingredient => {
     const matchesSearch = ingredient.name.toLowerCase().includes(invSearch.toLowerCase());
     const matchesStatus = inventoryFilter === 'ALL' || ingredient.inventory_status === inventoryFilter;
     return matchesSearch && matchesStatus;
   });
-  const pagedInventory = visibleInventory.slice((inventoryPage - 1) * TABLE_PAGE_SIZE, inventoryPage * TABLE_PAGE_SIZE);
+  const sortedInventory = sortRows(visibleInventory, inventorySort);
+  const pagedInventory = paginateRows(sortedInventory, inventoryPage, TABLE_PAGE_SIZE);
   const inventoryCounts = inventoryStatuses.reduce((counts, status) => {
     if (status.key === 'ALL') {
       counts.ALL = ingredients.length;
@@ -654,11 +645,12 @@ export default function StaffDashboard() {
     const matchesEnd = !salesEnd || createdAt <= salesEnd;
     return isCompletedSale && matchesPayment && matchesStart && matchesEnd;
   });
-  const pagedOrders = filteredOrders.slice((salesPage - 1) * TABLE_PAGE_SIZE, salesPage * TABLE_PAGE_SIZE);
+  const sortedOrders = sortRows(filteredOrders, salesSort);
+  const pagedOrders = paginateRows(sortedOrders, salesPage, TABLE_PAGE_SIZE);
   const filteredBookingPayments = bookingPayments.filter(payment => (
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
   ));
-  const pagedBookingPayments = filteredBookingPayments.slice((paymentPage - 1) * TABLE_PAGE_SIZE, paymentPage * TABLE_PAGE_SIZE);
+  const pagedBookingPayments = paginateRows(filteredBookingPayments, paymentPage, TABLE_PAGE_SIZE);
 
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
@@ -1111,79 +1103,77 @@ export default function StaffDashboard() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-espresso/5 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-cream border-b border-espresso/5 text-espresso/50 font-bold uppercase tracking-wider">
-                        <th className="p-4 text-left">Ingredient</th>
-                        <th className="p-4 text-left">Category</th>
-                        <th className="p-4 text-center">Quantity</th>
-                        <th className="p-4 text-center">Min / Max</th>
-                        <th className="p-4 text-left">Status</th>
-                        <th className="p-4 text-left">Action</th>
-                        <th className="p-4 text-left">Expiry</th>
-                        <th className="p-4 text-left">Storage</th>
-                        <th className="p-4 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pagedInventory.map((ingredient, i) => {
+              <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+                <DataTable
+                  columns={[
+                    {
+                      key: 'name',
+                      label: 'Ingredient',
+                      render: ingredient => (
+                        <>
+                          <p className="font-bold text-espresso">{ingredient.name}</p>
+                          <p className="text-[10px] text-espresso/45">Batch {ingredient.batch_number || 'N/A'} · {ingredient.supplier_details?.name || 'No supplier'}</p>
+                        </>
+                      ),
+                    },
+                    { key: 'category_details.name', label: 'Category', render: ingredient => ingredient.category_details?.name || '-' },
+                    { key: 'stock_quantity', label: 'Quantity', align: 'center', render: ingredient => `${Number(ingredient.stock_quantity).toLocaleString()} ${ingredient.base_unit}` },
+                    { key: 'minimum_stock_level', label: 'Min / Max', align: 'center', render: ingredient => `${ingredient.minimum_stock_level} / ${ingredient.maximum_stock_level}` },
+                    {
+                      key: 'inventory_status_label',
+                      label: 'Status',
+                      render: ingredient => {
                         const meta = getInventoryStatusMeta(ingredient.inventory_status);
                         return (
-                          <tr key={ingredient.id} className="border-b border-espresso/5 hover:bg-espresso/[0.02] transition-colors animate-in-up" style={{ animationDelay: `${i * 20}ms` }}>
-                            <td className="p-4">
-                              <p className="font-bold text-espresso">{ingredient.name}</p>
-                              <p className="text-[10px] text-espresso/45">Batch {ingredient.batch_number || 'N/A'} · {ingredient.supplier_details?.name || 'No supplier'}</p>
-                            </td>
-                            <td className="p-4 text-espresso/60">{ingredient.category_details?.name || '-'}</td>
-                            <td className="p-4 text-center font-bold text-espresso">{Number(ingredient.stock_quantity).toLocaleString()} {ingredient.base_unit}</td>
-                            <td className="p-4 text-center text-espresso/55">{ingredient.minimum_stock_level} / {ingredient.maximum_stock_level}</td>
-                            <td className="p-4">
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${meta.className}`}>
-                                {ingredient.inventory_status_label}
-                              </span>
-                            </td>
-                            <td className="p-4 font-bold text-espresso/70">{ingredient.suggested_action}</td>
-                            <td className="p-4 text-espresso/60">
-                              {ingredient.expiration_date || 'N/A'}
-                              {ingredient.days_until_expiry !== null && ingredient.days_until_expiry !== undefined && (
-                                <span className="block text-[10px] text-espresso/40">{ingredient.days_until_expiry} day(s)</span>
-                              )}
-                            </td>
-                            <td className="p-4 text-espresso/60">{ingredient.storage_location || 'N/A'}</td>
-                            <td className="p-4 text-right">
-                              <div className="flex justify-end gap-1.5">
-                                <Button
-                                  variant="ghost"
-                                  size="xs"
-                                  icon={Pencil}
-                                  title={`Edit ${ingredient.name}`}
-                                  aria-label={`Edit ${ingredient.name}`}
-                                  onClick={() => openEditIngredientModal(ingredient)}
-                                />
-                                <Button variant="ghost" size="xs" onClick={() => {
-                                  setManualAdjIngredient(ingredient);
-                                  setAdjQty(0);
-                                  setAdjUnit(ingredient.base_unit);
-                                  setAdjMovementType('IN');
-                                }}>Adjust Stock</Button>
-                              </div>
-                            </td>
-                          </tr>
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${meta.className}`}>
+                            {ingredient.inventory_status_label}
+                          </span>
                         );
-                      })}
-                    </tbody>
-                  </table>
-                  {visibleInventory.length === 0 && (
-                    <div className="p-8">
-                      <EmptyState icon={Package} title="No ingredients found" description="Try a different search or status filter." />
-                    </div>
+                      },
+                    },
+                    { key: 'suggested_action', label: 'Action' },
+                    {
+                      key: 'expiration_date',
+                      label: 'Expiry',
+                      render: ingredient => (
+                        <>
+                          {ingredient.expiration_date || 'N/A'}
+                          {ingredient.days_until_expiry !== null && ingredient.days_until_expiry !== undefined && (
+                            <span className="block text-[10px] text-espresso/40">{ingredient.days_until_expiry} day(s)</span>
+                          )}
+                        </>
+                      ),
+                    },
+                    { key: 'storage_location', label: 'Storage', render: ingredient => ingredient.storage_location || 'N/A' },
+                  ]}
+                  rows={pagedInventory}
+                  sort={inventorySort}
+                  onSort={(key, column) => toggleSort(inventorySort, setInventorySort, key, column)}
+                  renderActions={ingredient => (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        icon={Pencil}
+                        title={`Edit ${ingredient.name}`}
+                        aria-label={`Edit ${ingredient.name}`}
+                        onClick={() => openEditIngredientModal(ingredient)}
+                      />
+                      <Button variant="ghost" size="xs" onClick={() => {
+                        setManualAdjIngredient(ingredient);
+                        setAdjQty(0);
+                        setAdjUnit(ingredient.base_unit);
+                        setAdjMovementType('IN');
+                      }}>Adjust Stock</Button>
+                    </>
                   )}
-                </div>
-                <div className="px-4 pb-4">
-                  <PaginationControls page={inventoryPage} setPage={setInventoryPage} total={visibleInventory.length} pageSize={TABLE_PAGE_SIZE} />
-                </div>
+                  emptyIcon={Package}
+                  emptyTitle="No ingredients found"
+                  emptyDescription="Try a different search or status filter."
+                  minWidth={980}
+                  actionWidth="w-[176px]"
+                />
+                <PaginationControls page={inventoryPage} setPage={setInventoryPage} total={visibleInventory.length} pageSize={TABLE_PAGE_SIZE} />
               </div>
             </div>
           )}
@@ -1240,52 +1230,45 @@ export default function StaffDashboard() {
                 </div>
               </div>
 
-              {filteredOrders.length > 0 ? (
-                <div className="rounded-2xl border border-espresso/5 bg-white shadow-sm overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-cream border-b border-espresso/5 text-espresso/50 font-bold uppercase tracking-wider">
-                          <th className="p-4 text-left">Transaction ID</th>
-                          <th className="p-4 text-left">Date &amp; Time</th>
-                          <th className="p-4 text-right">Amount Paid</th>
-                          <th className="p-4 text-right">Receipt</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pagedOrders.map((order, index) => (
-                          <tr key={order.id} className="border-b border-espresso/5 hover:bg-espresso/[0.02] transition-colors animate-in-up" style={{ animationDelay: `${index * 20}ms` }}>
-                            <td className="p-4 font-black text-gold-dark whitespace-nowrap">
-                              {order.transaction_id || 'Transaction pending'}
-                            </td>
-                            <td className="p-4 font-bold text-espresso/70 whitespace-nowrap">
-                              {getReceiptDateTime(order)}
-                            </td>
-                            <td className="p-4 text-right font-black text-espresso whitespace-nowrap">
-                              {formatReceiptCurrency(getReceiptAmountReceived(order))}
-                            </td>
-                            <td className="p-4 text-right">
-                              <Button
-                                variant="ghost"
-                                size="xs"
-                                icon={Eye}
-                                title={`Open receipt ${order.transaction_id || order.id}`}
-                                aria-label={`Open receipt ${order.transaction_id || order.id}`}
-                                onClick={() => setReceiptOrder(order)}
-                              />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="px-4 pb-4 pt-3">
-                    <PaginationControls page={salesPage} setPage={setSalesPage} total={filteredOrders.length} pageSize={TABLE_PAGE_SIZE} />
-                  </div>
-                </div>
-              ) : (
-                <EmptyState icon={DollarSign} title="No transactions" description="No sales match the selected payment method or date range." />
-              )}
+              <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+                <DataTable
+                  columns={[
+                    { key: 'transaction_id', label: 'Transaction ID', render: order => order.transaction_id || 'Transaction pending' },
+                    {
+                      key: 'created_at',
+                      label: 'Date & Time',
+                      sortAccessor: order => order.completed_at || order.created_at,
+                      render: order => getReceiptDateTime(order),
+                    },
+                    {
+                      key: 'amount_paid',
+                      label: 'Amount Paid',
+                      align: 'right',
+                      sortAccessor: order => getReceiptAmountReceived(order),
+                      render: order => formatReceiptCurrency(getReceiptAmountReceived(order)),
+                    },
+                  ]}
+                  rows={pagedOrders}
+                  sort={salesSort}
+                  onSort={(key, column) => toggleSort(salesSort, setSalesSort, key, column)}
+                  renderActions={order => (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      icon={Eye}
+                      title={`Open receipt ${order.transaction_id || order.id}`}
+                      aria-label={`Open receipt ${order.transaction_id || order.id}`}
+                      onClick={() => setReceiptOrder(order)}
+                    />
+                  )}
+                  actionLabel="Receipt"
+                  emptyIcon={DollarSign}
+                  emptyTitle="No transactions"
+                  emptyDescription="No sales match the selected payment method or date range."
+                  minWidth={700}
+                />
+                <PaginationControls page={salesPage} setPage={setSalesPage} total={filteredOrders.length} pageSize={TABLE_PAGE_SIZE} />
+              </div>
             </div>
           )}
         </main>

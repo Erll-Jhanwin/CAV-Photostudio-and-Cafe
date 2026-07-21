@@ -25,6 +25,8 @@ export function Button({
   disabled = false,
   icon: Icon,
   className = '',
+  type = 'button',
+  onClick,
   ...props
 }) {
   const [ripple, setRipple] = useState(null);
@@ -34,14 +36,17 @@ export function Button({
     const rect = e.currentTarget.getBoundingClientRect();
     setRipple({ x: e.clientX - rect.left, y: e.clientY - rect.top, id: Date.now() });
     setTimeout(() => setRipple(null), 600);
-    props.onClick?.(e);
+    onClick?.(e);
   };
 
   return (
     <button
+      type={type}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      {...props}
       className={`
-        relative inline-flex items-center justify-center gap-2 font-bold rounded-[20px]
+        relative inline-flex min-h-9 items-center justify-center gap-2 rounded-xl font-bold
         transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-300 ease-out hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]
         disabled:opacity-55 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:active:scale-100
         focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold
@@ -51,7 +56,6 @@ export function Button({
         ${className}
       `}
       onClick={handleClick}
-      {...props}
     >
       {ripple && (
         <span
@@ -65,25 +69,26 @@ export function Button({
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
       ) : Icon ? (
-        <Icon className="w-4 h-4" />
+        <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
       ) : null}
       {children}
     </button>
   );
 }
 
-export function IconButton({ icon, label, variant = 'ghost', size = 'md', className = '', ...props }) {
+export function IconButton({ icon, label, variant = 'ghost', size = 'md', className = '', type = 'button', ...props }) {
   return (
     <button
+      type={type}
       aria-label={label}
+      {...props}
       className={`
-        inline-flex items-center justify-center rounded-[18px] transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-300 ease-out hover:-translate-y-0.5 active:translate-y-0 active:scale-95
+        inline-flex min-h-9 min-w-9 items-center justify-center rounded-xl transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-300 ease-out hover:-translate-y-0.5 active:translate-y-0 active:scale-95
         focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold
         ${variants[variant] || variants.ghost}
         ${size === 'sm' ? 'p-1.5' : size === 'lg' ? 'p-3' : 'p-2'}
         ${className}
       `}
-      {...props}
     >
       {typeof icon === 'function' ? icon({ className: 'w-4 h-4' }) : icon}
     </button>
