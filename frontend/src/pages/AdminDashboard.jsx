@@ -1317,22 +1317,25 @@ export default function AdminDashboard() {
                   <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
                   <DashboardTable
                     columns={[
-                      ['package_name', 'Package'],
-                      ['customer_name', 'Customer'],
-                      ['scheduled_date', 'Booking Date'],
-                      ['status', 'Status'],
-                      ['amount', 'Amount'],
+                      { key: 'package_name', label: 'Package', width: 'w-[18%]' },
+                      { key: 'customer_name', label: 'Customer', width: 'w-[25%]' },
+                      { key: 'scheduled_date', label: 'Booking Date', width: 'w-[16%]' },
+                      { key: 'status', label: 'Status', width: 'w-[19%]' },
+                      { key: 'amount', label: 'Amount', align: 'right', width: 'w-[16%]' },
                     ]}
                     rows={bookingPageRows}
                     sort={bookingSort}
                     onSort={(key) => toggleSort(bookingSort, setBookingSort, key)}
+                    minWidth={680}
+                    actionLabel=""
+                    actionWidth="w-[52px]"
                     renderCell={(row, key) => key === 'amount'
                       ? formatCurrency(row[key])
                       : key === 'status'
                       ? <StatusBadge status={row[key]} />
                       : key === 'customer_name'
                       ? (
-                        <span className="inline-flex min-w-0 items-center gap-2">
+                        <span className="flex min-w-0 max-w-full items-center gap-2">
                           <Avatar user={{ username: row[key], profile_picture_url: row.customer_profile_picture_url }} size="xs" />
                           <span className="min-w-0 truncate font-black text-espresso">{row[key]}</span>
                         </span>
@@ -1343,11 +1346,11 @@ export default function AdminDashboard() {
                         type="button"
                         onClick={() => handleDeleteBooking(row)}
                         disabled={deletingBookingId === row.id}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-1.5 text-[10px] font-black text-red-600 hover:bg-red-600 hover:text-white transition-all"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-red-50 text-red-600 transition-colors hover:bg-red-600 hover:text-white disabled:opacity-50"
                         aria-label={`Delete booking for ${row.customer_name || 'customer'}`}
+                        title="Remove booking"
                       >
-                        <Trash2 className="w-3 h-3" />
-                        {deletingBookingId === row.id ? 'Removing Booking...' : 'Remove Booking'}
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
                   />
