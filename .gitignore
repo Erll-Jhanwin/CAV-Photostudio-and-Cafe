@@ -5,7 +5,6 @@ __pycache__/
 *.pyd
 .Python
 *.sqlite3-journal
-
 # Django/local runtime
 backend/venv/
 backend/staticfiles/
