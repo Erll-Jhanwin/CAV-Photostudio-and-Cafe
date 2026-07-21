@@ -749,6 +749,7 @@ export default function CustomerDashboard() {
     const dateStatus = monthAvailability[dateValue]?.status;
     if (!selectedPackage || dateStatus !== 'AVAILABLE') return;
     if (dateValue !== selectedDate) resetPendingBooking();
+    setAvailabilityError('');
     setSelectedDate(dateValue);
     setSelectedTime('');
   };
@@ -1278,6 +1279,9 @@ export default function CustomerDashboard() {
   const requiredDownPayment = selectedPackage ? calculateDownPayment(selectedPackage.price) : 0;
   const calendarDays = getCalendarDays(calendarMonth);
   const selectedDaySlots = dayAvailability?.date === selectedDate ? (dayAvailability.slots || []) : [];
+  const selectedDayNotice = dayAvailability?.date === selectedDate
+    ? dayAvailability.notice
+    : monthAvailability[selectedDate]?.notice;
   const availableSlotsCount = selectedDaySlots.filter(slot => slot.available).length;
   const selectedSlot = selectedDaySlots.find(slot => slot.time === selectedTime);
   const selectedSlotLabel = selectedSlot
@@ -1928,9 +1932,9 @@ export default function CustomerDashboard() {
                                 </div>
 
                                 {availabilityError && <p className="text-[11px] font-bold text-red-600">{availabilityError}</p>}
-                                {selectedPackage && Object.values(monthAvailability).some(day => day.notice) && (
+                                {selectedPackage && selectedDayNotice && (
                                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-bold text-amber-800">
-                                    {Array.from(new Set(Object.values(monthAvailability).map(day => day.notice).filter(Boolean))).slice(0, 2).join(' ')}
+                                    {selectedDayNotice}
                                   </div>
                                 )}
                                 {!selectedPackage && <p className="text-[11px] text-espresso/50">Select a package first to load live availability.</p>}
