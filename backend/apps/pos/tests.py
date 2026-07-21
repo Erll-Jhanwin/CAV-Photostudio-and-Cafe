@@ -1,6 +1,6 @@
 from django.test import SimpleTestCase
 
-from pos.receipt_printing import _end_of_day_text, _escpos_receipt_bytes, _receipt_text
+from pos.receipt_printing import RECEIPT_WIDTH, _end_of_day_text, _escpos_receipt_bytes, _receipt_text
 
 
 class ReceiptPrintingTests(SimpleTestCase):
@@ -58,6 +58,7 @@ class ReceiptPrintingTests(SimpleTestCase):
             self.assertIn(expected, text)
 
         self.assertNotIn("Savor the moment", text)
+        self.assertTrue(all(len(line) <= RECEIPT_WIDTH for line in text.splitlines()))
 
         raw = _escpos_receipt_bytes(receipt)
         self.assertIn(b"CAV", raw)
@@ -107,3 +108,4 @@ class ReceiptPrintingTests(SimpleTestCase):
             "CASH DIFFERENCE",
         ]:
             self.assertIn(expected, text)
+        self.assertTrue(all(len(line) <= RECEIPT_WIDTH for line in text.splitlines()))

@@ -90,27 +90,31 @@ $printerName = $env:PRINTER_NAME
 $doc = New-Object System.Drawing.Printing.PrintDocument
 $doc.DocumentName = 'CAV Receipt'
 $doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController
-$doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
+$doc.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('57mm Receipt', 224, 1100)
+$doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(2, 2, 2, 2)
+$doc.OriginAtMargins = $false
 if ($printerName) {
   $doc.PrinterSettings.PrinterName = $printerName
 }
 if (-not $doc.PrinterSettings.IsValid) {
   throw "Printer is not available: $($doc.PrinterSettings.PrinterName)"
 }
-$font = New-Object System.Drawing.Font('Consolas', 8)
+$font = New-Object System.Drawing.Font('Consolas', 9, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Point)
 $brush = [System.Drawing.Brushes]::Black
 $lines = ($content -replace "\`r\`n", "\`n" -replace "\`r", "\`n").Split("\`n")
 $script:lineIndex = 0
 $doc.add_PrintPage({
   param($sender, $eventArgs)
-  $y = [float]0
-  $lineHeight = $font.GetHeight($eventArgs.Graphics)
+  $x = [float]4
+  $y = [float]4
+  $lineHeight = $font.GetHeight($eventArgs.Graphics) + 1
   while ($script:lineIndex -lt $lines.Length) {
-    if (($y + $lineHeight) -gt $eventArgs.PageBounds.Height) {
+    if (($y + $lineHeight) -gt ($eventArgs.PageBounds.Height - 4)) {
       $eventArgs.HasMorePages = $true
       return
     }
-    $eventArgs.Graphics.DrawString($lines[$script:lineIndex], $font, $brush, 0, $y)
+    $eventArgs.Graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::SingleBitPerPixelGridFit
+    $eventArgs.Graphics.DrawString($lines[$script:lineIndex], $font, $brush, $x, $y)
     $y += $lineHeight
     $script:lineIndex += 1
   }

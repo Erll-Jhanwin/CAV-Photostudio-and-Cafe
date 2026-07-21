@@ -246,7 +246,7 @@
 }
 
 @page {
-  size: 58mm 200mm;
+  size: 57mm 200mm;
   margin: 0;
 }
 
@@ -268,10 +268,10 @@
   body:has(#receipt-print-area) #receipt-print-area {
     position: absolute !important;
     inset: 0 auto auto 0 !important;
-    width: 58mm !important;
-    max-width: 58mm !important;
+    width: 57mm !important;
+    max-width: 57mm !important;
     margin: 0 !important;
-    padding: 3mm 4mm !important;
+    padding: 3mm 2.5mm !important;
     box-sizing: border-box !important;
     box-shadow: none !important;
     color: #000 !important;

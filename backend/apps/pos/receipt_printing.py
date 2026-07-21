@@ -7,8 +7,11 @@ from ctypes import wintypes
 from decimal import Decimal, InvalidOperation
 
 
-RECEIPT_WIDTH = 32
+RECEIPT_WIDTH = 30
 POS58_PRINTABLE_DOTS = 384
+ITEM_QTY_WIDTH = 4
+ITEM_UNIT_WIDTH = 10
+ITEM_TOTAL_WIDTH = RECEIPT_WIDTH - ITEM_QTY_WIDTH - ITEM_UNIT_WIDTH
 STORE_LOGO_TEXT = "CAV"
 STORE_NAME = "CAV PHOTO STUDIO & CAFE"
 STORE_ADDRESS = "028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas"
@@ -30,13 +33,17 @@ def _money(value):
     return f"PHP {_as_decimal(value):,.2f}"
 
 
+def _amount(value):
+    return f"{_as_decimal(value):,.2f}"
+
+
 def _quantity(value):
     qty = _as_decimal(value)
     return str(qty.quantize(Decimal("1"))) if qty == qty.to_integral() else str(qty.normalize())
 
 
 def _center(text):
-    return str(text)[:RECEIPT_WIDTH].center(RECEIPT_WIDTH)
+    return str(text).strip()[:RECEIPT_WIDTH].center(RECEIPT_WIDTH)
 
 
 def _center_wrapped(text):
@@ -44,12 +51,13 @@ def _center_wrapped(text):
 
 
 def _wrap(text, width=RECEIPT_WIDTH):
-    return textwrap.wrap(str(text), width=width, break_long_words=True, replace_whitespace=False) or [""]
+    normalized = " ".join(str(text or "").split())
+    return textwrap.wrap(normalized, width=width, break_long_words=True, replace_whitespace=False) or [""]
 
 
 def _pair(left, right, width=RECEIPT_WIDTH):
-    left = str(left)
-    right = str(right)
+    left = " ".join(str(left or "").split())
+    right = " ".join(str(right or "").split())
     if len(left) + 1 + len(right) <= width:
         return [f"{left:<{width - len(right)}}{right}"[:width]]
     if len(right) > width // 2:
@@ -59,6 +67,14 @@ def _pair(left, right, width=RECEIPT_WIDTH):
     lines = [f"{wrapped_left[0]:<{left_width}} {right}"[:width]]
     lines.extend(wrapped_left[1:])
     return lines
+
+
+def _item_amount_line(item):
+    return (
+        f"{_quantity(item.get('quantity')):<{ITEM_QTY_WIDTH}}"
+        f"{_amount(item.get('price')):>{ITEM_UNIT_WIDTH}}"
+        f"{_amount(item.get('subtotal')):>{ITEM_TOTAL_WIDTH}}"
+    )[:RECEIPT_WIDTH]
 
 
 def _receipt_sections(receipt):
@@ -86,19 +102,14 @@ def _receipt_sections(receipt):
     items = [
         "-" * RECEIPT_WIDTH,
         "ITEMIZED PRODUCTS",
-        f"{'QTY':<4}{'UNIT PRICE':>13}{'AMOUNT':>15}",
+        f"{'QTY':<{ITEM_QTY_WIDTH}}{'PRICE':>{ITEM_UNIT_WIDTH}}{'AMOUNT':>{ITEM_TOTAL_WIDTH}}",
         "-" * RECEIPT_WIDTH,
     ]
 
     for item in receipt.get("items") or []:
         name = item.get("product_details", {}).get("name") or "Item"
         items.extend(_wrap(name))
-        item_amounts = (
-            f"{_quantity(item.get('quantity')):<4}"
-            f"{_money(item.get('price')):>13}"
-            f"{_money(item.get('subtotal')):>15}"
-        )
-        items.append(item_amounts[:RECEIPT_WIDTH])
+        items.append(_item_amount_line(item))
 
     items.append("-" * RECEIPT_WIDTH)
     totals = [
@@ -214,7 +225,7 @@ def _escpos_receipt_bytes(receipt):
         b"\x1bE\x01"          # Emphasis on for darker thermal text
         b"\x1bG\x01"          # Double-strike on for stronger black text
         b"\x1b-\x00"          # Underline off
-        b"\x1b3\x18"          # Compact 24-dot line spacing
+        b"\x1b3\x20"          # Readable 32-dot line spacing for 57 mm thermal paper
         b"\x1dL\x00\x00"      # Left margin 0 dots
         + bytes([0x1D, 0x57, width_low, width_high])  # Printable width 384 dots
         + ESC_POS_MAX_DENSITY
@@ -252,7 +263,7 @@ def _escpos_end_of_day_bytes(report):
         b"\x1bE\x01"
         b"\x1bG\x01"
         b"\x1b-\x00"
-        b"\x1b3\x18"
+        b"\x1b3\x20"
         b"\x1dL\x00\x00"
         + bytes([0x1D, 0x57, width_low, width_high])
         + ESC_POS_MAX_DENSITY
@@ -353,8 +364,8 @@ def _print_windows_driver(printer_name, content):
     old_font = None
     try:
         log_pixels_y = gdi32.GetDeviceCaps(hdc, 90) or 203
-        font_height = -int(8.5 * log_pixels_y / 72)
-        line_height = max(abs(font_height) + 1, int(log_pixels_y / 11))
+        font_height = -int(9.2 * log_pixels_y / 72)
+        line_height = max(abs(font_height) + 2, int(log_pixels_y / 10))
         font = gdi32.CreateFontW(
             font_height,
             0,

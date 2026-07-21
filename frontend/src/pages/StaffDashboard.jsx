@@ -1812,7 +1812,7 @@ export default function StaffDashboard() {
         {receiptOrder && (() => {
           const business = getReceiptBusiness(receiptOrder);
           return (
-            <div id="receipt-print-area" className="mx-auto w-[58mm] max-w-full bg-white px-[4mm] py-[3mm] font-sans text-[9.5px] font-semibold leading-tight text-black">
+            <div id="receipt-print-area" className="mx-auto w-[57mm] max-w-full bg-white px-[2.5mm] py-[3mm] font-mono text-[9px] font-bold leading-tight text-black">
               <div className="space-y-1 text-center">
                 <div className="flex justify-center">
                   <div className="flex h-[17mm] w-[17mm] items-center justify-center overflow-hidden">
@@ -1839,19 +1839,19 @@ export default function StaffDashboard() {
               <div className="my-1.5 border-t border-black" />
 
               <div className="space-y-0.5">
-                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                <div className="grid grid-cols-[20mm_1fr] gap-1">
                   <span className="font-black">OR No.</span>
                   <span className="break-all text-right">{getReceiptOrNumber(receiptOrder)}</span>
                 </div>
-                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                <div className="grid grid-cols-[20mm_1fr] gap-1">
                   <span className="font-black">Transaction No.</span>
                   <span className="break-all text-right">{getReceiptTransactionNumber(receiptOrder)}</span>
                 </div>
-                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                <div className="grid grid-cols-[20mm_1fr] gap-1">
                   <span className="font-black">Date &amp; Time</span>
                   <span className="text-right">{getReceiptDateTime(receiptOrder)}</span>
                 </div>
-                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                <div className="grid grid-cols-[20mm_1fr] gap-1">
                   <span className="font-black">Cashier</span>
                   <span className="break-all text-right">{receiptOrder?.staff_name || user?.username}</span>
                 </div>
@@ -1861,7 +1861,7 @@ export default function StaffDashboard() {
 
               <div>
                 <div className="mb-1 text-center text-[9px] font-black uppercase">Itemized Products</div>
-                <div className="grid grid-cols-[1fr_6mm_13mm_15mm] gap-1 border-b border-black pb-0.5 text-[8px] font-black uppercase">
+                <div className="grid grid-cols-[1fr_5mm_10mm_14mm] gap-1 border-b border-black pb-0.5 text-[7.5px] font-black uppercase">
                   <span>Product</span>
                   <span className="text-right">Qty</span>
                   <span className="text-right">Price</span>
@@ -1869,7 +1869,7 @@ export default function StaffDashboard() {
                 </div>
                 <div className="space-y-1 pt-1">
                   {receiptOrder?.items?.map((item, index) => (
-                    <div key={item.id || `${item.product}-${index}`} className="grid grid-cols-[1fr_6mm_13mm_15mm] gap-1 text-[8.5px] leading-tight">
+                    <div key={item.id || `${item.product}-${index}`} className="grid grid-cols-[1fr_5mm_10mm_14mm] gap-1 text-[8px] leading-tight">
                       <span className="break-words pr-1 font-semibold">{item.product_details?.name || 'Item'}</span>
                       <span className="text-right tabular-nums">{item.quantity}</span>
                       <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(item.price)}</span>
@@ -1882,27 +1882,27 @@ export default function StaffDashboard() {
               <div className="my-1.5 border-t border-black" />
 
               <div className="space-y-0.5">
-                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                <div className="grid grid-cols-[20mm_1fr] gap-1">
                   <span className="font-black">Subtotal</span>
                   <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(getReceiptSubtotal(receiptOrder))}</span>
                 </div>
-                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                <div className="grid grid-cols-[20mm_1fr] gap-1">
                   <span className="font-black">Discounts</span>
                   <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(getReceiptDiscounts(receiptOrder))}</span>
                 </div>
-                <div className="grid grid-cols-[23mm_1fr] gap-1 border-y border-black py-0.5 text-[11px] font-black">
+                <div className="grid grid-cols-[20mm_1fr] gap-1 border-y border-black py-0.5 text-[10px] font-black">
                   <span>Grand Total</span>
                   <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(receiptOrder?.total)}</span>
                 </div>
-                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                <div className="grid grid-cols-[20mm_1fr] gap-1">
                   <span className="font-black">Payment Method</span>
                   <span className="text-right">{getReceiptPayment(receiptOrder)?.method || 'CASH'}</span>
                 </div>
-                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                <div className="grid grid-cols-[20mm_1fr] gap-1">
                   <span className="font-black">Cash Received</span>
                   <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(getReceiptAmountReceived(receiptOrder))}</span>
                 </div>
-                <div className="grid grid-cols-[23mm_1fr] gap-1">
+                <div className="grid grid-cols-[20mm_1fr] gap-1">
                   <span className="font-black">Change</span>
                   <span className="whitespace-nowrap text-right tabular-nums">{formatReceiptCurrency(getReceiptChange(receiptOrder))}</span>
                 </div>

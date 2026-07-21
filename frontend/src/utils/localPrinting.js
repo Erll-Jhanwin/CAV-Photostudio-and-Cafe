@@ -43,16 +43,79 @@ const money = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
   maximumFractionDigits: 2,
 })}`;
 
-const line = (char = '-') => char.repeat(32);
+const amount = (value) => Number(value || 0).toLocaleString('en-PH', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
-const pair = (label, value) => {
-  const left = String(label || '').slice(0, 16);
-  const right = String(value || '');
-  const spaces = Math.max(1, 32 - left.length - right.length);
-  return `${left}${' '.repeat(spaces)}${right}`.slice(0, 32);
+const RECEIPT_WIDTH = 30;
+const ITEM_QTY_WIDTH = 4;
+const ITEM_UNIT_WIDTH = 10;
+const ITEM_TOTAL_WIDTH = RECEIPT_WIDTH - ITEM_QTY_WIDTH - ITEM_UNIT_WIDTH;
+
+const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+const line = (char = '-') => char.repeat(RECEIPT_WIDTH);
+
+const wrapText = (value, width = RECEIPT_WIDTH) => {
+  const text = normalizeText(value);
+  if (!text) return [''];
+  const words = text.split(' ');
+  const rows = [];
+  let current = '';
+  words.forEach((word) => {
+    const chunks = [];
+    for (let index = 0; index < word.length; index += width) {
+      chunks.push(word.slice(index, index + width));
+    }
+    chunks.forEach((chunk) => {
+      const next = current ? `${current} ${chunk}` : chunk;
+      if (next.length <= width) {
+        current = next;
+      } else {
+        if (current) rows.push(current);
+        current = chunk;
+      }
+    });
+  });
+  if (current) rows.push(current);
+  return rows;
 };
 
-const center = (value) => String(value || '').slice(0, 32).padStart(Math.floor((32 + String(value || '').slice(0, 32).length) / 2)).padEnd(32);
+const fitLeft = (value, width) => normalizeText(value).padEnd(width).slice(0, width);
+const fitRight = (value, width) => normalizeText(value).padStart(width).slice(-width);
+
+const pair = (label, value) => {
+  const left = normalizeText(label);
+  const right = normalizeText(value);
+  if (!right) return wrapText(left);
+  if (left.length + 1 + right.length <= RECEIPT_WIDTH) {
+    return [`${left}${' '.repeat(RECEIPT_WIDTH - left.length - right.length)}${right}`];
+  }
+  const rightWidth = Math.min(Math.max(right.length, 10), RECEIPT_WIDTH - 8);
+  const leftWidth = RECEIPT_WIDTH - rightWidth - 1;
+  const leftRows = wrapText(left, leftWidth);
+  const rightRows = wrapText(right, rightWidth);
+  const rows = [];
+  const totalRows = Math.max(leftRows.length, rightRows.length);
+  for (let index = 0; index < totalRows; index += 1) {
+    rows.push(`${fitLeft(leftRows[index] || '', leftWidth)} ${fitRight(rightRows[index] || '', rightWidth)}`);
+  }
+  return rows;
+};
+
+const centerLine = (value) => {
+  const text = normalizeText(value);
+  const padding = Math.max(RECEIPT_WIDTH - text.length, 0);
+  const left = Math.floor(padding / 2);
+  return `${' '.repeat(left)}${text}${' '.repeat(padding - left)}`;
+};
+
+const center = (value) => wrapText(value).map(centerLine);
+
+const itemAmountLine = (item) => (
+  `${fitLeft(item.quantity, ITEM_QTY_WIDTH)}${fitRight(amount(item.price), ITEM_UNIT_WIDTH)}${fitRight(amount(item.subtotal), ITEM_TOTAL_WIDTH)}`
+);
 
 export const getLocalPrinters = async () => {
   let lastError;
@@ -78,36 +141,37 @@ export const buildReceiptText = (order, business, user) => {
   const dateText = order?.created_at_display || formatManilaDateTime(order?.created_at);
 
   const rows = [
-    center(business.logoText || 'CAV'),
-    center(business.name || 'CAV PHOTO STUDIO & CAFE'),
-    business.address || '',
-    pair('CONTACT', business.contactNumber || ''),
+    ...center(business.logoText || 'CAV'),
+    ...center(business.name || 'CAV PHOTO STUDIO & CAFE'),
+    ...center(business.address || ''),
+    ...pair('CONTACT', business.contactNumber || ''),
     line(),
-    pair('OR NO.', order?.or_number || order?.id || ''),
-    pair('TXN NO.', transactionNumber),
-    pair('DATE', dateText),
-    pair('CASHIER', order?.staff_name || user?.username || ''),
+    ...pair('OR NO.', order?.or_number || order?.id || ''),
+    ...pair('TXN NO.', transactionNumber),
+    ...pair('DATE', dateText),
+    ...pair('CASHIER', order?.staff_name || user?.username || ''),
     line(),
     'ITEMIZED PRODUCTS',
+    `${fitLeft('QTY', ITEM_QTY_WIDTH)}${fitRight('PRICE', ITEM_UNIT_WIDTH)}${fitRight('AMOUNT', ITEM_TOTAL_WIDTH)}`,
     line(),
   ];
 
   items.forEach(item => {
     const name = item.product_details?.name || 'Item';
-    rows.push(name.slice(0, 32));
-    rows.push(pair(`${item.quantity} x ${money(item.price)}`, money(item.subtotal)));
+    rows.push(...wrapText(name));
+    rows.push(itemAmountLine(item));
   });
 
   rows.push(
     line(),
-    pair('SUBTOTAL', money(order?.subtotal || order?.total)),
-    pair('DISCOUNTS', money(order?.discounts ?? order?.discount_amount)),
-    pair('GRAND TOTAL', money(order?.total)),
-    pair('METHOD', payment.method || 'CASH'),
-    pair('RECEIVED', money(amountReceived)),
-    pair('CHANGE', money(change)),
+    ...pair('SUBTOTAL', money(order?.subtotal || order?.total)),
+    ...pair('DISCOUNTS', money(order?.discounts ?? order?.discount_amount)),
+    ...pair('GRAND TOTAL', money(order?.total)),
+    ...pair('METHOD', payment.method || 'CASH'),
+    ...pair('RECEIVED', money(amountReceived)),
+    ...pair('CHANGE', money(change)),
     line(),
-    center('Thank You'),
+    ...center('Thank You'),
     '',
     '',
     '',
