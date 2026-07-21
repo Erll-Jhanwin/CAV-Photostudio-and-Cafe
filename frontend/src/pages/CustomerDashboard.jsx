@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import client from '../api/client';
+import client, { getApiErrorMessage } from '../api/client';
 import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -308,6 +308,7 @@ export default function CustomerDashboard() {
   const [bookings, setBookings] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState('');
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -509,11 +510,12 @@ export default function CustomerDashboard() {
       .catch(() => {});
   }, []);
 
-  const fetchDashboardData = useCallback(async () => {
+  const fetchDashboardData = useCallback(async ({ background = false } = {}) => {
     const requestSeq = dashboardFetchSeqRef.current + 1;
     dashboardFetchSeqRef.current = requestSeq;
     try {
-      setLoading(true);
+      if (!background) setLoading(true);
+      setDashboardError('');
       const [servicesRes, bookingsRes, profileRes] = await Promise.all([
         client.get('/api/bookings/services/'),
         client.get('/api/bookings/'),
@@ -564,8 +566,11 @@ export default function CustomerDashboard() {
       setNotifications(mockNotifications);
     } catch (err) {
       console.error(err);
+      if (requestSeq === dashboardFetchSeqRef.current) {
+        setDashboardError(getApiErrorMessage(err, 'Could not refresh your bookings and profile.'));
+      }
     } finally {
-      if (requestSeq === dashboardFetchSeqRef.current) setLoading(false);
+      if (!background && requestSeq === dashboardFetchSeqRef.current) setLoading(false);
     }
   }, [user?.email, updateStoredUser]);
 
@@ -601,6 +606,21 @@ export default function CustomerDashboard() {
     if (!userId) { navigate('/login'); return; }
     fetchDashboardData();
   }, [userId, navigate, fetchDashboardData]);
+
+  useEffect(() => {
+    if (!userId) return undefined;
+    const refresh = () => {
+      if (!document.hidden) fetchDashboardData({ background: true });
+    };
+    const intervalId = window.setInterval(refresh, 45000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [userId, fetchDashboardData]);
 
   const handleProfileUpdate = async (e) => {
     e.preventDefault();
@@ -1351,6 +1371,16 @@ export default function CustomerDashboard() {
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
+          {dashboardError && (
+            <div className="mb-6 flex items-start gap-3 border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm" role="alert">
+              <XCircle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div className="flex-1 text-sm">
+                <p className="font-bold">Could not refresh your account data</p>
+                <p className="mt-1 text-xs text-red-700">{dashboardError}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => fetchDashboardData()} className="border-red-200 bg-white text-red-800 hover:bg-red-100">Retry</Button>
+            </div>
+          )}
           {/* BOOK SESSION */}
           {activeTab === 'book' && (
             <div className="space-y-6 animate-in-up" key="book">

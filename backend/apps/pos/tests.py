@@ -1,5 +1,12 @@
-from django.test import SimpleTestCase
+from decimal import Decimal
 
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase
+from rest_framework.test import APIClient
+
+from inventory.models import Product
+from payment.models import Payment
+from pos.models import Order
 from pos.receipt_printing import RECEIPT_WIDTH, _end_of_day_text, _escpos_receipt_bytes, _receipt_text
 
 
@@ -109,3 +116,42 @@ class ReceiptPrintingTests(SimpleTestCase):
         ]:
             self.assertIn(expected, text)
         self.assertTrue(all(len(line) <= RECEIPT_WIDTH for line in text.splitlines()))
+
+
+class PosIdempotencyTests(TestCase):
+    def setUp(self):
+        self.staff = get_user_model().objects.create_user(
+            username='pos-staff',
+            email='pos-staff@example.com',
+            password='Staff123!pass',
+            role='STAFF',
+        )
+        self.product = Product.objects.create(
+            name='Idempotent Latte',
+            sku='IDEMPOTENT-LATTE',
+            item_type=Product.PRODUCT,
+            price=Decimal('125.00'),
+            stock_level=5,
+            reorder_point=1,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.staff)
+
+    def test_repeated_checkout_returns_the_original_order_without_double_deducting_stock(self):
+        payload = {
+            'items': [{'product_id': self.product.id, 'quantity': 2}],
+            'order_type': 'WALK_IN',
+            'payment': {'amount': '250.00', 'method': 'CASH'},
+            'idempotency_key': 'pos-idempotency-test-1',
+        }
+
+        first = self.client.post('/api/pos/orders/', payload, format='json')
+        second = self.client.post('/api/pos/orders/', payload, format='json')
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.data['id'], second.data['id'])
+        self.assertEqual(Order.objects.count(), 1)
+        self.assertEqual(Payment.objects.filter(payment_type=Payment.POS).count(), 1)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_level, 3)

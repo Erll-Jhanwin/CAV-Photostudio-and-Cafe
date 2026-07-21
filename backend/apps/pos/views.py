@@ -18,6 +18,9 @@ from pos.receipt_printing import print_end_of_day_report, print_receipt
 from pos.serializers import EndOfDayReportSerializer, OrderSerializer
 
 
+POS_IDEMPOTENCY_KEY_MAX_LENGTH = 100
+
+
 def apply_limit(queryset, request, default=50, maximum=200):
     raw_limit = request.query_params.get('limit')
     if raw_limit is None:
@@ -80,13 +83,15 @@ def assign_order_transaction_id(order, completed_at=None):
         return order.transaction_id
     completed_at = completed_at or timezone.now()
     sequence_date = timezone.localtime(completed_at).date()
-    existing_count = Order.objects.filter(
-        transaction_id__startswith=f"TXN-{sequence_date.strftime('%Y%m%d')}-"
-    ).count()
-    order.transaction_id = generate_transaction_id(sequence_date, existing_count + 1)
+    order.transaction_id = generate_transaction_id(sequence_date, order.pk)
     order.completed_at = completed_at
     order.save(update_fields=['transaction_id', 'completed_at'])
     return order.transaction_id
+
+
+def get_idempotency_key(request):
+    value = str(request.data.get('idempotency_key') or '').strip()
+    return value[:POS_IDEMPOTENCY_KEY_MAX_LENGTH]
 
 
 def decimal_sum(value):
@@ -152,6 +157,22 @@ class OrderListCreateView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
             return Response({"detail": "Only staff members can process POS orders."}, status=status.HTTP_403_FORBIDDEN)
+
+        idempotency_key = get_idempotency_key(request)
+        if idempotency_key:
+            existing_order = Order.objects.filter(
+                staff=request.user,
+                idempotency_key=idempotency_key,
+            ).prefetch_related('payments').first()
+            if existing_order:
+                payment = existing_order.payments.order_by('-created_at', '-id').first()
+                payload = build_receipt_payload(existing_order, payment, request.user.username)
+                payload['receipt_print'] = {
+                    'printed': False,
+                    'printer': None,
+                    'error': 'Receipt printing was skipped for this duplicate request.',
+                }
+                return Response(payload, status=status.HTTP_200_OK)
 
         items_data = request.data.get('items', [])
         payment_data = request.data.get('payment')
@@ -278,6 +299,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
                 order_type=order_type,
                 payment_status=payment_status_value,
                 line_items=order_items,
+                idempotency_key=idempotency_key or None,
             )
 
             Product.objects.bulk_update(products, ['stock_level'])

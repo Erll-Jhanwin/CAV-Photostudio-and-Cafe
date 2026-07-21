@@ -10,7 +10,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from django.utils import timezone
-from booking.models import Service, Package, Booking, StudioUnavailableDate
+from booking.models import Service, Package, Booking, BookingDateLock, StudioUnavailableDate
 from booking.serializers import (
     ServiceSerializer,
     PackageSerializer,
@@ -34,6 +34,11 @@ def get_idempotency_key(request):
     if not value:
         return ''
     return value[:IDEMPOTENCY_KEY_MAX_LENGTH]
+
+
+def lock_booking_date(day):
+    lock, _ = BookingDateLock.objects.get_or_create(scheduled_date=day)
+    BookingDateLock.objects.select_for_update().get(pk=lock.pk)
 
 def apply_limit(queryset, request, default=None, maximum=200):
     raw_limit = request.query_params.get('limit')
@@ -238,6 +243,7 @@ class BookingListCreateView(generics.ListCreateAPIView):
 
         try:
             with transaction.atomic():
+                lock_booking_date(serializer.validated_data['scheduled_date'])
                 list(Booking.objects.select_for_update().filter(
                     scheduled_date=serializer.validated_data['scheduled_date'],
                     status__in=ACTIVE_BOOKING_STATUSES
@@ -366,6 +372,11 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
         with transaction.atomic():
             if requested_edit_fields:
+                try:
+                    target_date = parse_date_value(request.data.get('scheduled_date', booking.scheduled_date))
+                except (TypeError, ValueError):
+                    target_date = booking.scheduled_date
+                lock_booking_date(target_date)
                 list(Booking.objects.select_for_update().filter(
                     scheduled_date=request.data.get('scheduled_date', booking.scheduled_date),
                     status__in=ACTIVE_BOOKING_STATUSES

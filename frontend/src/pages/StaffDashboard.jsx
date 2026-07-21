@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import client from '../api/client';
+import client, { getApiErrorMessage } from '../api/client';
 import {
   ShoppingBag, Package, DollarSign, Search, Plus,
   Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
@@ -58,6 +58,10 @@ const inventoryStatuses = [
 const getInventoryStatusMeta = (status) => inventoryStatuses.find(item => item.key === status) || inventoryStatuses[0];
 
 const todayValue = () => getManilaDateInputValue();
+const createIdempotencyKey = (prefix) => {
+  const random = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`.slice(0, 100);
+};
 const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
@@ -210,6 +214,7 @@ export default function StaffDashboard() {
   const [localPrintStatus, setLocalPrintStatus] = useState('');
   const [localPrinterLoading, setLocalPrinterLoading] = useState(false);
   const checkoutInFlightRef = useRef(false);
+  const checkoutIdempotencyKeyRef = useRef('');
 
   const [posSearch, setPosSearch] = useState('');
   const [invSearch, setInvSearch] = useState('');
@@ -310,8 +315,8 @@ export default function StaffDashboard() {
       }
 
       setLoadedTabs(current => ({ ...current, [tab]: true }));
-    } catch {
-      setError('Failed to load dashboard data. Make sure the server is running.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load dashboard data.'));
     } finally {
       tabLoadInFlightRef.current.delete(tab);
       setLoadingResources(current => ({ ...current, [tab]: false }));
@@ -326,6 +331,21 @@ export default function StaffDashboard() {
     }
     loadTabData(activeTab);
   }, [user, navigate, activeTab, loadTabData]);
+
+  useEffect(() => {
+    if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) return undefined;
+    const refresh = () => {
+      if (!document.hidden) loadTabData(activeTab, true);
+    };
+    const intervalId = window.setInterval(refresh, 45000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [user, activeTab, loadTabData]);
 
   useEffect(() => { setProductPage(1); }, [posSearch]);
   useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
@@ -512,12 +532,16 @@ export default function StaffDashboard() {
       setReceiptPrintError('');
       setReceiptPrintFallbackOrder(null);
       loadingTimer = setTimeout(() => setShowCheckoutLoading(true), 450);
+      if (!checkoutIdempotencyKeyRef.current) {
+        checkoutIdempotencyKeyRef.current = createIdempotencyKey('pos-order');
+      }
       const payload = {
         items: cart.map(item => ({ product_id: item.id, quantity: item.quantity })),
         order_type: 'WALK_IN',
         print_receipt: false,
         discount: { type: 'PERCENT', value: discountNumber },
-        payment: { amount: cashReceived, method: paymentMethod, transaction_id: transactionId }
+        payment: { amount: cashReceived, method: paymentMethod, transaction_id: transactionId },
+        idempotency_key: checkoutIdempotencyKeyRef.current,
       };
       const res = await client.post('/api/pos/orders/', payload);
       const savedOrder = {
@@ -559,9 +583,10 @@ export default function StaffDashboard() {
       setTransactionId('');
       setAmountReceived('');
       setDiscountValue('');
+      checkoutIdempotencyKeyRef.current = '';
       alert('Sale completed successfully.');
     } catch (err) {
-      alert(err.response?.data?.detail || 'Checkout failed.');
+      alert(getApiErrorMessage(err, 'Checkout failed.'));
     } finally {
       checkoutInFlightRef.current = false;
       clearTimeout(loadingTimer);

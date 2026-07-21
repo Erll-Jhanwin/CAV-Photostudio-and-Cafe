@@ -31,10 +31,18 @@ class Order(models.Model):
     report_data = models.JSONField(default=dict, blank=True)
     printed_at = models.DateTimeField(null=True, blank=True)
     print_status = models.JSONField(default=dict, blank=True)
+    idempotency_key = models.CharField(max_length=100, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['staff', 'idempotency_key'],
+                condition=models.Q(idempotency_key__isnull=False) & ~models.Q(idempotency_key=''),
+                name='pos_order_staff_idempotency_unique',
+            ),
+        ]
 
     def __str__(self):
         return f"Order #{self.id} - Total: PHP {self.total} ({self.get_payment_status_display()})"

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useState, useEffect, useContext } from 'react';
-import client from '../api/client';
+import client, { clearStoredAuth, getApiErrorMessage } from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -8,14 +8,39 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user session exists in localStorage
-    const savedUser = localStorage.getItem('user');
-    const token = localStorage.getItem('access_token');
-    
-    if (savedUser && token) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+    let active = true;
+
+    const restoreSession = async () => {
+      const savedUser = localStorage.getItem('user');
+      const token = localStorage.getItem('access_token');
+      if (!savedUser || !token) {
+        if (active) setLoading(false);
+        return;
+      }
+
+      try {
+        JSON.parse(savedUser);
+        const response = await client.get('/api/auth/profile/');
+        const profile = response.data || {};
+        const userData = {
+          id: profile.id,
+          username: profile.username,
+          email: profile.email,
+          role: profile.role,
+          profile_picture_url: profile.profile_picture_url || '',
+        };
+        localStorage.setItem('user', JSON.stringify(userData));
+        if (active) setUser(userData);
+      } catch {
+        clearStoredAuth();
+        if (active) setUser(null);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    restoreSession();
+    return () => { active = false; };
   }, []);
 
   const login = async (username, password) => {
@@ -33,7 +58,7 @@ export const AuthProvider = ({ children }) => {
       return { success: true, user: userData };
     } catch (error) {
       console.error("Login failed:", error);
-      const message = error.response?.data?.detail || "Invalid username or password.";
+      const message = error.response?.data?.detail || getApiErrorMessage(error, 'Invalid username or password.');
       return { success: false, error: message };
     }
   };
@@ -53,13 +78,13 @@ export const AuthProvider = ({ children }) => {
       return { success: true, user: userData, created: response.data.created };
     } catch (error) {
       console.error("Google login failed:", error);
-      const message = error.response?.data?.detail || "Google authentication failed.";
+      const message = error.response?.data?.detail || getApiErrorMessage(error, 'Google authentication failed.');
       return { success: false, error: message };
     }
   };
 
   const logout = () => {
-    ['access_token', 'refresh_token', 'user'].forEach((key) => localStorage.removeItem(key));
+    clearStoredAuth();
     sessionStorage.clear();
     document.cookie.split(';').forEach((cookie) => {
       const name = cookie.split('=')[0].trim();

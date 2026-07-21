@@ -10,6 +10,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
+from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
 from django.db.backends.signals import connection_created
@@ -112,15 +113,18 @@ DATABASE_URL = os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DATABA
 if not DATABASE_URL:
     raise ImproperlyConfigured('DATABASE_URL must be set to the Supabase/PostgreSQL connection string.')
 
+IS_POSTGRES_DATABASE = DATABASE_URL.startswith(('postgres://', 'postgresql://', 'postgresql+'))
+
 DATABASES = {
     'default': dj_database_url.parse(
         DATABASE_URL,
         conn_max_age=600,
-        ssl_require=env_bool('DATABASE_SSL_REQUIRE', True),
+        ssl_require=IS_POSTGRES_DATABASE and env_bool('DATABASE_SSL_REQUIRE', True),
     )
 }
 DATABASES['default'].setdefault('OPTIONS', {})
-DATABASES['default']['OPTIONS']['options'] = f"-c timezone={os.environ.get('DATABASE_TIME_ZONE', APP_TIME_ZONE)}"
+if IS_POSTGRES_DATABASE:
+    DATABASES['default']['OPTIONS']['options'] = f"-c timezone={os.environ.get('DATABASE_TIME_ZONE', APP_TIME_ZONE)}"
 
 
 def set_database_session_timezone(sender, connection, **kwargs):
@@ -223,6 +227,11 @@ CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS', [
     'capacitor://localhost',
 ])
 CORS_ALLOW_CREDENTIALS = env_bool('CORS_ALLOW_CREDENTIALS', False)
+CORS_ALLOW_HEADERS = [
+    *default_headers,
+    'idempotency-key',
+    'x-idempotency-key',
+]
 CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS', CORS_ALLOWED_ORIGINS)
 
 SESSION_COOKIE_HTTPONLY = True

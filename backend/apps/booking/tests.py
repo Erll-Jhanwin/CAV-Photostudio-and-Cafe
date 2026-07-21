@@ -3,9 +3,10 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from booking.availability import get_available_slots, is_slot_available
-from booking.models import Booking, Package, Service, StudioUnavailableDate
+from booking.models import Booking, BookingDateLock, Package, Service, StudioUnavailableDate
 
 
 class BookingAvailabilityPolicyTests(TestCase):
@@ -117,3 +118,44 @@ class BookingAvailabilityPolicyTests(TestCase):
 
         self.assertFalse(any(slot['available'] for slot in event_slots))
         self.assertTrue(all(slot['notice'] == 'Studio sessions already booked on this date.' for slot in event_slots))
+
+
+class BookingWriteSafetyTests(TestCase):
+    def setUp(self):
+        self.customer = get_user_model().objects.create_user(
+            username='booking-write-customer',
+            email='booking-write@example.com',
+            password='Customer123!',
+        )
+        service = Service.objects.create(
+            name='Booking Write Studio',
+            description='Studio sessions',
+            duration_minutes=60,
+            base_price='1000.00',
+        )
+        self.package = Package.objects.create(
+            service=service,
+            name='Write Safety Package',
+            description='Studio shoot',
+            price='1000.00',
+            inclusions='Studio session',
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.customer)
+
+    def test_booking_creation_acquires_a_date_lock(self):
+        scheduled_date = timezone.localdate() + timedelta(days=14)
+        response = self.client.post('/api/bookings/', {
+            'package': self.package.id,
+            'scheduled_date': scheduled_date.isoformat(),
+            'scheduled_time': '09:00',
+            'first_name': 'Booking',
+            'last_name': 'Customer',
+            'email': self.customer.email,
+            'phone_number': '09171234567',
+            'address': 'Lipa City',
+            'idempotency_key': 'booking-write-safety-1',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(BookingDateLock.objects.filter(scheduled_date=scheduled_date).exists())

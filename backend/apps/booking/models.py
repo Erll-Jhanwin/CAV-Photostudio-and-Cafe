@@ -114,6 +114,13 @@ class Booking(models.Model):
         return f"Booking {self.id}: {self.customer.username} - {self.package.name} on {self.scheduled_date} at {self.scheduled_time}"
 
 
+class BookingDateLock(models.Model):
+    scheduled_date = models.DateField(unique=True)
+
+    def __str__(self):
+        return f"Booking lock for {self.scheduled_date}"
+
+
 class StudioUnavailableDate(models.Model):
     date = models.DateField(unique=True)
     reason = models.CharField(max_length=220)
