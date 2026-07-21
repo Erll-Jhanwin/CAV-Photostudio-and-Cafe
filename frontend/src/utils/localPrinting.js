@@ -1,13 +1,39 @@
 const EXTERNAL_BRIDGE_URL = process.env.REACT_APP_LOCAL_PRINT_BRIDGE_URL || 'http://127.0.0.1:8765';
 const SAME_ORIGIN_BRIDGE_URL = '/local-print';
+export const LOCAL_STAFF_CONSOLE_URL = 'http://127.0.0.1:3001/staff';
+const LOCAL_STAFF_CONSOLE_BRIDGE_URL = 'http://127.0.0.1:3001/local-print';
+
+export const isLocalStaffConsole = () => (
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  && window.location.port === '3001'
+);
 
 const bridgeUrls = () => {
   const urls = [];
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
     urls.push(SAME_ORIGIN_BRIDGE_URL);
+    if (!isLocalStaffConsole()) urls.push(LOCAL_STAFF_CONSOLE_BRIDGE_URL);
+  } else {
+    urls.push(LOCAL_STAFF_CONSOLE_BRIDGE_URL);
   }
   urls.push(EXTERNAL_BRIDGE_URL);
-  return urls;
+  return [...new Set(urls)];
+};
+
+export const getLocalPrintingSetupMessage = () => {
+  const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (isLocalHost && window.location.port !== '3001') {
+    return 'Local printer service not found. Open http://127.0.0.1:3001 from "Start Local Staff Console.cmd", then click Detect again.';
+  }
+  if (isLocalHost) {
+    return 'Local printer service did not respond. Restart "Start Local Staff Console.cmd", keep the window open, then click Detect again.';
+  }
+  return 'Local printer service not found. Opening the local staff console. If it does not load, double-click "Start Local Staff Console.cmd" on the cashier PC.';
+};
+
+export const openLocalStaffConsole = () => {
+  if (isLocalStaffConsole()) return null;
+  return window.open(LOCAL_STAFF_CONSOLE_URL, 'cav-local-staff-console');
 };
 
 const money = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {

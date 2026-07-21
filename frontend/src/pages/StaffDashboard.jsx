@@ -19,7 +19,7 @@ import { MobileHeader } from '../components/ui/MobileHeader';
 import { DataTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
-import { getLocalPrinters, printLocalReceipt } from '../utils/localPrinting';
+import { getLocalPrinters, getLocalPrintingSetupMessage, isLocalStaffConsole, openLocalStaffConsole, printLocalReceipt } from '../utils/localPrinting';
 import { brandAssets } from '../utils/cavAssets';
 import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 
@@ -397,24 +397,27 @@ export default function StaffDashboard() {
     contactNumber: order?.business_contact_number || RECEIPT_BUSINESS.contactNumber,
   });
 
-  const refreshLocalPrinters = useCallback(async ({ silent = false } = {}) => {
+  const refreshLocalPrinters = useCallback(async ({ silent = false, openConsoleOnFailure = false } = {}) => {
     try {
       setLocalPrinterLoading(true);
       const printers = await getLocalPrinters();
       setLocalPrinters(printers);
       const defaultPrinter = printers.find(printer => printer.default) || printers[0];
-      if (!selectedLocalPrinter && defaultPrinter) {
+      if (defaultPrinter && (!selectedLocalPrinter || !printers.some(printer => printer.name === selectedLocalPrinter))) {
         setSelectedLocalPrinter(defaultPrinter.name);
       }
       if (!silent) {
         setLocalPrintStatus(printers.length
-          ? `${printers.length} local printer${printers.length === 1 ? '' : 's'} detected.`
+          ? `${printers.length} local printer${printers.length === 1 ? '' : 's'} detected. ${defaultPrinter?.name ? `Using ${defaultPrinter.name}.` : ''}`
           : 'Local print bridge is running, but no printers were found.');
       }
       return printers;
     } catch (err) {
       if (!silent) {
-        setLocalPrintStatus('Local printer service not found. On the cashier PC, use http://127.0.0.1:3001 from "Start Local Staff Console.cmd", or double-click "Start Local Print Bridge.cmd" for the online site.');
+        setLocalPrintStatus(getLocalPrintingSetupMessage());
+      }
+      if (openConsoleOnFailure && !isLocalStaffConsole()) {
+        openLocalStaffConsole();
       }
       setLocalPrinters([]);
       return [];
@@ -422,6 +425,14 @@ export default function StaffDashboard() {
       setLocalPrinterLoading(false);
     }
   }, [selectedLocalPrinter]);
+
+  const handleDetectLocalPrinters = useCallback(async () => {
+    setLocalPrintingEnabled(true);
+    const printers = await refreshLocalPrinters({ openConsoleOnFailure: true });
+    if (!printers.length && !isLocalStaffConsole()) {
+      setLocalPrintStatus('Opening the local staff console. Sign in there, keep that window open, then Detect will use the cashier PC printers automatically.');
+    }
+  }, [refreshLocalPrinters]);
 
   useEffect(() => {
     if (localPrintingEnabled) {
@@ -991,9 +1002,9 @@ export default function StaffDashboard() {
                         variant="outline"
                         size="sm"
                         icon={RefreshCw}
-                        onClick={() => refreshLocalPrinters()}
+                        onClick={handleDetectLocalPrinters}
                         loading={localPrinterLoading}
-                        disabled={!localPrintingEnabled || localPrinterLoading}
+                        disabled={localPrinterLoading}
                       >
                         Detect
                       </Button>

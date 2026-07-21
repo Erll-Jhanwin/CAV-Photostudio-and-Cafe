@@ -22,6 +22,10 @@ const sendJson = (res, status, data) => {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Private-Network': 'true',
   });
   res.end(JSON.stringify(data));
 };
@@ -164,6 +168,11 @@ const sendFile = (res, filePath) => {
 };
 
 http.createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    sendJson(res, 204, {});
+    return;
+  }
+
   const cleanPath = decodeURIComponent((req.url || '/').split('?')[0]);
   if (await handleLocalPrint(req, res, cleanPath)) return;
 
