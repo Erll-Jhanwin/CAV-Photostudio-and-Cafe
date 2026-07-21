@@ -62,6 +62,25 @@ const splitPackageText = (text) => (
     .filter(Boolean)
 );
 
+const formatApiError = (error, fallback) => {
+  const status = error?.response?.status;
+  if (status === 401) return 'Your session has expired. Please sign in again and retry the booking.';
+
+  const data = error?.response?.data;
+  if (typeof data === 'string' && data.trim()) return data.trim();
+  if (data && typeof data === 'object') {
+    const messages = Object.entries(data).flatMap(([field, value]) => {
+      const values = Array.isArray(value) ? value : [value];
+      return values
+        .map(item => String(item || '').trim())
+        .filter(Boolean)
+        .map(message => field === 'detail' ? message : `${field.replace(/_/g, ' ')}: ${message}`);
+    });
+    if (messages.length) return messages.join(' ');
+  }
+  return error?.message || fallback;
+};
+
 const getPackagePhotoOutputs = (pkg) => {
   const parsed = parseDescription(pkg?.description || '');
   const outputs = splitPackageText(pkg?.inclusions).filter(item => (
@@ -313,6 +332,7 @@ export default function CustomerDashboard() {
   const [packageSlide, setPackageSlide] = useState(0);
   const [cardsPerSlide, setCardsPerSlide] = useState(2);
   const [bookingConfirmation, setBookingConfirmation] = useState(null);
+  const [pendingPaymentBookingId, setPendingPaymentBookingId] = useState(null);
   const [selectedBookingDetails, setSelectedBookingDetails] = useState(null);
   const [cancellingBookingId, setCancellingBookingId] = useState(null);
   const [editingBooking, setEditingBooking] = useState(null);
@@ -353,6 +373,12 @@ export default function CustomerDashboard() {
   const bookingIdempotencyKeyRef = useRef('');
   const paymentIdempotencyKeyRef = useRef('');
   const dashboardFetchSeqRef = useRef(0);
+
+  const resetPendingBooking = () => {
+    setPendingPaymentBookingId(null);
+    bookingIdempotencyKeyRef.current = '';
+    paymentIdempotencyKeyRef.current = '';
+  };
 
   useEffect(() => {
     const handleResize = () => setCardsPerSlide(window.innerWidth < 640 ? 1 : 2);
@@ -629,6 +655,7 @@ export default function CustomerDashboard() {
 
   const handlePackageSelect = (pkg) => {
     const isSamePackage = selectedPackage?.id === pkg.id;
+    if (!isSamePackage) resetPendingBooking();
     setSelectedPackage(pkg);
     if (isSamePackage) return;
     setSelectedDate('');
@@ -681,6 +708,7 @@ export default function CustomerDashboard() {
   const handleDateSelect = (dateValue) => {
     const dateStatus = monthAvailability[dateValue]?.status;
     if (!selectedPackage || dateStatus !== 'AVAILABLE') return;
+    if (dateValue !== selectedDate) resetPendingBooking();
     setSelectedDate(dateValue);
     setSelectedTime('');
   };
@@ -1030,47 +1058,51 @@ export default function CustomerDashboard() {
         setPaymentSubmitting(false);
         return;
       }
-      const latestAvailability = await fetchDayAvailability(selectedDate);
-      const latestSlot = latestAvailability?.slots?.find(slot => slot.time === selectedTime);
-      if (!latestSlot?.available) {
-        alert('This schedule is no longer available. Please choose another date or time slot.');
-        setPaymentSubmitting(false);
-        return;
-      }
       const fullName = `${firstName} ${lastName}`.trim();
       if (fullName.length < 2 || !isValidEmail(bookingEmail) || !isValidPhone(phone)) {
         alert('Please enter your full name, a valid email address, and a valid contact number.');
         setPaymentSubmitting(false);
         return;
       }
-      const bookingRes = await client.post('/api/bookings/', {
-        package: selectedPackage.id, scheduled_date: selectedDate,
-        scheduled_time: selectedTime, notes,
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        email: bookingEmail.trim(),
-        phone_number: phone.trim(),
-        address: address.trim(),
-        idempotency_key: bookingIdempotencyKeyRef.current,
-      }, {
-        headers: { 'Idempotency-Key': bookingIdempotencyKeyRef.current },
-      });
+      let bookingId = pendingPaymentBookingId;
+      if (!bookingId) {
+        const latestAvailability = await fetchDayAvailability(selectedDate);
+        const latestSlot = latestAvailability?.slots?.find(slot => slot.time === selectedTime);
+        if (!latestSlot?.available) {
+          alert('This schedule is no longer available. Please choose another date or time slot.');
+          setPaymentSubmitting(false);
+          return;
+        }
+        const bookingRes = await client.post('/api/bookings/', {
+          package: selectedPackage.id, scheduled_date: selectedDate,
+          scheduled_time: selectedTime, notes,
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          email: bookingEmail.trim(),
+          phone_number: phone.trim(),
+          address: address.trim(),
+          idempotency_key: bookingIdempotencyKeyRef.current,
+        }, {
+          headers: { 'Idempotency-Key': bookingIdempotencyKeyRef.current },
+        });
+        bookingId = bookingRes.data.id;
+        setPendingPaymentBookingId(bookingId);
+      }
       const paidAt = new Date(`${paymentDate}T${paymentTime}:00`);
       const paymentData = new FormData();
-      paymentData.append('booking', bookingRes.data.id);
+      paymentData.append('booking', bookingId);
       paymentData.append('reference_number', paymentReference.trim());
       paymentData.append('amount', paidAmount.toFixed(2));
       paymentData.append('paid_at', paidAt.toISOString());
-      paymentData.append('receipt', paymentReceipt);
+      if (paymentReceipt) paymentData.append('receipt', paymentReceipt);
       paymentData.append('idempotency_key', paymentIdempotencyKeyRef.current);
       const paymentRes = await client.post('/api/bookings/payments/', paymentData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
           'Idempotency-Key': paymentIdempotencyKeyRef.current,
         }
       });
       setBookingConfirmation({
-        id: bookingRes.data?.id,
+        id: bookingId,
         packageName: selectedPackage.name,
         date: selectedDate,
         time: selectedTime,
@@ -1095,15 +1127,13 @@ export default function CustomerDashboard() {
         messages: [],
       });
       setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
-      bookingIdempotencyKeyRef.current = '';
-      paymentIdempotencyKeyRef.current = '';
+      resetPendingBooking();
       setCurrentStep(1);
       fetchDashboardData();
       setActiveTab('history');
       alert('Booking submitted successfully.');
     } catch (err) {
-      const errorData = err.response?.data || {};
-      alert(errorData.scheduled_time || errorData.amount || errorData.detail || 'Failed to submit booking payment.');
+      alert(formatApiError(err, 'Failed to submit booking payment. Please check your payment details and try again.'));
       if (err.response?.status === 409) {
         fetchDayAvailability(selectedDate);
         fetchMonthAvailability();
@@ -1443,6 +1473,7 @@ export default function CustomerDashboard() {
                                     setSelectedPackage(null); 
                                     setSelectedDate('');
                                     setSelectedTime('');
+                                    resetPendingBooking();
                                     setDayAvailability(null);
                                     setPackageSlide(0);
                                   }}
@@ -1810,7 +1841,10 @@ export default function CustomerDashboard() {
                                   <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70">Pick a Time Slot</span>
                                   <select
                                     value={selectedTime}
-                                    onChange={e => setSelectedTime(e.target.value)}
+                                    onChange={e => {
+                                      if (e.target.value !== selectedTime) resetPendingBooking();
+                                      setSelectedTime(e.target.value);
+                                    }}
                                     disabled={!selectedDate || slotLoading || availableSlotsCount === 0}
                                     className="w-full bg-white/95 border border-espresso/10 rounded-[18px] px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)] focus:outline-none focus:border-gold focus:ring-4 focus:ring-gold/15 disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
@@ -1829,7 +1863,10 @@ export default function CustomerDashboard() {
                                       key={slot.time}
                                       type="button"
                                       disabled={!slot.available}
-                                      onClick={() => setSelectedTime(slot.time)}
+                                      onClick={() => {
+                                        if (slot.time !== selectedTime) resetPendingBooking();
+                                        setSelectedTime(slot.time);
+                                      }}
                                       className={`rounded-2xl border px-3 py-2 text-[11px] font-black transition-all ${
                                         selectedTime === slot.time
                                           ? 'bg-espresso text-gold border-gold'
