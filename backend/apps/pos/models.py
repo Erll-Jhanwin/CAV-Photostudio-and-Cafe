@@ -27,7 +27,7 @@ class Order(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
     payment_status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='PENDING')
     order_type = models.CharField(max_length=20, choices=ORDER_TYPES, default='WALK_IN')
-    items = models.JSONField(default=list, blank=True)
+    line_items = models.JSONField(default=list, blank=True)
     report_data = models.JSONField(default=dict, blank=True)
     printed_at = models.DateTimeField(null=True, blank=True)
     print_status = models.JSONField(default=dict, blank=True)

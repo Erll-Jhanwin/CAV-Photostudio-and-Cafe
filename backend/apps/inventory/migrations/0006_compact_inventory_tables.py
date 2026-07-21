@@ -132,6 +132,7 @@ def migrate_inventory_children(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
 
     dependencies = [
         ('inventory', '0005_product_is_active_deactivate_glossy_a4'),

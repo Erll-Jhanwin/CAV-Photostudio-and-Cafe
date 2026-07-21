@@ -20,7 +20,7 @@ class PaymentSerializer(serializers.ModelSerializer):
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    items = serializers.JSONField(read_only=True)
+    items = serializers.JSONField(source='line_items', read_only=True)
     payments = PaymentSerializer(many=True, read_only=True)
     staff_name = serializers.CharField(source='staff.username', read_only=True)
     booking_customer_name = serializers.CharField(source='booking.customer.username', read_only=True, default='')

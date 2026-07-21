@@ -52,6 +52,7 @@ def migrate_booking_children(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    atomic = False
 
     dependencies = [
         ('booking', '0004_bookingchangelog'),

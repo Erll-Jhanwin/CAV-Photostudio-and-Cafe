@@ -82,7 +82,7 @@ class DashboardAnalyticsView(views.APIView):
         total_rev = pos_rev + booking_rev
         prev_total_rev = sum(prev_paid_orders.values_list('total', flat=True), Decimal('0.00'))
         total_tx = len(paid_pos_orders)
-        total_items_sold = sum(sum(int(item.get('quantity') or 0) for item in order.items or []) for order in paid_pos_orders)
+        total_items_sold = sum(sum(int(item.get('quantity') or 0) for item in order.line_items or []) for order in paid_pos_orders)
         avg_transaction = money(pos_rev) / total_tx if total_tx else 0
 
         bookings_in_range = Booking.objects.filter(created_at__range=(start_dt, end_dt))
@@ -153,7 +153,7 @@ class DashboardAnalyticsView(views.APIView):
 
         product_totals = defaultdict(lambda: {'quantity_sold': 0, 'revenue': Decimal('0.00')})
         for order in paid_pos_orders:
-            for item in order.items or []:
+            for item in order.line_items or []:
                 name = item.get('product_details', {}).get('name') or 'Item'
                 product_totals[name]['quantity_sold'] += int(item.get('quantity') or 0)
                 product_totals[name]['revenue'] += Decimal(str(item.get('subtotal') or '0'))

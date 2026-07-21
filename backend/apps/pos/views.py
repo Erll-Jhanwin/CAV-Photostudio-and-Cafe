@@ -94,7 +94,7 @@ def decimal_sum(value):
 
 
 def item_quantity_total(order):
-    return sum(int(item.get('quantity') or 0) for item in order.items or [])
+    return sum(int(item.get('quantity') or 0) for item in order.line_items or [])
 
 
 def build_receipt_payload(order, payment, staff_username, amount_received=None):
@@ -127,7 +127,7 @@ def build_receipt_payload(order, payment, staff_username, amount_received=None):
         "completed_at": order.completed_at.isoformat() if order.completed_at else None,
         "created_at": order.created_at.isoformat(),
         "created_at_display": created_at_display,
-        "items": order.items or [],
+        "items": order.line_items or [],
         "payments": [{
             "id": payment.id,
             "amount": str(payment.amount),
@@ -276,7 +276,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
                 total=final_total,
                 order_type=order_type,
                 payment_status=payment_status_value,
-                items=order_items,
+                line_items=order_items,
             )
 
             Product.objects.bulk_update(products, ['stock_level'])
@@ -397,7 +397,7 @@ def create_end_of_day_report(user, report_date, actual_cash, opening_cash=Decima
 
     product_totals = defaultdict(lambda: {'quantity': 0, 'total': Decimal('0.00')})
     for order in paid_orders:
-        for item in order.items or []:
+        for item in order.line_items or []:
             name = item.get('product_details', {}).get('name') or 'Item'
             product_totals[name]['quantity'] += int(item.get('quantity') or 0)
             product_totals[name]['total'] += Decimal(str(item.get('subtotal') or '0'))

@@ -3,6 +3,32 @@
 from django.db import migrations, models
 
 
+class AddFieldIfNotExists(migrations.AddField):
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        model = to_state.apps.get_model(app_label, self.model_name)
+        table_name = model._meta.db_table
+        with schema_editor.connection.cursor() as cursor:
+            columns = {
+                column.name
+                for column in schema_editor.connection.introspection.get_table_description(cursor, table_name)
+            }
+        if self.name in columns:
+            return
+        super().database_forwards(app_label, schema_editor, from_state, to_state)
+
+    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+        model = from_state.apps.get_model(app_label, self.model_name)
+        table_name = model._meta.db_table
+        with schema_editor.connection.cursor() as cursor:
+            columns = {
+                column.name
+                for column in schema_editor.connection.introspection.get_table_description(cursor, table_name)
+            }
+        if self.name not in columns:
+            return
+        super().database_backwards(app_label, schema_editor, from_state, to_state)
+
+
 def migrate_pos_children(apps, schema_editor):
     Order = apps.get_model('pos', 'Order')
     OrderItem = apps.get_model('pos', 'OrderItem')
@@ -27,59 +53,91 @@ def migrate_pos_children(apps, schema_editor):
                     'image_url': product.image_url if product else '',
                 },
             })
-        order.items = items
-        order.save(update_fields=['items'])
+        order.line_items = items
+        order.save(update_fields=['line_items'])
 
     for old in OldPayment.objects.all().order_by('id'):
-        Payment.objects.create(
-            payment_type='POS',
-            order_id=old.order_id,
-            amount=old.amount,
-            method=old.method,
-            transaction_id=old.transaction_id,
-            status='PAID',
-            metadata={'legacy_pos_payment_id': old.id},
-        )
+        payment = Payment.objects.filter(payment_type='POS', metadata__legacy_pos_payment_id=old.id).first()
+        if payment is None:
+            Payment.objects.create(
+                payment_type='POS',
+                order_id=old.order_id,
+                amount=old.amount,
+                method=old.method,
+                transaction_id=old.transaction_id,
+                status='PAID',
+                metadata={'legacy_pos_payment_id': old.id},
+            )
+        else:
+            payment.order_id = old.order_id
+            payment.amount = old.amount
+            payment.method = old.method
+            payment.transaction_id = old.transaction_id
+            payment.status = 'PAID'
+            payment.save(update_fields=['order_id', 'amount', 'method', 'transaction_id', 'status'])
 
     for report in EndOfDayReport.objects.all().order_by('id'):
+        report_date = report.report_date.isoformat() if report.report_date else None
+        existing = Order.objects.filter(
+            order_type='END_OF_DAY_REPORT',
+            report_data__legacy_end_of_day_report_id=report.id,
+        ).first()
+        if existing is None and report_date:
+            existing = Order.objects.filter(
+                order_type='END_OF_DAY_REPORT',
+                staff_id=report.closed_by_id,
+                report_data__report_date=report_date,
+            ).first()
+
+        report_data = {
+            'legacy_end_of_day_report_id': report.id,
+            'report_date': report_date,
+            'opening_time': report.opening_time.isoformat() if report.opening_time else None,
+            'closing_time': report.closing_time.isoformat() if report.closing_time else None,
+            'staff_name': report.staff_name,
+            'total_transactions': report.total_transactions,
+            'gross_sales': str(report.gross_sales),
+            'discounts': str(report.discounts),
+            'refunds': str(report.refunds),
+            'opening_cash': str(report.opening_cash),
+            'cash_sales': str(report.cash_sales),
+            'gcash_sales': str(report.gcash_sales),
+            'card_sales': str(report.card_sales),
+            'other_payment_sales': str(report.other_payment_sales),
+            'booking_income': str(report.booking_income),
+            'cafe_pos_income': str(report.cafe_pos_income),
+            'total_items_sold': report.total_items_sold,
+            'best_selling_items': report.best_selling_items,
+            'cancelled_or_voided_transactions': report.cancelled_or_voided_transactions,
+            'cash_in_out': str(report.cash_in_out),
+            'first_transaction_id': '',
+            'last_transaction_id': '',
+            'expected_cash': str(report.expected_cash),
+            'actual_cash': str(report.actual_cash),
+            'cash_difference': str(report.cash_difference),
+        }
+        if existing:
+            existing.staff_id = report.closed_by_id
+            existing.report_data = report_data
+            existing.printed_at = report.printed_at
+            existing.print_status = report.print_status
+            existing.save(update_fields=['staff_id', 'report_data', 'printed_at', 'print_status'])
+            continue
+
         Order.objects.create(
             staff_id=report.closed_by_id,
             order_type='END_OF_DAY_REPORT',
             subtotal=0,
             total=0,
             payment_status='PAID',
-            report_data={
-                'report_date': report.report_date.isoformat() if report.report_date else None,
-                'opening_time': report.opening_time.isoformat() if report.opening_time else None,
-                'closing_time': report.closing_time.isoformat() if report.closing_time else None,
-                'staff_name': report.staff_name,
-                'total_transactions': report.total_transactions,
-                'gross_sales': str(report.gross_sales),
-                'discounts': str(report.discounts),
-                'refunds': str(report.refunds),
-                'opening_cash': str(report.opening_cash),
-                'cash_sales': str(report.cash_sales),
-                'gcash_sales': str(report.gcash_sales),
-                'card_sales': str(report.card_sales),
-                'other_payment_sales': str(report.other_payment_sales),
-                'booking_income': str(report.booking_income),
-                'cafe_pos_income': str(report.cafe_pos_income),
-                'total_items_sold': report.total_items_sold,
-                'best_selling_items': report.best_selling_items,
-                'cancelled_or_voided_transactions': report.cancelled_or_voided_transactions,
-                'cash_in_out': str(report.cash_in_out),
-                'first_transaction_id': '',
-                'last_transaction_id': '',
-                'expected_cash': str(report.expected_cash),
-                'actual_cash': str(report.actual_cash),
-                'cash_difference': str(report.cash_difference),
-            },
+            report_data=report_data,
             printed_at=report.printed_at,
             print_status=report.print_status,
         )
 
 
 class Migration(migrations.Migration):
+    atomic = False
 
     dependencies = [
         ('payment', '0001_initial'),
@@ -88,10 +146,10 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AlterModelOptions(name='order', options={'ordering': ['-created_at']}),
-        migrations.AddField(model_name='order', name='items', field=models.JSONField(blank=True, default=list)),
-        migrations.AddField(model_name='order', name='print_status', field=models.JSONField(blank=True, default=dict)),
-        migrations.AddField(model_name='order', name='printed_at', field=models.DateTimeField(blank=True, null=True)),
-        migrations.AddField(model_name='order', name='report_data', field=models.JSONField(blank=True, default=dict)),
+        AddFieldIfNotExists(model_name='order', name='line_items', field=models.JSONField(blank=True, default=list)),
+        AddFieldIfNotExists(model_name='order', name='print_status', field=models.JSONField(blank=True, default=dict)),
+        AddFieldIfNotExists(model_name='order', name='printed_at', field=models.DateTimeField(blank=True, null=True)),
+        AddFieldIfNotExists(model_name='order', name='report_data', field=models.JSONField(blank=True, default=dict)),
         migrations.AlterField(
             model_name='order',
             name='order_type',
