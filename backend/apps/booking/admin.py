@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from booking.models import Booking, Package, Service
+from booking.models import Booking, Package, Service, StudioUnavailableDate
 
 
 class PackageInline(admin.TabularInline):
@@ -27,3 +27,10 @@ class BookingAdmin(admin.ModelAdmin):
     list_display = ('id', 'customer', 'package', 'scheduled_date', 'scheduled_time', 'status', 'created_at')
     list_filter = ('status', 'scheduled_date')
     search_fields = ('customer__username', 'customer__email', 'package__name')
+
+
+@admin.register(StudioUnavailableDate)
+class StudioUnavailableDateAdmin(admin.ModelAdmin):
+    list_display = ('date', 'reason', 'created_by', 'created_at')
+    list_filter = ('date',)
+    search_fields = ('reason', 'created_by__username')

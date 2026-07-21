@@ -23,7 +23,8 @@ from users.views import (
 from booking.views import (
     ServiceListView, PackageListView, BookingListCreateView, BookingDetailUpdateView,
     BookingPaymentListCreateView, BookingPaymentVerifyView, BookingAvailabilityView,
-    BookingPaymentOcrView, BookingPaymentReferenceCheckView
+    BookingPaymentOcrView, BookingPaymentReferenceCheckView,
+    StudioUnavailableDateListCreateView, StudioUnavailableDateDetailView
 )
 from inventory.views import (
     ProductListCreateView, ProductDetailUpdateView, StockMovementListView, 
@@ -57,6 +58,8 @@ urlpatterns = [
     path('api/bookings/services/', ServiceListView.as_view(), name='service_list'),
     path('api/bookings/packages/', PackageListView.as_view(), name='package_list'),
     path('api/bookings/availability/', BookingAvailabilityView.as_view(), name='booking_availability'),
+    path('api/bookings/studio-unavailable-dates/', StudioUnavailableDateListCreateView.as_view(), name='studio_unavailable_date_list_create'),
+    path('api/bookings/studio-unavailable-dates/<int:pk>/', StudioUnavailableDateDetailView.as_view(), name='studio_unavailable_date_detail'),
     path('api/bookings/', BookingListCreateView.as_view(), name='booking_list_create'),
     path('api/bookings/<int:pk>/', BookingDetailUpdateView.as_view(), name='booking_detail_update'),
     path('api/bookings/payments/', BookingPaymentListCreateView.as_view(), name='booking_payment_list_create'),

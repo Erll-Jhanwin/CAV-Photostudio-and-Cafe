@@ -52,6 +52,37 @@ const inventoryStatusMeta = {
 
 const formatDateValue = (date) => date.toISOString().split('T')[0];
 const todayValue = () => new Date().toISOString().split('T')[0];
+const monthValue = (date = new Date()) => date.toISOString().slice(0, 7);
+
+const shiftMonthValue = (value, delta) => {
+  const [year, month] = String(value || monthValue()).split('-').map(Number);
+  const date = new Date(year, (month || 1) - 1 + delta, 1);
+  return monthValue(date);
+};
+
+const getMonthLabel = (value) => {
+  const [year, month] = String(value || monthValue()).split('-').map(Number);
+  return new Date(year, (month || 1) - 1, 1).toLocaleDateString('en-PH', {
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
+const getCalendarDays = (value) => {
+  const [year, month] = String(value || monthValue()).split('-').map(Number);
+  const firstDay = new Date(year, (month || 1) - 1, 1);
+  const daysInMonth = new Date(year, month || 1, 0).getDate();
+  const blanks = Array.from({ length: firstDay.getDay() }, (_, index) => ({ key: `blank-${index}`, blank: true }));
+  const days = Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    return {
+      key: `${value}-${day}`,
+      date: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+      day,
+    };
+  });
+  return [...blanks, ...days];
+};
 
 const getRangeDates = (preset, customStart, customEnd) => {
   const now = new Date();
@@ -176,6 +207,8 @@ export default function AdminDashboard() {
   const [staffList, setStaffList] = useState([]);
   const [faqs, setFaqs] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
+  const [calendarBookings, setCalendarBookings] = useState([]);
+  const [studioUnavailableDates, setStudioUnavailableDates] = useState([]);
   const [endOfDayReports, setEndOfDayReports] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -209,6 +242,11 @@ export default function AdminDashboard() {
     forecast: true,
     combined: true,
   });
+  const [bookingCalendarMonth, setBookingCalendarMonth] = useState(monthValue());
+  const [studioUnavailableDate, setStudioUnavailableDate] = useState(todayValue());
+  const [studioUnavailableReason, setStudioUnavailableReason] = useState('');
+  const [studioUnavailableSaving, setStudioUnavailableSaving] = useState(false);
+  const [studioCalendarError, setStudioCalendarError] = useState('');
   const [bookingPage, setBookingPage] = useState(1);
   const [bookingPageSize, setBookingPageSize] = useState(5);
   const [posPage, setPosPage] = useState(1);
@@ -257,12 +295,14 @@ export default function AdminDashboard() {
     try {
       if (!background) setLoading(true);
       const range = getRangeDates(datePreset, customStart, customEnd);
-      const [analyticsRes, forecastRes, staffRes, faqRes, paymentsRes, endOfDayRes] = await Promise.all([
+      const [analyticsRes, forecastRes, staffRes, faqRes, paymentsRes, bookingsRes, unavailableRes, endOfDayRes] = await Promise.all([
         client.get('/api/dashboard/analytics/', { params: { ...range, grain: chartGrain } }),
         client.get('/api/forecasting/predictions/'),
         client.get('/api/auth/users/'),
         client.get('/api/chatbot/faqs/'),
         client.get('/api/bookings/payments/'),
+        client.get('/api/bookings/', { params: { limit: 500 } }),
+        client.get('/api/bookings/studio-unavailable-dates/', { params: { month: bookingCalendarMonth } }),
         client.get('/api/pos/end-of-day-reports/')
       ]);
       if (requestSeq !== dashboardFetchSeqRef.current) return;
@@ -271,13 +311,15 @@ export default function AdminDashboard() {
       setStaffList(normalizeRowsById(staffRes.data, row => row?.username || row?.email));
       setFaqs(normalizeRowsById(faqRes.data, row => row?.question));
       setBookingPayments(normalizePayments(paymentsRes.data));
+      setCalendarBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
+      setStudioUnavailableDates(normalizeRowsById(unavailableRes.data, row => row?.date));
       setEndOfDayReports(normalizeRowsById(endOfDayRes.data, row => row?.report_number || row?.created_at));
     } catch (err) {
       console.error(err);
     } finally {
       if (!background && requestSeq === dashboardFetchSeqRef.current) setLoading(false);
     }
-  }, [datePreset, customStart, customEnd, chartGrain]);
+  }, [datePreset, customStart, customEnd, chartGrain, bookingCalendarMonth]);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') {
@@ -541,11 +583,81 @@ export default function AdminDashboard() {
         });
       });
       setBookingPage(page => Math.max(1, Math.min(page, Math.ceil((sortedBookings.length - 1) / bookingPageSize) || 1)));
+      fetchData({ background: true });
       alert('Record deleted successfully.');
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to delete booking.');
     } finally {
       setDeletingBookingId(null);
+    }
+  };
+
+  const handleCreateStudioUnavailable = async (e) => {
+    e.preventDefault();
+    if (studioUnavailableSaving) return;
+    const cleanReason = studioUnavailableReason.trim();
+    if (!studioUnavailableDate || cleanReason.length < 3) {
+      setStudioCalendarError('Choose a date and enter a reason.');
+      return;
+    }
+    const confirmed = await confirm({
+      title: 'Mark Studio Unavailable',
+      message: `Block Studio Session slots on ${studioUnavailableDate}?`,
+      confirmLabel: 'Mark Unavailable',
+      type: 'warning',
+    });
+    if (!confirmed) return;
+    try {
+      setStudioUnavailableSaving(true);
+      setStudioCalendarError('');
+      await client.post('/api/bookings/studio-unavailable-dates/', {
+        date: studioUnavailableDate,
+        reason: cleanReason,
+      });
+      setStudioUnavailableReason('');
+      setBookingCalendarMonth(studioUnavailableDate.slice(0, 7));
+      fetchData({ background: true });
+      alert('Studio unavailable date saved.');
+    } catch (err) {
+      const data = err.response?.data || {};
+      setStudioCalendarError(data.date || data.reason || data.detail || 'Could not save studio unavailable date.');
+    } finally {
+      setStudioUnavailableSaving(false);
+    }
+  };
+
+  const handleDeleteStudioUnavailable = async (row) => {
+    const confirmed = await confirm({
+      title: 'Remove Studio Block',
+      message: `Remove studio unavailable marker for ${row.date}?`,
+      confirmLabel: 'Remove Block',
+      type: 'warning',
+    });
+    if (!confirmed) return;
+    try {
+      await client.delete(`/api/bookings/studio-unavailable-dates/${row.id}/`);
+      fetchData({ background: true });
+      alert('Studio unavailable date removed.');
+    } catch (err) {
+      setStudioCalendarError(err.response?.data?.detail || 'Could not remove studio unavailable date.');
+    }
+  };
+
+  const handleCalendarBookingStatus = async (booking, newStatus) => {
+    if (!newStatus || newStatus === booking.status) return;
+    const confirmed = await confirm({
+      title: 'Update Booking Status',
+      message: `Set booking #${booking.id} to ${newStatus}?`,
+      confirmLabel: 'Update Status',
+      type: 'warning',
+    });
+    if (!confirmed) return;
+    try {
+      await client.patch(`/api/bookings/${booking.id}/`, { status: newStatus });
+      fetchData({ background: true });
+      alert('Booking status updated.');
+    } catch (err) {
+      setStudioCalendarError(err.response?.data?.detail || err.response?.data?.status || 'Could not update booking status.');
     }
   };
 
@@ -743,6 +855,7 @@ export default function AdminDashboard() {
 
   const navItems = [
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
+    { key: 'calendar', label: 'Booking Calendar', icon: Calendar, active: activeTab === 'calendar', onClick: () => setActiveTab('calendar') },
     { key: 'reports', label: 'End-of-Day Reports', icon: Printer, active: activeTab === 'reports', onClick: () => setActiveTab('reports') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'staff', label: 'Staff Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
@@ -750,7 +863,7 @@ export default function AdminDashboard() {
     { key: 'system', label: 'System Controls', icon: AlertTriangle, active: activeTab === 'system', onClick: () => setActiveTab('system') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager', system: 'System Controls' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager', system: 'System Controls' };
   const metrics = analytics?.metrics || {};
   const statusData = [
     { label: 'Pending', value: metrics.pending || 0, color: '#F59E0B' },
@@ -819,6 +932,32 @@ export default function AdminDashboard() {
     acc[payment.status] = (acc[payment.status] || 0) + 1;
     return acc;
   }, {});
+  const calendarDays = getCalendarDays(bookingCalendarMonth);
+  const calendarMonthBookings = calendarBookings.filter(booking => String(booking.scheduled_date || '').startsWith(bookingCalendarMonth));
+  const isEventBooking = (booking) => {
+    const packageName = (booking.package_details?.name || '').toLowerCase();
+    return packageName.includes('event') || packageName.includes('photo service');
+  };
+  const getCalendarBookingName = (booking) => (
+    booking.customer?.first_name || booking.customer?.last_name
+      ? `${booking.customer?.first_name || ''} ${booking.customer?.last_name || ''}`.trim()
+      : booking.customer?.username || `Booking #${booking.id}`
+  );
+  const bookingsByDate = calendarMonthBookings.reduce((acc, booking) => {
+    const key = booking.scheduled_date;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(booking);
+    return acc;
+  }, {});
+  const unavailableByDate = studioUnavailableDates.reduce((acc, row) => {
+    acc[row.date] = row;
+    return acc;
+  }, {});
+  const eventBlockedDates = calendarMonthBookings.reduce((acc, booking) => {
+    if (isEventBooking(booking)) acc.add(booking.scheduled_date);
+    return acc;
+  }, new Set());
+  const calendarBookingStatusOptions = ['PENDING', 'CONFIRMED', 'CONFIRMED_DP', 'COMPLETED', 'CANCELLED'];
   const displayedEndOfDayExpectedCash = endOfDayExpectedCash || getEndOfDayExpectedCashValue().toFixed(2);
 
   return (
@@ -1241,6 +1380,195 @@ export default function AdminDashboard() {
                   )}
                   </div>
                 </Card>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'calendar' && (
+            <div className="w-full space-y-4 animate-in-up" key="calendar">
+              <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-gold-dark font-black mb-1">Live Scheduling</p>
+                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Booking Calendar</h1>
+                  <p className="text-xs text-espresso/55 mt-1">Manage studio availability, studio sessions, and off-site event photoshoots.</p>
+                </div>
+                <div className="inline-flex rounded-[20px] border border-espresso/10 bg-white p-1 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setBookingCalendarMonth(month => shiftMonthValue(month, -1))}
+                    className="rounded-2xl px-3 py-2 text-xs font-black text-espresso hover:bg-cream"
+                  >
+                    Previous
+                  </button>
+                  <div className="min-w-[160px] px-4 py-2 text-center text-sm font-black text-espresso">
+                    {getMonthLabel(bookingCalendarMonth)}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBookingCalendarMonth(month => shiftMonthValue(month, 1))}
+                    className="rounded-2xl px-3 py-2 text-xs font-black text-espresso hover:bg-cream"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_0.65fr] gap-4 items-start">
+                <div className="rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
+                  <div className="grid grid-cols-7 gap-1.5 text-center text-[10px] font-black uppercase tracking-wider text-espresso/40 mb-2">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <span key={day}>{day}</span>)}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {calendarDays.map(day => {
+                      if (day.blank) return <span key={day.key} />;
+                      const dayBookings = bookingsByDate[day.date] || [];
+                      const manualBlock = unavailableByDate[day.date];
+                      const eventBlocked = eventBlockedDates.has(day.date);
+                      const studioUnavailable = manualBlock || eventBlocked;
+                      return (
+                        <div
+                          key={day.date}
+                          className={`min-h-28 rounded-2xl border p-2 text-left transition-colors ${
+                            studioUnavailable
+                              ? 'border-amber-200 bg-amber-50'
+                              : dayBookings.length
+                              ? 'border-emerald-200 bg-emerald-50/70'
+                              : 'border-espresso/10 bg-cream/30'
+                          }`}
+                          title={manualBlock?.reason || (eventBlocked ? 'Unavailable due to an event photoshoot.' : day.date)}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-black text-espresso">{day.day}</span>
+                            {studioUnavailable && (
+                              <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[8px] font-black text-amber-800">
+                                Studio Off
+                              </span>
+                            )}
+                          </div>
+                          {studioUnavailable && (
+                            <p className="mt-1 line-clamp-2 text-[9px] font-bold leading-tight text-amber-800">
+                              {manualBlock?.reason || 'Unavailable due to an event photoshoot.'}
+                            </p>
+                          )}
+                          <div className="mt-2 space-y-1">
+                            {dayBookings.slice(0, 3).map(booking => (
+                              <div
+                                key={booking.id}
+                                className={`rounded-lg px-2 py-1 text-[9px] font-black leading-tight ${
+                                  isEventBooking(booking)
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-white text-espresso'
+                                }`}
+                              >
+                                {isEventBooking(booking) ? 'Event' : 'Studio'} {String(booking.scheduled_time || '').slice(0, 5)}
+                              </div>
+                            ))}
+                            {dayBookings.length > 3 && (
+                              <p className="text-[9px] font-black text-espresso/45">+{dayBookings.length - 3} more</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <form onSubmit={handleCreateStudioUnavailable} className="rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm space-y-3">
+                    <CardHeader title="Studio Unavailable" subtitle="Block all Studio Session slots for one date." className="mb-1" />
+                    <Input
+                      label="Date"
+                      type="date"
+                      value={studioUnavailableDate}
+                      onChange={e => {
+                        setStudioUnavailableDate(e.target.value);
+                        if (e.target.value) setBookingCalendarMonth(e.target.value.slice(0, 7));
+                      }}
+                    />
+                    <Textarea
+                      label="Reason"
+                      rows={3}
+                      value={studioUnavailableReason}
+                      onChange={e => setStudioUnavailableReason(e.target.value)}
+                      placeholder="Maintenance, private studio use, equipment setup..."
+                    />
+                    {studioCalendarError && <p className="text-[11px] font-bold text-red-600">{studioCalendarError}</p>}
+                    <Button type="submit" variant="primary" icon={Calendar} loading={studioUnavailableSaving} disabled={studioUnavailableSaving}>
+                      Mark Studio Unavailable
+                    </Button>
+                  </form>
+
+                  <div className="rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
+                    <CardHeader title="Manual Blocks" subtitle="Admin-created studio unavailable dates." className="mb-3" />
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {studioUnavailableDates.length ? studioUnavailableDates.map(row => (
+                        <div key={row.id} className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-black text-espresso">{row.date}</p>
+                              <p className="mt-1 font-bold text-amber-800">{row.reason}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteStudioUnavailable(row)}
+                              className="rounded-lg p-1.5 text-amber-700 hover:bg-amber-100 hover:text-red-700"
+                              aria-label={`Remove studio block for ${row.date}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )) : (
+                        <EmptyState icon={Calendar} title="No studio blocks" description="Manual unavailable dates for this month will appear here." />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
+                <CardHeader title="Live Bookings" subtitle="Studio sessions and off-site event photoshoots for this month." className="mb-3" />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {calendarMonthBookings.length ? calendarMonthBookings.map(booking => (
+                    <div key={booking.id} className="rounded-2xl border border-espresso/10 bg-cream/40 p-3 text-xs">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${isEventBooking(booking) ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                              {isEventBooking(booking) ? 'Off-site Event' : 'Studio Session'}
+                            </span>
+                            <StatusBadge status={booking.status} />
+                          </div>
+                          <p className="mt-2 font-black text-espresso">{booking.package_details?.name || 'Booking'} #{booking.id}</p>
+                          <p className="mt-1 font-bold text-espresso/65">{getCalendarBookingName(booking)}</p>
+                          <p className="mt-1 font-bold text-espresso/55">{booking.scheduled_date} at {String(booking.scheduled_time || '').slice(0, 5)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBooking({ ...booking, customer_name: getCalendarBookingName(booking) })}
+                          className="rounded-lg p-1.5 text-red-500 hover:bg-red-50"
+                          aria-label={`Delete booking ${booking.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <label className="mt-3 block">
+                        <span className="sr-only">Booking status</span>
+                        <select
+                          value={booking.status}
+                          onChange={e => handleCalendarBookingStatus(booking, e.target.value)}
+                          className="w-full rounded-xl border border-espresso/10 bg-white px-3 py-2 text-xs font-bold text-espresso focus:outline-none focus:ring-4 focus:ring-gold/15"
+                        >
+                          {calendarBookingStatusOptions.map(option => (
+                            <option key={option} value={option}>{option.replace('_', ' ')}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  )) : (
+                    <EmptyState icon={Calendar} title="No bookings this month" description="Studio and event bookings will appear here as they are created." />
+                  )}
                 </div>
               </div>
             </div>

@@ -1008,7 +1008,7 @@ export default function CustomerDashboard() {
     bookingSubmitInFlightRef.current = true;
     const confirmed = await confirm({
       title: 'Submit Booking',
-      message: `Reserve ${selectedPackage.name} on ${selectedDate} at ${selectedTime}?`,
+      message: `Reserve ${selectedPackage.name} on ${selectedDate} at ${selectedSlotLabel}?`,
       confirmLabel: 'Submit Booking',
       type: 'success',
     });
@@ -1213,8 +1213,16 @@ export default function CustomerDashboard() {
   const calendarDays = getCalendarDays(calendarMonth);
   const selectedDaySlots = dayAvailability?.date === selectedDate ? (dayAvailability.slots || []) : [];
   const availableSlotsCount = selectedDaySlots.filter(slot => slot.available).length;
+  const selectedSlot = selectedDaySlots.find(slot => slot.time === selectedTime);
+  const selectedSlotLabel = selectedSlot
+    ? `${selectedSlot.label}${selectedSlot.display_time && selectedSlot.display_time !== selectedSlot.label ? ` (${selectedSlot.display_time})` : ''}`
+    : selectedTime;
   const editSelectedPackage = editForm ? getPackageById(editForm.package) : null;
   const editAvailableSlots = editDayAvailability && editDayAvailability.date === editForm?.scheduled_date ? (editDayAvailability.slots || []) : [];
+  const editSelectedSlot = editAvailableSlots.find(slot => slot.time === editForm?.scheduled_time);
+  const editSelectedSlotLabel = editSelectedSlot
+    ? `${editSelectedSlot.label}${editSelectedSlot.display_time && editSelectedSlot.display_time !== editSelectedSlot.label ? ` (${editSelectedSlot.display_time})` : ''}`
+    : editForm?.scheduled_time;
   const editAddonsTotal = editingBooking?.items?.reduce((acc, item) => acc + (parseFloat(item.price) * item.quantity), 0) || 0;
   const editTotal = editSelectedPackage ? parseFloat(editSelectedPackage.price || 0) + editAddonsTotal : editAddonsTotal;
   const detailPackage = packageDetails?.package || null;
@@ -1759,6 +1767,8 @@ export default function CustomerDashboard() {
                                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                                       : statusValue === 'FULLY_BOOKED'
                                       ? 'bg-red-50 text-red-500 border-red-100 cursor-not-allowed'
+                                      : statusValue === 'STUDIO_UNAVAILABLE'
+                                      ? 'bg-amber-50 text-amber-700 border-amber-200 cursor-not-allowed'
                                       : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed';
                                     return (
                                       <button
@@ -1767,11 +1777,12 @@ export default function CustomerDashboard() {
                                         disabled={disabled}
                                         onClick={() => handleDateSelect(day.date)}
                                         className={`min-h-12 rounded-2xl border text-xs font-black transition-all ${statusClass} disabled:hover:translate-y-0`}
-                                        title={`${day.date} - ${statusValue.replace('_', ' ')}`}
+                                        title={`${day.date} - ${meta?.notice || statusValue.replace('_', ' ')}`}
                                       >
                                         <span>{day.day}</span>
                                         {statusValue === 'AVAILABLE' && <span className="block text-[8px] font-bold opacity-70">{meta?.available_count || 0} slots</span>}
                                         {statusValue === 'FULLY_BOOKED' && <span className="block text-[8px] font-bold opacity-70">Full</span>}
+                                        {statusValue === 'STUDIO_UNAVAILABLE' && <span className="block text-[8px] font-bold leading-tight opacity-80">Event</span>}
                                       </button>
                                     );
                                   })}
@@ -1781,6 +1792,7 @@ export default function CustomerDashboard() {
                                   <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-400" /> Available</span>
                                   <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-espresso" /> Selected</span>
                                   <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-300" /> Fully booked</span>
+                                  <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-300" /> Studio unavailable</span>
                                   <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-gray-300" /> Unavailable</span>
                                 </div>
                               </div>
@@ -1833,6 +1845,11 @@ export default function CustomerDashboard() {
                                 </div>
 
                                 {availabilityError && <p className="text-[11px] font-bold text-red-600">{availabilityError}</p>}
+                                {selectedPackage && Object.values(monthAvailability).some(day => day.notice) && (
+                                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-bold text-amber-800">
+                                    {Array.from(new Set(Object.values(monthAvailability).map(day => day.notice).filter(Boolean))).slice(0, 2).join(' ')}
+                                  </div>
+                                )}
                                 {!selectedPackage && <p className="text-[11px] text-espresso/50">Select a package first to load live availability.</p>}
                               </div>
                             </div>
@@ -1930,7 +1947,7 @@ export default function CustomerDashboard() {
                                 <p className="text-[9px] uppercase tracking-wider text-espresso/40">Time Slot</p>
                                 <p className="font-semibold flex items-center gap-1">
                                   <Clock className="w-3.5 h-3.5 text-gold" />
-                                  {selectedTime || 'No slot selected'}
+                                  {selectedSlotLabel || 'No slot selected'}
                                 </p>
                               </div>
                             </div>
@@ -2213,7 +2230,7 @@ export default function CustomerDashboard() {
                             </div>
                             <div className="flex items-center gap-2 text-espresso/60">
                               <Clock className="w-3.5 h-3.5 text-gold" />
-                              <span>{selectedTime.slice(0, 5)}</span>
+                              <span>{selectedSlotLabel}</span>
                             </div>
                           </div>
                         )}
@@ -2914,7 +2931,7 @@ export default function CustomerDashboard() {
                 </div>
                 <div className="flex justify-between gap-3">
                   <span className="font-black uppercase tracking-wider text-espresso/45">Schedule</span>
-                  <span className="font-bold text-espresso text-right">{editForm.scheduled_date} at {editForm.scheduled_time}</span>
+                  <span className="font-bold text-espresso text-right">{editForm.scheduled_date} at {editSelectedSlotLabel}</span>
                 </div>
                 <div className="flex justify-between gap-3">
                   <span className="font-black uppercase tracking-wider text-espresso/45">Total</span>

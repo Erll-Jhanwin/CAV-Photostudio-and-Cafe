@@ -1,7 +1,7 @@
 from decimal import Decimal
 import re
 from rest_framework import serializers
-from booking.models import Service, Package, Booking
+from booking.models import Service, Package, Booking, StudioUnavailableDate
 from booking.availability import is_slot_available
 from payment.models import Payment
 from users.serializers import UserSerializer
@@ -223,3 +223,18 @@ class BookingSerializer(serializers.ModelSerializer):
         for field, value in customer_data.items():
             setattr(user, field, value)
         user.save(update_fields=list(customer_data.keys()))
+
+
+class StudioUnavailableDateSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = StudioUnavailableDate
+        fields = ['id', 'date', 'reason', 'created_by', 'created_by_name', 'created_at', 'updated_at']
+        read_only_fields = ['created_by', 'created_by_name', 'created_at', 'updated_at']
+
+    def validate_reason(self, value):
+        value = str(value or '').strip()
+        if len(value) < 3:
+            raise serializers.ValidationError('Reason must be at least 3 characters.')
+        return value[:220]

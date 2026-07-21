@@ -112,3 +112,23 @@ class Booking(models.Model):
 
     def __str__(self):
         return f"Booking {self.id}: {self.customer.username} - {self.package.name} on {self.scheduled_date} at {self.scheduled_time}"
+
+
+class StudioUnavailableDate(models.Model):
+    date = models.DateField(unique=True)
+    reason = models.CharField(max_length=220)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='studio_unavailable_dates',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['date']
+
+    def __str__(self):
+        return f"Studio unavailable on {self.date}: {self.reason}"

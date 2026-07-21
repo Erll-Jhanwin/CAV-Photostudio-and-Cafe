@@ -6,11 +6,18 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from rest_framework import generics, permissions, status, filters, views
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from django.utils import timezone
-from booking.models import Service, Package, Booking
-from booking.serializers import ServiceSerializer, PackageSerializer, BookingSerializer, BookingPaymentSerializer
+from booking.models import Service, Package, Booking, StudioUnavailableDate
+from booking.serializers import (
+    ServiceSerializer,
+    PackageSerializer,
+    BookingSerializer,
+    BookingPaymentSerializer,
+    StudioUnavailableDateSerializer,
+)
 from booking.availability import ACTIVE_BOOKING_STATUSES, get_available_slots, is_slot_available, parse_date_value
 from booking.payment_ocr import analyze_gcash_receipt
 from payment.models import Payment
@@ -93,10 +100,12 @@ class BookingAvailabilityView(views.APIView):
             except ValueError:
                 return Response({"date": "Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
             slots = get_available_slots(package.id, day, exclude_booking_id=exclude_booking_id)
+            studio_notice = next((slot.get('notice') for slot in slots if slot.get('status') == 'STUDIO_UNAVAILABLE' and slot.get('notice')), '')
             return Response({
                 "package": package.id,
                 "date": day.isoformat(),
-                "status": "AVAILABLE" if any(slot['available'] for slot in slots) else "FULLY_BOOKED",
+                "status": "AVAILABLE" if any(slot['available'] for slot in slots) else "STUDIO_UNAVAILABLE" if studio_notice else "FULLY_BOOKED",
+                "notice": studio_notice,
                 "slots": slots,
             })
 
@@ -117,10 +126,12 @@ class BookingAvailabilityView(views.APIView):
                 continue
             slots = get_available_slots(package.id, day, exclude_booking_id=exclude_booking_id)
             available_count = sum(1 for slot in slots if slot['available'])
+            studio_notice = next((slot.get('notice') for slot in slots if slot.get('status') == 'STUDIO_UNAVAILABLE' and slot.get('notice')), '')
             dates.append({
                 "date": day.isoformat(),
-                "status": "AVAILABLE" if available_count else "FULLY_BOOKED",
+                "status": "AVAILABLE" if available_count else "STUDIO_UNAVAILABLE" if studio_notice else "FULLY_BOOKED",
                 "available_count": available_count,
+                "notice": studio_notice,
             })
 
         return Response({
@@ -128,6 +139,41 @@ class BookingAvailabilityView(views.APIView):
             "month": f"{year:04d}-{month_number:02d}",
             "dates": dates,
         })
+
+
+class StudioUnavailableDateListCreateView(generics.ListCreateAPIView):
+    serializer_class = StudioUnavailableDateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.role != 'ADMIN':
+            raise PermissionDenied('Only admins can manage studio unavailable dates.')
+        queryset = StudioUnavailableDate.objects.select_related('created_by').order_by('date', 'id')
+        month = self.request.query_params.get('month')
+        if month:
+            try:
+                year, month_number = [int(part) for part in month.split('-')]
+                if year < 1900 or year > 2100:
+                    raise ValueError
+                queryset = queryset.filter(date__year=year, date__month=month_number)
+            except (ValueError, calendar.IllegalMonthError):
+                raise ValidationError({'month': 'Use YYYY-MM.'})
+        return queryset
+
+    def perform_create(self, serializer):
+        if self.request.user.role != 'ADMIN':
+            raise PermissionDenied('Only admins can manage studio unavailable dates.')
+        serializer.save(created_by=self.request.user)
+
+
+class StudioUnavailableDateDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = StudioUnavailableDateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.role != 'ADMIN':
+            raise PermissionDenied('Only admins can manage studio unavailable dates.')
+        return StudioUnavailableDate.objects.select_related('created_by')
 
 class BookingListCreateView(generics.ListCreateAPIView):
     serializer_class = BookingSerializer
