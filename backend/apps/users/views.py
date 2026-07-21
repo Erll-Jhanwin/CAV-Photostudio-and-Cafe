@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import generics, permissions, status, views
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -31,6 +33,7 @@ import requests
 import secrets
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 PASSWORD_RESET_OTP_TTL_MINUTES = int(getattr(settings, 'PASSWORD_RESET_OTP_TTL_MINUTES', 10))
 PASSWORD_RESET_OTP_MAX_ATTEMPTS = int(getattr(settings, 'PASSWORD_RESET_OTP_MAX_ATTEMPTS', 5))
 PASSWORD_RESET_TOKEN_TTL_MINUTES = int(getattr(settings, 'PASSWORD_RESET_TOKEN_TTL_MINUTES', 10))
@@ -467,6 +470,7 @@ class ForgotPasswordView(views.APIView):
                 fail_silently=False,
             )
         except Exception:
+            logger.exception('Password reset email delivery failed for user_id=%s.', user.id)
             reset_otp.used_at = timezone.now()
             reset_otp.save(update_fields=['used_at'])
             return Response(

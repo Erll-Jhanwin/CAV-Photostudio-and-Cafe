@@ -18,7 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input, Textarea } from '../components/ui/Input';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
-import client from '../api/client';
+import client, { getApiErrorMessage } from '../api/client';
 import {
   getConfirmPasswordError,
   getEmailError,
@@ -288,12 +288,7 @@ export default function LoginPage() {
       resetForgotPasswordFlow();
       setForm((f) => ({ ...f, email: forgotEmail, password: '' }));
     } catch (err) {
-      const payload = err.response?.data;
-      const msg = payload?.detail
-        || payload?.new_password?.join?.(' ')
-        || payload?.email?.join?.(' ')
-        || payload?.otp?.join?.(' ')
-        || 'Something went wrong. Please try again.';
+      const msg = getApiErrorMessage(err, 'Unable to complete password recovery. Please try again.');
       setForgotResult({ detail: msg, error: true });
     } finally {
       setForgotLoading(false);
