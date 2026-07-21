@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import client from '../api/client';
+import client, { getApiErrorMessage } from '../api/client';
 import {
   TrendingUp, BarChart2, Users, MessageSquare, Play, Package,
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
@@ -50,9 +50,9 @@ const inventoryStatusMeta = {
   OVERSTOCKED: { label: 'Overstocked', className: 'bg-blue-50 text-blue-700 border-blue-200' },
 };
 
-const formatDateValue = (date) => date.toISOString().split('T')[0];
-const todayValue = () => new Date().toISOString().split('T')[0];
-const monthValue = (date = new Date()) => date.toISOString().slice(0, 7);
+const formatDateValue = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const todayValue = () => formatDateValue(new Date());
+const monthValue = (date = new Date()) => formatDateValue(date).slice(0, 7);
 
 const shiftMonthValue = (value, delta) => {
   const [year, month] = String(value || monthValue()).split('-').map(Number);
@@ -211,6 +211,7 @@ export default function AdminDashboard() {
   const [studioUnavailableDates, setStudioUnavailableDates] = useState([]);
   const [endOfDayReports, setEndOfDayReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dataError, setDataError] = useState('');
 
   const [faqQuestion, setFaqQuestion] = useState('');
   const [faqAnswer, setFaqAnswer] = useState('');
@@ -295,27 +296,36 @@ export default function AdminDashboard() {
     try {
       if (!background) setLoading(true);
       const range = getRangeDates(datePreset, customStart, customEnd);
-      const [analyticsRes, forecastRes, staffRes, faqRes, paymentsRes, bookingsRes, unavailableRes, endOfDayRes] = await Promise.all([
+      const responses = await Promise.allSettled([
         client.get('/api/dashboard/analytics/', { params: { ...range, grain: chartGrain } }),
         client.get('/api/forecasting/predictions/'),
         client.get('/api/auth/users/'),
         client.get('/api/chatbot/faqs/'),
         client.get('/api/bookings/payments/'),
-        client.get('/api/bookings/', { params: { limit: 500 } }),
+        client.get('/api/bookings/', { params: { month: bookingCalendarMonth, limit: 500 } }),
         client.get('/api/bookings/studio-unavailable-dates/', { params: { month: bookingCalendarMonth } }),
         client.get('/api/pos/end-of-day-reports/')
       ]);
       if (requestSeq !== dashboardFetchSeqRef.current) return;
-      setAnalytics(normalizeDashboardAnalytics(analyticsRes.data));
-      setForecast(forecastRes.data);
-      setStaffList(normalizeRowsById(staffRes.data, row => row?.username || row?.email));
-      setFaqs(normalizeRowsById(faqRes.data, row => row?.question));
-      setBookingPayments(normalizePayments(paymentsRes.data));
-      setCalendarBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
-      setStudioUnavailableDates(normalizeRowsById(unavailableRes.data, row => row?.date));
-      setEndOfDayReports(normalizeRowsById(endOfDayRes.data, row => row?.report_number || row?.created_at));
+      const data = index => responses[index].status === 'fulfilled' ? responses[index].value.data : null;
+      if (data(0)) setAnalytics(normalizeDashboardAnalytics(data(0)));
+      if (data(1)) setForecast(data(1));
+      if (data(2)) setStaffList(normalizeRowsById(data(2), row => row?.username || row?.email));
+      if (data(3)) setFaqs(normalizeRowsById(data(3), row => row?.question));
+      if (data(4)) setBookingPayments(normalizePayments(data(4)));
+      if (data(5)) setCalendarBookings(normalizeRowsById(data(5), row => row?.id));
+      if (data(6)) setStudioUnavailableDates(normalizeRowsById(data(6), row => row?.date));
+      if (data(7)) setEndOfDayReports(normalizeRowsById(data(7), row => row?.report_number || row?.created_at));
+
+      const failedResponse = responses.find(response => response.status === 'rejected');
+      setDataError(failedResponse
+        ? `Some dashboard data could not be refreshed. ${getApiErrorMessage(failedResponse.reason)}`
+        : '');
     } catch (err) {
       console.error(err);
+      if (requestSeq === dashboardFetchSeqRef.current) {
+        setDataError(getApiErrorMessage(err, 'Failed to load dashboard data.'));
+      }
     } finally {
       if (!background && requestSeq === dashboardFetchSeqRef.current) setLoading(false);
     }
@@ -990,6 +1000,14 @@ export default function AdminDashboard() {
               <button type="button" onClick={() => setReceiptPrintError('')} className="text-amber-700/70 hover:text-amber-900">
                 <X className="w-4 h-4" />
               </button>
+            </div>
+          )}
+
+          {dataError && (
+            <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-2xl mb-6 flex items-start gap-3 shadow-sm" role="alert">
+              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+              <p className="flex-1 text-xs font-semibold">{dataError}</p>
+              <Button variant="outline" size="sm" onClick={() => fetchData()} className="border-red-200 bg-white text-red-800 hover:bg-red-100">Retry</Button>
             </div>
           )}
 

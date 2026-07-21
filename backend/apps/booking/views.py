@@ -195,11 +195,19 @@ class BookingListCreateView(generics.ListCreateAPIView):
             status_param = self.request.query_params.get('status')
             if date_param:
                 queryset = queryset.filter(scheduled_date=date_param)
+            month_param = self.request.query_params.get('month')
+            if month_param:
+                try:
+                    year, month = (int(part) for part in month_param.split('-', 1))
+                    calendar.monthrange(year, month)
+                    queryset = queryset.filter(scheduled_date__year=year, scheduled_date__month=month)
+                except (TypeError, ValueError):
+                    raise ValidationError({'month': 'Use YYYY-MM format.'})
             if status_param:
                 queryset = queryset.filter(status=status_param)
             if self.request.query_params.get('active') == 'true':
                 queryset = queryset.filter(status__in=['PENDING', 'CONFIRMED', 'CONFIRMED_DP'])
-            return apply_limit(queryset.order_by('scheduled_date', 'scheduled_time', 'id'), self.request)
+            return apply_limit(queryset.order_by('scheduled_date', 'scheduled_time', 'id'), self.request, maximum=500)
         # Customers only see their own bookings
         queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service').prefetch_related('payments').distinct().order_by('-scheduled_date', '-created_at', '-id')
         return apply_limit(queryset, self.request)

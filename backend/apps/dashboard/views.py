@@ -126,7 +126,10 @@ class DashboardAnalyticsView(views.APIView):
                     'suggested_action': ingredient.suggested_action,
                 })
 
-        recent_bookings = bookings_in_range.select_related('customer', 'package').order_by('-created_at', '-id')[:10]
+        # The activity feed is intentionally independent of the reporting range.
+        # A booking for a future session must appear as soon as it is created,
+        # even when its scheduled date is outside the currently selected period.
+        recent_bookings = Booking.objects.select_related('customer', 'package').order_by('-created_at', '-id')[:10]
         bookings_list = [{
             'id': b.id,
             'customer_name': b.customer.get_full_name() or b.customer.username,
