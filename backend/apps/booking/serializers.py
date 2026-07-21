@@ -1,8 +1,9 @@
 from decimal import Decimal
 import re
 from rest_framework import serializers
-from booking.models import Service, Package, Booking, BookingItem, BookingPayment, BookingChangeLog
+from booking.models import Service, Package, Booking
 from booking.availability import is_slot_available
+from payment.models import Payment
 from users.serializers import UserSerializer
 
 class PackageSerializer(serializers.ModelSerializer):
@@ -17,22 +18,20 @@ class ServiceSerializer(serializers.ModelSerializer):
         model = Service
         fields = ['id', 'name', 'description', 'duration_minutes', 'base_price', 'image_url', 'packages']
 
-class BookingItemSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = BookingItem
-        fields = ['id', 'name', 'price', 'quantity']
+class BookingItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    name = serializers.CharField(max_length=100)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    quantity = serializers.IntegerField()
 
-class BookingChangeLogSerializer(serializers.ModelSerializer):
-    changed_by_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = BookingChangeLog
-        fields = ['id', 'changed_by', 'changed_by_name', 'old_values', 'new_values', 'reason', 'created_at']
-
-    def get_changed_by_name(self, obj):
-        if not obj.changed_by:
-            return 'System'
-        return obj.changed_by.get_full_name() or obj.changed_by.username
+class BookingChangeLogSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    changed_by = serializers.IntegerField(required=False, allow_null=True)
+    changed_by_name = serializers.CharField(required=False)
+    old_values = serializers.JSONField()
+    new_values = serializers.JSONField()
+    reason = serializers.CharField(allow_blank=True)
+    created_at = serializers.DateTimeField()
 
 class BookingPaymentSerializer(serializers.ModelSerializer):
     booking_details = serializers.SerializerMethodField()
@@ -41,7 +40,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     required_down_payment = serializers.SerializerMethodField()
 
     class Meta:
-        model = BookingPayment
+        model = Payment
         fields = [
             'id', 'booking', 'booking_details', 'reference_number', 'amount',
             'paid_at', 'receipt', 'receipt_url', 'status', 'verified_by',
@@ -91,7 +90,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'reference_number': 'Reference number must be 6-100 letters, numbers, spaces, or hyphens.'
                 })
-            duplicate_qs = BookingPayment.objects.filter(reference_number__iexact=normalized_reference)
+            duplicate_qs = Payment.objects.filter(payment_type=Payment.BOOKING, reference_number__iexact=normalized_reference)
             if self.instance:
                 duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
             if duplicate_qs.exists():
@@ -124,9 +123,9 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
 class BookingSerializer(serializers.ModelSerializer):
     customer = UserSerializer(read_only=True)
     package_details = PackageSerializer(source='package', read_only=True)
-    items = BookingItemSerializer(many=True, read_only=True)
+    items = serializers.JSONField(read_only=True)
     payments = BookingPaymentSerializer(many=True, read_only=True)
-    change_history = BookingChangeLogSerializer(many=True, read_only=True)
+    change_history = serializers.JSONField(read_only=True)
     required_down_payment = serializers.SerializerMethodField()
     can_edit = serializers.BooleanField(source='is_customer_editable', read_only=True)
     edit_locked_reason = serializers.CharField(source='customer_edit_lock_reason', read_only=True)

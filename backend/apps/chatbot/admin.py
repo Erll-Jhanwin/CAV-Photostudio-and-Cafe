@@ -1,3 +1,3 @@
 from django.contrib import admin
 
-# Register your models here.
+# Chatbot FAQ/log tables are consolidated out of the compact schema.

@@ -1,28 +1,26 @@
 from rest_framework import serializers
-from django.utils import timezone
-from datetime import datetime
-from pos.models import Order, OrderItem, Payment, EndOfDayReport
 
-class ProductOrderSummarySerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
+from payment.models import Payment
+from pos.models import Order
+
+
+class OrderItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField(read_only=True)
+    product = serializers.IntegerField()
+    product_details = serializers.JSONField(read_only=True)
+    quantity = serializers.IntegerField()
     price = serializers.DecimalField(max_digits=10, decimal_places=2)
-    image_url = serializers.CharField(allow_blank=True, allow_null=True)
+    subtotal = serializers.DecimalField(max_digits=10, decimal_places=2)
 
-class OrderItemSerializer(serializers.ModelSerializer):
-    product_details = ProductOrderSummarySerializer(source='product', read_only=True)
-
-    class Meta:
-        model = OrderItem
-        fields = ['id', 'product', 'product_details', 'quantity', 'price', 'subtotal']
 
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = ['id', 'amount', 'method', 'transaction_id', 'timestamp']
 
+
 class OrderSerializer(serializers.ModelSerializer):
-    items = OrderItemSerializer(many=True, read_only=True)
+    items = serializers.JSONField(read_only=True)
     payments = PaymentSerializer(many=True, read_only=True)
     staff_name = serializers.CharField(source='staff.username', read_only=True)
     booking_customer_name = serializers.CharField(source='booking.customer.username', read_only=True, default='')
@@ -30,7 +28,7 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = [
-            'id', 'staff', 'staff_name', 'booking', 'booking_customer_name', 
+            'id', 'staff', 'staff_name', 'booking', 'booking_customer_name',
             'subtotal', 'discount_type', 'discount_value', 'discount_amount',
             'total', 'transaction_id', 'completed_at', 'payment_status',
             'order_type', 'created_at', 'items', 'payments'
@@ -41,45 +39,34 @@ class OrderSerializer(serializers.ModelSerializer):
         ]
 
 
-class EndOfDayReportSerializer(serializers.ModelSerializer):
-    closed_by_name = serializers.CharField(source='closed_by.username', read_only=True, default='')
-    first_transaction_id = serializers.SerializerMethodField()
-    last_transaction_id = serializers.SerializerMethodField()
-
-    def get_transaction_ids(self, obj):
-        cache_name = '_transaction_ids_cache'
-        if not hasattr(obj, cache_name):
-            tz = timezone.get_current_timezone()
-            start = timezone.make_aware(datetime.combine(obj.report_date, datetime.min.time()), tz)
-            end = timezone.make_aware(datetime.combine(obj.report_date, datetime.max.time()), tz)
-            setattr(obj, cache_name, list(
-                Order.objects
-                .filter(payment_status='PAID', created_at__range=(start, end), transaction_id__isnull=False)
-                .exclude(transaction_id='')
-                .order_by('completed_at', 'id')
-                .values_list('transaction_id', flat=True)
-            ))
-        return getattr(obj, cache_name)
-
-    def get_first_transaction_id(self, obj):
-        transaction_ids = self.get_transaction_ids(obj)
-        return transaction_ids[0] if transaction_ids else ''
-
-    def get_last_transaction_id(self, obj):
-        transaction_ids = self.get_transaction_ids(obj)
-        return transaction_ids[-1] if transaction_ids else ''
-
-    class Meta:
-        model = EndOfDayReport
-        fields = [
-            'id', 'report_date', 'opening_time', 'closing_time', 'closed_by',
-            'closed_by_name', 'staff_name', 'total_transactions', 'gross_sales',
-            'discounts', 'refunds', 'opening_cash', 'cash_sales',
-            'gcash_sales', 'card_sales', 'other_payment_sales',
-            'booking_income', 'cafe_pos_income', 'total_items_sold',
-            'best_selling_items', 'cancelled_or_voided_transactions', 'cash_in_out',
-            'first_transaction_id', 'last_transaction_id',
-            'expected_cash', 'actual_cash', 'cash_difference', 'printed_at',
-            'print_status', 'created_at'
-        ]
-        read_only_fields = fields
+class EndOfDayReportSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    report_date = serializers.DateField()
+    opening_time = serializers.DateTimeField(allow_null=True)
+    closing_time = serializers.DateTimeField()
+    closed_by = serializers.IntegerField(allow_null=True)
+    closed_by_name = serializers.CharField(allow_blank=True)
+    staff_name = serializers.CharField(allow_blank=True)
+    total_transactions = serializers.IntegerField()
+    gross_sales = serializers.DecimalField(max_digits=12, decimal_places=2)
+    discounts = serializers.DecimalField(max_digits=12, decimal_places=2)
+    refunds = serializers.DecimalField(max_digits=12, decimal_places=2)
+    opening_cash = serializers.DecimalField(max_digits=12, decimal_places=2)
+    cash_sales = serializers.DecimalField(max_digits=12, decimal_places=2)
+    gcash_sales = serializers.DecimalField(max_digits=12, decimal_places=2)
+    card_sales = serializers.DecimalField(max_digits=12, decimal_places=2)
+    other_payment_sales = serializers.DecimalField(max_digits=12, decimal_places=2)
+    booking_income = serializers.DecimalField(max_digits=12, decimal_places=2)
+    cafe_pos_income = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total_items_sold = serializers.IntegerField()
+    best_selling_items = serializers.JSONField()
+    cancelled_or_voided_transactions = serializers.IntegerField()
+    cash_in_out = serializers.DecimalField(max_digits=12, decimal_places=2)
+    first_transaction_id = serializers.CharField(allow_blank=True)
+    last_transaction_id = serializers.CharField(allow_blank=True)
+    expected_cash = serializers.DecimalField(max_digits=12, decimal_places=2)
+    actual_cash = serializers.DecimalField(max_digits=12, decimal_places=2)
+    cash_difference = serializers.DecimalField(max_digits=12, decimal_places=2)
+    printed_at = serializers.DateTimeField(allow_null=True)
+    print_status = serializers.JSONField()
+    created_at = serializers.DateTimeField()

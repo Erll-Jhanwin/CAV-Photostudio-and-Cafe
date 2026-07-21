@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from inventory.models import Category, Ingredient, Product, RecipeIngredient
+from inventory.models import Product
 
 
 INGREDIENTS = {
@@ -44,7 +44,7 @@ def infer_recipe(product):
         return RECIPES[product.name]
 
     name = product.name.lower()
-    category_name = product.category.name.lower() if product.category else ""
+    category_name = (product.category_name or "").lower()
     if "soda" in category_name or "sparkling" in name:
         return [("Sparkling Water", 250), ("Fruit Syrup", 30)]
     if "matcha" in name:
@@ -55,48 +55,53 @@ def infer_recipe(product):
 
 
 def ensure_default_ingredients_and_recipes():
-    raw_category, _ = Category.objects.get_or_create(
-        name="Raw Ingredients",
-        defaults={"description": "Ingredient stock used by POS drink recipes"},
-    )
-
     ingredients = {}
     for name, defaults in INGREDIENTS.items():
-        ingredient, _ = Ingredient.objects.get_or_create(
+        ingredient, _ = Product.objects.get_or_create(
             name=name,
-            defaults={**defaults, "category": raw_category, "storage_location": "Main Bar"},
+            item_type=Product.INGREDIENT,
+            defaults={**defaults, "category": 4, "category_name": "Raw Ingredients", "storage_location": "Main Bar"},
         )
         ingredients[name] = ingredient
 
     if "Fruit Syrup" not in ingredients:
-        ingredient, _ = Ingredient.objects.get_or_create(
+        ingredient, _ = Product.objects.get_or_create(
             name="Fruit Syrup",
+            item_type=Product.INGREDIENT,
             defaults={
                 "base_unit": "ML",
                 "stock_quantity": 8000,
                 "minimum_stock_level": 1200,
                 "maximum_stock_level": 20000,
-                "category": raw_category,
+                "category": 4,
+                "category_name": "Raw Ingredients",
                 "storage_location": "Main Bar",
             },
         )
         ingredients["Fruit Syrup"] = ingredient
 
     generated = 0
-    for product in Product.objects.filter(is_cafe_item=True).select_related("category"):
+    for product in Product.objects.filter(item_type=Product.PRODUCT, is_cafe_item=True):
         recipe = infer_recipe(product)
         if not recipe:
             continue
+        recipe_items = list(product.recipe_data or [])
+        existing_ingredient_ids = {item.get("ingredient") for item in recipe_items}
         for ingredient_name, quantity in recipe:
             ingredient = ingredients.get(ingredient_name)
-            if not ingredient:
+            if not ingredient or ingredient.id in existing_ingredient_ids:
                 continue
-            _, created = RecipeIngredient.objects.update_or_create(
-                product=product,
-                ingredient=ingredient,
-                defaults={"quantity": Decimal(str(quantity))},
-            )
-            if created:
-                generated += 1
+            recipe_items.append({
+                "id": len(recipe_items) + 1,
+                "product": product.id,
+                "ingredient": ingredient.id,
+                "ingredient_name": ingredient.name,
+                "quantity": str(Decimal(str(quantity))),
+                "base_unit": ingredient.base_unit,
+            })
+            generated += 1
+        if recipe_items != product.recipe_data:
+            product.recipe_data = recipe_items
+            product.save(update_fields=["recipe_data"])
 
     return generated

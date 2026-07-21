@@ -13,7 +13,7 @@ Usage:
 """
 
 from django.core.management.base import BaseCommand
-from inventory.models import Category, Product
+from inventory.models import Product
 from inventory.recipe_defaults import ensure_default_ingredients_and_recipes
 
 
@@ -137,16 +137,8 @@ class Command(BaseCommand):
         created_products = 0
         updated_products = 0
 
-        for category_name, items in MENU.items():
-            category, cat_created = Category.objects.get_or_create(
-                name=category_name,
-                defaults={"description": f"CAV Café — {category_name} drinks"},
-            )
-            if cat_created:
-                self.stdout.write(self.style.SUCCESS(f"  [+] Category created: {category_name}"))
-            else:
-                self.stdout.write(f"  [~] Category exists: {category_name}")
-
+        for category_index, (category_name, items) in enumerate(MENU.items(), start=10):
+            self.stdout.write(f"  [~] Category: {category_name}")
             for item in items:
                 # Preserve existing stock for already-seeded items
                 existing_stock = (
@@ -159,9 +151,12 @@ class Command(BaseCommand):
                     sku=item["sku"],
                     defaults={
                         "name":          item["name"],
+                        "item_type":     Product.PRODUCT,
                         "price":         item["price"],
                         "cost":          0.00,
-                        "category":      category,
+                        "category":      category_index,
+                        "category_name": category_name,
+                        "category_description": f"CAV Cafe - {category_name} drinks",
                         "supplier":      None,
                         "stock_level":   DEFAULT_STOCK if existing_stock is None else existing_stock,
                         "reorder_point": REORDER_POINT,

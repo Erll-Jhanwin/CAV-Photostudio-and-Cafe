@@ -1,23 +1,15 @@
-from rest_framework import views, permissions
-from rest_framework.response import Response
-from django.db.models import Prefetch, Sum, Count
-from django.db.models.functions import TruncDay, TruncMonth, TruncWeek
-from django.utils import timezone
+from collections import defaultdict
 from datetime import datetime, timedelta
-from sales.models import DailySalesSummary
+from decimal import Decimal
+
+from django.utils import timezone
+from rest_framework import permissions, views
+from rest_framework.response import Response
+
 from booking.models import Booking
-from inventory.models import Ingredient, Product
-from pos.models import Order, OrderItem
-from pos.models import Payment
-
-
-def parse_date(value, fallback):
-    if not value:
-      return fallback
-    try:
-      return datetime.strptime(value, '%Y-%m-%d').date()
-    except ValueError:
-      return fallback
+from inventory.models import Product
+from payment.models import Payment
+from pos.models import Order
 
 
 def parse_date_param(value, field, fallback):
@@ -39,6 +31,16 @@ def pct_change(current, previous):
 
 def money(value):
     return round(float(value or 0), 2)
+
+
+def bucket_key(dt, grain):
+    local_date = timezone.localtime(dt).date()
+    if grain == 'monthly':
+        return local_date.replace(day=1).strftime('%Y-%m-%d')
+    if grain == 'weekly':
+        return (local_date - timedelta(days=local_date.weekday())).strftime('%Y-%m-%d')
+    return local_date.strftime('%Y-%m-%d')
+
 
 class DashboardAnalyticsView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -63,27 +65,24 @@ class DashboardAnalyticsView(views.APIView):
         grain = request.query_params.get('grain', 'daily')
         if grain not in {'daily', 'weekly', 'monthly'}:
             return Response({"grain": "Grain must be daily, weekly, or monthly."}, status=400)
-        trunc_fn = {'weekly': TruncWeek, 'monthly': TruncMonth}.get(grain, TruncDay)
 
         start_dt = timezone.make_aware(datetime.combine(start_date, datetime.min.time()))
         end_dt = timezone.make_aware(datetime.combine(end_date, datetime.max.time()))
         period_days = max((end_date - start_date).days + 1, 1)
-        prev_end = start_date - timedelta(days=1)
-        prev_start = prev_end - timedelta(days=period_days - 1)
-        prev_start_dt = timezone.make_aware(datetime.combine(prev_start, datetime.min.time()))
-        prev_end_dt = timezone.make_aware(datetime.combine(prev_end, datetime.max.time()))
+        prev_start_dt = timezone.make_aware(datetime.combine(start_date - timedelta(days=period_days), datetime.min.time()))
+        prev_end_dt = timezone.make_aware(datetime.combine(start_date - timedelta(days=1), datetime.max.time()))
 
-        paid_orders = Order.objects.filter(payment_status='PAID', created_at__range=(start_dt, end_dt))
-        paid_pos_orders = paid_orders.filter(order_type='WALK_IN')
-        paid_booking_orders = paid_orders.filter(order_type='BOOKING_LINKED', booking__status='COMPLETED')
-        prev_paid_orders = Order.objects.filter(payment_status='PAID', created_at__range=(prev_start_dt, prev_end_dt))
+        paid_orders = list(Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(payment_status='PAID', created_at__range=(start_dt, end_dt)).select_related('staff', 'booking'))
+        prev_paid_orders = Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(payment_status='PAID', created_at__range=(prev_start_dt, prev_end_dt))
+        paid_pos_orders = [order for order in paid_orders if order.order_type == 'WALK_IN']
+        paid_booking_orders = [order for order in paid_orders if order.order_type == 'BOOKING_LINKED']
 
-        pos_rev = paid_pos_orders.aggregate(total=Sum('total'))['total'] or 0
-        booking_rev = paid_booking_orders.aggregate(total=Sum('total'))['total'] or 0
-        total_rev = money(pos_rev) + money(booking_rev)
-        prev_total_rev = prev_paid_orders.aggregate(total=Sum('total'))['total'] or 0
-        total_tx = paid_pos_orders.count()
-        total_items_sold = OrderItem.objects.filter(order__in=paid_pos_orders).aggregate(total=Sum('quantity'))['total'] or 0
+        pos_rev = sum((order.total for order in paid_pos_orders), Decimal('0.00'))
+        booking_rev = sum((order.total for order in paid_booking_orders), Decimal('0.00'))
+        total_rev = pos_rev + booking_rev
+        prev_total_rev = sum(prev_paid_orders.values_list('total', flat=True), Decimal('0.00'))
+        total_tx = len(paid_pos_orders)
+        total_items_sold = sum(sum(int(item.get('quantity') or 0) for item in order.items or []) for order in paid_pos_orders)
         avg_transaction = money(pos_rev) / total_tx if total_tx else 0
 
         bookings_in_range = Booking.objects.filter(created_at__range=(start_dt, end_dt))
@@ -96,33 +95,26 @@ class DashboardAnalyticsView(views.APIView):
         }
 
         buckets = {}
-        for row in paid_orders.annotate(bucket=trunc_fn('created_at')).values('bucket', 'order_type').annotate(total=Sum('total')).order_by('bucket'):
-            key = row['bucket'].date().strftime('%Y-%m-%d')
+        for order in paid_orders:
+            key = bucket_key(order.created_at, grain)
             buckets.setdefault(key, {'date': key, 'pos_revenue': 0, 'booking_revenue': 0, 'total_revenue': 0})
-            if row['order_type'] == 'BOOKING_LINKED':
-                buckets[key]['booking_revenue'] += money(row['total'])
+            if order.order_type == 'BOOKING_LINKED':
+                buckets[key]['booking_revenue'] += money(order.total)
             else:
-                buckets[key]['pos_revenue'] += money(row['total'])
+                buckets[key]['pos_revenue'] += money(order.total)
             buckets[key]['total_revenue'] = buckets[key]['pos_revenue'] + buckets[key]['booking_revenue']
-        chart_data = list(buckets.values())
 
-        inventory_status_counts = {
-            'IN_STOCK': 0,
-            'LOW_STOCK': 0,
-            'NEAR_EXPIRY': 0,
-            'EXPIRED': 0,
-            'OVERSTOCKED': 0,
-        }
+        inventory_status_counts = {'IN_STOCK': 0, 'LOW_STOCK': 0, 'NEAR_EXPIRY': 0, 'EXPIRED': 0, 'OVERSTOCKED': 0}
         inventory_alerts = []
-        for ingredient in Ingredient.objects.all().select_related('supplier', 'category'):
+        for ingredient in Product.objects.filter(item_type=Product.INGREDIENT):
             status_key = ingredient.inventory_status
             inventory_status_counts[status_key] = inventory_status_counts.get(status_key, 0) + 1
             if status_key != 'IN_STOCK':
                 inventory_alerts.append({
                     'id': ingredient.id,
                     'name': ingredient.name,
-                    'category': ingredient.category.name if ingredient.category else 'N/A',
-                    'supplier_name': ingredient.supplier.name if ingredient.supplier else 'N/A',
+                    'category': ingredient.category_name or 'N/A',
+                    'supplier_name': (ingredient.supplier_details or {}).get('name', 'N/A'),
                     'stock_quantity': money(ingredient.stock_quantity),
                     'base_unit': ingredient.base_unit,
                     'minimum_stock_level': money(ingredient.minimum_stock_level),
@@ -134,10 +126,6 @@ class DashboardAnalyticsView(views.APIView):
                     'suggested_action': ingredient.suggested_action,
                 })
 
-        priority_order = {'EXPIRED': 0, 'NEAR_EXPIRY': 1, 'LOW_STOCK': 2, 'OVERSTOCKED': 3}
-        inventory_alerts.sort(key=lambda row: priority_order.get(row['inventory_status'], 99))
-
-        # 4. Recent bookings list
         recent_bookings = bookings_in_range.select_related('customer', 'package').order_by('-created_at')[:10]
         bookings_list = [{
             'id': b.id,
@@ -150,26 +138,35 @@ class DashboardAnalyticsView(views.APIView):
             'created_at': timezone.localtime(b.created_at).strftime('%Y-%m-%d %H:%M')
         } for b in recent_bookings]
 
-        recent_orders = paid_pos_orders.select_related('staff').prefetch_related(
-            Prefetch('payments', queryset=Payment.objects.order_by('id'), to_attr='prefetched_payments')
-        ).order_by('-created_at')[:10]
+        pos_payments = Payment.objects.filter(payment_type=Payment.POS, order__in=[order.id for order in paid_pos_orders]).select_related('order')
+        first_payment_by_order = {}
+        for payment in pos_payments:
+            first_payment_by_order.setdefault(payment.order_id, payment)
         orders_list = [{
             'id': order.id,
             'transaction_id': order.transaction_id or f'POS-{order.id}',
             'cashier': order.staff.username if order.staff else 'N/A',
             'date': timezone.localtime(order.created_at).strftime('%Y-%m-%d %H:%M'),
             'total': money(order.total),
-            'payment_method': order.prefetched_payments[0].method if order.prefetched_payments else 'N/A',
-        } for order in recent_orders]
+            'payment_method': first_payment_by_order.get(order.id).method if first_payment_by_order.get(order.id) else 'N/A',
+        } for order in sorted(paid_pos_orders, key=lambda row: row.created_at, reverse=True)[:10]]
 
-        top_products = OrderItem.objects.filter(order__in=paid_pos_orders).values('product__name').annotate(
-            quantity_sold=Sum('quantity'),
-            revenue=Sum('subtotal')
-        ).order_by('-quantity_sold')[:8]
-        top_packages = bookings_in_range.values('package__name').annotate(
-            total_bookings=Count('id'),
-            revenue=Sum('package__price')
-        ).order_by('-total_bookings')[:8]
+        product_totals = defaultdict(lambda: {'quantity_sold': 0, 'revenue': Decimal('0.00')})
+        for order in paid_pos_orders:
+            for item in order.items or []:
+                name = item.get('product_details', {}).get('name') or 'Item'
+                product_totals[name]['quantity_sold'] += int(item.get('quantity') or 0)
+                product_totals[name]['revenue'] += Decimal(str(item.get('subtotal') or '0'))
+        top_products = sorted(product_totals.items(), key=lambda row: (-row[1]['quantity_sold'], -row[1]['revenue']))[:8]
+
+        package_totals = defaultdict(lambda: {'total_bookings': 0, 'revenue': Decimal('0.00')})
+        for booking in bookings_in_range.select_related('package'):
+            package_totals[booking.package.name]['total_bookings'] += 1
+            package_totals[booking.package.name]['revenue'] += booking.package.price
+        top_packages = sorted(package_totals.items(), key=lambda row: (-row[1]['total_bookings'], -row[1]['revenue']))[:8]
+
+        priority_order = {'EXPIRED': 0, 'NEAR_EXPIRY': 1, 'LOW_STOCK': 2, 'OVERSTOCKED': 3}
+        inventory_alerts.sort(key=lambda row: priority_order.get(row['inventory_status'], 99))
 
         return Response({
             'metrics': {
@@ -184,19 +181,19 @@ class DashboardAnalyticsView(views.APIView):
                 'completed_bookings': booking_status_counts['completed'],
                 **booking_status_counts,
             },
-            'sales_history_chart': chart_data,
+            'sales_history_chart': list(buckets.values()),
             'low_stock_alerts': [row for row in inventory_alerts if row['inventory_status'] == 'LOW_STOCK'],
             'inventory_status_counts': inventory_status_counts,
             'inventory_alerts': inventory_alerts[:8],
             'recent_bookings': bookings_list,
             'recent_pos_transactions': orders_list,
             'top_selling_products': [
-                {'product': p['product__name'], 'quantity_sold': p['quantity_sold'] or 0, 'revenue': money(p['revenue'])}
-                for p in top_products
+                {'product': name, 'quantity_sold': values['quantity_sold'], 'revenue': money(values['revenue'])}
+                for name, values in top_products
             ],
             'top_booked_packages': [
-                {'package': p['package__name'], 'total_bookings': p['total_bookings'] or 0, 'revenue': money(p['revenue'])}
-                for p in top_packages
+                {'package': name, 'total_bookings': values['total_bookings'], 'revenue': money(values['revenue'])}
+                for name, values in top_packages
             ],
             'range': {'start': start_date.strftime('%Y-%m-%d'), 'end': end_date.strftime('%Y-%m-%d'), 'grain': grain}
         })

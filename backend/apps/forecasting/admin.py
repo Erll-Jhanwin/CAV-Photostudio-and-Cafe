@@ -1,3 +1,3 @@
 from django.contrib import admin
 
-# Register your models here.
+# Forecast tables are removed; forecast responses are generated at request time.

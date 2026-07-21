@@ -1,3 +1,3 @@
 from django.contrib import admin
 
-# Register your models here.
+# Notifications do not have a dedicated table in the compact schema.

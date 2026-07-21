@@ -21,13 +21,10 @@ from users.serializers import (
 )
 from users.models import Customer, PasswordResetOTP
 from audit.models import AuditLog
-from booking.models import Booking, BookingChangeLog, BookingItem, BookingPayment
-from chatbot.models import ChatbotLog
-from forecasting.models import DemandPrediction, SalesPrediction
-from inventory.models import IngredientStockMovement, PurchaseOrder, PurchaseOrderItem, StockMovement
-from notifications.models import Notification
-from pos.models import EndOfDayReport, Order, OrderItem, Payment, TransactionSequence
-from sales.models import DailySalesSummary
+from booking.models import Booking
+from inventory.models import InventoryEvent
+from payment.models import Payment
+from pos.models import Order
 import requests
 import secrets
 
@@ -364,23 +361,9 @@ class SystemDataResetView(views.APIView):
                     return Response({"detail": "Admin password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
 
                 deleted = dict([
-                    delete_queryset('booking_payments', BookingPayment.objects.all()),
-                    delete_queryset('booking_items', BookingItem.objects.all()),
-                    delete_queryset('booking_change_logs', BookingChangeLog.objects.all()),
-                    delete_queryset('pos_payments', Payment.objects.all()),
-                    delete_queryset('pos_order_items', OrderItem.objects.all()),
+                    delete_queryset('payments', Payment.objects.all()),
                     delete_queryset('pos_orders', Order.objects.all()),
-                    delete_queryset('end_of_day_reports', EndOfDayReport.objects.all()),
-                    delete_queryset('transaction_sequences', TransactionSequence.objects.all()),
-                    delete_queryset('purchase_order_items', PurchaseOrderItem.objects.all()),
-                    delete_queryset('purchase_orders', PurchaseOrder.objects.all()),
-                    delete_queryset('stock_movements', StockMovement.objects.all()),
-                    delete_queryset('ingredient_stock_movements', IngredientStockMovement.objects.all()),
-                    delete_queryset('demand_predictions', DemandPrediction.objects.all()),
-                    delete_queryset('sales_predictions', SalesPrediction.objects.all()),
-                    delete_queryset('daily_sales_summaries', DailySalesSummary.objects.all()),
-                    delete_queryset('notifications', Notification.objects.all()),
-                    delete_queryset('chatbot_logs', ChatbotLog.objects.all()),
+                    delete_queryset('inventory_events', InventoryEvent.objects.all()),
                     delete_queryset('password_reset_otps', PasswordResetOTP.objects.all()),
                     delete_queryset('bookings', Booking.objects.all()),
                     delete_queryset('non_admin_users', User.objects.exclude(role='ADMIN')),

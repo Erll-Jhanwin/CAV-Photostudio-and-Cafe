@@ -5,6 +5,7 @@ class AuditLog(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_logs')
     action = models.CharField(max_length=100)  # e.g. "INVENTORY_ADJUST", "BOOKING_UPDATE", "STAFF_CREATE"
     description = models.TextField()
+    metadata = models.JSONField(default=dict, blank=True)
     ip_address = models.CharField(max_length=45, blank=True, null=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 

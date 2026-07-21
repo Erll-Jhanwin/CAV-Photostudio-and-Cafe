@@ -40,6 +40,8 @@ class Booking(models.Model):
     scheduled_time = models.TimeField()
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='PENDING')
     notes = models.TextField(blank=True, null=True)
+    items = models.JSONField(default=list, blank=True)
+    change_history = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property
@@ -77,58 +79,3 @@ class Booking(models.Model):
 
     def __str__(self):
         return f"Booking {self.id}: {self.customer.username} - {self.package.name} on {self.scheduled_date} at {self.scheduled_time}"
-
-
-class BookingChangeLog(models.Model):
-    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='change_history')
-    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='booking_changes')
-    old_values = models.JSONField(default=dict)
-    new_values = models.JSONField(default=dict)
-    reason = models.CharField(max_length=220, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"Booking #{self.booking_id} updated on {self.created_at.date()}"
-
-class BookingItem(models.Model):
-    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='items')
-    name = models.CharField(max_length=100)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-    quantity = models.IntegerField(default=1)
-
-    def __str__(self):
-        return f"{self.name} x {self.quantity} for Booking {self.booking.id}"
-
-class BookingPayment(models.Model):
-    STATUS_CHOICES = (
-        ('PENDING_VERIFICATION', 'Pending Verification'),
-        ('APPROVED', 'Approved'),
-        ('REJECTED', 'Rejected'),
-    )
-
-    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='payments')
-    reference_number = models.CharField(max_length=100)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
-    paid_at = models.DateTimeField()
-    receipt = models.FileField(upload_to='booking_receipts/')
-    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default='PENDING_VERIFICATION')
-    verified_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='verified_booking_payments'
-    )
-    verified_at = models.DateTimeField(null=True, blank=True)
-    admin_note = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"Payment {self.reference_number} for Booking {self.booking_id}"

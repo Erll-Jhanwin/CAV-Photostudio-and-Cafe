@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'users',
     'booking',
     'inventory',
+    'payment',
     'pos',
     'sales',
     'forecasting',

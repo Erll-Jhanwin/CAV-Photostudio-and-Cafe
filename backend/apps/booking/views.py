@@ -8,11 +8,11 @@ from rest_framework import generics, permissions, status, filters, views
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from django.utils import timezone
-from booking.models import Service, Package, Booking, BookingItem, BookingPayment, BookingChangeLog
+from booking.models import Service, Package, Booking
 from booking.serializers import ServiceSerializer, PackageSerializer, BookingSerializer, BookingPaymentSerializer
 from booking.availability import ACTIVE_BOOKING_STATUSES, get_available_slots, is_slot_available, parse_date_value
 from booking.payment_ocr import analyze_gcash_receipt
-from notifications.models import Notification
+from payment.models import Payment
 from audit.models import AuditLog
 
 User = get_user_model()
@@ -121,7 +121,7 @@ class BookingListCreateView(generics.ListCreateAPIView):
         user = self.request.user
         if user.role in ['STAFF', 'ADMIN']:
             # Staff/Admin see all bookings, filterable by date
-            queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('items', 'payments')
+            queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('payments')
             date_param = self.request.query_params.get('date')
             status_param = self.request.query_params.get('status')
             if date_param:
@@ -132,7 +132,7 @@ class BookingListCreateView(generics.ListCreateAPIView):
                 queryset = queryset.filter(status__in=['PENDING', 'CONFIRMED', 'CONFIRMED_DP'])
             return apply_limit(queryset.order_by('scheduled_date', 'scheduled_time'), self.request)
         # Customers only see their own bookings
-        queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service').prefetch_related('items', 'payments').order_by('-scheduled_date')
+        queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service').prefetch_related('payments').order_by('-scheduled_date')
         return apply_limit(queryset, self.request)
 
     def create(self, request, *args, **kwargs):
@@ -173,22 +173,15 @@ class BookingListCreateView(generics.ListCreateAPIView):
                     {"scheduled_time": "This schedule was just booked. Please select another available time slot."},
                     status=status.HTTP_409_CONFLICT
                 )
-            booking = serializer.save()
-            
-            for item in normalized_items:
-                BookingItem.objects.create(
-                    booking=booking,
-                    name=item['name'],
-                    price=item['price'],
-                    quantity=item['quantity']
-                )
-
-        # Notify Customer
-        Notification.objects.create(
-            user=request.user,
-            title="Booking Submitted",
-            message=f"Your booking for {booking.package.name} on {booking.scheduled_date} at {booking.scheduled_time} is pending confirmation."
-        )
+            booking = serializer.save(items=[
+                {
+                    "id": index + 1,
+                    "name": item['name'],
+                    "price": str(item['price']),
+                    "quantity": item['quantity'],
+                }
+                for index, item in enumerate(normalized_items)
+            ])
 
         # Log Audit
         AuditLog.objects.create(
@@ -197,14 +190,14 @@ class BookingListCreateView(generics.ListCreateAPIView):
             description=f"Created booking #{booking.id} for {booking.package.name}."
         )
 
-        return Response(BookingSerializer(booking).data, status=status.HTTP_201_CREATED)
+        return Response(BookingSerializer(booking, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = BookingSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('items', 'payments')
+        queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('payments')
         user = self.request.user
         if user.role in ['STAFF', 'ADMIN']:
             return queryset
@@ -240,17 +233,6 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
             
             booking.status = new_status
             booking.save(update_fields=['status'])
-            
-            # Send Notification to Customer
-            Notification.objects.create(
-                user=booking.customer,
-                title="Booking Cancelled" if customer_cancel else f"Booking Status Updated: {new_status}",
-                message=(
-                    f"Your booking for {booking.package.name} on {booking.scheduled_date} was cancelled."
-                    if customer_cancel
-                    else f"Your booking for {booking.package.name} on {booking.scheduled_date} is now {new_status}."
-                )
-            )
             
             # Log Audit
             AuditLog.objects.create(
@@ -302,7 +284,7 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                 customer.save(update_fields=list(requested_customer_fields))
 
             updated_booking = Booking.objects.select_related('customer', 'package', 'package__service').prefetch_related(
-                'items', 'payments', 'change_history'
+                'payments'
             ).get(pk=updated_booking.pk)
 
             new_values = {}
@@ -322,13 +304,18 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
             }
 
             if changed_values:
-                BookingChangeLog.objects.create(
-                    booking=updated_booking,
-                    changed_by=user,
-                    old_values={key: value['from'] for key, value in changed_values.items()},
-                    new_values={key: value['to'] for key, value in changed_values.items()},
-                    reason=request.data.get('change_reason', 'Customer updated booking details')[:220],
-                )
+                history = list(updated_booking.change_history or [])
+                history.insert(0, {
+                    "id": len(history) + 1,
+                    "changed_by": user.id,
+                    "changed_by_name": user.get_full_name() or user.username,
+                    "old_values": {key: value['from'] for key, value in changed_values.items()},
+                    "new_values": {key: value['to'] for key, value in changed_values.items()},
+                    "reason": request.data.get('change_reason', 'Customer updated booking details')[:220],
+                    "created_at": timezone.now().isoformat(),
+                })
+                updated_booking.change_history = history
+                updated_booking.save(update_fields=['change_history'])
 
                 AuditLog.objects.create(
                     user=user,
@@ -336,23 +323,8 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                     description=f"Updated booking #{updated_booking.id}: {', '.join(sorted(changed_values.keys()))}."
                 )
 
-                staff_users = User.objects.filter(role__in=['STAFF', 'ADMIN'])
-                notifications = [
-                    Notification(
-                        user=staff,
-                        title="Booking Updated",
-                        message=(
-                            f"Booking #{updated_booking.id} for "
-                            f"{updated_booking.customer.get_full_name() or updated_booking.customer.username} "
-                            f"was updated. New schedule: {updated_booking.scheduled_date} at {updated_booking.scheduled_time}."
-                        )
-                    )
-                    for staff in staff_users
-                ]
-                Notification.objects.bulk_create(notifications)
-
         updated_booking = Booking.objects.select_related('customer', 'package', 'package__service').prefetch_related(
-            'items', 'payments', 'change_history'
+            'payments'
         ).get(pk=updated_booking.pk)
         return Response(self.get_serializer(updated_booking).data)
 
@@ -368,11 +340,6 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
         booking.delete()
 
-        Notification.objects.create(
-            user=customer,
-            title="Booking Deleted",
-            message=f"Your booking for {package_name} on {scheduled_date} was deleted by an admin."
-        )
         AuditLog.objects.create(
             user=request.user,
             action="BOOKING_DELETE",
@@ -390,7 +357,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = BookingPayment.objects.select_related(
+        queryset = Payment.objects.filter(payment_type=Payment.BOOKING).select_related(
             'booking',
             'booking__customer',
             'booking__package',
@@ -406,12 +373,11 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        payment = serializer.save(status='PENDING_VERIFICATION')
-
-        Notification.objects.create(
-            user=payment.booking.customer,
-            title="GCash Payment Submitted",
-            message=f"Your GCash payment for booking #{payment.booking.id} is pending staff verification."
+        payment = serializer.save(
+            payment_type=Payment.BOOKING,
+            method='GCASH',
+            status='PENDING_VERIFICATION',
+            paid_at=serializer.validated_data.get('paid_at') or timezone.now(),
         )
 
         AuditLog.objects.create(
@@ -431,7 +397,7 @@ class BookingPaymentReferenceCheckView(views.APIView):
             return Response({"exists": False, "reference_number": ""})
         if len(reference_number) > 100:
             return Response({"reference_number": "Reference number is too long."}, status=status.HTTP_400_BAD_REQUEST)
-        exists = BookingPayment.objects.filter(reference_number__iexact=reference_number).exists()
+        exists = Payment.objects.filter(payment_type=Payment.BOOKING, reference_number__iexact=reference_number).exists()
         return Response({
             "exists": exists,
             "reference_number": reference_number,
@@ -457,7 +423,7 @@ class BookingPaymentOcrView(views.APIView):
             return Response({"detail": "Could not read this receipt image."}, status=status.HTTP_400_BAD_REQUEST)
         reference_number = result.get('fields', {}).get('reference_number', {}).get('value')
         if reference_number:
-            duplicate_exists = BookingPayment.objects.filter(reference_number__iexact=reference_number).exists()
+            duplicate_exists = Payment.objects.filter(payment_type=Payment.BOOKING, reference_number__iexact=reference_number).exists()
             result['duplicate_reference'] = duplicate_exists
             if duplicate_exists:
                 result.setdefault('warnings', []).append('This GCash reference number has already been submitted.')
@@ -468,7 +434,7 @@ class BookingPaymentOcrView(views.APIView):
 class BookingPaymentVerifyView(generics.UpdateAPIView):
     serializer_class = BookingPaymentSerializer
     permission_classes = [permissions.IsAuthenticated]
-    queryset = BookingPayment.objects.select_related('booking', 'booking__customer', 'booking__package', 'verified_by')
+    queryset = Payment.objects.filter(payment_type=Payment.BOOKING).select_related('booking', 'booking__customer', 'booking__package', 'verified_by')
 
     def update(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -495,12 +461,6 @@ class BookingPaymentVerifyView(generics.UpdateAPIView):
             title = "Down Payment Rejected"
             message = f"Your GCash payment for booking #{payment.booking.id} was rejected after verification."
             action = "BOOKING_PAYMENT_REJECT"
-
-        Notification.objects.create(
-            user=payment.booking.customer,
-            title=title,
-            message=message
-        )
 
         AuditLog.objects.create(
             user=request.user,
