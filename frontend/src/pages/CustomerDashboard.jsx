@@ -185,6 +185,9 @@ const createIdempotencyKey = (prefix) => {
 const DOWN_PAYMENT_RATE = 0.5;
 const PAYMENT_RECEIPT_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const PAYMENT_RECEIPT_MAX_SIZE = 5 * 1024 * 1024;
+const HIDDEN_PAYMENT_OCR_WARNINGS = new Set([
+  'Could not read the payment time. Please enter it manually.',
+]);
 const calculateDownPayment = (price) => Number(price || 0) * DOWN_PAYMENT_RATE;
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 const isValidPhone = (value) => String(value || '').replace(/[^\d+]/g, '').replace(/^\+/, '').length >= 7;
@@ -765,7 +768,7 @@ export default function CustomerDashboard() {
       setPaymentReferenceStatus({
         checking: false,
         exists,
-        message: exists ? res.data.message || 'This GCash reference number has already been submitted.' : 'Reference number is available.',
+        message: exists ? res.data.message || 'This GCash reference number has already been submitted.' : '',
       });
       return exists;
     } catch {
@@ -856,7 +859,9 @@ export default function CustomerDashboard() {
       if (fields.payment_date?.value) setPaymentDate(fields.payment_date.value);
       if (fields.payment_time?.value) setPaymentTime(fields.payment_time.value);
       setPaymentOcrResult(res.data);
-      setPaymentOcrWarnings(res.data.warnings || []);
+      setPaymentOcrWarnings((res.data.warnings || []).filter(
+        warning => !HIDDEN_PAYMENT_OCR_WARNINGS.has(warning)
+      ));
       if (res.data.duplicate_reference) {
         setPaymentReferenceStatus({
           checking: false,
