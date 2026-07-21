@@ -1082,8 +1082,6 @@ export default function CustomerDashboard() {
           phone_number: phone.trim(),
           address: address.trim(),
           idempotency_key: bookingIdempotencyKeyRef.current,
-        }, {
-          headers: { 'Idempotency-Key': bookingIdempotencyKeyRef.current },
         });
         bookingId = bookingRes.data.id;
         setPendingPaymentBookingId(bookingId);
@@ -1096,11 +1094,7 @@ export default function CustomerDashboard() {
       paymentData.append('paid_at', paidAt.toISOString());
       if (paymentReceipt) paymentData.append('receipt', paymentReceipt);
       paymentData.append('idempotency_key', paymentIdempotencyKeyRef.current);
-      const paymentRes = await client.post('/api/bookings/payments/', paymentData, {
-        headers: {
-          'Idempotency-Key': paymentIdempotencyKeyRef.current,
-        }
-      });
+      const paymentRes = await client.post('/api/bookings/payments/', paymentData);
       setBookingConfirmation({
         id: bookingId,
         packageName: selectedPackage.name,
