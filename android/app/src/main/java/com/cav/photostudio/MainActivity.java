@@ -1,4 +1,4 @@
-package com.cav.app;
+package com.cav.photostudio;
 
 import com.getcapacitor.BridgeActivity;
 

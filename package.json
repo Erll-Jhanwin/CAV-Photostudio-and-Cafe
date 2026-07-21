@@ -2,20 +2,29 @@
   "name": "cav-capacitor",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
   "workspaces": [
     "frontend"
   ],
   "scripts": {
     "build": "npm --workspace frontend run build",
-    "cap": "cap",
-    "cap:copy": "npm run build && cap copy android",
-    "cap:sync": "npm run build && cap sync android",
-    "cap:open:android": "cap open android",
-    "cap:run:android": "npm run cap:sync && cap run android"
+    "verify:web-build": "node ./scripts/verify-web-build.mjs",
+    "capacitor:sync:before": "npm run verify:web-build",
+    "cap": "npx cap",
+    "cap:copy": "npm run build && npm run verify:web-build && npx cap copy android",
+    "cap:sync": "npm run build && npm run verify:web-build && npx cap sync android",
+    "cap:open:android": "npx cap open android",
+    "cap:run:android": "npm run cap:sync && npx cap run android"
   },
   "dependencies": {
-    "@capacitor/android": "^8.4.2",
-    "@capacitor/cli": "^8.4.2",
-    "@capacitor/core": "^8.4.2"
+    "@capacitor/android": "8.4.2",
+    "@capacitor/cli": "8.4.2",
+    "@capacitor/core": "8.4.2"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
   }
 }
