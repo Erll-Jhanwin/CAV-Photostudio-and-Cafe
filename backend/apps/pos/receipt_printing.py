@@ -7,18 +7,18 @@ from ctypes import wintypes
 from decimal import Decimal, InvalidOperation
 
 
-RECEIPT_WIDTH = 30
+RECEIPT_WIDTH = 32
 POS58_PRINTABLE_DOTS = 384
 ITEM_QTY_WIDTH = 4
-ITEM_UNIT_WIDTH = 10
+ITEM_UNIT_WIDTH = 12
 ITEM_TOTAL_WIDTH = RECEIPT_WIDTH - ITEM_QTY_WIDTH - ITEM_UNIT_WIDTH
 STORE_LOGO_TEXT = "CAV"
 STORE_NAME = "CAV PHOTO STUDIO & CAFE"
 STORE_ADDRESS = "028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas"
 STORE_CONTACT_NUMBER = "+639171234567"
-ESC_POS_MAX_DENSITY = (
-    b"\x12#\xff"          # Common POS58 density command: maximum density/darkness.
-    b"\x1b7\xff\xff\xff"  # Maximum heat dots, heat time, and heat interval supported by ESC/POS clones.
+ESC_POS_DARK_PRINT = (
+    b"\x12#\xff"          # Common POS58 density command: high darkness.
+    b"\x1b7\x0b\x80\x40"  # Higher heat/time with a moderate interval to avoid smeared text.
 )
 
 
@@ -129,7 +129,7 @@ def _receipt_sections(receipt):
 
 
 def _receipt_text(receipt):
-    return "\n".join("\n".join(section) for section in _receipt_sections(receipt)) + "\n\n"
+    return "\n\n".join("\n".join(section) for section in _receipt_sections(receipt)) + "\n\n"
 
 
 def _end_of_day_sections(report):
@@ -181,7 +181,7 @@ def _end_of_day_sections(report):
 
 
 def _end_of_day_text(report):
-    return "\n".join("\n".join(section) for section in _end_of_day_sections(report)) + "\n\n"
+    return "\n\n".join("\n".join(section) for section in _end_of_day_sections(report)) + "\n\n"
 
 
 def _encode_receipt_line(line):
@@ -222,25 +222,19 @@ def _escpos_receipt_bytes(receipt):
         b"\x1b!\x00"          # Font A 12x24, normal size, normal weight
         b"\x1bM\x00"          # Font A
         b"\x1d!\x00"          # Normal character width/height
-        b"\x1bE\x01"          # Emphasis on for darker thermal text
-        b"\x1bG\x01"          # Double-strike on for stronger black text
+        b"\x1bE\x00"          # Normal text weight; darkness is handled by heat/density.
+        b"\x1bG\x00"          # Double-strike off to avoid blurred characters.
         b"\x1b-\x00"          # Underline off
-        b"\x1b3\x20"          # Readable 32-dot line spacing for 57 mm thermal paper
+        b"\x1b2"              # Default ESC/POS line spacing
         b"\x1dL\x00\x00"      # Left margin 0 dots
         + bytes([0x1D, 0x57, width_low, width_high])  # Printable width 384 dots
-        + ESC_POS_MAX_DENSITY
+        + ESC_POS_DARK_PRINT
     )
 
     for index, section in enumerate(sections):
         payload.extend(b"\x1ba\x01" if index in (0, 4) else b"\x1ba\x00")
         payload.extend(b"\x1d!\x00")
         for line_index, line in enumerate(section):
-            payload.extend(b"\x1bE\x01\x1bG\x01")
-            if index == 0 and line_index == 0:
-                payload.extend(b"\x1d!\x11")  # Double width and height for the CAV logo text.
-                payload.extend(_encode_receipt_line(line.strip()))
-                payload.extend(b"\x1d!\x00\n")
-                continue
             payload.extend(_encode_receipt_line(line))
         payload.extend(b"\x1d!\x00")
         if index < len(sections) - 1:
@@ -260,19 +254,18 @@ def _escpos_end_of_day_bytes(report):
         b"\x1b!\x00"
         b"\x1bM\x00"
         b"\x1d!\x00"
-        b"\x1bE\x01"
-        b"\x1bG\x01"
+        b"\x1bE\x00"
+        b"\x1bG\x00"
         b"\x1b-\x00"
-        b"\x1b3\x20"
+        b"\x1b2"
         b"\x1dL\x00\x00"
         + bytes([0x1D, 0x57, width_low, width_high])
-        + ESC_POS_MAX_DENSITY
+        + ESC_POS_DARK_PRINT
     )
 
     for index, section in enumerate(sections):
         payload.extend(b"\x1ba\x01" if index in (0, 5) else b"\x1ba\x00")
         for line in section:
-            payload.extend(b"\x1bE\x01\x1bG\x01")
             payload.extend(_encode_receipt_line(line))
         if index == 0:
             payload.extend(b"\x1ba\x01")

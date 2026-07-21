@@ -1812,7 +1812,7 @@ export default function StaffDashboard() {
         {receiptOrder && (() => {
           const business = getReceiptBusiness(receiptOrder);
           return (
-            <div id="receipt-print-area" className="mx-auto w-[57mm] max-w-full bg-white px-[2.5mm] py-[3mm] font-mono text-[9px] font-bold leading-tight text-black">
+            <div id="receipt-print-area" className="mx-auto w-[58mm] max-w-full bg-white p-0 font-mono text-[9px] font-bold leading-tight text-black">
               <div className="space-y-1 text-center">
                 <div className="flex justify-center">
                   <div className="flex h-[17mm] w-[17mm] items-center justify-center overflow-hidden">

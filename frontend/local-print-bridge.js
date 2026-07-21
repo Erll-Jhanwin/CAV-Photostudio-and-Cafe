@@ -81,57 +81,118 @@ const listPosixPrinters = async () => {
   }));
 };
 
+const escposReceiptPayload = (content) => {
+  const printableWidthDots = 384;
+  const widthLow = printableWidthDots & 0xff;
+  const widthHigh = (printableWidthDots >> 8) & 0xff;
+  return Buffer.concat([
+    Buffer.from([
+      0x1b, 0x40,       // Initialize printer
+      0x1b, 0x21, 0x00, // Font A 12x24, normal size
+      0x1b, 0x4d, 0x00, // Font A
+      0x1d, 0x21, 0x00, // Normal character width/height
+      0x1b, 0x45, 0x00, // Emphasis off
+      0x1b, 0x47, 0x00, // Double-strike off
+      0x1b, 0x2d, 0x00, // Underline off
+      0x1b, 0x32,       // Default ESC/POS line spacing
+      0x1d, 0x4c, 0x00, 0x00, // Left margin 0 dots
+      0x1d, 0x57, widthLow, widthHigh, // Printable width 384 dots
+      0x12, 0x23, 0xff, // High POS58 density/darkness
+      0x1b, 0x37, 0x0b, 0x80, 0x40, // Higher heat/time, controlled interval
+      0x1b, 0x61, 0x00, // Left align body text
+    ]),
+    Buffer.from(String(content || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n'), 'ascii'),
+    Buffer.from([
+      0x0a, 0x0a, 0x0a,
+      0x1d, 0x56, 0x42, 0x00, // Partial cut
+    ]),
+  ]);
+};
+
 const printWindows = async ({ printerName, content }) => {
   const command = `
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Drawing
-$content = [Console]::In.ReadToEnd()
-$printerName = $env:PRINTER_NAME
-$doc = New-Object System.Drawing.Printing.PrintDocument
-$doc.DocumentName = 'CAV Receipt'
-$doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController
-$doc.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('57mm Receipt', 224, 1100)
-$doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(2, 2, 2, 2)
-$doc.OriginAtMargins = $false
-if ($printerName) {
-  $doc.PrinterSettings.PrinterName = $printerName
-}
-if (-not $doc.PrinterSettings.IsValid) {
-  throw "Printer is not available: $($doc.PrinterSettings.PrinterName)"
-}
-$font = New-Object System.Drawing.Font('Consolas', 9, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Point)
-$brush = [System.Drawing.Brushes]::Black
-$lines = ($content -replace "\`r\`n", "\`n" -replace "\`r", "\`n").Split("\`n")
-$script:lineIndex = 0
-$doc.add_PrintPage({
-  param($sender, $eventArgs)
-  $x = [float]4
-  $y = [float]4
-  $lineHeight = $font.GetHeight($eventArgs.Graphics) + 1
-  while ($script:lineIndex -lt $lines.Length) {
-    if (($y + $lineHeight) -gt ($eventArgs.PageBounds.Height - 4)) {
-      $eventArgs.HasMorePages = $true
-      return
-    }
-    $eventArgs.Graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::SingleBitPerPixelGridFit
-    $eventArgs.Graphics.DrawString($lines[$script:lineIndex], $font, $brush, $x, $y)
-    $y += $lineHeight
-    $script:lineIndex += 1
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public class RawPrinterHelper {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+  public class DOCINFOA {
+    [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
+    [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
+    [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
   }
-  $eventArgs.HasMorePages = $false
-})
-$doc.Print()
-$font.Dispose()
-$doc.Dispose()
+
+  [DllImport("winspool.Drv", EntryPoint = "OpenPrinterA", SetLastError = true, CharSet = CharSet.Ansi, ExactSpelling = true)]
+  public static extern bool OpenPrinter(string szPrinter, out IntPtr hPrinter, IntPtr pd);
+
+  [DllImport("winspool.Drv", SetLastError = true, ExactSpelling = true)]
+  public static extern bool ClosePrinter(IntPtr hPrinter);
+
+  [DllImport("winspool.Drv", EntryPoint = "StartDocPrinterA", SetLastError = true, CharSet = CharSet.Ansi, ExactSpelling = true)]
+  public static extern bool StartDocPrinter(IntPtr hPrinter, int level, [In] DOCINFOA di);
+
+  [DllImport("winspool.Drv", SetLastError = true, ExactSpelling = true)]
+  public static extern bool EndDocPrinter(IntPtr hPrinter);
+
+  [DllImport("winspool.Drv", SetLastError = true, ExactSpelling = true)]
+  public static extern bool StartPagePrinter(IntPtr hPrinter);
+
+  [DllImport("winspool.Drv", SetLastError = true, ExactSpelling = true)]
+  public static extern bool EndPagePrinter(IntPtr hPrinter);
+
+  [DllImport("winspool.Drv", SetLastError = true, ExactSpelling = true)]
+  public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
+
+  public static void SendBytesToPrinter(string printerName, byte[] bytes) {
+    IntPtr hPrinter;
+    if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero)) {
+      throw new Exception("Printer could not be opened: " + printerName);
+    }
+
+    DOCINFOA di = new DOCINFOA();
+    di.pDocName = "CAV POS Receipt";
+    di.pDataType = "RAW";
+
+    try {
+      if (!StartDocPrinter(hPrinter, 1, di)) throw new Exception("RAW print job could not be started.");
+      try {
+        if (!StartPagePrinter(hPrinter)) throw new Exception("RAW print page could not be started.");
+        IntPtr unmanagedBytes = Marshal.AllocHGlobal(bytes.Length);
+        try {
+          Marshal.Copy(bytes, 0, unmanagedBytes, bytes.Length);
+          int written;
+          if (!WritePrinter(hPrinter, unmanagedBytes, bytes.Length, out written) || written != bytes.Length) {
+            throw new Exception("Receipt bytes could not be sent to the printer.");
+          }
+        } finally {
+          Marshal.FreeHGlobal(unmanagedBytes);
+          EndPagePrinter(hPrinter);
+        }
+      } finally {
+        EndDocPrinter(hPrinter);
+      }
+    } finally {
+      ClosePrinter(hPrinter);
+    }
+  }
+}
+"@
+$printerName = $env:PRINTER_NAME
+if (-not $printerName) {
+  throw 'Printer name is required for RAW ESC/POS printing.'
+}
+$bytes = [Convert]::FromBase64String($env:RECEIPT_PAYLOAD)
+[RawPrinterHelper]::SendBytesToPrinter($printerName, $bytes)
 `;
+  const payload = escposReceiptPayload(content);
   const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command], {
     windowsHide: true,
-    env: { ...process.env, PRINTER_NAME: printerName || '' },
+    env: { ...process.env, PRINTER_NAME: printerName || '', RECEIPT_PAYLOAD: payload.toString('base64') },
   });
   let stderr = '';
   child.stderr?.on('data', chunk => { stderr += chunk.toString(); });
-  child.stdin.write(content);
-  child.stdin.end();
   const code = await new Promise(resolve => child.on('close', resolve));
   if (code !== 0) throw new Error(cleanPowerShellError(stderr) || 'Printer command failed.');
 };

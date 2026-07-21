@@ -48,9 +48,9 @@ const amount = (value) => Number(value || 0).toLocaleString('en-PH', {
   maximumFractionDigits: 2,
 });
 
-const RECEIPT_WIDTH = 30;
+const RECEIPT_WIDTH = 32;
 const ITEM_QTY_WIDTH = 4;
-const ITEM_UNIT_WIDTH = 10;
+const ITEM_UNIT_WIDTH = 12;
 const ITEM_TOTAL_WIDTH = RECEIPT_WIDTH - ITEM_QTY_WIDTH - ITEM_UNIT_WIDTH;
 
 const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
@@ -140,16 +140,21 @@ export const buildReceiptText = (order, business, user) => {
   const transactionNumber = order?.transaction_id || order?.transaction_number || payment.transaction_id || `POS-${order?.id || ''}`;
   const dateText = order?.created_at_display || formatManilaDateTime(order?.created_at);
 
-  const rows = [
+  const header = [
     ...center(business.logoText || 'CAV'),
     ...center(business.name || 'CAV PHOTO STUDIO & CAFE'),
     ...center(business.address || ''),
     ...pair('CONTACT', business.contactNumber || ''),
-    line(),
+  ];
+
+  const details = [
     ...pair('OR NO.', order?.or_number || order?.id || ''),
     ...pair('TXN NO.', transactionNumber),
     ...pair('DATE', dateText),
     ...pair('CASHIER', order?.staff_name || user?.username || ''),
+  ];
+
+  const itemRows = [
     line(),
     'ITEMIZED PRODUCTS',
     `${fitLeft('QTY', ITEM_QTY_WIDTH)}${fitRight('PRICE', ITEM_UNIT_WIDTH)}${fitRight('AMOUNT', ITEM_TOTAL_WIDTH)}`,
@@ -158,26 +163,28 @@ export const buildReceiptText = (order, business, user) => {
 
   items.forEach(item => {
     const name = item.product_details?.name || 'Item';
-    rows.push(...wrapText(name));
-    rows.push(itemAmountLine(item));
+    itemRows.push(...wrapText(name));
+    itemRows.push(itemAmountLine(item));
   });
+  itemRows.push(line());
 
-  rows.push(
-    line(),
+  const totals = [
     ...pair('SUBTOTAL', money(order?.subtotal || order?.total)),
     ...pair('DISCOUNTS', money(order?.discounts ?? order?.discount_amount)),
     ...pair('GRAND TOTAL', money(order?.total)),
     ...pair('METHOD', payment.method || 'CASH'),
     ...pair('RECEIVED', money(amountReceived)),
     ...pair('CHANGE', money(change)),
+  ];
+
+  const footer = [
     line(),
     ...center('Thank You'),
-    '',
-    '',
-    '',
-  );
+  ];
 
-  return rows.join('\n');
+  return [header, details, itemRows, totals, footer]
+    .map(section => section.join('\n'))
+    .join('\n\n') + '\n\n\n';
 };
 
 export const printLocalReceipt = async ({ order, business, user, printerName }) => {
