@@ -1161,13 +1161,13 @@ export default function LandingPage() {
             </p>
             <div className="flex items-center gap-6 md:gap-10 pt-2">
               <div>
-                <span className="font-sans text-2xl md:text-3xl font-black text-white">5k+</span>
-                <span className="text-[10px] uppercase text-cream/65 tracking-wider block">Sessions Booked</span>
+                <span className="font-sans text-2xl md:text-3xl font-black text-white">2</span>
+                <span className="text-[10px] uppercase text-cream/65 tracking-wider block">Booking Services</span>
               </div>
               <div className="w-px h-10 bg-cream/10" />
               <div>
-                <span className="font-sans text-2xl md:text-3xl font-black text-white">100%</span>
-                <span className="text-[10px] uppercase text-cream/65 tracking-wider block">Fresh Arabica</span>
+                <span className="font-sans text-2xl md:text-3xl font-black text-white">6</span>
+                <span className="text-[10px] uppercase text-cream/65 tracking-wider block">Photo Packages</span>
               </div>
             </div>
           </div>
