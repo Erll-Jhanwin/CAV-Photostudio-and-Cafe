@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import client, { getApiErrorMessage } from '../api/client';
+import client, { DATA_CHANGED_EVENT, getApiErrorMessage } from '../api/client';
 import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -724,6 +724,23 @@ export default function CustomerDashboard() {
       setSlotLoading(false);
     }
   }, [selectedPackage, selectedDate]);
+
+  useEffect(() => {
+    if (!userId) return undefined;
+    const refreshChangedData = (event) => {
+      const url = String(event.detail?.url || '');
+      if (url.includes('/api/auth/profile/')) {
+        void fetchDashboardData({ background: true });
+      }
+      if (url.includes('/api/bookings/')) {
+        void fetchDashboardData({ background: true });
+        void fetchMonthAvailability();
+        if (selectedDate) void fetchDayAvailability(selectedDate);
+      }
+    };
+    window.addEventListener(DATA_CHANGED_EVENT, refreshChangedData);
+    return () => window.removeEventListener(DATA_CHANGED_EVENT, refreshChangedData);
+  }, [userId, selectedDate, fetchDashboardData, fetchMonthAvailability, fetchDayAvailability]);
 
   const handleDateSelect = (dateValue) => {
     const dateStatus = monthAvailability[dateValue]?.status;

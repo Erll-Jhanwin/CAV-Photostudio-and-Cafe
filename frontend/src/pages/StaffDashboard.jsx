@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import client, { getApiErrorMessage } from '../api/client';
+import client, { DATA_CHANGED_EVENT, getApiErrorMessage } from '../api/client';
 import {
   ShoppingBag, Package, DollarSign, Search, Plus,
   Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
@@ -346,6 +346,22 @@ export default function StaffDashboard() {
       document.removeEventListener('visibilitychange', refresh);
     };
   }, [user, activeTab, loadTabData]);
+
+  useEffect(() => {
+    if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) return undefined;
+    const refreshChangedData = (event) => {
+      const url = String(event.detail?.url || '');
+      if (url.includes('/api/pos/orders/')) {
+        void Promise.all(['pos', 'inventory', 'sales'].map(tab => loadTabData(tab, true)));
+      } else if (url.includes('/api/inventory/')) {
+        void Promise.all(['pos', 'inventory'].map(tab => loadTabData(tab, true)));
+      } else if (url.includes('/api/bookings/payments/')) {
+        void loadTabData('payments', true);
+      }
+    };
+    window.addEventListener(DATA_CHANGED_EVENT, refreshChangedData);
+    return () => window.removeEventListener(DATA_CHANGED_EVENT, refreshChangedData);
+  }, [user, loadTabData]);
 
   useEffect(() => { setProductPage(1); }, [posSearch]);
   useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);

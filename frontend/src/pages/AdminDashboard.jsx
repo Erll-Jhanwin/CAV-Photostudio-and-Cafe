@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import client, { getApiErrorMessage } from '../api/client';
+import client, { DATA_CHANGED_EVENT, getApiErrorMessage } from '../api/client';
 import {
   TrendingUp, BarChart2, Users, MessageSquare, Play, Package,
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
@@ -356,6 +356,13 @@ export default function AdminDashboard() {
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
+  }, [user, fetchData]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'ADMIN') return undefined;
+    const refreshChangedData = () => fetchData({ background: true });
+    window.addEventListener(DATA_CHANGED_EVENT, refreshChangedData);
+    return () => window.removeEventListener(DATA_CHANGED_EVENT, refreshChangedData);
   }, [user, fetchData]);
 
   const validateNewStaffForm = () => {
@@ -844,11 +851,12 @@ export default function AdminDashboard() {
         admin_password: systemResetPassword,
         confirmation: systemResetConfirmation,
       });
-      alert('System reset completed successfully.');
+      await fetchData({ background: true });
       setSystemResetOpen(false);
-      window.setTimeout(() => {
-        window.location.reload();
-      }, 600);
+      setSystemResetPassword('');
+      setSystemResetConfirmation('');
+      setSystemResetError('');
+      alert('System reset completed successfully.');
     } catch (err) {
       const payload = err.response?.data;
       const msg = payload?.detail

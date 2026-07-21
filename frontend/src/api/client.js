@@ -1,6 +1,36 @@
 import axios from 'axios';
 import { API_BASE_URL } from './config';
 
+export const DATA_CHANGED_EVENT = 'cav:data-changed';
+const DATA_CHANGED_STORAGE_KEY = 'cav:data-change';
+
+const dispatchDataChanged = (detail) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(DATA_CHANGED_EVENT, { detail }));
+  try {
+    window.localStorage.setItem(DATA_CHANGED_STORAGE_KEY, JSON.stringify({
+      ...detail,
+      at: Date.now(),
+      nonce: Math.random().toString(36).slice(2),
+    }));
+  } catch {
+    // Storage can be unavailable in private browsing; the current tab still refreshes.
+  }
+};
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== DATA_CHANGED_STORAGE_KEY || !event.newValue) return;
+    try {
+      window.dispatchEvent(new CustomEvent(DATA_CHANGED_EVENT, {
+        detail: JSON.parse(event.newValue),
+      }));
+    } catch {
+      // Ignore malformed storage events from older app versions.
+    }
+  });
+}
+
 const client = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
@@ -57,7 +87,16 @@ client.interceptors.request.use(
 
 // Response Interceptor: Handle Token Refresh on 401
 client.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = String(response.config?.method || 'get').toLowerCase();
+    if (['post', 'put', 'patch', 'delete'].includes(method)) {
+      dispatchDataChanged({
+        method,
+        url: response.config?.url || '',
+      });
+    }
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config || {};
     const requestUrl = originalRequest.url || '';
