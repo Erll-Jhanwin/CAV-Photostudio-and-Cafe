@@ -6,6 +6,7 @@ from rest_framework import permissions, serializers, status, views
 from rest_framework.response import Response
 
 from audit.models import AuditLog
+from users.permissions import IsAdmin
 from chatbot.booking_assistant import build_booking_chatbot_response, detect_language
 
 logger = logging.getLogger(__name__)
@@ -271,7 +272,7 @@ class FAQListCreateView(views.APIView):
     def get_permissions(self):
         if self.request.method == 'GET':
             return [permissions.AllowAny()]
-        return [permissions.IsAuthenticated()]
+        return [IsAdmin()]
 
     def get(self, request):
         return Response(get_faqs())
@@ -291,7 +292,7 @@ class FAQListCreateView(views.APIView):
 
 
 class FAQDetailUpdateView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def get_record(self, pk):
         return AuditLog.objects.get(pk=pk, action=FAQ_ACTION, metadata__active=True)

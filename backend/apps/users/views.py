@@ -14,6 +14,7 @@ from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from users.serializers import (
     AccountSerializer,
     ProfileSerializer,
@@ -24,6 +25,7 @@ from users.serializers import (
     PasswordResetConfirmSerializer,
 )
 from users.models import Customer, PasswordResetOTP
+from users.permissions import IsAdmin
 from users.email_delivery import send_password_reset_email
 from audit.models import AuditLog
 from booking.models import Booking
@@ -143,7 +145,9 @@ class GoogleAuthView(views.APIView):
             return Response({"detail": "Invalid Google credential."}, status=status.HTTP_400_BAD_REQUEST)
 
         profile = verify_res.json()
-        if profile.get('aud') != settings.GOOGLE_CLIENT_ID:
+        if profile.get('aud') != settings.GOOGLE_CLIENT_ID or profile.get('iss') not in {
+            'accounts.google.com', 'https://accounts.google.com',
+        }:
             return Response({"detail": "Invalid Google credential."}, status=status.HTTP_400_BAD_REQUEST)
 
         email = profile.get('email', '').strip().lower()
@@ -193,6 +197,7 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = ProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+    throttle_scope = 'sensitive'
 
     def get_object(self):
         user = self.request.user
@@ -200,18 +205,32 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
             Customer.objects.get_or_create(user=user)
         return user
 
+    def perform_update(self, serializer):
+        password_changed = bool(serializer.validated_data.get('new_password'))
+        changed_fields = sorted(
+            field for field in serializer.validated_data
+            if field not in {'current_password', 'new_password', 'profile_picture', 'remove_profile_picture'}
+        )
+        user = serializer.save()
+        if password_changed:
+            for outstanding in OutstandingToken.objects.filter(user=user):
+                BlacklistedToken.objects.get_or_create(token=outstanding)
+        AuditLog.objects.create(
+            user=user,
+            action='USER_PASSWORD_CHANGE' if password_changed else 'USER_PROFILE_UPDATE',
+            description=(
+                'User changed their password.' if password_changed
+                else f"User updated profile fields: {', '.join(changed_fields) or 'profile photo'}."
+            ),
+            ip_address=get_client_ip(self.request),
+        )
+
 class StaffListView(generics.ListCreateAPIView):
     serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def get_queryset(self):
-        # Admin can view all users, staff can see staff/customers.
-        user = self.request.user
-        if user.role == 'ADMIN':
-            return User.objects.all().order_by('role', 'username')
-        if user.role == 'STAFF':
-            return User.objects.filter(role__in=['STAFF', 'CUSTOMER']).order_by('role', 'username')
-        return User.objects.filter(pk=user.pk)
+        return User.objects.all().order_by('role', 'username')
 
     def create(self, request, *args, **kwargs):
         if request.user.role != 'ADMIN':
@@ -230,7 +249,7 @@ class StaffListView(generics.ListCreateAPIView):
         return Response(AccountSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 class StaffDetailView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def get_object(self, pk):
         try:
@@ -297,7 +316,7 @@ def delete_queryset(label, queryset):
     return label, count
 
 class SystemDataResetView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
     throttle_scope = 'auth'
 
     def post(self, request):

@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 from django.db.models.functions import Lower
+from users.uploads import receipt_upload_path
 
 
 class Payment(models.Model):
@@ -29,7 +30,7 @@ class Payment(models.Model):
     method = models.CharField(max_length=15, choices=METHOD_CHOICES, default='GCASH')
     reference_number = models.CharField(max_length=100, blank=True, null=True)
     transaction_id = models.CharField(max_length=100, blank=True, null=True)
-    receipt = models.FileField(upload_to='booking_receipts/', blank=True, null=True)
+    receipt = models.FileField(upload_to=receipt_upload_path, blank=True, null=True)
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default='PENDING')
     paid_at = models.DateTimeField(null=True, blank=True)
     verified_by = models.ForeignKey(

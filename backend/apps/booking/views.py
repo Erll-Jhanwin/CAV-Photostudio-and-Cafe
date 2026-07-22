@@ -22,6 +22,8 @@ from booking.availability import ACTIVE_BOOKING_STATUSES, get_available_slots, i
 from booking.payment_ocr import analyze_gcash_receipt
 from payment.models import Payment
 from audit.models import AuditLog
+from users.permissions import IsAdmin, IsStaffOrAdmin
+from users.uploads import validate_receipt_image
 
 User = get_user_model()
 
@@ -148,7 +150,7 @@ class BookingAvailabilityView(views.APIView):
 
 class StudioUnavailableDateListCreateView(generics.ListCreateAPIView):
     serializer_class = StudioUnavailableDateSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def get_queryset(self):
         if self.request.user.role != 'ADMIN':
@@ -173,7 +175,7 @@ class StudioUnavailableDateListCreateView(generics.ListCreateAPIView):
 
 class StudioUnavailableDateDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = StudioUnavailableDateSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def get_queryset(self):
         if self.request.user.role != 'ADMIN':
@@ -228,11 +230,14 @@ class BookingListCreateView(generics.ListCreateAPIView):
         if not isinstance(items_data, list):
             return Response({"items": "Items must be a list."}, status=status.HTTP_400_BAD_REQUEST)
 
+        if len(items_data) > 25:
+            return Response({"items": "A booking can include up to 25 add-ons."}, status=status.HTTP_400_BAD_REQUEST)
+
         normalized_items_by_name = {}
         for item in items_data:
             if not isinstance(item, dict):
                 return Response({"items": "Each item must be an object."}, status=status.HTTP_400_BAD_REQUEST)
-            name = str(item.get('name') or '').strip()
+            name = ' '.join(str(item.get('name') or '').replace('\x00', '').split()).strip()
             if not name or len(name) > 100:
                 return Response({"items": "Each item needs a name up to 100 characters."}, status=status.HTTP_400_BAD_REQUEST)
             try:
@@ -489,11 +494,13 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
 
     def create(self, request, *args, **kwargs):
         idempotency_key = get_idempotency_key(request)
+        payment_queryset = Payment.objects.filter(payment_type=Payment.BOOKING)
+        if request.user.role not in ['STAFF', 'ADMIN']:
+            payment_queryset = payment_queryset.filter(booking__customer=request.user)
         if idempotency_key:
-            existing_payment = Payment.objects.filter(
-                payment_type=Payment.BOOKING,
-                idempotency_key=idempotency_key,
-            ).select_related('booking', 'booking__customer', 'booking__package', 'verified_by').first()
+            existing_payment = payment_queryset.filter(idempotency_key=idempotency_key).select_related(
+                'booking', 'booking__customer', 'booking__package', 'verified_by'
+            ).first()
             if existing_payment:
                 return Response(self.get_serializer(existing_payment).data, status=status.HTTP_200_OK)
 
@@ -509,10 +516,9 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             )
         except IntegrityError:
             if idempotency_key:
-                existing_payment = Payment.objects.filter(
-                    payment_type=Payment.BOOKING,
-                    idempotency_key=idempotency_key,
-                ).select_related('booking', 'booking__customer', 'booking__package', 'verified_by').first()
+                existing_payment = payment_queryset.filter(idempotency_key=idempotency_key).select_related(
+                    'booking', 'booking__customer', 'booking__package', 'verified_by'
+                ).first()
                 if existing_payment:
                     return Response(self.get_serializer(existing_payment).data, status=status.HTTP_200_OK)
             return Response(
@@ -537,7 +543,10 @@ class BookingPaymentReferenceCheckView(views.APIView):
             return Response({"exists": False, "reference_number": ""})
         if len(reference_number) > 100:
             return Response({"reference_number": "Reference number is too long."}, status=status.HTTP_400_BAD_REQUEST)
-        exists = Payment.objects.filter(payment_type=Payment.BOOKING, reference_number__iexact=reference_number).exists()
+        payments = Payment.objects.filter(payment_type=Payment.BOOKING, reference_number__iexact=reference_number)
+        if request.user.role not in ['STAFF', 'ADMIN']:
+            payments = payments.filter(booking__customer=request.user)
+        exists = payments.exists()
         return Response({
             "exists": exists,
             "reference_number": reference_number,
@@ -553,10 +562,10 @@ class BookingPaymentOcrView(views.APIView):
         receipt = request.FILES.get('receipt')
         if not receipt:
             return Response({"receipt": "Upload a GCash screenshot."}, status=status.HTTP_400_BAD_REQUEST)
-        if receipt.size > 5 * 1024 * 1024:
-            return Response({"receipt": "Receipt file must be 5MB or smaller."}, status=status.HTTP_400_BAD_REQUEST)
-        if getattr(receipt, 'content_type', '') not in {'image/jpeg', 'image/png', 'image/webp'}:
-            return Response({"receipt": "OCR accepts JPG, PNG, or WEBP screenshots only."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            validate_receipt_image(receipt)
+        except ValidationError as exc:
+            return Response({"receipt": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
         try:
             result = analyze_gcash_receipt(receipt)
         except Exception:
@@ -574,7 +583,7 @@ class BookingPaymentOcrView(views.APIView):
 
 class BookingPaymentVerifyView(generics.UpdateAPIView):
     serializer_class = BookingPaymentSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
     queryset = Payment.objects.filter(payment_type=Payment.BOOKING).select_related('booking', 'booking__customer', 'booking__package', 'verified_by').distinct()
 
     def update(self, request, *args, **kwargs):

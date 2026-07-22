@@ -34,7 +34,8 @@ def env_list(name, default=None):
     return [item.strip() for item in raw.split(',') if item.strip()]
 
 
-DEBUG = env_bool('DJANGO_DEBUG', os.environ.get('ENVIRONMENT', '').lower() != 'production')
+IS_TESTING = 'test' in sys.argv
+DEBUG = env_bool('DJANGO_DEBUG', False)
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or os.environ.get('SECRET_KEY')
 if not SECRET_KEY:
     if not DEBUG:
@@ -80,6 +81,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'config.middleware.SecurityHeadersMiddleware',
     'corsheaders.middleware.CorsMiddleware',  # Put at the top
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -194,6 +196,10 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',
+    ),
+    'EXCEPTION_HANDLER': 'config.api.secure_exception_handler',
     'DEFAULT_THROTTLE_CLASSES': (
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
@@ -206,6 +212,7 @@ REST_FRAMEWORK = {
         'password_reset': os.environ.get('DRF_PASSWORD_RESET_THROTTLE_RATE', '3/hour'),
         'chatbot': os.environ.get('DRF_CHATBOT_THROTTLE_RATE', '20/minute'),
         'ocr': os.environ.get('DRF_OCR_THROTTLE_RATE', '10/minute'),
+        'sensitive': os.environ.get('DRF_SENSITIVE_THROTTLE_RATE', '12/minute'),
     },
 }
 
@@ -241,28 +248,48 @@ CORS_ALLOWED_ORIGINS = list(dict.fromkeys([
     *CAPACITOR_ALLOWED_ORIGINS,
 ]))
 CORS_ALLOW_CREDENTIALS = env_bool('CORS_ALLOW_CREDENTIALS', False)
+CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
 CORS_ALLOW_HEADERS = [
     *default_headers,
     'idempotency-key',
     'x-idempotency-key',
 ]
-CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS', CORS_ALLOWED_ORIGINS)
+CSRF_TRUSTED_ORIGINS = env_list(
+    'CSRF_TRUSTED_ORIGINS',
+    [origin for origin in CORS_ALLOWED_ORIGINS if origin.startswith(('http://', 'https://'))],
+)
 
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False
 SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE', not DEBUG)
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_AGE = int(os.environ.get('SESSION_COOKIE_AGE', str(60 * 60 * 8)))
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
-SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT', False)
+SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT', not DEBUG and not IS_TESTING)
 SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '0' if DEBUG else '31536000'))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', not DEBUG)
-SECURE_HSTS_PRELOAD = env_bool('SECURE_HSTS_PRELOAD', False)
-REFERRER_POLICY = 'same-origin'
+SECURE_HSTS_PRELOAD = env_bool('SECURE_HSTS_PRELOAD', not DEBUG)
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+CONTENT_SECURITY_POLICY = os.environ.get(
+    'CONTENT_SECURITY_POLICY',
+    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+    "form-action 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; "
+    "script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self' data:;",
+)
+PERMISSIONS_POLICY = os.environ.get(
+    'PERMISSIONS_POLICY',
+    'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
+)
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get('DATA_UPLOAD_MAX_MEMORY_SIZE', str(5 * 1024 * 1024)))
 FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get('FILE_UPLOAD_MAX_MEMORY_SIZE', str(5 * 1024 * 1024)))
+DATA_UPLOAD_MAX_NUMBER_FIELDS = int(os.environ.get('DATA_UPLOAD_MAX_NUMBER_FIELDS', '100'))
+FILE_UPLOAD_PERMISSIONS = 0o640
 
 LOGGING = {
     'version': 1,

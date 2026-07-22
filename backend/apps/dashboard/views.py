@@ -3,13 +3,14 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.utils import timezone
-from rest_framework import permissions, views
+from rest_framework import views
 from rest_framework.response import Response
 
 from booking.models import Booking
 from inventory.models import Product
 from payment.models import Payment
 from pos.models import Order
+from users.permissions import IsStaffOrAdmin
 
 
 def parse_date_param(value, field, fallback):
@@ -43,12 +44,9 @@ def bucket_key(dt, grain):
 
 
 class DashboardAnalyticsView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get(self, request, *args, **kwargs):
-        if request.user.role not in ['STAFF', 'ADMIN']:
-            return Response({"detail": "Staff access required."}, status=403)
-
         today = timezone.localdate()
         default_start = today - timedelta(days=30)
         start_date, start_error = parse_date_param(request.query_params.get('start'), 'start', default_start)

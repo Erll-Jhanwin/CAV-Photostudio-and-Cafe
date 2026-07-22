@@ -18,6 +18,7 @@ from inventory.models import InventoryEvent, Product
 from pos.models import Order
 from pos.receipt_printing import print_end_of_day_report, print_receipt
 from pos.serializers import EndOfDayReportSerializer, OrderSerializer
+from users.permissions import IsAdmin, IsStaffOrAdmin
 
 
 POS_IDEMPOTENCY_KEY_MAX_LENGTH = 100
@@ -147,7 +148,7 @@ def build_receipt_payload(order, payment, staff_username, amount_received=None):
 
 class OrderListCreateView(generics.ListCreateAPIView):
     serializer_class = OrderSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get_queryset(self):
         user = self.request.user
@@ -343,7 +344,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
 
 class OrderDetailView(generics.RetrieveAPIView):
     serializer_class = OrderSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get_queryset(self):
         queryset = Order.objects.exclude(order_type='END_OF_DAY_REPORT').select_related('staff', 'booking__customer').prefetch_related('payments')
@@ -354,7 +355,7 @@ class OrderDetailView(generics.RetrieveAPIView):
 
 class PaymentCreateView(generics.CreateAPIView):
     queryset = Payment.objects.filter(payment_type=Payment.POS)
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def create(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -492,7 +493,7 @@ def create_end_of_day_report(user, report_date, actual_cash, opening_cash=Decima
 
 
 class EndOfDayReportSummaryView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def get(self, request):
         if request.user.role != 'ADMIN':
@@ -523,7 +524,7 @@ class EndOfDayReportSummaryView(APIView):
 
 
 class EndOfDayReportListCreateView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def get(self, request):
         if request.user.role != 'ADMIN':
@@ -564,7 +565,7 @@ class EndOfDayReportListCreateView(APIView):
 
 
 class EndOfDayReportReprintView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def post(self, request, pk):
         if request.user.role != 'ADMIN':
@@ -592,7 +593,7 @@ class EndOfDayReportReprintView(APIView):
 
 
 class EndOfDayReportMarkPrintedView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def post(self, request, pk):
         if request.user.role != 'ADMIN':

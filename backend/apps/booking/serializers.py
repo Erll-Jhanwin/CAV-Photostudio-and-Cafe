@@ -5,6 +5,7 @@ from booking.models import Service, Package, Booking, StudioUnavailableDate
 from booking.availability import is_slot_available
 from payment.models import Payment
 from users.serializers import UserSerializer
+from users.uploads import validate_receipt_upload
 
 class PackageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -113,14 +114,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
         return attrs
 
     def validate_receipt(self, value):
-        max_size = 5 * 1024 * 1024
-        allowed_types = {'image/jpeg', 'image/png', 'image/webp', 'application/pdf'}
-        if value.size > max_size:
-            raise serializers.ValidationError('Receipt file must be 5MB or smaller.')
-        content_type = getattr(value, 'content_type', '')
-        if content_type and content_type not in allowed_types:
-            raise serializers.ValidationError('Receipt must be a JPG, PNG, WEBP, or PDF file.')
-        return value
+        return validate_receipt_upload(value)
 
 class BookingSerializer(serializers.ModelSerializer):
     customer = UserSerializer(read_only=True)

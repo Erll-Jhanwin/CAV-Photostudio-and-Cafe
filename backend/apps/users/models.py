@@ -2,12 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
 from django.utils import timezone
-from uuid import uuid4
-
-
-def profile_picture_upload_path(instance, filename):
-    extension = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'jpg'
-    return f'profile_pictures/user_{instance.pk or "new"}/{uuid4().hex}.{extension}'
+from users.uploads import profile_picture_upload_path
 
 class CustomUser(AbstractUser):
     ROLE_CHOICES = (

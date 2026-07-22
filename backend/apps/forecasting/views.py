@@ -1,17 +1,15 @@
-from rest_framework import views, permissions
+from rest_framework import views
 from rest_framework.response import Response
 from django.utils import timezone
 from datetime import timedelta
 from ml.forecasting_engine import get_reorder_recommendations
 from inventory.models import Product
+from users.permissions import IsStaffOrAdmin
 
 class ForecastingDataView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get(self, request, *args, **kwargs):
-        if request.user.role not in ['STAFF', 'ADMIN']:
-            return Response({"detail": "Staff access required."}, status=403)
-
         today = timezone.localdate()
         preds_list = [
             {

@@ -1,4 +1,5 @@
 from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 
 from django.contrib.auth import get_user_model
@@ -152,3 +153,43 @@ class AccountCrudTests(TestCase):
         self.assertEqual(customer.phone_number, '09179876543')
         self.assertEqual(customer.address, 'Imus, Cavite')
         self.assertTrue(customer.check_password('UpdatedPass123!'))
+
+
+class SecurityBoundaryTests(TestCase):
+    def setUp(self):
+        self.customer = get_user_model().objects.create_user(
+            username='security-customer',
+            email='security-customer@example.com',
+            password='CustomerPass123!',
+            role='CUSTOMER',
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.customer)
+
+    def test_customer_cannot_access_administrative_or_operational_data(self):
+        for path in [
+            '/api/auth/users/',
+            '/api/inventory/ingredients/',
+            '/api/pos/orders/',
+            '/api/pos/end-of-day-summary/',
+            '/api/dashboard/analytics/',
+            '/api/forecasting/predictions/',
+        ]:
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 403)
+
+    def test_customer_cannot_modify_chatbot_faqs(self):
+        response = self.client.post('/api/chatbot/faqs/', {
+            'question': 'Can I edit this?',
+            'answer': 'No.',
+        }, format='json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_profile_rejects_non_image_uploads(self):
+        response = self.client.patch('/api/auth/profile/', {
+            'profile_picture': SimpleUploadedFile(
+                'not-an-image.jpg', b'not an image', content_type='image/jpeg'
+            ),
+        }, format='multipart')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('profile_picture', response.data)

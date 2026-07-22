@@ -7,10 +7,9 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email as django_validate_email
 from django.db import transaction
 from users.models import Customer
+from users.uploads import validate_profile_picture
 
 User = get_user_model()
-PROFILE_PICTURE_MAX_SIZE = 2 * 1024 * 1024
-PROFILE_PICTURE_ALLOWED_TYPES = {'image/jpeg', 'image/png', 'image/webp'}
 PHONE_PATTERN = re.compile(r'^\+?[\d\s().-]{7,20}$')
 
 
@@ -81,14 +80,7 @@ class UserSerializer(serializers.ModelSerializer):
         return obj.profile_picture_external_url or ''
 
     def validate_profile_picture(self, value):
-        if not value:
-            return value
-        if value.size > PROFILE_PICTURE_MAX_SIZE:
-            raise serializers.ValidationError('Profile picture must be 2MB or smaller.')
-        content_type = getattr(value, 'content_type', '')
-        if content_type and content_type not in PROFILE_PICTURE_ALLOWED_TYPES:
-            raise serializers.ValidationError('Profile picture must be a JPG, PNG, or WEBP image.')
-        return value
+        return validate_profile_picture(value)
 
     def validate_phone_number(self, value):
         return validate_phone_number_format(value)

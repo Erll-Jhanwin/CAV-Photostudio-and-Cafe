@@ -19,6 +19,7 @@ from inventory.serializers import (
     StockMovementSerializer,
     supplier_for,
 )
+from users.permissions import IsStaffOrAdmin
 
 
 def apply_limit(queryset, request, default=None, maximum=300):
@@ -91,7 +92,7 @@ class ProductListCreateView(generics.ListCreateAPIView):
 class ProductDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Product.objects.filter(item_type=Product.PRODUCT)
     serializer_class = ProductSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def update(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -130,7 +131,7 @@ class ProductDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
 class StockMovementListView(generics.ListCreateAPIView):
     serializer_class = StockMovementSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get_queryset(self):
         queryset = InventoryEvent.objects.filter(event_type=InventoryEvent.STOCK_MOVEMENT).select_related('product', 'user')
@@ -174,7 +175,7 @@ class StockMovementListView(generics.ListCreateAPIView):
 
 class IngredientListCreateView(generics.ListCreateAPIView):
     serializer_class = IngredientSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get_queryset(self):
         queryset = Product.objects.filter(item_type=Product.INGREDIENT).order_by('name')
@@ -205,7 +206,7 @@ class IngredientListCreateView(generics.ListCreateAPIView):
 class IngredientDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Product.objects.filter(item_type=Product.INGREDIENT)
     serializer_class = IngredientSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def update(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -241,7 +242,7 @@ class IngredientDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class RecipeIngredientListCreateView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get(self, request):
         product_id = request.query_params.get('product')
@@ -277,7 +278,7 @@ class RecipeIngredientListCreateView(views.APIView):
 
 class IngredientStockMovementListView(generics.ListCreateAPIView):
     serializer_class = IngredientStockMovementSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get_queryset(self):
         queryset = InventoryEvent.objects.filter(event_type=InventoryEvent.INGREDIENT_MOVEMENT).select_related('product', 'user')
@@ -326,7 +327,7 @@ class IngredientStockMovementListView(generics.ListCreateAPIView):
 
 
 class GenerateRecipeIngredientsView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def post(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -337,7 +338,7 @@ class GenerateRecipeIngredientsView(views.APIView):
 
 
 class CategoryListCreateView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get(self, request):
         return Response(CategorySerializer(DEFAULT_CATEGORIES, many=True).data)
@@ -349,7 +350,7 @@ class CategoryListCreateView(views.APIView):
 
 
 class SupplierListCreateView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get(self, request):
         return Response(DEFAULT_SUPPLIERS)
@@ -362,7 +363,7 @@ class SupplierListCreateView(views.APIView):
 
 class PurchaseOrderListCreateView(generics.ListCreateAPIView):
     serializer_class = PurchaseOrderSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get_queryset(self):
         queryset = InventoryEvent.objects.filter(event_type=InventoryEvent.PURCHASE_ORDER)
@@ -397,7 +398,7 @@ class PurchaseOrderListCreateView(generics.ListCreateAPIView):
 class PurchaseOrderDetailUpdateView(generics.RetrieveUpdateAPIView):
     queryset = InventoryEvent.objects.filter(event_type=InventoryEvent.PURCHASE_ORDER)
     serializer_class = PurchaseOrderSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def update(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
