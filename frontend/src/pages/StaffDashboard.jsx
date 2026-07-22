@@ -977,9 +977,10 @@ export default function StaffDashboard() {
             </div>
           )}
 
-          {isCurrentTabLoading && !loading && (
-            <div className="mb-4 rounded-2xl border border-gold/20 bg-gold/10 px-4 py-2 text-xs font-bold text-espresso">
-              Refreshing {pageTitles[activeTab]}...
+          {isCurrentTabLoading && (
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-gold/20 bg-gold/10 px-4 py-3" role="status">
+              <Skeleton className="h-4 w-4 rounded-full bg-gold/30" />
+              <span className="text-xs font-bold text-espresso">Loading {pageTitles[activeTab]}...</span>
             </div>
           )}
 

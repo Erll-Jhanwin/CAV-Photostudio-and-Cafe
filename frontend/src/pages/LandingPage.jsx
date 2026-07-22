@@ -822,6 +822,16 @@ export default function LandingPage() {
         )}
       </header>
 
+      {!loaded && (
+        <div className="sticky top-16 z-30 border-b border-gold/15 bg-cream/95 px-4 py-2 backdrop-blur" role="status">
+          <div className="mx-auto flex max-w-7xl items-center gap-3">
+            <Skeleton className="h-3 w-3 rounded-full bg-gold/35" />
+            <Skeleton className="h-2.5 w-40" />
+            <span className="sr-only">Loading services and cafe menu</span>
+          </div>
+        </div>
+      )}
+
       {/* Hero Section */}
       <section id="hero" className="relative flex-grow flex items-center min-h-[calc(100vh-4rem)] premium-section bg-gradient-to-br from-espresso-dark via-espresso to-espresso-light text-cream overflow-hidden">
         <div className="absolute inset-0 opacity-[0.07] bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-gold via-transparent to-transparent" />

@@ -1395,6 +1395,13 @@ export default function CustomerDashboard() {
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
+          {loading && (
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-espresso/[0.08] bg-white px-4 py-3" role="status">
+              <Skeleton className="h-4 w-4 rounded-full" />
+              <Skeleton className="h-3 w-44" />
+              <span className="sr-only">Loading account and booking information</span>
+            </div>
+          )}
           {dashboardError && (
             <div className="mb-6 flex items-start gap-3 border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm" role="alert">
               <XCircle className="mt-0.5 h-5 w-5 shrink-0" />
