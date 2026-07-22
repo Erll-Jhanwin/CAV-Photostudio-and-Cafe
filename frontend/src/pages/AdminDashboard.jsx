@@ -615,17 +615,22 @@ export default function AdminDashboard() {
     if (!confirmed) return;
     try {
       setFaqSaving(true);
+      let savedFaq;
       if (editingFaq) {
-        await client.put(`/api/chatbot/faqs/${editingFaq.id}/`, {
+        const res = await client.put(`/api/chatbot/faqs/${editingFaq.id}/`, {
           question: faqQuestion, answer: faqAnswer, tags: faqTags
         });
+        savedFaq = res.data;
+        setFaqs(current => normalizeRowsById(current.map(faq => faq.id === savedFaq.id ? savedFaq : faq), row => row?.question));
       } else {
-        await client.post('/api/chatbot/faqs/', {
+        const res = await client.post('/api/chatbot/faqs/', {
           question: faqQuestion, answer: faqAnswer, tags: faqTags
         });
+        savedFaq = res.data;
+        setFaqs(current => normalizeRowsById([savedFaq, ...current], row => row?.question));
       }
       setFaqQuestion(''); setFaqAnswer(''); setFaqTags(''); setEditingFaq(null); setFaqErrors({});
-      fetchData();
+      fetchData({ background: true });
       alert(editingFaq ? 'Record updated successfully.' : 'Record added successfully.');
     } catch {
       alert('Failed to save FAQ.');
@@ -654,7 +659,9 @@ export default function AdminDashboard() {
     try {
       setDeletingFaqId(id);
       await client.delete(`/api/chatbot/faqs/${id}/`);
-      fetchData();
+      setFaqs(current => current.filter(faq => faq.id !== id));
+      setFaqPage(page => Math.max(1, Math.min(page, Math.ceil((faqs.length - 1) / faqPageSize) || 1)));
+      fetchData({ background: true });
       alert('Record deleted successfully.');
     } catch {
       alert('Failed to delete FAQ.');
@@ -675,6 +682,7 @@ export default function AdminDashboard() {
     try {
       setDeletingBookingId(booking.id);
       await client.delete(`/api/bookings/${booking.id}/`);
+      setCalendarBookings(current => current.filter(row => row.id !== booking.id));
       setAnalytics(current => {
         if (!current) return current;
         const statusKey = booking.status?.toLowerCase();
@@ -720,10 +728,11 @@ export default function AdminDashboard() {
     try {
       setStudioUnavailableSaving(true);
       setStudioCalendarError('');
-      await client.post('/api/bookings/studio-unavailable-dates/', {
+      const res = await client.post('/api/bookings/studio-unavailable-dates/', {
         date: studioUnavailableDate,
         reason: cleanReason,
       });
+      setStudioUnavailableDates(current => normalizeRowsById([res.data, ...current], row => row?.date));
       setStudioUnavailableReason('');
       setBookingCalendarMonth(studioUnavailableDate.slice(0, 7));
       fetchData({ background: true });
@@ -746,6 +755,7 @@ export default function AdminDashboard() {
     if (!confirmed) return;
     try {
       await client.delete(`/api/bookings/studio-unavailable-dates/${row.id}/`);
+      setStudioUnavailableDates(current => current.filter(item => item.id !== row.id));
       fetchData({ background: true });
       alert('Studio unavailable date removed.');
     } catch (err) {
@@ -763,7 +773,12 @@ export default function AdminDashboard() {
     });
     if (!confirmed) return;
     try {
-      await client.patch(`/api/bookings/${booking.id}/`, { status: newStatus });
+      const res = await client.patch(`/api/bookings/${booking.id}/`, { status: newStatus });
+      setCalendarBookings(current => normalizeRowsById(current.map(item => item.id === booking.id ? res.data : item), row => row?.id));
+      setAnalytics(current => current ? normalizeDashboardAnalytics({
+        ...current,
+        recent_bookings: (current.recent_bookings || []).map(item => item.id === booking.id ? { ...item, ...res.data } : item),
+      }) : current);
       fetchData({ background: true });
       alert('Booking status updated.');
     } catch (err) {

@@ -14,6 +14,7 @@ import { Modal } from '../components/ui/Modal';
 import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar, getAvatarUrl } from '../components/ui/Avatar';
+import { getConfirmPasswordError, getPasswordError, getRequiredError } from '../utils/validation';
 import {
   normalizeBooking,
   normalizeBookings,
@@ -315,9 +316,13 @@ export default function CustomerDashboard() {
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [profileUsername, setProfileUsername] = useState('');
   const [bookingEmail, setBookingEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
   const [points, setPoints] = useState(0);
   const [loyaltyTier, setLoyaltyTier] = useState('Bronze');
   const [profileSaving, setProfileSaving] = useState(false);
@@ -470,10 +475,13 @@ export default function CustomerDashboard() {
 
   const validateProfileForm = () => {
     const errors = {
+      username: getRequiredError(profileUsername, 'Username'),
       firstName: firstName.trim() ? '' : 'First name is required.',
       lastName: lastName.trim() ? '' : 'Last name is required.',
       email: isValidEmail(bookingEmail) ? '' : 'Enter a valid email address.',
       phone: phone.trim() ? (isValidPhone(phone) ? '' : 'Enter a valid phone number.') : 'Phone number is required.',
+      newPassword: newPassword ? getPasswordError(newPassword, 'New password') : '',
+      newPasswordConfirm: newPassword ? getConfirmPasswordError(newPassword, newPasswordConfirm) : '',
     };
     return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
   };
@@ -532,6 +540,7 @@ export default function CustomerDashboard() {
       setBookings(uniqueBookings);
       setGalleryImages(normalizeGalleryImages(localGalleryImages));
       const p = profileRes.data;
+      setProfileUsername(p.username || '');
       setFirstName(p.first_name || '');
       setLastName(p.last_name || '');
       setBookingEmail(p.email || user?.email || '');
@@ -642,11 +651,14 @@ export default function CustomerDashboard() {
     try {
       setProfileSaving(true);
       const formData = new FormData();
+      formData.append('username', profileUsername);
       formData.append('first_name', firstName);
       formData.append('last_name', lastName);
       formData.append('email', bookingEmail);
       formData.append('phone_number', phone);
       formData.append('address', address);
+      if (currentPassword) formData.append('current_password', currentPassword);
+      if (newPassword) formData.append('new_password', newPassword);
       if (profilePictureFile) formData.append('profile_picture', profilePictureFile);
       if (profilePictureRemove) formData.append('remove_profile_picture', 'true');
 
@@ -654,6 +666,15 @@ export default function CustomerDashboard() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       const updatedUser = res.data || {};
+      setProfileUsername(updatedUser.username || '');
+      setFirstName(updatedUser.first_name || '');
+      setLastName(updatedUser.last_name || '');
+      setBookingEmail(updatedUser.email || '');
+      setPhone(updatedUser.phone_number || '');
+      setAddress(updatedUser.address || '');
+      setCurrentPassword('');
+      setNewPassword('');
+      setNewPasswordConfirm('');
       updateStoredUser?.({
         username: updatedUser.username,
         email: updatedUser.email,
@@ -669,10 +690,22 @@ export default function CustomerDashboard() {
         return '';
       });
       setProfileErrors({});
-      fetchDashboardData();
+      fetchDashboardData({ background: true });
       alert('Profile updated successfully.');
-    } catch {
-      alert('Failed to update profile.');
+    } catch (err) {
+      const data = err.response?.data || {};
+      const asText = (value) => Array.isArray(value) ? value.join(' ') : value;
+      setProfileErrors(current => ({
+        ...current,
+        username: asText(data.username) || current.username,
+        email: asText(data.email) || current.email,
+        firstName: asText(data.first_name) || current.firstName,
+        lastName: asText(data.last_name) || current.lastName,
+        phone: asText(data.phone_number) || current.phone,
+        currentPassword: asText(data.current_password) || current.currentPassword,
+        newPassword: asText(data.new_password) || current.newPassword,
+      }));
+      alert(getApiErrorMessage(err, 'Failed to update profile.'));
     } finally {
       setProfileSaving(false);
     }
@@ -1110,6 +1143,7 @@ export default function CustomerDashboard() {
         return;
       }
       let bookingId = pendingPaymentBookingId;
+      let createdBooking = null;
       if (!bookingId) {
         const latestAvailability = await fetchDayAvailability(selectedDate);
         const latestSlot = latestAvailability?.slots?.find(slot => slot.time === selectedTime);
@@ -1129,6 +1163,7 @@ export default function CustomerDashboard() {
           idempotency_key: bookingIdempotencyKeyRef.current,
         });
         bookingId = bookingRes.data.id;
+        createdBooking = normalizeBooking(bookingRes.data);
         setPendingPaymentBookingId(bookingId);
       }
       const paidAt = new Date(`${paymentDate}T${paymentTime}:00`);
@@ -1140,6 +1175,12 @@ export default function CustomerDashboard() {
       if (paymentReceipt) paymentData.append('receipt', paymentReceipt);
       paymentData.append('idempotency_key', paymentIdempotencyKeyRef.current);
       const paymentRes = await client.post('/api/bookings/payments/', paymentData);
+      if (createdBooking) {
+        setBookings(current => normalizeBookings([
+          { ...createdBooking, payments: [paymentRes.data] },
+          ...current.filter(booking => booking.id !== createdBooking.id),
+        ]));
+      }
       setBookingConfirmation({
         id: bookingId,
         packageName: selectedPackage.name,
@@ -1168,7 +1209,7 @@ export default function CustomerDashboard() {
       setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
       resetPendingBooking();
       setCurrentStep(1);
-      fetchDashboardData();
+      fetchDashboardData({ background: true });
       setActiveTab('history');
       alert('Booking submitted successfully.');
     } catch (err) {
@@ -2573,6 +2614,14 @@ export default function CustomerDashboard() {
                           </div>
                         </div>
                       </div>
+                      <Input
+                        label="Username"
+                        required
+                        value={profileUsername}
+                        onChange={e => { setProfileUsername(e.target.value); setProfileErrors(current => ({ ...current, username: '' })); }}
+                        disabled={profileSaving}
+                        error={profileErrors.username}
+                      />
                       <div className="grid grid-cols-2 gap-4">
                         <Input
                           label="First Name"
@@ -2610,6 +2659,37 @@ export default function CustomerDashboard() {
                         error={profileErrors.phone}
                       />
                       <Textarea label="Address" value={address} onChange={e => setAddress(e.target.value)} rows={3} disabled={profileSaving} />
+                      <div className="border-t border-espresso/[0.08] pt-4">
+                        <p className="mb-3 text-sm font-black text-espresso">Change Password</p>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <Input
+                            label="Current Password"
+                            type="password"
+                            value={currentPassword}
+                            onChange={e => { setCurrentPassword(e.target.value); setProfileErrors(current => ({ ...current, currentPassword: '' })); }}
+                            disabled={profileSaving}
+                            error={profileErrors.currentPassword}
+                          />
+                          <Input
+                            label="New Password"
+                            type="password"
+                            value={newPassword}
+                            onChange={e => { setNewPassword(e.target.value); setProfileErrors(current => ({ ...current, newPassword: '' })); }}
+                            disabled={profileSaving}
+                            error={profileErrors.newPassword}
+                          />
+                        </div>
+                        <div className="mt-4">
+                          <Input
+                            label="Confirm New Password"
+                            type="password"
+                            value={newPasswordConfirm}
+                            onChange={e => { setNewPasswordConfirm(e.target.value); setProfileErrors(current => ({ ...current, newPasswordConfirm: '' })); }}
+                            disabled={profileSaving}
+                            error={profileErrors.newPasswordConfirm}
+                          />
+                        </div>
+                      </div>
                       <div className="flex items-center gap-3 pt-2">
                         <Button type="submit" variant="primary" loading={profileSaving} disabled={profileSaving || !profileFormValid}>Update My Profile</Button>
                         <Button type="button" variant="outline" size="sm" onClick={() => { setProfileErrors({}); fetchDashboardData(); }} disabled={profileSaving}>Restore Saved Info</Button>
@@ -2618,7 +2698,7 @@ export default function CustomerDashboard() {
                   </Card>
                   <div className="mt-4 bg-cream rounded-2xl border border-espresso/5 p-4 text-xs text-espresso/50">
                     <p className="font-semibold text-espresso mb-1">Account Security</p>
-                    <p>Password and security settings can be managed by an administrator. Contact the café staff for password resets.</p>
+                    <p>Use your current password before setting a new one. Google-only accounts can set their first password here.</p>
                   </div>
                 </div>
 

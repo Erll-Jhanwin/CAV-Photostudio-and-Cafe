@@ -117,3 +117,38 @@ class AccountCrudTests(TestCase):
         self.assertEqual(customer.first_name, 'Updated')
         self.assertEqual(customer.address, 'Dasmarinas, Cavite')
         self.assertEqual(Customer.objects.filter(user=customer).count(), 1)
+
+    def test_customer_can_update_all_registration_fields_and_password(self):
+        customer = get_user_model().objects.create_user(
+            username='editable-customer',
+            email='editable@example.com',
+            password='CustomerPass123!',
+            first_name='Editable',
+            last_name='Customer',
+            phone_number='09171234567',
+            address='Cavite City',
+            role='CUSTOMER',
+        )
+        Customer.objects.get_or_create(user=customer)
+
+        self.client.force_authenticate(customer)
+        response = self.client.patch('/api/auth/profile/', {
+            'username': 'updated-customer',
+            'email': 'updated-customer@example.com',
+            'first_name': 'Updated',
+            'last_name': 'Profile',
+            'phone_number': '09179876543',
+            'address': 'Imus, Cavite',
+            'current_password': 'CustomerPass123!',
+            'new_password': 'UpdatedPass123!',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        customer.refresh_from_db()
+        self.assertEqual(customer.username, 'updated-customer')
+        self.assertEqual(customer.email, 'updated-customer@example.com')
+        self.assertEqual(customer.first_name, 'Updated')
+        self.assertEqual(customer.last_name, 'Profile')
+        self.assertEqual(customer.phone_number, '09179876543')
+        self.assertEqual(customer.address, 'Imus, Cavite')
+        self.assertTrue(customer.check_password('UpdatedPass123!'))

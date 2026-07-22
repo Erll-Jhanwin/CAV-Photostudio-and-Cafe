@@ -16,6 +16,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from users.serializers import (
     AccountSerializer,
+    ProfileSerializer,
     UserSerializer,
     RegisterSerializer,
     PasswordResetRequestSerializer,
@@ -189,7 +190,7 @@ class GoogleAuthView(views.APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
-    serializer_class = UserSerializer
+    serializer_class = ProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 

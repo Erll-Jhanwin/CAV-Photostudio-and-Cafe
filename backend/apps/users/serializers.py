@@ -130,6 +130,46 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
+class ProfileSerializer(UserSerializer):
+    """Self-service profile updates, including a guarded password change."""
+
+    current_password = serializers.CharField(write_only=True, trim_whitespace=False, required=False)
+    new_password = serializers.CharField(write_only=True, trim_whitespace=False, required=False)
+
+    class Meta(UserSerializer.Meta):
+        fields = UserSerializer.Meta.fields + ['current_password', 'new_password']
+
+    def validate(self, attrs):
+        current_password = attrs.get('current_password', '')
+        new_password = attrs.get('new_password', '')
+
+        if current_password and not new_password:
+            raise serializers.ValidationError({
+                'new_password': 'Enter a new password to complete the password change.'
+            })
+        if not new_password:
+            return attrs
+        if self.instance.has_usable_password() and not current_password:
+            raise serializers.ValidationError({
+                'current_password': 'Enter your current password.'
+            })
+        if self.instance.has_usable_password() and not self.instance.check_password(current_password):
+            raise serializers.ValidationError({
+                'current_password': 'Current password is incorrect.'
+            })
+        validate_password(new_password, user=self.instance)
+        return attrs
+
+    def update(self, instance, validated_data):
+        validated_data.pop('current_password', None)
+        new_password = validated_data.pop('new_password', '')
+        instance = super().update(instance, validated_data)
+        if new_password:
+            instance.set_password(new_password)
+            instance.save(update_fields=['password'])
+        return instance
+
+
 class AccountSerializer(UserSerializer):
     """Admin account CRUD using the same core fields as customer registration."""
 
