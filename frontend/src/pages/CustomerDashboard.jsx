@@ -472,6 +472,7 @@ export default function CustomerDashboard() {
     const errors = {
       firstName: firstName.trim() ? '' : 'First name is required.',
       lastName: lastName.trim() ? '' : 'Last name is required.',
+      email: isValidEmail(bookingEmail) ? '' : 'Enter a valid email address.',
       phone: phone.trim() ? (isValidPhone(phone) ? '' : 'Enter a valid phone number.') : 'Phone number is required.',
     };
     return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
@@ -643,6 +644,7 @@ export default function CustomerDashboard() {
       const formData = new FormData();
       formData.append('first_name', firstName);
       formData.append('last_name', lastName);
+      formData.append('email', bookingEmail);
       formData.append('phone_number', phone);
       formData.append('address', address);
       if (profilePictureFile) formData.append('profile_picture', profilePictureFile);
@@ -732,7 +734,7 @@ export default function CustomerDashboard() {
     if (!userId) return undefined;
     const refreshChangedData = (event) => {
       const url = String(event.detail?.url || '');
-      if (url.includes('/api/auth/profile/')) {
+      if (url.includes('/api/auth/profile/') || url.includes('/api/auth/users/')) {
         void fetchDashboardData({ background: true });
       }
       if (url.includes('/api/bookings/')) {
@@ -2589,6 +2591,15 @@ export default function CustomerDashboard() {
                           error={profileErrors.lastName}
                         />
                       </div>
+                      <Input
+                        label="Email Address"
+                        type="email"
+                        required
+                        value={bookingEmail}
+                        onChange={e => { setBookingEmail(e.target.value); setProfileErrors(current => ({ ...current, email: '' })); }}
+                        disabled={profileSaving}
+                        error={profileErrors.email}
+                      />
                       <Input
                         label="Phone"
                         type="tel"

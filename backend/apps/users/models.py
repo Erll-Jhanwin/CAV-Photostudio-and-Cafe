@@ -16,8 +16,10 @@ class CustomUser(AbstractUser):
         ('ADMIN', 'Admin'),
     )
     role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='CUSTOMER')
-    phone_number = models.CharField(max_length=20, blank=True, null=True)
-    address = models.TextField(blank=True, null=True)
+    # Keep optional contact fields as empty strings instead of a mixture of
+    # NULL and ''. This makes every client receive one predictable shape.
+    phone_number = models.CharField(max_length=20, blank=True, default='')
+    address = models.TextField(blank=True, default='')
     profile_picture = models.ImageField(upload_to=profile_picture_upload_path, blank=True, null=True)
     profile_picture_external_url = models.URLField(max_length=500, blank=True)
 

@@ -28,6 +28,7 @@ import { PasswordStrength } from '../components/ui/PasswordStrength';
 import {
   getEmailError,
   getPasswordError,
+  getPhoneError,
   getRequiredError,
 } from '../utils/validation';
 import {
@@ -128,6 +129,37 @@ const getRangeDates = (preset, customStart, customEnd) => {
 const sumBy = (rows, key) => rows.reduce((total, row) => total + Number(row?.[key] || 0), 0);
 
 const getAverage = (rows, key) => rows.length ? sumBy(rows, key) / rows.length : 0;
+
+const emptyAccountForm = () => ({
+  username: '',
+  password: '',
+  email: '',
+  first_name: '',
+  last_name: '',
+  phone_number: '',
+  address: '',
+  role: 'STAFF',
+});
+
+const getAccountValidationErrors = (form, { passwordRequired = false } = {}) => {
+  const isCustomer = form.role === 'CUSTOMER';
+  const errors = {
+    username: getRequiredError(form.username, 'Username'),
+    email: getEmailError(form.email, { required: isCustomer }),
+    password: passwordRequired
+      ? getPasswordError(form.password)
+      : (form.password.trim() ? getPasswordError(form.password, 'New password') : ''),
+    first_name: isCustomer ? getRequiredError(form.first_name, 'First name') : '',
+    last_name: isCustomer ? getRequiredError(form.last_name, 'Last name') : '',
+    phone_number: isCustomer && !form.phone_number.trim()
+      ? 'Phone number is required.'
+      : getPhoneError(form.phone_number),
+    address: isCustomer ? getRequiredError(form.address, 'Address') : '',
+  };
+  return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
+};
+
+const getAccountErrorMessage = (value) => Array.isArray(value) ? value.join(' ') : value;
 
 const formatChartDate = (value) => {
   if (!value) return '';
@@ -235,12 +267,9 @@ export default function AdminDashboard() {
   const [faqSaving, setFaqSaving] = useState(false);
   const [deletingFaqId, setDeletingFaqId] = useState(null);
 
-  const [newUsername, setNewUsername] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [newRole, setNewRole] = useState('STAFF');
+  const [newAccountForm, setNewAccountForm] = useState(emptyAccountForm);
   const [editingStaff, setEditingStaff] = useState(null);
-  const [editStaffForm, setEditStaffForm] = useState({ username: '', email: '', password: '', role: 'STAFF' });
+  const [editStaffForm, setEditStaffForm] = useState(emptyAccountForm);
   const [staffSaving, setStaffSaving] = useState(false);
   const [creatingStaff, setCreatingStaff] = useState(false);
   const [deletingStaffId, setDeletingStaffId] = useState(null);
@@ -420,21 +449,11 @@ export default function AdminDashboard() {
   }, [user, activeTab, fetchData, loadAdminTabData]);
 
   const validateNewStaffForm = () => {
-    const errors = {
-      username: getRequiredError(newUsername, 'Username'),
-      password: getPasswordError(newPassword),
-      email: getEmailError(newEmail),
-    };
-    return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
+    return getAccountValidationErrors(newAccountForm, { passwordRequired: true });
   };
 
   const validateEditStaffForm = () => {
-    const errors = {
-      username: getRequiredError(editStaffForm.username, 'Username'),
-      email: getEmailError(editStaffForm.email),
-      password: editStaffForm.password.trim() ? getPasswordError(editStaffForm.password, 'New password') : '',
-    };
-    return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
+    return getAccountValidationErrors(editStaffForm);
   };
 
   const validateFAQForm = () => {
@@ -456,30 +475,34 @@ export default function AdminDashboard() {
     setNewStaffErrors(errors);
     if (Object.keys(errors).length) return;
     const confirmed = await confirm({
-      title: 'Create Staff Account',
-      message: `Create an account for ${newUsername || 'this staff member'}?`,
+      title: 'Create Account',
+      message: `Create an account for ${newAccountForm.username || 'this user'}?`,
       confirmLabel: 'Create Account',
       type: 'success',
     });
     if (!confirmed) return;
     try {
       setCreatingStaff(true);
-      await client.post('/api/auth/users/', {
-        username: newUsername, password: newPassword,
-        email: newEmail, role: newRole
-      });
-      setNewUsername(''); setNewPassword(''); setNewEmail(''); setNewRole('STAFF'); setNewStaffErrors({});
-      fetchData();
-      alert('Staff account created successfully.');
+      const res = await client.post('/api/auth/users/', newAccountForm);
+      setStaffList(current => normalizeRowsById([res.data, ...current], row => row?.username || row?.email));
+      setNewAccountForm(emptyAccountForm());
+      setNewStaffErrors({});
+      fetchData({ background: true });
+      loadAdminTabData('staff', { force: true });
+      alert('Account created successfully.');
     } catch (err) {
       const payload = err.response?.data || {};
       setNewStaffErrors(current => ({
         ...current,
-        username: payload.username || payload.detail || current.username,
-        email: Array.isArray(payload.email) ? payload.email.join(' ') : payload.email || current.email,
-        password: Array.isArray(payload.password) ? payload.password.join(' ') : payload.password || current.password,
+        username: getAccountErrorMessage(payload.username || payload.detail) || current.username,
+        email: getAccountErrorMessage(payload.email) || current.email,
+        password: getAccountErrorMessage(payload.password) || current.password,
+        first_name: getAccountErrorMessage(payload.first_name) || current.first_name,
+        last_name: getAccountErrorMessage(payload.last_name) || current.last_name,
+        phone_number: getAccountErrorMessage(payload.phone_number) || current.phone_number,
+        address: getAccountErrorMessage(payload.address) || current.address,
       }));
-      alert(payload.detail || 'Failed to create staff account.');
+      alert(payload.detail || 'Failed to create account.');
     } finally {
       setCreatingStaff(false);
     }
@@ -491,6 +514,10 @@ export default function AdminDashboard() {
       username: staff.username || '',
       email: staff.email || '',
       password: '',
+      first_name: staff.first_name || '',
+      last_name: staff.last_name || '',
+      phone_number: staff.phone_number || '',
+      address: staff.address || '',
       role: staff.role || 'STAFF',
     });
     setEditStaffErrors({});
@@ -503,7 +530,7 @@ export default function AdminDashboard() {
     setEditStaffErrors(errors);
     if (Object.keys(errors).length) return;
     const confirmed = await confirm({
-      title: 'Update Staff Account',
+      title: 'Update Account',
       message: `Save changes to ${editingStaff.username}?`,
       confirmLabel: 'Update Account',
       type: 'warning',
@@ -514,6 +541,10 @@ export default function AdminDashboard() {
       const payload = {
         username: editStaffForm.username,
         email: editStaffForm.email,
+        first_name: editStaffForm.first_name,
+        last_name: editStaffForm.last_name,
+        phone_number: editStaffForm.phone_number,
+        address: editStaffForm.address,
         role: editStaffForm.role,
       };
       if (editStaffForm.password.trim()) {
@@ -522,16 +553,22 @@ export default function AdminDashboard() {
       const res = await client.patch(`/api/auth/users/${editingStaff.id}/`, payload);
       setStaffList(current => normalizeRowsById(current.map(staff => staff.id === editingStaff.id ? res.data : staff), row => row?.username || row?.email));
       setEditingStaff(null);
-      setEditStaffForm({ username: '', email: '', password: '', role: 'STAFF' });
+      setEditStaffForm(emptyAccountForm());
       setEditStaffErrors({});
+      fetchData({ background: true });
+      loadAdminTabData('staff', { force: true });
       alert('Record updated successfully.');
     } catch (err) {
       const payload = err.response?.data || {};
       setEditStaffErrors(current => ({
         ...current,
-        username: payload.username || payload.detail || current.username,
-        email: Array.isArray(payload.email) ? payload.email.join(' ') : payload.email || current.email,
-        password: Array.isArray(payload.password) ? payload.password.join(' ') : payload.password || current.password,
+        username: getAccountErrorMessage(payload.username || payload.detail) || current.username,
+        email: getAccountErrorMessage(payload.email) || current.email,
+        password: getAccountErrorMessage(payload.password) || current.password,
+        first_name: getAccountErrorMessage(payload.first_name) || current.first_name,
+        last_name: getAccountErrorMessage(payload.last_name) || current.last_name,
+        phone_number: getAccountErrorMessage(payload.phone_number) || current.phone_number,
+        address: getAccountErrorMessage(payload.address) || current.address,
       }));
       alert(payload.detail || 'Failed to update account.');
     } finally {
@@ -542,7 +579,7 @@ export default function AdminDashboard() {
   const handleDeleteStaff = async (staff) => {
     if (deletingStaffId === staff.id) return;
     const confirmed = await confirm({
-      title: 'Delete Staff Account',
+      title: 'Delete Account',
       message: `Delete account for ${staff.username}? This cannot be undone.`,
       confirmLabel: 'Delete Account',
       type: 'error',
@@ -553,6 +590,8 @@ export default function AdminDashboard() {
       await client.delete(`/api/auth/users/${staff.id}/`);
       setStaffList(current => current.filter(item => item.id !== staff.id));
       setStaffPage(page => Math.max(1, Math.min(page, Math.ceil((staffList.length - 1) / staffPageSize) || 1)));
+      fetchData({ background: true });
+      loadAdminTabData('staff', { force: true });
       alert('Record deleted successfully.');
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to delete account.');
@@ -984,12 +1023,12 @@ export default function AdminDashboard() {
     { key: 'calendar', label: 'Booking Calendar', icon: Calendar, active: activeTab === 'calendar', onClick: () => setActiveTab('calendar') },
     { key: 'reports', label: 'End-of-Day Reports', icon: Printer, active: activeTab === 'reports', onClick: () => setActiveTab('reports') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
-    { key: 'staff', label: 'Staff Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
+    { key: 'staff', label: 'Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
     { key: 'system', label: 'System Controls', icon: AlertTriangle, active: activeTab === 'system', onClick: () => setActiveTab('system') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager', system: 'System Controls' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', system: 'System Controls' };
   const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
   const metrics = analytics?.metrics || {};
   const statusData = [
@@ -2025,18 +2064,18 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* STAFF ACCOUNTS */}
+          {/* ACCOUNTS */}
           {activeTab === 'staff' && (
             <div className="grid w-full grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,0.42fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(320px,0.36fr)_minmax(0,1fr)] items-stretch animate-in-up" key="staff">
-              <div className="min-h-[540px]">
+              <div className="min-h-[620px]">
                 <Card className="!p-4 md:!p-5 h-full flex flex-col">
-                  <CardHeader title="Add Staff User" />
+                  <CardHeader title="Add Account" />
                   <form onSubmit={handleCreateStaff} className="flex min-h-0 flex-1 flex-col gap-4">
                     <Input
                       label="Username"
                       required
-                      value={newUsername}
-                      onChange={e => { setNewUsername(e.target.value); setNewStaffErrors(current => ({ ...current, username: '' })); }}
+                      value={newAccountForm.username}
+                      onChange={e => { setNewAccountForm(current => ({ ...current, username: e.target.value })); setNewStaffErrors(current => ({ ...current, username: '' })); }}
                       placeholder="username"
                       disabled={creatingStaff}
                       error={newStaffErrors.username}
@@ -2045,26 +2084,17 @@ export default function AdminDashboard() {
                       label="Password"
                       type="password"
                       required
-                      value={newPassword}
-                      onChange={e => { setNewPassword(e.target.value); setNewStaffErrors(current => ({ ...current, password: '' })); }}
+                      value={newAccountForm.password}
+                      onChange={e => { setNewAccountForm(current => ({ ...current, password: e.target.value })); setNewStaffErrors(current => ({ ...current, password: '' })); }}
                       placeholder="password"
                       disabled={creatingStaff}
                       error={newStaffErrors.password}
                     />
-                    <PasswordStrength password={newPassword} />
-                    <Input
-                      label="Email"
-                      type="email"
-                      value={newEmail}
-                      onChange={e => { setNewEmail(e.target.value); setNewStaffErrors(current => ({ ...current, email: '' })); }}
-                      placeholder="staff@cav.com"
-                      disabled={creatingStaff}
-                      error={newStaffErrors.email}
-                    />
+                    <PasswordStrength password={newAccountForm.password} />
                     <Select
                       label="Role"
-                      value={newRole}
-                      onChange={e => setNewRole(e.target.value)}
+                      value={newAccountForm.role}
+                      onChange={e => setNewAccountForm(current => ({ ...current, role: e.target.value }))}
                       disabled={creatingStaff}
                       options={[
                         { value: 'STAFF', label: 'Regular Staff' },
@@ -2072,8 +2102,54 @@ export default function AdminDashboard() {
                         { value: 'CUSTOMER', label: 'Customer Profile' },
                       ]}
                     />
+                    <div className="grid grid-cols-2 gap-3">
+                      <Input
+                        label="First Name"
+                        required={newAccountForm.role === 'CUSTOMER'}
+                        value={newAccountForm.first_name}
+                        onChange={e => { setNewAccountForm(current => ({ ...current, first_name: e.target.value })); setNewStaffErrors(current => ({ ...current, first_name: '' })); }}
+                        disabled={creatingStaff}
+                        error={newStaffErrors.first_name}
+                      />
+                      <Input
+                        label="Last Name"
+                        required={newAccountForm.role === 'CUSTOMER'}
+                        value={newAccountForm.last_name}
+                        onChange={e => { setNewAccountForm(current => ({ ...current, last_name: e.target.value })); setNewStaffErrors(current => ({ ...current, last_name: '' })); }}
+                        disabled={creatingStaff}
+                        error={newStaffErrors.last_name}
+                      />
+                    </div>
+                    <Input
+                      label="Email"
+                      type="email"
+                      required={newAccountForm.role === 'CUSTOMER'}
+                      value={newAccountForm.email}
+                      onChange={e => { setNewAccountForm(current => ({ ...current, email: e.target.value })); setNewStaffErrors(current => ({ ...current, email: '' })); }}
+                      placeholder="account@cav.com"
+                      disabled={creatingStaff}
+                      error={newStaffErrors.email}
+                    />
+                    <Input
+                      label="Phone Number"
+                      type="tel"
+                      required={newAccountForm.role === 'CUSTOMER'}
+                      value={newAccountForm.phone_number}
+                      onChange={e => { setNewAccountForm(current => ({ ...current, phone_number: e.target.value })); setNewStaffErrors(current => ({ ...current, phone_number: '' })); }}
+                      disabled={creatingStaff}
+                      error={newStaffErrors.phone_number}
+                    />
+                    <Textarea
+                      label="Address"
+                      required={newAccountForm.role === 'CUSTOMER'}
+                      rows={3}
+                      value={newAccountForm.address}
+                      onChange={e => { setNewAccountForm(current => ({ ...current, address: e.target.value })); setNewStaffErrors(current => ({ ...current, address: '' })); }}
+                      disabled={creatingStaff}
+                      error={newStaffErrors.address}
+                    />
                     <Button type="submit" variant="primary" className="mt-auto w-full" icon={Plus} loading={creatingStaff} disabled={creatingStaff || !newStaffFormValid}>
-                      Create Staff Access
+                      Create Account
                     </Button>
                   </form>
                 </Card>
@@ -2096,7 +2172,22 @@ export default function AdminDashboard() {
                             </span>
                           ),
                         },
-                        { key: 'email', label: 'Email', render: st => st.email || 'N/A' },
+                        {
+                          key: 'name',
+                          label: 'Name',
+                          render: st => `${st.first_name || ''} ${st.last_name || ''}`.trim() || 'Not provided',
+                        },
+                        {
+                          key: 'contact',
+                          label: 'Contact',
+                          render: st => (
+                            <div className="min-w-[170px] text-xs leading-relaxed text-espresso/70">
+                              <p className="break-all">{st.email || 'No email'}</p>
+                              <p>{st.phone_number || 'No phone'}</p>
+                            </div>
+                          ),
+                        },
+                        { key: 'address', label: 'Address', render: st => <span className="block max-w-[180px] truncate" title={st.address || ''}>{st.address || 'Not provided'}</span> },
                         { key: 'role', label: 'Role', render: st => <StatusBadge status={st.role} /> },
                       ]}
                       rows={staffPageRows}
@@ -2124,12 +2215,12 @@ export default function AdminDashboard() {
                           />
                         </>
                       )}
-                      minWidth={680}
+                      minWidth={980}
                     />
                     <PaginationControls page={staffPage} setPage={setStaffPage} total={staffList.length} pageSize={staffPageSize} setPageSize={setStaffPageSize} />
                     </div>
                   ) : (
-                    <EmptyState icon={Users} title="No accounts found" description="Create your first staff account using the form." />
+                    <EmptyState icon={Users} title="No accounts found" description="Create the first account using the form." />
                   )}
                 </Card>
               </div>
@@ -2344,8 +2435,8 @@ export default function AdminDashboard() {
           setEditingStaff(null);
           setEditStaffErrors({});
         }}
-        title="Edit Staff Account"
-        size="md"
+        title="Edit Account"
+        size="lg"
       >
         <form onSubmit={handleUpdateStaff} className="space-y-4">
           <Input
@@ -2362,6 +2453,7 @@ export default function AdminDashboard() {
           <Input
             label="Email"
             type="email"
+            required={editStaffForm.role === 'CUSTOMER'}
             value={editStaffForm.email}
             onChange={e => {
               setEditStaffForm(current => ({ ...current, email: e.target.value }));
@@ -2369,6 +2461,54 @@ export default function AdminDashboard() {
             }}
             disabled={staffSaving}
             error={editStaffErrors.email}
+          />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="First Name"
+              required={editStaffForm.role === 'CUSTOMER'}
+              value={editStaffForm.first_name}
+              onChange={e => {
+                setEditStaffForm(current => ({ ...current, first_name: e.target.value }));
+                setEditStaffErrors(current => ({ ...current, first_name: '' }));
+              }}
+              disabled={staffSaving}
+              error={editStaffErrors.first_name}
+            />
+            <Input
+              label="Last Name"
+              required={editStaffForm.role === 'CUSTOMER'}
+              value={editStaffForm.last_name}
+              onChange={e => {
+                setEditStaffForm(current => ({ ...current, last_name: e.target.value }));
+                setEditStaffErrors(current => ({ ...current, last_name: '' }));
+              }}
+              disabled={staffSaving}
+              error={editStaffErrors.last_name}
+            />
+          </div>
+          <Input
+            label="Phone Number"
+            type="tel"
+            required={editStaffForm.role === 'CUSTOMER'}
+            value={editStaffForm.phone_number}
+            onChange={e => {
+              setEditStaffForm(current => ({ ...current, phone_number: e.target.value }));
+              setEditStaffErrors(current => ({ ...current, phone_number: '' }));
+            }}
+            disabled={staffSaving}
+            error={editStaffErrors.phone_number}
+          />
+          <Textarea
+            label="Address"
+            required={editStaffForm.role === 'CUSTOMER'}
+            rows={3}
+            value={editStaffForm.address}
+            onChange={e => {
+              setEditStaffForm(current => ({ ...current, address: e.target.value }));
+              setEditStaffErrors(current => ({ ...current, address: '' }));
+            }}
+            disabled={staffSaving}
+            error={editStaffErrors.address}
           />
           <Input
             label="New Password"

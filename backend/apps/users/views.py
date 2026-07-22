@@ -9,13 +9,13 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.validators import validate_email as django_validate_email
 from django.db import transaction
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from users.serializers import (
+    AccountSerializer,
     UserSerializer,
     RegisterSerializer,
     PasswordResetRequestSerializer,
@@ -194,7 +194,10 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self):
-        return self.request.user
+        user = self.request.user
+        if user.role == 'CUSTOMER':
+            Customer.objects.get_or_create(user=user)
+        return user
 
 class StaffListView(generics.ListCreateAPIView):
     serializer_class = UserSerializer
@@ -211,47 +214,19 @@ class StaffListView(generics.ListCreateAPIView):
 
     def create(self, request, *args, **kwargs):
         if request.user.role != 'ADMIN':
-            return Response({"detail": "Only Admins can create staff accounts."}, status=status.HTTP_403_FORBIDDEN)
-            
-        username = (request.data.get('username') or '').strip()
-        password = request.data.get('password') or ''
-        email = (request.data.get('email') or '').strip().lower()
-        role = request.data.get('role', 'STAFF')
-        
-        if not username or not password:
-            return Response({"detail": "Username and password are required."}, status=status.HTTP_400_BAD_REQUEST)
-        if role not in ['STAFF', 'ADMIN', 'CUSTOMER']:
-            return Response({"role": "Role must be STAFF, ADMIN, or CUSTOMER."}, status=status.HTTP_400_BAD_REQUEST)
-            
-        if User.objects.filter(username__iexact=username).exists():
-            return Response({"detail": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
-        if email:
-            try:
-                django_validate_email(email)
-            except DjangoValidationError:
-                return Response({"email": "Enter a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
-        if email and User.objects.filter(email__iexact=email).exists():
-            return Response({"email": "Email already exists."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            validate_password(password)
-        except DjangoValidationError as exc:
-            return Response({"password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
-            
-        user = User.objects.create_user(
-            username=username,
-            password=password,
-            email=email,
-            role=role,
-            is_staff=(role in ['STAFF', 'ADMIN'])
-        )
+            return Response({"detail": "Only Admins can create accounts."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = AccountSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
         
         AuditLog.objects.create(
             user=request.user,
             action="STAFF_CREATE",
-            description=f"Created user {user.username} with role {role}."
+            description=f"Created user {user.username} with role {user.role}."
         )
         
-        return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+        return Response(AccountSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 class StaffDetailView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -270,50 +245,17 @@ class StaffDetailView(views.APIView):
         if not user:
             return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        username = request.data.get('username', user.username).strip()
-        email = (request.data.get('email', user.email or '') or '').strip().lower()
-        role = request.data.get('role', user.role)
-        password = request.data.get('password', '')
-
-        if not username:
-            return Response({"detail": "Username is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if role not in ['STAFF', 'ADMIN', 'CUSTOMER']:
-            return Response({"role": "Role must be STAFF, ADMIN, or CUSTOMER."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if User.objects.filter(username__iexact=username).exclude(pk=user.pk).exists():
-            return Response({"detail": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
-        if email:
-            try:
-                django_validate_email(email)
-            except DjangoValidationError:
-                return Response({"email": "Enter a valid email address."}, status=status.HTTP_400_BAD_REQUEST)
-        if email and User.objects.filter(email__iexact=email).exclude(pk=user.pk).exists():
-            return Response({"email": "Email already exists."}, status=status.HTTP_400_BAD_REQUEST)
-        if password:
-            try:
-                validate_password(password, user=user)
-            except DjangoValidationError as exc:
-                return Response({"password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
-
-        user.username = username
-        user.email = email
-        user.role = role
-        user.is_staff = role in ['STAFF', 'ADMIN']
-        if password:
-            user.set_password(password)
-        user.save()
-
-        if role == 'CUSTOMER':
-            Customer.objects.get_or_create(user=user)
+        serializer = AccountSerializer(user, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
 
         AuditLog.objects.create(
             user=request.user,
             action="STAFF_UPDATE",
-            description=f"Updated user {user.username} with role {role}."
+            description=f"Updated user {user.username} with role {user.role}."
         )
 
-        return Response(UserSerializer(user).data)
+        return Response(AccountSerializer(user, context={'request': request}).data)
 
     def delete(self, request, pk):
         if request.user.role != 'ADMIN':
