@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { StyledAlertProvider } from './components/ui/StyledAlert';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { brandAssets } from './utils/cavAssets';
+import { API_BASE_URL } from './api/config';
 import AdminDashboard from './pages/AdminDashboard';
 
 const LandingPage = lazy(() => lazyWithRetry(() => import('./pages/LandingPage')));
@@ -12,6 +13,41 @@ const PrivacyPolicyPage = lazy(() => lazyWithRetry(() => import('./pages/Privacy
 const CustomerDashboard = lazy(() => lazyWithRetry(() => import('./pages/CustomerDashboard')));
 const StaffDashboard = lazy(() => lazyWithRetry(() => import('./pages/StaffDashboard')));
 const SPLASH_SEEN_KEY = 'cav:splash-seen';
+
+const redactDiagnostic = (value, limit) => String(value || '')
+  .replace(/Bearer\s+[^\s]+/gi, 'Bearer [redacted]')
+  .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[redacted token]')
+  .slice(0, limit);
+
+const reportClientRuntimeError = (error, errorInfo) => {
+  if (typeof window === 'undefined') return;
+
+  let token = '';
+  try {
+    token = localStorage.getItem('access_token') || '';
+  } catch {
+    return;
+  }
+  if (!token) return;
+
+  const payload = {
+    message: redactDiagnostic(error?.message || error, 500),
+    component_stack: redactDiagnostic(errorInfo?.componentStack, 4000),
+    route: window.location.pathname,
+  };
+
+  window.fetch(`${API_BASE_URL}/api/audit/client-runtime-errors/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch(() => {
+    // Browser diagnostics must never affect the running application.
+  });
+};
 
 function AppLoader() {
   return (
@@ -116,8 +152,8 @@ class RouteErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    // Keep the full diagnostic in the browser console without exposing it in the UI.
     console.error('CAV route render error', error, errorInfo);
+    reportClientRuntimeError(error, errorInfo);
   }
 
   componentDidUpdate(previousProps) {
@@ -139,7 +175,7 @@ class RouteErrorBoundary extends React.Component {
       <div className="min-h-screen bg-cream flex items-center justify-center px-4">
         <div className="w-full max-w-md rounded-2xl border border-espresso/10 bg-white p-6 text-center shadow-[0_24px_65px_rgba(46,26,17,0.10)]">
           <h1 className="text-xl font-black text-espresso">This screen could not be opened</h1>
-          <p className="mt-2 text-sm leading-relaxed text-espresso/60">Try opening the screen again. Your session and current URL will stay unchanged.</p>
+          <p className="mt-2 text-sm leading-relaxed text-espresso/60">A screen component did not finish rendering. Your session and current URL are unchanged.</p>
           <button
             type="button"
             onClick={this.handleRetry}

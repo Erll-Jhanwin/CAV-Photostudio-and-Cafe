@@ -49,6 +49,14 @@ import {
 
 const LOCAL_PRINTING_PRINTER_KEY = 'admin:localPrintingPrinter';
 
+const readLocalStorageValue = (key, fallback = '') => {
+  try {
+    return localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
@@ -335,7 +343,7 @@ export default function AdminDashboard() {
   const [endOfDayPrinting, setEndOfDayPrinting] = useState(false);
   const [endOfDayReprintingId, setEndOfDayReprintingId] = useState(null);
   const [localPrinters, setLocalPrinters] = useState([]);
-  const [selectedLocalPrinter, setSelectedLocalPrinter] = useState(() => localStorage.getItem(LOCAL_PRINTING_PRINTER_KEY) || '');
+  const [selectedLocalPrinter, setSelectedLocalPrinter] = useState(() => readLocalStorageValue(LOCAL_PRINTING_PRINTER_KEY));
   const [localPrinterLoading, setLocalPrinterLoading] = useState(false);
   const [localPrintStatus, setLocalPrintStatus] = useState('Detect the cashier printer before printing a closeout.');
   const [systemResetOpen, setSystemResetOpen] = useState(false);
@@ -388,7 +396,10 @@ export default function AdminDashboard() {
         getCached('/api/forecasting/predictions/', {}, { force: background }),
       ]);
       if (requestSeq !== dashboardFetchSeqRef.current) return;
-      const data = index => responses[index].status === 'fulfilled' ? responses[index].value.data : null;
+      const data = (index) => {
+        const response = responses[index];
+        return response?.status === 'fulfilled' ? response.value?.data || null : null;
+      };
       if (data(0)) setAnalytics(normalizeDashboardAnalytics(data(0)));
       if (data(1)) setForecast(data(1));
 

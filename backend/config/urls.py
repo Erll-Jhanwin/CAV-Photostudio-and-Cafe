@@ -37,6 +37,7 @@ from chatbot.views import ChatbotQueryView, FAQListCreateView, FAQDetailUpdateVi
 from dashboard.views import DashboardAnalyticsView
 from forecasting.views import ForecastingDataView
 from gallery.views import GalleryImageListView
+from audit.views import ClientRuntimeErrorView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -98,6 +99,7 @@ urlpatterns = [
     # Analytics / Dashboard
     path('api/dashboard/analytics/', DashboardAnalyticsView.as_view(), name='dashboard_analytics'),
     path('api/forecasting/predictions/', ForecastingDataView.as_view(), name='forecasting_predictions'),
+    path('api/audit/client-runtime-errors/', ClientRuntimeErrorView.as_view(), name='client_runtime_errors'),
 
     # Landing gallery
     path('api/gallery/images/', GalleryImageListView.as_view(), name='gallery_image_list'),
