@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from booking.models import Booking, Package, Service
+from payment.models import Payment
 
 
 class DashboardAnalyticsTests(TestCase):
@@ -55,3 +56,29 @@ class DashboardAnalyticsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['metrics']['total_bookings'], 0)
         self.assertEqual([row['id'] for row in response.data['recent_bookings']], [booking.id])
+
+    def test_approved_booking_payment_is_included_in_booking_income(self):
+        booking = Booking.objects.create(
+            customer=self.customer,
+            package=self.package,
+            scheduled_date=timezone.localdate() + timedelta(days=7),
+            scheduled_time='10:00',
+            status='CONFIRMED_DP',
+        )
+        Payment.objects.create(
+            payment_type=Payment.BOOKING,
+            booking=booking,
+            amount='500.00',
+            method='GCASH',
+            status='APPROVED',
+            paid_at=timezone.now(),
+        )
+
+        today = timezone.localdate().isoformat()
+        response = self.client.get('/api/dashboard/analytics/', {'start': today, 'end': today})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['metrics']['booking_revenue'], 500.0)
+        self.assertEqual(response.data['metrics']['booking_payment_revenue'], 500.0)
+        self.assertEqual(response.data['metrics']['total_revenue'], 500.0)
+        self.assertEqual(response.data['sales_history_chart'][0]['booking_revenue'], 500.0)

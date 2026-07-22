@@ -74,13 +74,28 @@ class DashboardAnalyticsView(views.APIView):
 
         paid_orders = list(Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(payment_status='PAID', created_at__range=(start_dt, end_dt)).select_related('staff', 'booking'))
         prev_paid_orders = Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(payment_status='PAID', created_at__range=(prev_start_dt, prev_end_dt))
+        approved_booking_payments = list(Payment.objects.filter(
+            payment_type=Payment.BOOKING,
+            status='APPROVED',
+            paid_at__range=(start_dt, end_dt),
+        ).select_related('booking', 'booking__package'))
+        prev_approved_booking_payments = Payment.objects.filter(
+            payment_type=Payment.BOOKING,
+            status='APPROVED',
+            paid_at__range=(prev_start_dt, prev_end_dt),
+        )
         paid_pos_orders = [order for order in paid_orders if order.order_type == 'WALK_IN']
         paid_booking_orders = [order for order in paid_orders if order.order_type == 'BOOKING_LINKED']
 
         pos_rev = sum((order.total for order in paid_pos_orders), Decimal('0.00'))
-        booking_rev = sum((order.total for order in paid_booking_orders), Decimal('0.00'))
+        booking_order_rev = sum((order.total for order in paid_booking_orders), Decimal('0.00'))
+        booking_payment_rev = sum((payment.amount for payment in approved_booking_payments), Decimal('0.00'))
+        booking_rev = booking_order_rev + booking_payment_rev
         total_rev = pos_rev + booking_rev
-        prev_total_rev = sum(prev_paid_orders.values_list('total', flat=True), Decimal('0.00'))
+        prev_total_rev = (
+            sum(prev_paid_orders.values_list('total', flat=True), Decimal('0.00'))
+            + sum(prev_approved_booking_payments.values_list('amount', flat=True), Decimal('0.00'))
+        )
         total_tx = len(paid_pos_orders)
         total_items_sold = sum(sum(int(item.get('quantity') or 0) for item in order.line_items or []) for order in paid_pos_orders)
         avg_transaction = money(pos_rev) / total_tx if total_tx else 0
@@ -102,6 +117,11 @@ class DashboardAnalyticsView(views.APIView):
                 buckets[key]['booking_revenue'] += money(order.total)
             else:
                 buckets[key]['pos_revenue'] += money(order.total)
+            buckets[key]['total_revenue'] = buckets[key]['pos_revenue'] + buckets[key]['booking_revenue']
+        for payment in approved_booking_payments:
+            key = bucket_key(payment.paid_at, grain)
+            buckets.setdefault(key, {'date': key, 'pos_revenue': 0, 'booking_revenue': 0, 'total_revenue': 0})
+            buckets[key]['booking_revenue'] += money(payment.amount)
             buckets[key]['total_revenue'] = buckets[key]['pos_revenue'] + buckets[key]['booking_revenue']
 
         inventory_status_counts = {'IN_STOCK': 0, 'LOW_STOCK': 0, 'NEAR_EXPIRY': 0, 'EXPIRED': 0, 'OVERSTOCKED': 0}
@@ -178,6 +198,7 @@ class DashboardAnalyticsView(views.APIView):
                 'total_revenue_change': pct_change(total_rev, prev_total_rev),
                 'pos_revenue': money(pos_rev),
                 'booking_revenue': money(booking_rev),
+                'booking_payment_revenue': money(booking_payment_rev),
                 'transaction_count': total_tx,
                 'avg_transaction_value': money(avg_transaction),
                 'total_items_sold': total_items_sold,
