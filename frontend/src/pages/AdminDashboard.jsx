@@ -36,6 +36,15 @@ import {
   normalizeRowsById,
 } from '../utils/uniqueRecords';
 import { formatManilaDateTime, MANILA_TIME_ZONE } from '../utils/dateTime';
+import {
+  getLocalPrinters,
+  getLocalPrintingSetupMessage,
+  isLocalStaffConsole,
+  openLocalStaffConsole,
+  printLocalEndOfDayReport,
+} from '../utils/localPrinting';
+
+const LOCAL_PRINTING_PRINTER_KEY = 'admin:localPrintingPrinter';
 
 const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-PH', {
   minimumFractionDigits: 0,
@@ -289,6 +298,11 @@ export default function AdminDashboard() {
   const [endOfDayExpectedCash, setEndOfDayExpectedCash] = useState('');
   const [endOfDayCashLoading, setEndOfDayCashLoading] = useState(false);
   const [endOfDayPrinting, setEndOfDayPrinting] = useState(false);
+  const [endOfDayReprintingId, setEndOfDayReprintingId] = useState(null);
+  const [localPrinters, setLocalPrinters] = useState([]);
+  const [selectedLocalPrinter, setSelectedLocalPrinter] = useState(() => localStorage.getItem(LOCAL_PRINTING_PRINTER_KEY) || '');
+  const [localPrinterLoading, setLocalPrinterLoading] = useState(false);
+  const [localPrintStatus, setLocalPrintStatus] = useState('Detect the cashier printer before printing a closeout.');
   const [systemResetOpen, setSystemResetOpen] = useState(false);
   const [systemResetPassword, setSystemResetPassword] = useState('');
   const [systemResetConfirmation, setSystemResetConfirmation] = useState('');
@@ -749,6 +763,65 @@ export default function AdminDashboard() {
     await getExpectedCashForDate(dateValue);
   };
 
+  useEffect(() => {
+    if (selectedLocalPrinter) localStorage.setItem(LOCAL_PRINTING_PRINTER_KEY, selectedLocalPrinter);
+    else localStorage.removeItem(LOCAL_PRINTING_PRINTER_KEY);
+  }, [selectedLocalPrinter]);
+
+  const refreshLocalPrinters = useCallback(async ({ openConsoleOnFailure = false } = {}) => {
+    try {
+      setLocalPrinterLoading(true);
+      const printers = await getLocalPrinters();
+      setLocalPrinters(printers);
+      const defaultPrinter = printers.find(printer => printer.default) || printers[0];
+      if (defaultPrinter && (!selectedLocalPrinter || !printers.some(printer => printer.name === selectedLocalPrinter))) {
+        setSelectedLocalPrinter(defaultPrinter.name);
+      }
+      setLocalPrintStatus(printers.length
+        ? `${printers.length} local printer${printers.length === 1 ? '' : 's'} detected. ${defaultPrinter?.name ? `Using ${defaultPrinter.name}.` : ''}`
+        : 'The local print bridge is running, but no printers were found.');
+      return printers;
+    } catch {
+      setLocalPrinters([]);
+      setLocalPrintStatus(getLocalPrintingSetupMessage());
+      if (openConsoleOnFailure && !isLocalStaffConsole()) openLocalStaffConsole();
+      return [];
+    } finally {
+      setLocalPrinterLoading(false);
+    }
+  }, [selectedLocalPrinter]);
+
+  const handleDetectLocalPrinters = useCallback(async () => {
+    const printers = await refreshLocalPrinters({ openConsoleOnFailure: true });
+    if (!printers.length && !isLocalStaffConsole()) {
+      setLocalPrintStatus('Opening the local staff console. Sign in there, keep it open, then select Detect Printers again.');
+    }
+  }, [refreshLocalPrinters]);
+
+  const handleLocalEndOfDayPrint = async (report) => {
+    const printers = localPrinters.length ? localPrinters : await refreshLocalPrinters();
+    if (!printers.length) {
+      setReceiptPrintError('Report saved, but no local receipt printer was detected. Start the Local Staff Console on the cashier PC, then use Reprint Closeout.');
+      return false;
+    }
+
+    const printer = printers.find(item => item.name === selectedLocalPrinter) || printers.find(item => item.default) || printers[0];
+    try {
+      const result = await printLocalEndOfDayReport({ report, printerName: printer?.name || '' });
+      const markedReport = await client.post(`/api/pos/end-of-day-reports/${report.id}/mark-printed/`, {
+        printer: result.printer || printer?.name || 'local cashier printer',
+      });
+      setEndOfDayReports(current => normalizeRowsById(current.map(item => item.id === report.id ? markedReport.data : item), row => row?.report_number || row?.created_at));
+      setLocalPrintStatus(`Closeout printed locally${result.printer ? ` on ${result.printer}` : ''}.`);
+      return true;
+    } catch (err) {
+      const message = err?.message || getApiErrorMessage(err, 'The local printer could not print the closeout.');
+      setLocalPrintStatus(`Local print failed: ${message}`);
+      setReceiptPrintError(`Report saved, but local printing failed: ${message}`);
+      return false;
+    }
+  };
+
   const handlePrintEndOfDayReport = async () => {
     const openingCash = Number(endOfDayOpeningCash || 0);
     const cashInOut = Number(endOfDayCashInOut || 0);
@@ -781,6 +854,7 @@ export default function AdminDashboard() {
         opening_cash: openingCash.toFixed(2),
         cash_in_out: cashInOut.toFixed(2),
         actual_cash: actualCash.toFixed(2),
+        print_report: false,
       });
       setEndOfDayReports(current => normalizeRowsById([res.data, ...current.filter(report => report.id !== res.data.id)], row => row?.report_number || row?.created_at));
       setEndOfDayModalOpen(false);
@@ -789,10 +863,8 @@ export default function AdminDashboard() {
       setEndOfDayCashInOut('0.00');
       setEndOfDayCashSales('');
       setEndOfDayExpectedCash('');
-      if (!res.data.receipt_print?.printed) {
-        setReceiptPrintError(res.data.receipt_print?.error || 'Report saved, but the end-of-day receipt could not be printed.');
-      }
-      alert('End-of-day report saved successfully.');
+      const printed = await handleLocalEndOfDayPrint(res.data);
+      alert(printed ? 'End-of-day report saved and printed successfully.' : 'End-of-day report saved. Use Reprint Closeout after the cashier printer is ready.');
     } catch (err) {
       const data = err.response?.data;
       const message = data && typeof data === 'object'
@@ -812,17 +884,11 @@ export default function AdminDashboard() {
       type: 'warning',
     });
     if (!confirmed) return;
-    try {
-      setReceiptPrintError('');
-      const res = await client.post(`/api/pos/end-of-day-reports/${report.id}/reprint/`);
-      setEndOfDayReports(current => normalizeRowsById(current.map(item => item.id === report.id ? res.data : item), row => row?.report_number || row?.created_at));
-      if (!res.data.receipt_print?.printed) {
-        setReceiptPrintError(res.data.receipt_print?.error || 'Report found, but the receipt could not be printed.');
-      }
-      alert('Report reprinted successfully.');
-    } catch {
-      alert('Failed to reprint report.');
-    }
+    setEndOfDayReprintingId(report.id);
+    setReceiptPrintError('');
+    const printed = await handleLocalEndOfDayPrint(report);
+    setEndOfDayReprintingId(null);
+    if (printed) alert('Report reprinted successfully.');
   };
 
   const handleLogout = useCallback(() => {
@@ -1676,6 +1742,28 @@ export default function AdminDashboard() {
                 </Button>
               </div>
 
+              <div className="shrink-0 flex flex-col gap-2 rounded-xl border border-espresso/10 bg-white px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <p className={`text-xs font-bold ${/failed|not found|no printer/i.test(localPrintStatus) ? 'text-amber-700' : 'text-espresso/65'}`}>
+                  {localPrintStatus}
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <select
+                    aria-label="Local closeout printer"
+                    value={selectedLocalPrinter}
+                    onChange={event => setSelectedLocalPrinter(event.target.value)}
+                    disabled={localPrinterLoading || !localPrinters.length}
+                    className="h-9 min-w-0 rounded-lg border border-espresso/10 bg-cream px-2 text-xs font-bold text-espresso outline-none focus:ring-4 focus:ring-gold/15 sm:w-52"
+                  >
+                    {localPrinters.length ? localPrinters.map(printer => (
+                      <option key={printer.name} value={printer.name}>{printer.name}{printer.default ? ' (Default)' : ''}</option>
+                    )) : <option value="">No printers detected</option>}
+                  </select>
+                  <Button variant="outline" size="sm" icon={Printer} onClick={handleDetectLocalPrinters} loading={localPrinterLoading} disabled={localPrinterLoading}>
+                    Detect Printers
+                  </Button>
+                </div>
+              </div>
+
               <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
                   ['Saved Reports', endOfDayReports.length, 'bg-white text-espresso border-espresso/[0.06]'],
@@ -1726,7 +1814,7 @@ export default function AdminDashboard() {
                             </p>
                           )}
                         </div>
-                        <Button variant="outline" size="sm" icon={Printer} onClick={() => handleReprintEndOfDayReport(report)}>
+                        <Button variant="outline" size="sm" icon={Printer} onClick={() => handleReprintEndOfDayReport(report)} loading={endOfDayReprintingId === report.id} disabled={endOfDayReprintingId !== null}>
                           Reprint Closeout
                         </Button>
                       </div>
@@ -2276,7 +2364,7 @@ export default function AdminDashboard() {
       <Modal open={endOfDayModalOpen} onClose={() => !endOfDayPrinting && setEndOfDayModalOpen(false)} title="Print End-of-Day Report" size="sm">
         <div className="space-y-4">
           <p className="text-xs leading-relaxed text-espresso/60">
-            Opening cash and cash movement update the closing cash automatically. The system will save the report and send it to the 58mm receipt printer.
+            Opening cash and cash movement update the closing cash automatically. The system saves the report first, then sends it to the selected 58mm cashier printer.
           </p>
           <Input
             label="Report Date"

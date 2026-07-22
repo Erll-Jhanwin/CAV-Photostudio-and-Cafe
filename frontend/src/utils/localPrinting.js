@@ -187,8 +187,52 @@ export const buildReceiptText = (order, business, user) => {
     .join('\n\n') + '\n\n\n';
 };
 
-export const printLocalReceipt = async ({ order, business, user, printerName }) => {
-  const content = buildReceiptText(order, business, user);
+export const buildEndOfDayReportText = (report) => {
+  const header = [
+    ...center('CAV PHOTO STUDIO & CAFE'),
+    ...center('Z REPORT'),
+  ];
+  const details = [
+    ...pair('DATE & TIME', report?.closing_time_display || report?.created_at_display || `${report?.report_date || ''} ${formatManilaDateTime(report?.created_at)}`.trim()),
+    ...pair('STAFF NAME', report?.staff_name || report?.closed_by_name || ''),
+  ];
+  const drawer = [
+    line(),
+    'CASH DRAWER',
+    ...pair('OPENING CASH', money(report?.opening_cash)),
+    ...pair('CASH SALES', money(report?.cash_sales)),
+    ...pair('CASH IN/OUT', money(report?.cash_in_out)),
+    ...pair('EXPECTED CASH', money(report?.expected_cash)),
+    ...pair('ACTUAL CASH', money(report?.actual_cash)),
+    ...pair('CASH DIFFERENCE', money(report?.cash_difference)),
+  ];
+  const sales = [
+    line(),
+    'SALES SUMMARY',
+    ...pair('GCASH SALES', money(report?.gcash_sales)),
+    ...pair('CARD SALES', money(report?.card_sales)),
+    ...pair('REFUNDS', money(report?.refunds)),
+    ...pair('DISCOUNTS', money(report?.discounts)),
+    ...pair('TOTAL TRANSACTIONS', report?.total_transactions || 0),
+  ];
+  const totals = [
+    line(),
+    ...pair('GROSS SALES', money(report?.gross_sales)),
+    ...pair('FIRST TXN', report?.first_transaction_id || 'N/A'),
+    ...pair('LAST TXN', report?.last_transaction_id || 'N/A'),
+    ...pair('BOOKING INCOME', money(report?.booking_income)),
+    ...pair('CAFE/POS INCOME', money(report?.cafe_pos_income)),
+    ...pair('ITEMS SOLD', report?.total_items_sold || 0),
+    ...pair('VOID/CANCEL', report?.cancelled_or_voided_transactions || 0),
+  ];
+  const footer = [line(), ...center('Report saved for records')];
+
+  return [header, details, drawer, sales, totals, footer]
+    .map(section => section.join('\n'))
+    .join('\n\n') + '\n\n\n';
+};
+
+const printLocalText = async ({ content, printerName }) => {
   let lastError;
   for (const url of bridgeUrls()) {
     try {
@@ -208,3 +252,13 @@ export const printLocalReceipt = async ({ order, business, user, printerName }) 
   }
   throw lastError || new Error('Local printer did not accept the receipt.');
 };
+
+export const printLocalReceipt = ({ order, business, user, printerName }) => printLocalText({
+  content: buildReceiptText(order, business, user),
+  printerName,
+});
+
+export const printLocalEndOfDayReport = ({ report, printerName }) => printLocalText({
+  content: buildEndOfDayReportText(report),
+  printerName,
+});

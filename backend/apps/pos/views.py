@@ -499,7 +499,15 @@ class EndOfDayReportListCreateView(APIView):
             return Response({"report_date": "Use YYYY-MM-DD format."}, status=status.HTTP_400_BAD_REQUEST)
         report_order = create_end_of_day_report(request.user, report_date, actual_cash, opening_cash, cash_in_out)
         report = report_from_order(report_order)
-        print_status = print_end_of_day_report(build_end_of_day_payload(report))
+        should_print_report = str(request.data.get('print_report', 'true')).strip().lower() in {'1', 'true', 'yes', 'on'}
+        print_status = (
+            print_end_of_day_report(build_end_of_day_payload(report))
+            if should_print_report else {
+                'printed': False,
+                'printer': None,
+                'error': 'Report printing was deferred to the local cashier printer.',
+            }
+        )
         report_order.print_status = print_status
         report_order.printed_at = timezone.now() if print_status.get("printed") else None
         report_order.save(update_fields=['print_status', 'printed_at'])
@@ -519,10 +527,36 @@ class EndOfDayReportReprintView(APIView):
         except Order.DoesNotExist:
             return Response({"detail": "Report not found."}, status=status.HTTP_404_NOT_FOUND)
         report = report_from_order(report_order)
-        print_status = print_end_of_day_report(build_end_of_day_payload(report))
+        should_print_report = str(request.data.get('print_report', 'true')).strip().lower() in {'1', 'true', 'yes', 'on'}
+        print_status = (
+            print_end_of_day_report(build_end_of_day_payload(report))
+            if should_print_report else {
+                'printed': False,
+                'printer': None,
+                'error': 'Report printing was deferred to the local cashier printer.',
+            }
+        )
         report_order.print_status = print_status
         report_order.printed_at = timezone.now() if print_status.get("printed") else report_order.printed_at
         report_order.save(update_fields=['print_status', 'printed_at'])
         data = EndOfDayReportSerializer(report_from_order(report_order)).data
         data['receipt_print'] = print_status
         return Response(data)
+
+
+class EndOfDayReportMarkPrintedView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        if request.user.role != 'ADMIN':
+            return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            report_order = Order.objects.get(pk=pk, order_type='END_OF_DAY_REPORT')
+        except Order.DoesNotExist:
+            return Response({'detail': 'Report not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        printer = str(request.data.get('printer') or 'local cashier printer').strip()[:255]
+        report_order.print_status = {'printed': True, 'printer': printer, 'error': ''}
+        report_order.printed_at = timezone.now()
+        report_order.save(update_fields=['print_status', 'printed_at'])
+        return Response(EndOfDayReportSerializer(report_from_order(report_order)).data)
