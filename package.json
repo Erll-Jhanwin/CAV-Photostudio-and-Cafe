@@ -13,11 +13,11 @@
     "build": "npm --workspace frontend run build",
     "verify:web-build": "node ./scripts/verify-web-build.mjs",
     "capacitor:sync:before": "npm run verify:web-build",
-    "cap": "npx cap",
-    "cap:copy": "npm run build && npm run verify:web-build && npx cap copy android",
-    "cap:sync": "npm run build && npm run verify:web-build && npx cap sync android",
-    "cap:open:android": "npx cap open android",
-    "cap:run:android": "npm run cap:sync && npx cap run android"
+    "cap": "node ./node_modules/@capacitor/cli/bin/capacitor",
+    "cap:copy": "npm run build && node ./scripts/verify-web-build.mjs && node ./node_modules/@capacitor/cli/bin/capacitor copy android",
+    "cap:sync": "npm run build && node ./scripts/verify-web-build.mjs && node ./node_modules/@capacitor/cli/bin/capacitor sync android",
+    "cap:open:android": "node ./node_modules/@capacitor/cli/bin/capacitor open android",
+    "cap:run:android": "npm run cap:sync && node ./node_modules/@capacitor/cli/bin/capacitor run android"
   },
   "dependencies": {
     "@capacitor/android": "8.4.2",

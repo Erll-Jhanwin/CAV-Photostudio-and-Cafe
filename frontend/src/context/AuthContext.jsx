@@ -58,7 +58,9 @@ export const AuthProvider = ({ children }) => {
       return { success: true, user: userData };
     } catch (error) {
       console.error("Login failed:", error);
-      const message = error.response?.data?.detail || getApiErrorMessage(error, 'Invalid username or password.');
+      const message = error.response?.status === 401
+        ? 'Invalid username or password.'
+        : getApiErrorMessage(error, 'Unable to sign in. Please try again.');
       return { success: false, error: message };
     }
   };
