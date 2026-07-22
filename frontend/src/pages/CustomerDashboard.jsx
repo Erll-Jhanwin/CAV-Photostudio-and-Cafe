@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import client, { DATA_CHANGED_EVENT, getApiErrorMessage } from '../api/client';
+import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
 import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -259,7 +259,7 @@ const shiftMonth = (monthValue, offset) => {
   return getMonthValue(new Date(year, month - 1 + offset, 1));
 };
 
-function CustomerSkeleton() {
+export function CustomerSkeleton() {
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
       <aside className="hidden md:flex w-64 bg-espresso flex-col p-5 shrink-0">
@@ -505,7 +505,7 @@ export default function CustomerDashboard() {
   }, [currentStep, activeTab, canGoNext]);
 
   useEffect(() => {
-    client.get('/api/chatbot/faqs/')
+    getCached('/api/chatbot/faqs/')
       .then(res => {
         const prompts = uniqueBy(res.data.map(faq => faq.question).filter(Boolean), question => question.toLowerCase()).slice(0, 6);
         if (prompts.length) setChatFaqPrompts(prompts);
@@ -520,9 +520,9 @@ export default function CustomerDashboard() {
       if (!background) setLoading(true);
       setDashboardError('');
       const [servicesRes, bookingsRes, profileRes] = await Promise.all([
-        client.get('/api/bookings/services/'),
-        client.get('/api/bookings/'),
-        client.get('/api/auth/profile/')
+        getCached('/api/bookings/services/', {}, { force: background }),
+        getCached('/api/bookings/', {}, { force: background }),
+        getCached('/api/auth/profile/', {}, { force: background })
       ]);
       const uniqueServices = decorateServicesWithAssets(normalizeServices(servicesRes.data));
       const uniqueBookings = normalizeBookings(bookingsRes.data);
@@ -1250,8 +1250,6 @@ export default function CustomerDashboard() {
     navigate('/login', { replace: true });
   }, [logout, navigate]);
 
-  if (loading) return <CustomerSkeleton />;
-
   const navItems = [
     { key: 'book', label: 'Book a Session', icon: Plus, active: activeTab === 'book', onClick: () => setActiveTab('book') },
     { key: 'history', label: 'Booking History', icon: Clock, active: activeTab === 'history', onClick: () => setActiveTab('history') },
@@ -1378,7 +1376,7 @@ export default function CustomerDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-cream flex flex-col md:flex-row">
+    <div className="min-h-screen bg-cream flex flex-col md:flex-row" aria-busy={loading}>
       <Sidebar
         brand="CAV Portal"
         brandSubtitle="Customer Console"

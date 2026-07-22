@@ -3,9 +3,18 @@ import client, { clearStoredAuth, getApiErrorMessage } from '../api/client';
 
 const AuthContext = createContext(null);
 
+const readStoredUser = () => {
+  try {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(readStoredUser);
+  const [loading, setLoading] = useState(() => !readStoredUser());
 
   useEffect(() => {
     let active = true;
@@ -19,7 +28,12 @@ export const AuthProvider = ({ children }) => {
       }
 
       try {
-        JSON.parse(savedUser);
+        const cachedUser = JSON.parse(savedUser);
+        // The cached role lets the correct shell paint immediately while this request verifies the session.
+        if (active) {
+          setUser(cachedUser);
+          setLoading(false);
+        }
         const response = await client.get('/api/auth/profile/');
         const profile = response.data || {};
         const userData = {

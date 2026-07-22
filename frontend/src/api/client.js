@@ -37,9 +37,53 @@ const client = axios.create({
 });
 
 let refreshPromise = null;
+const queryCache = new Map();
+const pendingQueries = new Map();
+
+const stableValue = (value) => {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value && typeof value === 'object') {
+    return Object.keys(value).sort().reduce((result, key) => {
+      result[key] = stableValue(value[key]);
+      return result;
+    }, {});
+  }
+  return value;
+};
+
+const getQueryKey = (url, config = {}) => `${url}?${JSON.stringify(stableValue(config.params || {}))}`;
+
+export const clearQueryCache = (prefix = '') => {
+  if (!prefix) {
+    queryCache.clear();
+    return;
+  }
+  Array.from(queryCache.keys()).forEach(key => {
+    if (key.startsWith(prefix)) queryCache.delete(key);
+  });
+};
+
+export const getCached = async (url, config = {}, { maxAge = 20_000, force = false } = {}) => {
+  const key = getQueryKey(url, config);
+  const cached = queryCache.get(key);
+  if (!force && cached && Date.now() - cached.savedAt < maxAge) {
+    return cached.response;
+  }
+  if (!force && pendingQueries.has(key)) return pendingQueries.get(key);
+
+  const request = client.get(url, config)
+    .then(response => {
+      queryCache.set(key, { response, savedAt: Date.now() });
+      return response;
+    })
+    .finally(() => pendingQueries.delete(key));
+  pendingQueries.set(key, request);
+  return request;
+};
 
 export const clearStoredAuth = () => {
   ['access_token', 'refresh_token', 'user'].forEach(key => localStorage.removeItem(key));
+  clearQueryCache();
 };
 
 export const getApiErrorMessage = (error, fallback = 'Something went wrong. Please try again.') => {
@@ -90,6 +134,7 @@ client.interceptors.response.use(
   (response) => {
     const method = String(response.config?.method || 'get').toLowerCase();
     if (['post', 'put', 'patch', 'delete'].includes(method)) {
+      clearQueryCache();
       dispatchDataChanged({
         method,
         url: response.config?.url || '',

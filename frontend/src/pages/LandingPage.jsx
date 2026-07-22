@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { API_BASE_URL } from '../api/config';
+import { getCached } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
@@ -14,7 +15,7 @@ import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/Chatb
 import { normalizeGalleryImages, normalizeRowsById, normalizeServices, recordKey, uniqueBy } from '../utils/uniqueRecords';
 import { brandAssets, businessAssets, decorateServicesWithAssets, localGalleryImages } from '../utils/cavAssets';
 
-function LandingSkeleton() {
+export function LandingSkeleton() {
   return (
     <div className="min-h-screen bg-cream">
       <header className="sticky top-0 z-40 bg-white border-b border-espresso/[0.08] shadow-[0_8px_24px_rgba(46,26,17,0.06)]">
@@ -621,8 +622,8 @@ export default function LandingPage() {
     async function fetchData() {
       try {
         const [servicesRes, productsRes] = await Promise.all([
-          axios.get(`${API_BASE_URL}/api/bookings/services/`),
-          axios.get(`${API_BASE_URL}/api/inventory/products/`)
+          getCached('/api/bookings/services/'),
+          getCached('/api/inventory/products/', { params: { limit: 100 } })
         ]);
         setServices(decorateServicesWithAssets(normalizeServices(servicesRes.data)));
         setCafeItems(normalizeRowsById(productsRes.data.filter(p => p.is_cafe_item)));
@@ -669,7 +670,7 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
-    axios.get(`${API_BASE_URL}/api/chatbot/faqs/`)
+    getCached('/api/chatbot/faqs/')
       .then(res => {
         const prompts = uniqueBy(res.data.map(faq => faq.question).filter(Boolean), question => question.toLowerCase()).slice(0, 6);
         if (prompts.length) setChatFaqPrompts(prompts);
@@ -732,10 +733,8 @@ export default function LandingPage() {
     { label: 'Our Story', href: '#about' },
   ];
 
-  if (!loaded) return <LandingSkeleton />;
-
   return (
-    <div className="min-h-screen bg-cream flex flex-col relative page-transition">
+    <div className="min-h-screen bg-cream flex flex-col relative page-transition" aria-busy={!loaded}>
       {/* Navigation */}
       <header className="sticky top-0 z-40 border-b border-espresso/[0.08] bg-white shadow-[0_8px_24px_rgba(46,26,17,0.06)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

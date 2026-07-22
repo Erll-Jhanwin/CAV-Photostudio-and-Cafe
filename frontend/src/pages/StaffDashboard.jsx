@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import client, { DATA_CHANGED_EVENT, getApiErrorMessage } from '../api/client';
+import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
 import {
   ShoppingBag, Package, DollarSign, Search, Plus,
   Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
@@ -24,7 +24,7 @@ import { brandAssets } from '../utils/cavAssets';
 import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
 
-function StaffSkeleton() {
+export function StaffSkeleton() {
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
       <aside className="hidden md:flex w-64 bg-espresso flex-col p-5 shrink-0">
@@ -253,8 +253,8 @@ export default function StaffDashboard() {
     if (cachedCategories && cachedSuppliers && !force) return;
 
     const [categoriesRes, suppliersRes] = await Promise.all([
-      client.get('/api/inventory/categories/'),
-      client.get('/api/inventory/suppliers/')
+      getCached('/api/inventory/categories/', {}, { force }),
+      getCached('/api/inventory/suppliers/', {}, { force })
     ]);
     const uniqueCategories = normalizeRowsById(categoriesRes.data, row => row?.name);
     const uniqueSuppliers = normalizeRowsById(suppliersRes.data, row => row?.name);
@@ -265,7 +265,7 @@ export default function StaffDashboard() {
   }, []);
 
   const refreshProducts = useCallback(async () => {
-    const productsRes = await client.get('/api/inventory/products/', { params: { limit: 240 } });
+    const productsRes = await getCached('/api/inventory/products/', { params: { limit: 240 } }, { force: true });
     const uniqueProducts = normalizeRowsById(productsRes.data, row => row?.name);
     setProducts(uniqueProducts);
     writeStaffCache('products', uniqueProducts);
@@ -297,20 +297,20 @@ export default function StaffDashboard() {
           setProducts(normalizeRowsById(cachedProducts, row => row?.name));
           setLoading(false);
         }
-        const productsRes = await client.get('/api/inventory/products/', { params: { limit: 240 } });
+        const productsRes = await getCached('/api/inventory/products/', { params: { limit: 240 } }, { force });
         const uniqueProducts = normalizeRowsById(productsRes.data, row => row?.name);
         setProducts(uniqueProducts);
         writeStaffCache('products', uniqueProducts);
         ensureDefaultRecipesOnce();
       } else if (tab === 'payments') {
-        const paymentsRes = await client.get('/api/bookings/payments/', { params: { limit: 100 } });
+        const paymentsRes = await getCached('/api/bookings/payments/', { params: { limit: 100 } }, { force });
         setBookingPayments(normalizePayments(paymentsRes.data));
       } else if (tab === 'inventory') {
         await loadStaticInventoryOptions(force);
-        const ingredientsRes = await client.get('/api/inventory/ingredients/', { params: { limit: 300 } });
+        const ingredientsRes = await getCached('/api/inventory/ingredients/', { params: { limit: 300 } }, { force });
         setIngredients(normalizeRowsById(ingredientsRes.data, row => row?.name));
       } else if (tab === 'sales') {
-        const ordersRes = await client.get('/api/pos/orders/', { params: { limit: 100 } });
+        const ordersRes = await getCached('/api/pos/orders/', { params: { limit: 100 } }, { force });
         setOrders(normalizeRowsById(ordersRes.data, row => row?.transaction_id || row?.created_at));
       }
 
@@ -871,8 +871,6 @@ export default function StaffDashboard() {
     navigate('/login', { replace: true });
   }, [logout, navigate]);
 
-  if (loading) return <StaffSkeleton />;
-
   const navItems = [
     { key: 'pos', label: 'POS Terminal', icon: ShoppingBag, active: activeTab === 'pos', onClick: () => setActiveTab('pos') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
@@ -922,7 +920,7 @@ export default function StaffDashboard() {
   const pagedBookingPayments = paginateRows(filteredBookingPayments, paymentPage, TABLE_PAGE_SIZE);
 
   return (
-    <div className="min-h-screen bg-cream flex flex-col md:flex-row">
+    <div className="min-h-screen bg-cream flex flex-col md:flex-row" aria-busy={loading}>
       <Sidebar
         brand="CAV Terminal"
         brandSubtitle="Staff Console"

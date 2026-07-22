@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import client, { DATA_CHANGED_EVENT, getApiErrorMessage } from '../api/client';
+import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
 import {
   TrendingUp, BarChart2, Users, MessageSquare, Play, Package,
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
@@ -179,7 +179,7 @@ function PerformanceList({ rows, primaryKey, midKey, midLabel }) {
   );
 }
 
-function AdminSkeleton({ pageTitle }) {
+export function AdminSkeleton({ pageTitle }) {
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
       <aside className="hidden md:flex w-64 bg-espresso flex-col p-5 shrink-0">
@@ -311,7 +311,39 @@ export default function AdminDashboard() {
   const [systemResetConfirmation, setSystemResetConfirmation] = useState('');
   const [systemResetLoading, setSystemResetLoading] = useState(false);
   const [systemResetError, setSystemResetError] = useState('');
+  const [tabLoading, setTabLoading] = useState({});
   const dashboardFetchSeqRef = useRef(0);
+
+  const loadAdminTabData = useCallback(async (tab, { force = false } = {}) => {
+    if (tab === 'analytics' || tab === 'system') return;
+    setTabLoading(current => ({ ...current, [tab]: true }));
+    try {
+      if (tab === 'calendar') {
+        const [bookingsRes, unavailableRes] = await Promise.all([
+          getCached('/api/bookings/', { params: { month: bookingCalendarMonth, limit: 500 } }, { force }),
+          getCached('/api/bookings/studio-unavailable-dates/', { params: { month: bookingCalendarMonth } }, { force }),
+        ]);
+        setCalendarBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
+        setStudioUnavailableDates(normalizeRowsById(unavailableRes.data, row => row?.date));
+      } else if (tab === 'reports') {
+        const response = await getCached('/api/pos/end-of-day-reports/', {}, { force });
+        setEndOfDayReports(normalizeRowsById(response.data, row => row?.report_number || row?.created_at));
+      } else if (tab === 'payments') {
+        const response = await getCached('/api/bookings/payments/', {}, { force });
+        setBookingPayments(normalizePayments(response.data));
+      } else if (tab === 'staff') {
+        const response = await getCached('/api/auth/users/', {}, { force });
+        setStaffList(normalizeRowsById(response.data, row => row?.username || row?.email));
+      } else if (tab === 'faq') {
+        const response = await getCached('/api/chatbot/faqs/', {}, { force });
+        setFaqs(normalizeRowsById(response.data, row => row?.question));
+      }
+    } catch (error) {
+      setDataError(getApiErrorMessage(error, `Could not load ${tab} data.`));
+    } finally {
+      setTabLoading(current => ({ ...current, [tab]: false }));
+    }
+  }, [bookingCalendarMonth]);
 
   const fetchData = useCallback(async ({ background = false } = {}) => {
     const requestSeq = dashboardFetchSeqRef.current + 1;
@@ -320,25 +352,13 @@ export default function AdminDashboard() {
       if (!background) setLoading(true);
       const range = getRangeDates(datePreset, customStart, customEnd);
       const responses = await Promise.allSettled([
-        client.get('/api/dashboard/analytics/', { params: { ...range, grain: chartGrain } }),
-        client.get('/api/forecasting/predictions/'),
-        client.get('/api/auth/users/'),
-        client.get('/api/chatbot/faqs/'),
-        client.get('/api/bookings/payments/'),
-        client.get('/api/bookings/', { params: { month: bookingCalendarMonth, limit: 500 } }),
-        client.get('/api/bookings/studio-unavailable-dates/', { params: { month: bookingCalendarMonth } }),
-        client.get('/api/pos/end-of-day-reports/')
+        getCached('/api/dashboard/analytics/', { params: { ...range, grain: chartGrain } }, { force: background }),
+        getCached('/api/forecasting/predictions/', {}, { force: background }),
       ]);
       if (requestSeq !== dashboardFetchSeqRef.current) return;
       const data = index => responses[index].status === 'fulfilled' ? responses[index].value.data : null;
       if (data(0)) setAnalytics(normalizeDashboardAnalytics(data(0)));
       if (data(1)) setForecast(data(1));
-      if (data(2)) setStaffList(normalizeRowsById(data(2), row => row?.username || row?.email));
-      if (data(3)) setFaqs(normalizeRowsById(data(3), row => row?.question));
-      if (data(4)) setBookingPayments(normalizePayments(data(4)));
-      if (data(5)) setCalendarBookings(normalizeRowsById(data(5), row => row?.id));
-      if (data(6)) setStudioUnavailableDates(normalizeRowsById(data(6), row => row?.date));
-      if (data(7)) setEndOfDayReports(normalizeRowsById(data(7), row => row?.report_number || row?.created_at));
 
       const failedResponse = responses.find(response => response.status === 'rejected');
       setDataError(failedResponse
@@ -352,7 +372,7 @@ export default function AdminDashboard() {
     } finally {
       if (!background && requestSeq === dashboardFetchSeqRef.current) setLoading(false);
     }
-  }, [datePreset, customStart, customEnd, chartGrain, bookingCalendarMonth]);
+  }, [datePreset, customStart, customEnd, chartGrain]);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') {
@@ -363,9 +383,17 @@ export default function AdminDashboard() {
   }, [user, navigate, fetchData]);
 
   useEffect(() => {
+    if (!user || user.role !== 'ADMIN') return;
+    void loadAdminTabData(activeTab);
+  }, [activeTab, bookingCalendarMonth, loadAdminTabData, user]);
+
+  useEffect(() => {
     if (!user || user.role !== 'ADMIN') return undefined;
 
-    const refresh = () => fetchData({ background: true });
+    const refresh = () => {
+      fetchData({ background: true });
+      loadAdminTabData(activeTab, { force: true });
+    };
     const intervalId = window.setInterval(refresh, 30000);
     window.addEventListener('focus', refresh);
 
@@ -379,14 +407,17 @@ export default function AdminDashboard() {
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [user, fetchData]);
+  }, [user, activeTab, fetchData, loadAdminTabData]);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') return undefined;
-    const refreshChangedData = () => fetchData({ background: true });
+    const refreshChangedData = () => {
+      fetchData({ background: true });
+      loadAdminTabData(activeTab, { force: true });
+    };
     window.addEventListener(DATA_CHANGED_EVENT, refreshChangedData);
     return () => window.removeEventListener(DATA_CHANGED_EVENT, refreshChangedData);
-  }, [user, fetchData]);
+  }, [user, activeTab, fetchData, loadAdminTabData]);
 
   const validateNewStaffForm = () => {
     const errors = {
@@ -948,8 +979,6 @@ export default function AdminDashboard() {
     }
   };
 
-  if (loading) return <AdminSkeleton />;
-
   const navItems = [
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
     { key: 'calendar', label: 'Booking Calendar', icon: Calendar, active: activeTab === 'calendar', onClick: () => setActiveTab('calendar') },
@@ -961,6 +990,7 @@ export default function AdminDashboard() {
   ];
 
   const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Staff Accounts', faq: 'Chatbot Manager', system: 'System Controls' };
+  const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
   const metrics = analytics?.metrics || {};
   const statusData = [
     { label: 'Pending', value: metrics.pending || 0, color: '#F59E0B' },
@@ -1095,6 +1125,14 @@ export default function AdminDashboard() {
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
               <p className="flex-1 text-xs font-semibold">{dataError}</p>
               <Button variant="outline" size="sm" onClick={() => fetchData()} className="border-red-200 bg-white text-red-800 hover:bg-red-100">Retry</Button>
+            </div>
+          )}
+
+          {isActiveTabLoading && (
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-espresso/[0.08] bg-white px-4 py-3" role="status">
+              <Skeleton className="h-4 w-4 rounded-full" />
+              <Skeleton className="h-3 w-40" />
+              <span className="sr-only">Loading {pageTitles[activeTab]}</span>
             </div>
           )}
 
