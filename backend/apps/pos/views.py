@@ -417,7 +417,7 @@ def json_safe_report_data(report):
     return json.loads(json.dumps(report, cls=DjangoJSONEncoder))
 
 
-def create_end_of_day_report(user, report_date, actual_cash, opening_cash=Decimal('0.00'), cash_in_out=Decimal('0.00')):
+def build_end_of_day_report_data(user, report_date, actual_cash, opening_cash=Decimal('0.00'), cash_in_out=Decimal('0.00')):
     tz = timezone.get_current_timezone()
     start = timezone.make_aware(datetime.combine(report_date, datetime.min.time()), tz)
     end = timezone.make_aware(datetime.combine(report_date, datetime.max.time()), tz)
@@ -479,11 +479,47 @@ def create_end_of_day_report(user, report_date, actual_cash, opening_cash=Decima
         'actual_cash': actual_cash,
         'cash_difference': actual_cash - expected_cash,
     }
+    return report
+
+
+def create_end_of_day_report(user, report_date, actual_cash, opening_cash=Decimal('0.00'), cash_in_out=Decimal('0.00')):
+    report = build_end_of_day_report_data(user, report_date, actual_cash, opening_cash, cash_in_out)
     return Order.objects.create(
         staff=user,
         order_type='END_OF_DAY_REPORT',
         report_data=json_safe_report_data(report),
     )
+
+
+class EndOfDayReportSummaryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'ADMIN':
+            return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            report_date = datetime.strptime(request.query_params.get('report_date') or timezone.localdate().isoformat(), '%Y-%m-%d').date()
+            opening_cash = Decimal(str(request.query_params.get('opening_cash') or '0'))
+            cash_in_out = Decimal(str(request.query_params.get('cash_in_out') or '0'))
+        except Exception:
+            return Response({'detail': 'Use a valid report date and cash amounts.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        report = build_end_of_day_report_data(
+            request.user,
+            report_date,
+            actual_cash=Decimal('0.00'),
+            opening_cash=opening_cash,
+            cash_in_out=cash_in_out,
+        )
+        return Response({
+            'report_date': report['report_date'],
+            'cash_sales': report['cash_sales'],
+            'booking_income': report['booking_income'],
+            'gcash_sales': report['gcash_sales'],
+            'gross_sales': report['gross_sales'],
+            'total_transactions': report['total_transactions'],
+            'expected_cash': report['expected_cash'],
+        })
 
 
 class EndOfDayReportListCreateView(APIView):

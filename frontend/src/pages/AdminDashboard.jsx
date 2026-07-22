@@ -294,6 +294,9 @@ export default function AdminDashboard() {
   const [endOfDayOpeningCash, setEndOfDayOpeningCash] = useState('0.00');
   const [endOfDayCashInOut, setEndOfDayCashInOut] = useState('0.00');
   const [endOfDayCashSales, setEndOfDayCashSales] = useState('');
+  const [endOfDayBookingIncome, setEndOfDayBookingIncome] = useState('');
+  const [endOfDayGcashSales, setEndOfDayGcashSales] = useState('');
+  const [endOfDayGrossSales, setEndOfDayGrossSales] = useState('');
   const [endOfDayActualCash, setEndOfDayActualCash] = useState('');
   const [endOfDayExpectedCash, setEndOfDayExpectedCash] = useState('');
   const [endOfDayCashLoading, setEndOfDayCashLoading] = useState(false);
@@ -730,21 +733,26 @@ export default function AdminDashboard() {
   const getExpectedCashForDate = async (dateValue) => {
     setEndOfDayCashLoading(true);
     try {
-      const res = await client.get('/api/pos/orders/', { params: { limit: 200 } });
-      const cashTotal = res.data
-        .filter(order => {
-          const orderDate = order.created_at ? new Date(order.created_at).toISOString().slice(0, 10) : '';
-          const paidCash = order.payment_status === 'PAID' && order.payments?.some(payment => payment.method === 'CASH');
-          return orderDate === dateValue && paidCash;
-        })
-        .reduce((sum, order) => sum + Number(order.total || 0), 0);
-      const cashSales = cashTotal.toFixed(2);
-      const expectedCash = getEndOfDayExpectedCashValue(endOfDayOpeningCash, cashSales, endOfDayCashInOut).toFixed(2);
+      const res = await client.get('/api/pos/end-of-day-summary/', {
+        params: {
+          report_date: dateValue,
+          opening_cash: endOfDayOpeningCash || 0,
+          cash_in_out: endOfDayCashInOut || 0,
+        },
+      });
+      const cashSales = Number(res.data.cash_sales || 0).toFixed(2);
+      const expectedCash = Number(res.data.expected_cash || 0).toFixed(2);
       setEndOfDayCashSales(cashSales);
+      setEndOfDayBookingIncome(Number(res.data.booking_income || 0).toFixed(2));
+      setEndOfDayGcashSales(Number(res.data.gcash_sales || 0).toFixed(2));
+      setEndOfDayGrossSales(Number(res.data.gross_sales || 0).toFixed(2));
       setEndOfDayExpectedCash(expectedCash);
       setEndOfDayActualCash(expectedCash);
     } catch {
       setEndOfDayCashSales('');
+      setEndOfDayBookingIncome('');
+      setEndOfDayGcashSales('');
+      setEndOfDayGrossSales('');
       setEndOfDayExpectedCash('');
       setEndOfDayActualCash('');
     } finally {
@@ -862,6 +870,9 @@ export default function AdminDashboard() {
       setEndOfDayOpeningCash('0.00');
       setEndOfDayCashInOut('0.00');
       setEndOfDayCashSales('');
+      setEndOfDayBookingIncome('');
+      setEndOfDayGcashSales('');
+      setEndOfDayGrossSales('');
       setEndOfDayExpectedCash('');
       const printed = await handleLocalEndOfDayPrint(res.data);
       alert(printed ? 'End-of-day report saved and printed successfully.' : 'End-of-day report saved. Use Reprint Closeout after the cashier printer is ready.');
@@ -2411,7 +2422,7 @@ export default function AdminDashboard() {
             disabled={endOfDayPrinting || endOfDayCashLoading}
           />
           <div className="rounded-2xl border border-espresso/10 bg-cream/70 p-3 text-[11px] font-bold leading-relaxed text-espresso/65">
-            Auto-filled cash sales: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(endOfDayCashSales || 0)}. Expected cash: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(displayedEndOfDayExpectedCash || 0)}.
+            Cash sales: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(endOfDayCashSales || 0)}. Approved booking income: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(endOfDayBookingIncome || 0)}. GCash sales: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(endOfDayGcashSales || 0)}. Gross sales: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(endOfDayGrossSales || 0)}. Expected cash: {endOfDayCashLoading ? 'Calculating...' : formatCurrency(displayedEndOfDayExpectedCash || 0)}.
           </div>
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-bold leading-relaxed text-amber-800">
             Confirm before printing. This creates a permanent saved report for future viewing and reprinting.
