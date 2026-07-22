@@ -4,13 +4,13 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { StyledAlertProvider } from './components/ui/StyledAlert';
 import { isChunkLoadError, lazyWithRetry, reloadWithFreshAssets, resetChunkReloadAttempt } from './utils/lazyWithRetry';
 import { brandAssets } from './utils/cavAssets';
+import AdminDashboard from './pages/AdminDashboard';
 
 const LandingPage = lazy(() => lazyWithRetry(() => import('./pages/LandingPage')));
 const LoginPage = lazy(() => lazyWithRetry(() => import('./pages/LoginPage')));
 const PrivacyPolicyPage = lazy(() => lazyWithRetry(() => import('./pages/PrivacyPolicyPage')));
 const CustomerDashboard = lazy(() => lazyWithRetry(() => import('./pages/CustomerDashboard')));
 const StaffDashboard = lazy(() => lazyWithRetry(() => import('./pages/StaffDashboard')));
-const AdminDashboard = lazy(() => lazyWithRetry(() => import('./pages/AdminDashboard')));
 const SPLASH_SEEN_KEY = 'cav:splash-seen';
 
 function AppLoader() {
