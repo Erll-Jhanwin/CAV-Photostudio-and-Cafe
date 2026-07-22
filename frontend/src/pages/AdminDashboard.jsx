@@ -35,6 +35,8 @@ import {
   normalizeDashboardAnalytics,
   normalizePayments,
   normalizeRowsById,
+  asArray,
+  asRecord,
 } from '../utils/uniqueRecords';
 import { formatManilaDateTime, MANILA_TIME_ZONE } from '../utils/dateTime';
 import {
@@ -1047,7 +1049,7 @@ export default function AdminDashboard() {
 
   const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', system: 'System Controls' };
   const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
-  const metrics = analytics?.metrics || {};
+  const metrics = asRecord(analytics?.metrics);
   const statusData = [
     { label: 'Pending', value: metrics.pending || 0, color: '#F59E0B' },
     { label: 'Confirmed', value: metrics.confirmed || 0, color: '#3B82F6' },
@@ -1062,8 +1064,8 @@ export default function AdminDashboard() {
   const sortedPos = sortRows(analytics?.recent_pos_transactions, posSort);
   const bookingPageRows = paginateRows(sortedBookings, bookingPage, bookingPageSize);
   const posPageRows = paginateRows(sortedPos, posPage, posPageSize);
-  const salesForecastRows = forecast?.sales_forecast || [];
-  const salesHistoryRows = analytics?.sales_history_chart || [];
+  const salesForecastRows = asArray(forecast?.sales_forecast);
+  const salesHistoryRows = asArray(analytics?.sales_history_chart);
   const forecastChartData = [
     ...salesHistoryRows.map(row => ({
       date: row.date,
@@ -1090,14 +1092,14 @@ export default function AdminDashboard() {
       }, 0) / salesForecastRows.length
     ))))
     : 0;
-  const topProducts = analytics?.top_selling_products || [];
-  const topPackages = analytics?.top_booked_packages || [];
+  const topProducts = asArray(analytics?.top_selling_products);
+  const topPackages = asArray(analytics?.top_booked_packages);
   const topProductRows = paginateRows(topProducts, topProductsPage, topProductsPageSize);
   const topPackageRows = paginateRows(topPackages, topPackagesPage, topPackagesPageSize);
-  const reorderRows = forecast?.reorder_recommendations || [];
+  const reorderRows = asArray(forecast?.reorder_recommendations);
   const sortedReorderRows = sortRows(reorderRows, reorderSort);
   const reorderPageRows = paginateRows(sortedReorderRows, reorderPage, reorderPageSize);
-  const inventoryCounts = analytics?.inventory_status_counts || {};
+  const inventoryCounts = asRecord(analytics?.inventory_status_counts);
   const inventorySummary = Object.entries(inventoryStatusMeta).map(([key, meta]) => ({
     key,
     ...meta,

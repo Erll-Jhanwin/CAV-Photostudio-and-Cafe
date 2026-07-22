@@ -1,5 +1,11 @@
 export const normalizeId = (value) => String(value ?? '').trim();
 
+export const asArray = (value) => Array.isArray(value) ? value : [];
+
+export const asRecord = (value) => (
+  value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+);
+
 export const recordKey = (row, fallback = '') => normalizeId(row?.id ?? row?.pk ?? fallback);
 
 export const uniqueBy = (rows, getKey) => {
@@ -87,17 +93,20 @@ export const normalizeDashboardAnalytics = (analytics) => {
   if (!analytics || typeof analytics !== 'object') return analytics;
   return {
     ...analytics,
+    metrics: asRecord(analytics.metrics),
     recent_bookings: uniqueBy(
-      analytics.recent_bookings,
+      asArray(analytics.recent_bookings),
       booking => booking?.id || normalizedTextKey(booking?.customer_name, booking?.scheduled_date, booking?.scheduled_time)
     ),
     recent_pos_transactions: uniqueBy(
-      analytics.recent_pos_transactions,
+      asArray(analytics.recent_pos_transactions),
       order => order?.id || order?.transaction_id || normalizedTextKey(order?.date, order?.total)
     ),
     low_stock_alerts: normalizeRowsById(analytics.low_stock_alerts),
     inventory_alerts: normalizeRowsById(analytics.inventory_alerts),
-    top_selling_products: uniqueBy(analytics.top_selling_products, row => normalizedTextKey(row?.product)),
-    top_booked_packages: uniqueBy(analytics.top_booked_packages, row => normalizedTextKey(row?.package)),
+    top_selling_products: uniqueBy(asArray(analytics.top_selling_products), row => normalizedTextKey(row?.product)),
+    top_booked_packages: uniqueBy(asArray(analytics.top_booked_packages), row => normalizedTextKey(row?.package)),
+    sales_history_chart: asArray(analytics.sales_history_chart),
+    inventory_status_counts: asRecord(analytics.inventory_status_counts),
   };
 };
