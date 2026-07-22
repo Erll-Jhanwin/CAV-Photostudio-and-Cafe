@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
+import { SocialLogin } from '@capgo/capacitor-social-login';
 import {
   Camera,
   Key,
@@ -28,6 +30,10 @@ import {
   isBlank,
 } from '../utils/validation';
 
+// OAuth client IDs identify an app; unlike a client secret they are safe in a
+// native bundle. Appflow builds do not receive the ignored frontend/.env file.
+const NATIVE_GOOGLE_WEB_CLIENT_ID = '22100729214-a9qrjd5vlvad0crt754f236968rrb3m8.apps.googleusercontent.com';
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login, loginWithGoogle, register } = useAuth();
@@ -51,8 +57,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [formErrors, setFormErrors] = useState({});
   const [forgotErrors, setForgotErrors] = useState({});
+  const [googleReady, setGoogleReady] = useState(!Capacitor.isNativePlatform());
+  const [googleInitError, setGoogleInitError] = useState('');
   const googleButtonRef = useRef(null);
-  const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+  const isNativeApp = Capacitor.isNativePlatform();
+  const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID
+    || (isNativeApp ? NATIVE_GOOGLE_WEB_CLIENT_ID : '');
 
   const [form, setForm] = useState({
     username: '', password: '', passwordConfirm: '', email: '',
@@ -116,32 +126,60 @@ export default function LoginPage() {
     window.alert(`${displayName} logged in successfully.`);
   };
 
+  const completeGoogleLogin = useCallback(async (credential) => {
+    if (!credential) {
+      setError('Google did not return a sign-in token. Please try again.');
+      return;
+    }
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    const res = await loginWithGoogle(credential);
+    setLoading(false);
+    if (res.success) {
+      showLoginSuccess(res.user);
+      navigateAfterAuth(res.user);
+    } else {
+      setError(res.error);
+    }
+  }, [loginWithGoogle, navigateAfterAuth]);
+
   useEffect(() => {
-    if (!googleClientId || !googleButtonRef.current) return undefined;
+    if (!googleClientId) return undefined;
 
     let cancelled = false;
 
-    const handleGoogleCredential = async (response) => {
-      if (!response?.credential) return;
-      setError('');
-      setSuccess('');
-      setLoading(true);
-      const res = await loginWithGoogle(response.credential);
-      setLoading(false);
-      if (res.success) {
-        showLoginSuccess(res.user);
-        navigateAfterAuth(res.user);
-      } else {
-        setError(res.error);
-      }
-    };
+    if (isNativeApp) {
+      setGoogleReady(false);
+      setGoogleInitError('');
+      SocialLogin.initialize({
+        google: {
+          webClientId: googleClientId,
+          mode: 'online',
+        },
+      })
+        .then(() => {
+          if (!cancelled) setGoogleReady(true);
+        })
+        .catch((initError) => {
+          if (cancelled) return;
+          console.error('Native Google login initialization failed:', initError);
+          setGoogleInitError('Google sign-in is unavailable on this device. Please use your username and password.');
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!googleButtonRef.current) return undefined;
 
     const renderGoogleButton = () => {
       if (cancelled || !window.google || !googleButtonRef.current) return;
       googleButtonRef.current.innerHTML = '';
       window.google.accounts.id.initialize({
         client_id: googleClientId,
-        callback: handleGoogleCredential,
+        callback: (response) => completeGoogleLogin(response?.credential),
       });
       window.google.accounts.id.renderButton(googleButtonRef.current, {
         type: 'standard',
@@ -172,7 +210,39 @@ export default function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [googleClientId, isRegister, loginWithGoogle, navigateAfterAuth]);
+  }, [completeGoogleLogin, googleClientId, isNativeApp, isRegister]);
+
+  const handleNativeGoogleLogin = async () => {
+    if (!googleReady || loading) return;
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      const response = await SocialLogin.login({
+        provider: 'google',
+        options: { scopes: ['profile', 'email'] },
+      });
+      const credential = response.provider === 'google' && response.result.responseType === 'online'
+        ? response.result.idToken
+        : null;
+      if (!credential) {
+        setError('Google did not return a sign-in token. Please try again.');
+        return;
+      }
+      const res = await loginWithGoogle(credential);
+      if (res.success) {
+        showLoginSuccess(res.user);
+        navigateAfterAuth(res.user);
+      } else {
+        setError(res.error);
+      }
+    } catch (nativeError) {
+      console.error('Native Google login failed:', nativeError);
+      setError('Google sign-in was cancelled or could not be completed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
@@ -496,7 +566,22 @@ export default function LoginPage() {
               {!showForgotPassword && (
                 <div className="space-y-3">
                   {googleClientId ? (
-                    <div ref={googleButtonRef} className="flex min-h-[44px] justify-center" />
+                    isNativeApp ? (
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={handleNativeGoogleLogin}
+                          disabled={!googleReady || loading}
+                          className="flex min-h-12 w-full items-center justify-center gap-3 rounded-xl border border-espresso/15 bg-white px-4 text-sm font-bold text-espresso shadow-sm transition-colors hover:bg-cream disabled:cursor-not-allowed disabled:opacity-55"
+                        >
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#4285F4] text-xs font-black text-white">G</span>
+                          {googleReady ? `Continue with Google${isRegister ? ' to sign up' : ''}` : 'Preparing Google sign-in...'}
+                        </button>
+                        {googleInitError && <p className="text-center text-[11px] font-semibold text-red-600">{googleInitError}</p>}
+                      </div>
+                    ) : (
+                      <div ref={googleButtonRef} className="flex min-h-[44px] justify-center" />
+                    )
                   ) : (
                     <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3.5 text-xs text-amber-700">
                       Add REACT_APP_GOOGLE_CLIENT_ID to enable Google {isRegister ? 'registration' : 'login'}.

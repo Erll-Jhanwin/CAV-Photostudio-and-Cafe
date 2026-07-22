@@ -2374,12 +2374,12 @@ export default function CustomerDashboard() {
                           const contact = getBookingContact(b);
                           return (
                             <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,1.1fr)_minmax(300px,1fr)_240px] gap-4 md:gap-5 items-stretch">
-                              <div className="flex gap-4 min-w-0">
-                                <Avatar user={b.customer || profileAvatarUser} size="lg" className="h-20 w-20 rounded-[18px] md:h-24 md:w-24" />
+                              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:gap-4">
+                                <Avatar user={b.customer || profileAvatarUser} size="lg" className="h-16 w-16 rounded-2xl sm:h-20 sm:w-20 md:h-24 md:w-24" />
                                 <div className="min-w-0 flex-1 space-y-2">
                                   <div className="flex items-start gap-2 flex-wrap">
                                     <h3 className="text-base md:text-lg font-black text-espresso leading-snug">{getBookingCustomerName(b)}</h3>
-                                    <span className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[10px] font-black border ${statusMeta.className}`}>
+                                    <span className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black leading-tight ${statusMeta.className}`}>
                                       <StatusIcon className="w-3.5 h-3.5" />
                                       {formatStatusLabel(b.status)}
                                     </span>
@@ -2399,7 +2399,7 @@ export default function CustomerDashboard() {
                                     </span>
                                   </div>
                                   <div className="rounded-2xl border border-espresso/[0.07] bg-white/85 p-4 md:p-5 shadow-[0_12px_28px_rgba(46,26,17,0.06)]">
-                                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,max-content)] items-center gap-x-4 gap-y-3">
+                                    <div className="grid grid-cols-1 items-center gap-x-4 gap-y-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,max-content)]">
                                       <div className="flex min-w-0 items-center gap-4">
                                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gold/10 text-gold-dark">
                                           <Sparkles className="h-4 w-4" />
@@ -2411,15 +2411,15 @@ export default function CustomerDashboard() {
                                           </p>
                                         </div>
                                       </div>
-                                      <div className="flex min-w-0 items-center justify-end gap-3 text-right">
+                                      <div className="flex min-w-0 items-center gap-3 sm:justify-end sm:text-right">
                                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cream text-gold-dark">
                                           <Phone className="h-4 w-4" />
                                         </span>
-                                        <span className="max-w-[34vw] truncate whitespace-nowrap text-xs font-bold text-espresso/68 sm:max-w-[180px]">
+                                        <span className="min-w-0 truncate whitespace-nowrap text-xs font-bold text-espresso/68 sm:max-w-[180px]">
                                           {contact.phone}
                                         </span>
                                       </div>
-                                      <div className="col-span-2 flex min-w-0 items-center gap-4 border-t border-espresso/[0.06] pt-3">
+                                      <div className="flex min-w-0 items-center gap-4 border-t border-espresso/[0.06] pt-3 sm:col-span-2">
                                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cream text-gold-dark">
                                           <Mail className="h-4 w-4" />
                                         </span>

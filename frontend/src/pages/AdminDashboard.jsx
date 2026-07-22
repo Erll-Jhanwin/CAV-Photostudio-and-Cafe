@@ -5,7 +5,7 @@ import {
   TrendingUp, BarChart2, Users, MessageSquare, Play, Package,
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
   X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
-  ArrowDownRight, Eye, Camera, Printer
+  ArrowDownRight, Eye, Camera, Printer, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -67,6 +67,12 @@ const getMonthLabel = (value) => {
     year: 'numeric',
   });
 };
+
+const getCalendarDayLabel = (date) => new Date(`${date}T00:00:00`).toLocaleDateString('en-PH', {
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+});
 
 const getCalendarDays = (value) => {
   const [year, month] = String(value || monthValue()).split('-').map(Number);
@@ -1428,7 +1434,8 @@ export default function AdminDashboard() {
                     onClick={() => setBookingCalendarMonth(month => shiftMonthValue(month, -1))}
                     className="rounded-2xl px-3 py-2 text-xs font-black text-espresso hover:bg-cream"
                   >
-                    Previous
+                    <ChevronLeft className="h-4 w-4 sm:hidden" aria-hidden="true" />
+                    <span className="hidden sm:inline">Previous</span>
                   </button>
                   <div className="min-w-[160px] px-4 py-2 text-center text-sm font-black text-espresso">
                     {getMonthLabel(bookingCalendarMonth)}
@@ -1438,17 +1445,18 @@ export default function AdminDashboard() {
                     onClick={() => setBookingCalendarMonth(month => shiftMonthValue(month, 1))}
                     className="rounded-2xl px-3 py-2 text-xs font-black text-espresso hover:bg-cream"
                   >
-                    Next
+                    <ChevronRight className="h-4 w-4 sm:hidden" aria-hidden="true" />
+                    <span className="hidden sm:inline">Next</span>
                   </button>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_0.65fr] gap-4 items-start">
                 <div className="rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
-                  <div className="grid grid-cols-7 gap-1.5 text-center text-[10px] font-black uppercase tracking-wider text-espresso/40 mb-2">
+                  <div className="mb-2 hidden grid-cols-7 gap-1.5 text-center text-[10px] font-black uppercase tracking-wider text-espresso/40 sm:grid">
                     {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <span key={day}>{day}</span>)}
                   </div>
-                  <div className="grid grid-cols-7 gap-1.5">
+                  <div className="grid hidden grid-cols-7 gap-1.5 sm:grid">
                     {calendarDays.map(day => {
                       if (day.blank) return <span key={day.key} />;
                       const dayBookings = bookingsByDate[day.date] || [];
@@ -1497,6 +1505,58 @@ export default function AdminDashboard() {
                               <p className="text-[9px] font-black text-espresso/45">+{dayBookings.length - 3} more</p>
                             )}
                           </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="space-y-2 sm:hidden">
+                    {calendarDays.filter(day => !day.blank).map(day => {
+                      const dayBookings = bookingsByDate[day.date] || [];
+                      const manualBlock = unavailableByDate[day.date];
+                      const eventBlocked = eventBlockedDates.has(day.date);
+                      const studioUnavailable = manualBlock || eventBlocked;
+                      return (
+                        <div
+                          key={day.date}
+                          className={`rounded-xl border p-3 ${
+                            studioUnavailable
+                              ? 'border-amber-200 bg-amber-50'
+                              : dayBookings.length
+                              ? 'border-emerald-200 bg-emerald-50/70'
+                              : 'border-espresso/10 bg-cream/30'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-black text-espresso">{getCalendarDayLabel(day.date)}</p>
+                            <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-black ${
+                              studioUnavailable
+                                ? 'bg-amber-200 text-amber-800'
+                                : dayBookings.length
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-white text-espresso/45'
+                            }`}>
+                              {studioUnavailable ? 'Studio Off' : dayBookings.length ? `${dayBookings.length} booking${dayBookings.length === 1 ? '' : 's'}` : 'Available'}
+                            </span>
+                          </div>
+                          {studioUnavailable && (
+                            <p className="mt-1 text-xs font-bold leading-relaxed text-amber-800">
+                              {manualBlock?.reason || 'Unavailable due to an event photoshoot.'}
+                            </p>
+                          )}
+                          {dayBookings.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {dayBookings.map(booking => (
+                                <span
+                                  key={booking.id}
+                                  className={`rounded-lg px-2 py-1 text-[10px] font-black ${
+                                    isEventBooking(booking) ? 'bg-blue-100 text-blue-800' : 'bg-white text-espresso'
+                                  }`}
+                                >
+                                  {isEventBooking(booking) ? 'Event' : 'Studio'} {String(booking.scheduled_time || '').slice(0, 5)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
