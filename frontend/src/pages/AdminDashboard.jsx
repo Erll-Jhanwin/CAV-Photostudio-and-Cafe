@@ -866,11 +866,7 @@ export default function AdminDashboard() {
       const printed = await handleLocalEndOfDayPrint(res.data);
       alert(printed ? 'End-of-day report saved and printed successfully.' : 'End-of-day report saved. Use Reprint Closeout after the cashier printer is ready.');
     } catch (err) {
-      const data = err.response?.data;
-      const message = data && typeof data === 'object'
-        ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
-        : 'Failed to print end-of-day report.';
-      alert(message);
+      alert(getApiErrorMessage(err, 'Could not save the end-of-day report. Please try again.'));
     } finally {
       setEndOfDayPrinting(false);
     }

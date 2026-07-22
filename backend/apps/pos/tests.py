@@ -1,13 +1,17 @@
+from datetime import date
 from decimal import Decimal
+import json
 
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from inventory.models import Product
 from payment.models import Payment
 from pos.models import Order
 from pos.receipt_printing import RECEIPT_WIDTH, _end_of_day_text, _escpos_receipt_bytes, _receipt_text
+from pos.views import json_safe_report_data
 
 
 class ReceiptPrintingTests(SimpleTestCase):
@@ -66,10 +70,26 @@ class ReceiptPrintingTests(SimpleTestCase):
 
         self.assertNotIn("Savor the moment", text)
         self.assertTrue(all(len(line) <= RECEIPT_WIDTH for line in text.splitlines()))
-
         raw = _escpos_receipt_bytes(receipt)
         self.assertIn(b"CAV", raw)
         self.assertNotIn(b"\x1d(k", raw)
+
+
+class EndOfDayReportDataTests(SimpleTestCase):
+    def test_closeout_data_is_safe_for_json_storage(self):
+        report = {
+            'report_date': date(2026, 7, 22),
+            'closing_time': timezone.now(),
+            'gross_sales': Decimal('1250.50'),
+            'best_selling_items': [{'name': 'Latte', 'total': Decimal('1250.50')}],
+        }
+
+        stored_data = json_safe_report_data(report)
+
+        self.assertEqual(stored_data['report_date'], '2026-07-22')
+        self.assertEqual(stored_data['gross_sales'], '1250.50')
+        self.assertEqual(stored_data['best_selling_items'][0]['total'], '1250.50')
+        json.dumps(stored_data)
 
     def test_end_of_day_text_prints_complete_z_report_fields(self):
         report = {

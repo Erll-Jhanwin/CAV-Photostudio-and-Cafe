@@ -1,7 +1,9 @@
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import json
 
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -410,6 +412,11 @@ def build_end_of_day_payload(report):
     }
 
 
+def json_safe_report_data(report):
+    """Store report JSON without leaking Decimal or datetime values into JSONField."""
+    return json.loads(json.dumps(report, cls=DjangoJSONEncoder))
+
+
 def create_end_of_day_report(user, report_date, actual_cash, opening_cash=Decimal('0.00'), cash_in_out=Decimal('0.00')):
     tz = timezone.get_current_timezone()
     start = timezone.make_aware(datetime.combine(report_date, datetime.min.time()), tz)
@@ -472,7 +479,11 @@ def create_end_of_day_report(user, report_date, actual_cash, opening_cash=Decima
         'actual_cash': actual_cash,
         'cash_difference': actual_cash - expected_cash,
     }
-    return Order.objects.create(staff=user, order_type='END_OF_DAY_REPORT', report_data=report)
+    return Order.objects.create(
+        staff=user,
+        order_type='END_OF_DAY_REPORT',
+        report_data=json_safe_report_data(report),
+    )
 
 
 class EndOfDayReportListCreateView(APIView):
@@ -499,7 +510,7 @@ class EndOfDayReportListCreateView(APIView):
             return Response({"report_date": "Use YYYY-MM-DD format."}, status=status.HTTP_400_BAD_REQUEST)
         report_order = create_end_of_day_report(request.user, report_date, actual_cash, opening_cash, cash_in_out)
         report = report_from_order(report_order)
-        should_print_report = str(request.data.get('print_report', 'true')).strip().lower() in {'1', 'true', 'yes', 'on'}
+        should_print_report = str(request.data.get('print_report', 'false')).strip().lower() in {'1', 'true', 'yes', 'on'}
         print_status = (
             print_end_of_day_report(build_end_of_day_payload(report))
             if should_print_report else {
@@ -527,7 +538,7 @@ class EndOfDayReportReprintView(APIView):
         except Order.DoesNotExist:
             return Response({"detail": "Report not found."}, status=status.HTTP_404_NOT_FOUND)
         report = report_from_order(report_order)
-        should_print_report = str(request.data.get('print_report', 'true')).strip().lower() in {'1', 'true', 'yes', 'on'}
+        should_print_report = str(request.data.get('print_report', 'false')).strip().lower() in {'1', 'true', 'yes', 'on'}
         print_status = (
             print_end_of_day_report(build_end_of_day_payload(report))
             if should_print_report else {
