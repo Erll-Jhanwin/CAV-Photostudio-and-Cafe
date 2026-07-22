@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 from unittest.mock import Mock, patch
 
 from users.models import Customer, PasswordResetOTP
+from audit.models import AuditLog
 
 
 @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
@@ -76,8 +77,15 @@ class AccountCrudTests(TestCase):
 
         self.assertEqual(create_response.status_code, 201)
         customer_id = create_response.data['id']
+        self.assertEqual(create_response.data['registration_method'], 'ADMIN')
         self.assertEqual(Customer.objects.filter(user_id=customer_id).count(), 1)
         self.assertEqual(create_response.data['address'], 'Cavite City')
+        self.assertTrue(AuditLog.objects.filter(
+            user=self.admin,
+            action='ADMIN_ACCOUNT_CREATE',
+            metadata__target_user_id=customer_id,
+            metadata__registration_method='ADMIN',
+        ).exists())
 
         update_response = self.client.patch(f'/api/auth/users/{customer_id}/', {
             'first_name': 'Updated',
@@ -90,6 +98,30 @@ class AccountCrudTests(TestCase):
         self.assertEqual(update_response.data['phone_number'], '09179876543')
         self.assertEqual(update_response.data['address'], 'Imus, Cavite')
         self.assertEqual(Customer.objects.filter(user_id=customer_id).count(), 1)
+        self.assertTrue(AuditLog.objects.filter(
+            user=self.admin,
+            action='ADMIN_ACCOUNT_UPDATE',
+            metadata__target_user_id=customer_id,
+        ).exists())
+
+    def test_registration_form_persists_its_registration_method(self):
+        anonymous_client = APIClient()
+        response = anonymous_client.post('/api/auth/register/', {
+            'username': 'form-customer',
+            'password': 'FormCustomer123!',
+            'email': 'form-customer@example.com',
+            'first_name': 'Form',
+            'last_name': 'Customer',
+            'phone_number': '09171234567',
+            'address': 'Cavite City',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['user']['registration_method'], 'FORM')
+        self.assertTrue(AuditLog.objects.filter(
+            action='CUSTOMER_REGISTER',
+            metadata__registration_method='FORM',
+        ).exists())
 
     def test_customer_profile_update_keeps_one_customer_profile(self):
         customer = get_user_model().objects.create_user(

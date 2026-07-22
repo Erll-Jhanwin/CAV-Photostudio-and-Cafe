@@ -170,7 +170,13 @@ class StudioUnavailableDateListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         if self.request.user.role != 'ADMIN':
             raise PermissionDenied('Only admins can manage studio unavailable dates.')
-        serializer.save(created_by=self.request.user)
+        unavailable_date = serializer.save(created_by=self.request.user)
+        AuditLog.objects.create(
+            user=self.request.user,
+            action='ADMIN_STUDIO_UNAVAILABLE_CREATE',
+            description=f'Marked studio unavailable on {unavailable_date.date}.',
+            metadata={'studio_unavailable_date_id': unavailable_date.id, 'reason': unavailable_date.reason},
+        )
 
 
 class StudioUnavailableDateDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -181,6 +187,26 @@ class StudioUnavailableDateDetailView(generics.RetrieveUpdateDestroyAPIView):
         if self.request.user.role != 'ADMIN':
             raise PermissionDenied('Only admins can manage studio unavailable dates.')
         return StudioUnavailableDate.objects.select_related('created_by')
+
+    def perform_update(self, serializer):
+        unavailable_date = serializer.save()
+        AuditLog.objects.create(
+            user=self.request.user,
+            action='ADMIN_STUDIO_UNAVAILABLE_UPDATE',
+            description=f'Updated studio availability for {unavailable_date.date}.',
+            metadata={'studio_unavailable_date_id': unavailable_date.id, 'reason': unavailable_date.reason},
+        )
+
+    def perform_destroy(self, instance):
+        date_value = instance.date.isoformat()
+        record_id = instance.id
+        instance.delete()
+        AuditLog.objects.create(
+            user=self.request.user,
+            action='ADMIN_STUDIO_UNAVAILABLE_DELETE',
+            description=f'Removed studio unavailable date {date_value}.',
+            metadata={'studio_unavailable_date_id': record_id},
+        )
 
 class BookingListCreateView(generics.ListCreateAPIView):
     serializer_class = BookingSerializer

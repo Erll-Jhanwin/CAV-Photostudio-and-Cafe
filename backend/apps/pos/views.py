@@ -559,6 +559,12 @@ class EndOfDayReportListCreateView(APIView):
         report_order.print_status = print_status
         report_order.printed_at = timezone.now() if print_status.get("printed") else None
         report_order.save(update_fields=['print_status', 'printed_at'])
+        AuditLog.objects.create(
+            user=request.user,
+            action='ADMIN_END_OF_DAY_REPORT_CREATE',
+            description=f'Created end-of-day report #{report_order.id} for {report_date.isoformat()}.',
+            metadata={'report_order_id': report_order.id, 'report_date': report_date.isoformat()},
+        )
         data = EndOfDayReportSerializer(report_from_order(report_order)).data
         data['receipt_print'] = print_status
         return Response(data, status=status.HTTP_201_CREATED)
@@ -587,6 +593,12 @@ class EndOfDayReportReprintView(APIView):
         report_order.print_status = print_status
         report_order.printed_at = timezone.now() if print_status.get("printed") else report_order.printed_at
         report_order.save(update_fields=['print_status', 'printed_at'])
+        AuditLog.objects.create(
+            user=request.user,
+            action='ADMIN_END_OF_DAY_REPORT_REPRINT',
+            description=f'Reprinted end-of-day report #{report_order.id}.',
+            metadata={'report_order_id': report_order.id, 'printed': bool(print_status.get('printed'))},
+        )
         data = EndOfDayReportSerializer(report_from_order(report_order)).data
         data['receipt_print'] = print_status
         return Response(data)
@@ -607,4 +619,10 @@ class EndOfDayReportMarkPrintedView(APIView):
         report_order.print_status = {'printed': True, 'printer': printer, 'error': ''}
         report_order.printed_at = timezone.now()
         report_order.save(update_fields=['print_status', 'printed_at'])
+        AuditLog.objects.create(
+            user=request.user,
+            action='ADMIN_END_OF_DAY_REPORT_MARK_PRINTED',
+            description=f'Marked end-of-day report #{report_order.id} as printed.',
+            metadata={'report_order_id': report_order.id, 'printer': printer},
+        )
         return Response(EndOfDayReportSerializer(report_from_order(report_order)).data)

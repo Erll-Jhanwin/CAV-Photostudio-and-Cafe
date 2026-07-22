@@ -85,7 +85,9 @@ class RegisterView(generics.CreateAPIView):
         AuditLog.objects.create(
             user=user,
             action="CUSTOMER_REGISTER",
-            description=f"New customer registered: {user.username}"
+            description=f"New customer registered: {user.username}",
+            metadata={'registration_method': user.registration_method, 'target_user_id': user.id},
+            ip_address=get_client_ip(request),
         )
         
         return Response(
@@ -164,6 +166,7 @@ class GoogleAuthView(views.APIView):
                 first_name=profile.get('given_name', ''),
                 last_name=profile.get('family_name', ''),
                 role='CUSTOMER',
+                registration_method=User.RegistrationMethod.GOOGLE,
             )
             user.set_unusable_password()
             user.profile_picture_external_url = google_picture_url[:500]
@@ -173,7 +176,9 @@ class GoogleAuthView(views.APIView):
             AuditLog.objects.create(
                 user=user,
                 action="CUSTOMER_REGISTER_GOOGLE",
-                description=f"New customer registered with Google: {user.username}"
+                description=f"New customer registered with Google: {user.username}",
+                metadata={'registration_method': user.registration_method, 'target_user_id': user.id},
+                ip_address=get_client_ip(request),
             )
 
         if user.role == 'CUSTOMER':
@@ -242,8 +247,10 @@ class StaffListView(generics.ListCreateAPIView):
         
         AuditLog.objects.create(
             user=request.user,
-            action="STAFF_CREATE",
-            description=f"Created user {user.username} with role {user.role}."
+            action="ADMIN_ACCOUNT_CREATE",
+            description=f"Created account {user.username} with role {user.role}.",
+            metadata=account_audit_metadata(user),
+            ip_address=get_client_ip(request),
         )
         
         return Response(AccountSerializer(user, context={'request': request}).data, status=status.HTTP_201_CREATED)
@@ -267,12 +274,15 @@ class StaffDetailView(views.APIView):
 
         serializer = AccountSerializer(user, data=request.data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
+        changed_fields = account_changed_fields(user, serializer.validated_data)
         user = serializer.save()
 
         AuditLog.objects.create(
             user=request.user,
-            action="STAFF_UPDATE",
-            description=f"Updated user {user.username} with role {user.role}."
+            action="ADMIN_ACCOUNT_UPDATE",
+            description=f"Updated account {user.username} with role {user.role}.",
+            metadata=account_audit_metadata(user, changed_fields=changed_fields),
+            ip_address=get_client_ip(request),
         )
 
         return Response(AccountSerializer(user, context={'request': request}).data)
@@ -288,13 +298,16 @@ class StaffDetailView(views.APIView):
         if user.pk == request.user.pk:
             return Response({"detail": "You cannot delete your own account."}, status=status.HTTP_400_BAD_REQUEST)
 
+        metadata = account_audit_metadata(user)
         username = user.username
         user.delete()
 
         AuditLog.objects.create(
             user=request.user,
-            action="STAFF_DELETE",
-            description=f"Deleted user {username}."
+            action="ADMIN_ACCOUNT_DELETE",
+            description=f"Deleted account {username}.",
+            metadata=metadata,
+            ip_address=get_client_ip(request),
         )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -304,6 +317,31 @@ def get_client_ip(request):
     if forwarded_for:
         return forwarded_for.split(',')[0].strip()
     return request.META.get('REMOTE_ADDR')
+
+
+def account_audit_metadata(target, *, changed_fields=None):
+    metadata = {
+        'target_user_id': target.id,
+        'target_username': target.username,
+        'target_role': target.role,
+        'registration_method': target.registration_method,
+    }
+    if changed_fields:
+        metadata['changed_fields'] = sorted(changed_fields)
+    return metadata
+
+
+def account_changed_fields(user, validated_data):
+    changed = []
+    for field, value in validated_data.items():
+        if field in {'remove_profile_picture', 'registration_method'}:
+            continue
+        if field == 'password':
+            if value:
+                changed.append('password')
+        elif getattr(user, field, None) != value:
+            changed.append(field)
+    return changed
 
 def generic_password_reset_response():
     return Response({

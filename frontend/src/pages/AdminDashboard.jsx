@@ -12,7 +12,7 @@ import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart
 } from 'recharts';
-import { Button } from '../components/ui/Button';
+import { Button, IconButton } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
 import { StatusBadge } from '../components/ui/Badge';
 import { Input, Select, Textarea } from '../components/ui/Input';
@@ -268,6 +268,7 @@ export default function AdminDashboard() {
   const [deletingFaqId, setDeletingFaqId] = useState(null);
 
   const [newAccountForm, setNewAccountForm] = useState(emptyAccountForm);
+  const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
   const [editStaffForm, setEditStaffForm] = useState(emptyAccountForm);
   const [staffSaving, setStaffSaving] = useState(false);
@@ -487,6 +488,7 @@ export default function AdminDashboard() {
       setStaffList(current => normalizeRowsById([res.data, ...current], row => row?.username || row?.email));
       setNewAccountForm(emptyAccountForm());
       setNewStaffErrors({});
+      setCreateAccountOpen(false);
       fetchData({ background: true });
       loadAdminTabData('staff', { force: true });
       alert('Account created successfully.');
@@ -2081,11 +2083,18 @@ export default function AdminDashboard() {
 
           {/* ACCOUNTS */}
           {activeTab === 'staff' && (
-            <div className="grid w-full grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,0.42fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(320px,0.36fr)_minmax(0,1fr)] items-stretch animate-in-up" key="staff">
-              <div className="min-h-[620px]">
-                <Card className="!p-4 md:!p-5 h-full flex flex-col">
-                  <CardHeader title="Add Account" />
-                  <form onSubmit={handleCreateStaff} className="flex min-h-0 flex-1 flex-col gap-4">
+            <div className="w-full animate-in-up" key="staff">
+              <Modal
+                open={createAccountOpen}
+                onClose={() => {
+                  if (creatingStaff) return;
+                  setCreateAccountOpen(false);
+                  setNewStaffErrors({});
+                }}
+                title="Add Account"
+                size="lg"
+              >
+                  <form onSubmit={handleCreateStaff} className="space-y-4">
                     <Input
                       label="Username"
                       required
@@ -2163,16 +2172,29 @@ export default function AdminDashboard() {
                       disabled={creatingStaff}
                       error={newStaffErrors.address}
                     />
-                    <Button type="submit" variant="primary" className="mt-auto w-full" icon={Plus} loading={creatingStaff} disabled={creatingStaff || !newStaffFormValid}>
+                    <Button type="submit" variant="primary" className="w-full" icon={Plus} loading={creatingStaff} disabled={creatingStaff || !newStaffFormValid}>
                       Create Account
                     </Button>
                   </form>
-                </Card>
-              </div>
+              </Modal>
 
-              <div className="min-h-[540px]">
-                <Card className="!p-4 md:!p-5 h-full flex flex-col">
-                  <CardHeader title="Existing Accounts" />
+                <Card className="!p-4 md:!p-5 flex min-h-[540px] flex-col">
+                  <CardHeader
+                    title="Existing Accounts"
+                    action={(
+                      <IconButton
+                        icon={Plus}
+                        label="Add account"
+                        title="Add account"
+                        variant="gold"
+                        onClick={() => {
+                          setNewAccountForm(emptyAccountForm());
+                          setNewStaffErrors({});
+                          setCreateAccountOpen(true);
+                        }}
+                      />
+                    )}
+                  />
                   {staffList.length > 0 ? (
                     <div className="flex min-h-0 flex-1 flex-col">
                     <DashboardTable
@@ -2203,6 +2225,16 @@ export default function AdminDashboard() {
                           ),
                         },
                         { key: 'address', label: 'Address', render: st => <span className="block max-w-[180px] truncate" title={st.address || ''}>{st.address || 'Not provided'}</span> },
+                        {
+                          key: 'registration_method',
+                          label: 'Registered Via',
+                          render: st => ({
+                            FORM: 'Registration Form',
+                            GOOGLE: 'Google',
+                            ADMIN: 'Admin',
+                            LEGACY: 'Existing Account',
+                          }[st.registration_method] || 'Existing Account'),
+                        },
                         { key: 'role', label: 'Role', render: st => <StatusBadge status={st.role} /> },
                       ]}
                       rows={staffPageRows}
@@ -2230,15 +2262,14 @@ export default function AdminDashboard() {
                           />
                         </>
                       )}
-                      minWidth={980}
+                      minWidth={1080}
                     />
                     <PaginationControls page={staffPage} setPage={setStaffPage} total={staffList.length} pageSize={staffPageSize} setPageSize={setStaffPageSize} />
                     </div>
                   ) : (
-                    <EmptyState icon={Users} title="No accounts found" description="Create the first account using the form." />
+                    <EmptyState icon={Users} title="No accounts found" description="Use the add account button to create the first account." />
                   )}
                 </Card>
-              </div>
             </div>
           )}
 

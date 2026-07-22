@@ -10,7 +10,18 @@ class CustomUser(AbstractUser):
         ('STAFF', 'Staff'),
         ('ADMIN', 'Admin'),
     )
+    class RegistrationMethod(models.TextChoices):
+        FORM = 'FORM', 'Registration form'
+        GOOGLE = 'GOOGLE', 'Google authentication'
+        ADMIN = 'ADMIN', 'Created by admin'
+        LEGACY = 'LEGACY', 'Existing account'
+
     role = models.CharField(max_length=15, choices=ROLE_CHOICES, default='CUSTOMER')
+    registration_method = models.CharField(
+        max_length=10,
+        choices=RegistrationMethod.choices,
+        default=RegistrationMethod.LEGACY,
+    )
     # Keep optional contact fields as empty strings instead of a mixture of
     # NULL and ''. This makes every client receive one predictable shape.
     phone_number = models.CharField(max_length=20, blank=True, default='')

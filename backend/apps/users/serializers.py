@@ -68,9 +68,9 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'role',
             'phone_number', 'address', 'profile_picture', 'profile_picture_url',
-            'remove_profile_picture', 'customer_profile'
+            'remove_profile_picture', 'customer_profile', 'registration_method'
         ]
-        read_only_fields = ['role']
+        read_only_fields = ['role', 'registration_method']
 
     def get_profile_picture_url(self, obj):
         if obj.profile_picture:
@@ -205,6 +205,7 @@ class AccountSerializer(UserSerializer):
         validated_data.pop('remove_profile_picture', None)
         password = validated_data.pop('password')
         role = validated_data.pop('role', 'STAFF')
+        validated_data['registration_method'] = User.RegistrationMethod.ADMIN
         with transaction.atomic():
             user = User.objects.create_user(
                 password=password,
@@ -218,6 +219,7 @@ class AccountSerializer(UserSerializer):
 
     def update(self, instance, validated_data):
         validated_data.pop('remove_profile_picture', None)
+        validated_data.pop('registration_method', None)
         password = validated_data.pop('password', '')
         role = validated_data.pop('role', instance.role)
 
@@ -251,7 +253,8 @@ class RegisterSerializer(serializers.ModelSerializer):
                 last_name=validated_data.get('last_name', ''),
                 phone_number=validated_data.get('phone_number', ''),
                 address=validated_data.get('address', ''),
-                role='CUSTOMER'
+                role='CUSTOMER',
+                registration_method=User.RegistrationMethod.FORM,
             )
             Customer.objects.get_or_create(user=user)
         return user
