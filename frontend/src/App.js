@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { StyledAlertProvider } from './components/ui/StyledAlert';
-import { lazyWithRetry, resetChunkReloadAttempt } from './utils/lazyWithRetry';
+import { isChunkLoadError, lazyWithRetry, reloadWithFreshAssets, resetChunkReloadAttempt } from './utils/lazyWithRetry';
 import { brandAssets } from './utils/cavAssets';
 
 const LandingPage = lazy(() => lazyWithRetry(() => import('./pages/LandingPage')));
@@ -110,27 +110,31 @@ function ProtectedRoute({ children, allowedRoles }) {
 class ChunkErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { error: null };
   }
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error) {
+    return { error };
   }
 
   handleReload = () => {
     resetChunkReloadAttempt();
-    window.location.reload();
+    reloadWithFreshAssets();
   };
 
   render() {
-    if (!this.state.hasError) return this.props.children;
+    if (!this.state.error) return this.props.children;
+
+    const needsUpdate = isChunkLoadError(this.state.error);
 
     return (
       <div className="min-h-screen bg-cream flex items-center justify-center px-4">
         <div className="w-full max-w-md rounded-2xl border border-espresso/10 bg-white p-6 text-center shadow-[0_24px_65px_rgba(46,26,17,0.10)]">
-          <h1 className="text-xl font-black text-espresso">Page update required</h1>
+          <h1 className="text-xl font-black text-espresso">{needsUpdate ? 'Page update required' : 'Unable to load this page'}</h1>
           <p className="mt-2 text-sm leading-relaxed text-espresso/60">
-            The app loaded an old page file. Refresh to load the latest version.
+            {needsUpdate
+              ? 'The app loaded an old page file. Refresh to load the latest version.'
+              : 'Please refresh the app. If the problem continues, contact an administrator.'}
           </p>
           <button
             type="button"
