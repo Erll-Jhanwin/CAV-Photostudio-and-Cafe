@@ -12,6 +12,14 @@ const readStoredUser = () => {
   }
 };
 
+const readStoredValue = (key) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(readStoredUser);
   const [loading, setLoading] = useState(() => !readStoredUser());
@@ -20,10 +28,13 @@ export const AuthProvider = ({ children }) => {
     let active = true;
 
     const restoreSession = async () => {
-      const savedUser = localStorage.getItem('user');
-      const token = localStorage.getItem('access_token');
+      const savedUser = readStoredValue('user');
+      const token = readStoredValue('access_token');
       if (!savedUser || !token) {
-        if (active) setLoading(false);
+        if (active) {
+          setUser(null);
+          setLoading(false);
+        }
         return;
       }
 

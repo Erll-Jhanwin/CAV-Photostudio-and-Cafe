@@ -1,8 +1,8 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { StyledAlertProvider } from './components/ui/StyledAlert';
-import { isChunkLoadError, lazyWithRetry, reloadWithFreshAssets, resetChunkReloadAttempt } from './utils/lazyWithRetry';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 import { brandAssets } from './utils/cavAssets';
 import AdminDashboard from './pages/AdminDashboard';
 
@@ -60,7 +60,7 @@ function SplashScreen() {
 }
 
 function StartupSplashGate({ children }) {
-  const navigate = useNavigate();
+  const location = useLocation();
   const [showSplash, setShowSplash] = useState(() => {
     try {
       return sessionStorage.getItem(SPLASH_SEEN_KEY) !== 'true';
@@ -70,8 +70,7 @@ function StartupSplashGate({ children }) {
   });
 
   useEffect(() => {
-    if (!showSplash) return undefined;
-    void import('./pages/LandingPage');
+    if (!showSplash || location.pathname !== '/') return undefined;
     const timer = window.setTimeout(() => {
       try {
         sessionStorage.setItem(SPLASH_SEEN_KEY, 'true');
@@ -79,12 +78,11 @@ function StartupSplashGate({ children }) {
         /* ignore private browsing storage failures */
       }
       setShowSplash(false);
-      navigate('/', { replace: true });
     }, 2400);
     return () => window.clearTimeout(timer);
-  }, [navigate, showSplash]);
+  }, [location.pathname, showSplash]);
 
-  return showSplash ? <SplashScreen /> : children;
+  return showSplash && location.pathname === '/' ? <SplashScreen /> : children;
 }
 
 function ProtectedRoute({ children, allowedRoles }) {
@@ -107,41 +105,47 @@ function ProtectedRoute({ children, allowedRoles }) {
   return children;
 }
 
-class ChunkErrorBoundary extends React.Component {
+class RouteErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { error: null };
+    this.state = { error: null, retryKey: 0 };
   }
 
   static getDerivedStateFromError(error) {
     return { error };
   }
 
-  handleReload = () => {
-    resetChunkReloadAttempt();
-    reloadWithFreshAssets();
+  componentDidCatch(error, errorInfo) {
+    // Keep the full diagnostic in the browser console without exposing it in the UI.
+    console.error('CAV route render error', error, errorInfo);
+  }
+
+  componentDidUpdate(previousProps) {
+    if (this.state.error && previousProps.resetKey !== this.props.resetKey) {
+      this.setState({ error: null });
+    }
+  }
+
+  handleRetry = () => {
+    this.setState(previous => ({ error: null, retryKey: previous.retryKey + 1 }));
   };
 
   render() {
-    if (!this.state.error) return this.props.children;
-
-    const needsUpdate = isChunkLoadError(this.state.error);
+    if (!this.state.error) {
+      return <React.Fragment key={this.state.retryKey}>{this.props.children}</React.Fragment>;
+    }
 
     return (
       <div className="min-h-screen bg-cream flex items-center justify-center px-4">
         <div className="w-full max-w-md rounded-2xl border border-espresso/10 bg-white p-6 text-center shadow-[0_24px_65px_rgba(46,26,17,0.10)]">
-          <h1 className="text-xl font-black text-espresso">{needsUpdate ? 'Page update required' : 'Unable to load this page'}</h1>
-          <p className="mt-2 text-sm leading-relaxed text-espresso/60">
-            {needsUpdate
-              ? 'The app loaded an old page file. Refresh to load the latest version.'
-              : 'Please refresh the app. If the problem continues, contact an administrator.'}
-          </p>
+          <h1 className="text-xl font-black text-espresso">This screen could not be opened</h1>
+          <p className="mt-2 text-sm leading-relaxed text-espresso/60">Try opening the screen again. Your session and current URL will stay unchanged.</p>
           <button
             type="button"
-            onClick={this.handleReload}
+            onClick={this.handleRetry}
             className="mt-5 inline-flex min-h-10 items-center justify-center rounded-xl bg-gold px-5 py-2.5 text-sm font-bold text-espresso shadow-[0_14px_34px_rgba(212,175,55,0.22)] transition-all hover:-translate-y-0.5 hover:bg-gold-light"
           >
-            Refresh App
+            Try Again
           </button>
         </div>
       </div>
@@ -149,12 +153,21 @@ class ChunkErrorBoundary extends React.Component {
   }
 }
 
+function AppErrorBoundary({ children }) {
+  const location = useLocation();
+  return (
+    <RouteErrorBoundary resetKey={`${location.pathname}${location.search}`}>
+      <React.Fragment key={location.key}>{children}</React.Fragment>
+    </RouteErrorBoundary>
+  );
+}
+
 function App() {
   return (
     <AuthProvider>
       <StyledAlertProvider>
         <BrowserRouter>
-          <ChunkErrorBoundary>
+          <AppErrorBoundary>
             <StartupSplashGate>
               <Suspense fallback={<AppLoader />}>
                 <Routes>
@@ -189,7 +202,7 @@ function App() {
                 </Routes>
               </Suspense>
             </StartupSplashGate>
-          </ChunkErrorBoundary>
+          </AppErrorBoundary>
         </BrowserRouter>
       </StyledAlertProvider>
     </AuthProvider>
