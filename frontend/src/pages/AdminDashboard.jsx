@@ -202,6 +202,36 @@ function SalesForecastTooltip({ active, payload, label }) {
   );
 }
 
+// Charts measure their container and can occasionally fail in restricted or
+// mid-layout browser states. Keep the rest of the management console usable
+// when a third-party chart cannot initialise.
+class DashboardChartBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidUpdate(previousProps) {
+    if (this.state.failed && previousProps.resetKey !== this.props.resetKey) {
+      this.setState({ failed: false });
+    }
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+
+    return (
+      <div className="flex h-full min-h-24 items-center justify-center rounded-xl bg-cream/70 px-4 text-center text-xs font-semibold text-espresso/55">
+        This chart could not be displayed. The dashboard data is still available below.
+      </div>
+    );
+  }
+}
+
 function PerformanceList({ rows, primaryKey, midKey, midLabel }) {
   if (!rows?.length) {
     return <EmptyState icon={Package} title="No performance data" description="Completed transactions will appear here." />;
@@ -1346,14 +1376,16 @@ export default function AdminDashboard() {
                         <CardHeader title="Booking Status Summary" className="mb-3" />
                         <div className="grid grid-cols-[120px_1fr] gap-4 items-center">
                           <div className="h-[120px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <PieChart>
-                                <Pie data={statusData} dataKey="value" nameKey="label" innerRadius={36} outerRadius={54} paddingAngle={3}>
-                                  {statusData.map(s => <Cell key={s.label} fill={s.color} />)}
-                                </Pie>
-                                <Tooltip />
-                              </PieChart>
-                            </ResponsiveContainer>
+                            <DashboardChartBoundary resetKey={JSON.stringify(statusData)}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie data={statusData} dataKey="value" nameKey="label" innerRadius={36} outerRadius={54} paddingAngle={3}>
+                                    {statusData.map(s => <Cell key={s.label} fill={s.color} />)}
+                                  </Pie>
+                                  <Tooltip />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            </DashboardChartBoundary>
                           </div>
                           <div className="space-y-2.5">
                             {statusData.map(status => (
@@ -1433,20 +1465,22 @@ export default function AdminDashboard() {
                     </div>
                     <div className="h-[300px] 2xl:h-[360px] w-full">
                       {forecastChartData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart data={forecastChartData} margin={{ top: 12, right: 20, left: 0, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
-                            <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} tickFormatter={formatChartDate} />
-                            <YAxis stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `PHP ${Math.round(Number(value || 0) / 1000)}k`} />
-                            <Tooltip content={<SalesForecastTooltip />} />
-                            <Legend wrapperStyle={{ fontSize: 11 }} />
-                            {visibleSeries.actual && <Line type="monotone" dataKey="actual_sales" name="Actual Sales" stroke="#2E1A11" strokeWidth={3} dot={false} connectNulls={false} />}
-                            {visibleSeries.forecast && <Line type="monotone" dataKey="forecast_sales" name="ML Forecast" stroke="#D4AF37" strokeWidth={3} strokeDasharray="7 5" dot={{ r: 3, fill: '#D4AF37' }} connectNulls={false} />}
-                            {visibleSeries.forecast && <Line type="monotone" dataKey="upper_bound" name="Upper Confidence" stroke="#8D6E63" strokeWidth={1.5} strokeDasharray="3 5" dot={false} connectNulls={false} />}
-                            {visibleSeries.forecast && <Line type="monotone" dataKey="lower_bound" name="Lower Confidence" stroke="#E57373" strokeWidth={1.5} strokeDasharray="3 5" dot={false} connectNulls={false} />}
-                            {visibleSeries.combined && <Line type="monotone" dataKey="combined_sales" name="Combined Actual + Forecast" stroke="#3B82F6" strokeWidth={2.5} dot={false} connectNulls />}
-                          </ComposedChart>
-                        </ResponsiveContainer>
+                        <DashboardChartBoundary resetKey={`${chartGrain}:${forecastChartData.length}:${visibleSeries.actual}:${visibleSeries.forecast}:${visibleSeries.combined}`}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={forecastChartData} margin={{ top: 12, right: 20, left: 0, bottom: 5 }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
+                              <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} tickFormatter={formatChartDate} />
+                              <YAxis stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `PHP ${Math.round(Number(value || 0) / 1000)}k`} />
+                              <Tooltip content={<SalesForecastTooltip />} />
+                              <Legend wrapperStyle={{ fontSize: 11 }} />
+                              {visibleSeries.actual && <Line type="monotone" dataKey="actual_sales" name="Actual Sales" stroke="#2E1A11" strokeWidth={3} dot={false} connectNulls={false} />}
+                              {visibleSeries.forecast && <Line type="monotone" dataKey="forecast_sales" name="ML Forecast" stroke="#D4AF37" strokeWidth={3} strokeDasharray="7 5" dot={{ r: 3, fill: '#D4AF37' }} connectNulls={false} />}
+                              {visibleSeries.forecast && <Line type="monotone" dataKey="upper_bound" name="Upper Confidence" stroke="#8D6E63" strokeWidth={1.5} strokeDasharray="3 5" dot={false} connectNulls={false} />}
+                              {visibleSeries.forecast && <Line type="monotone" dataKey="lower_bound" name="Lower Confidence" stroke="#E57373" strokeWidth={1.5} strokeDasharray="3 5" dot={false} connectNulls={false} />}
+                              {visibleSeries.combined && <Line type="monotone" dataKey="combined_sales" name="Combined Actual + Forecast" stroke="#3B82F6" strokeWidth={2.5} dot={false} connectNulls />}
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </DashboardChartBoundary>
                       ) : (
                         <EmptyState icon={BarChart2} title="No sales or forecast data" description="Run forecasting or select a date range with completed revenue." />
                       )}

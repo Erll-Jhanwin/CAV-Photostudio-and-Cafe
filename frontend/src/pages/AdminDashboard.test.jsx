@@ -42,20 +42,6 @@ jest.mock('../api/client', () => ({
   }),
 }));
 
-jest.mock('recharts', () => ({
-  ResponsiveContainer: ({ children }) => <div>{children}</div>,
-  PieChart: ({ children }) => <div>{children}</div>,
-  Pie: ({ children }) => <div>{children}</div>,
-  Cell: () => null,
-  Tooltip: () => null,
-  Line: () => null,
-  XAxis: () => null,
-  YAxis: () => null,
-  CartesianGrid: () => null,
-  Legend: () => null,
-  ComposedChart: ({ children }) => <div>{children}</div>,
-}));
-
 import AdminDashboard from './AdminDashboard';
 
 describe('AdminDashboard', () => {
