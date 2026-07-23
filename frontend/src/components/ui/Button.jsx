@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 
 const variants = {
   primary: 'bg-espresso text-cream shadow-[0_14px_34px_rgba(46,26,17,0.18)] hover:bg-espresso-light hover:shadow-[0_18px_42px_rgba(46,26,17,0.24)] active:bg-espresso-dark',
@@ -77,6 +77,12 @@ export function Button({
 }
 
 export function IconButton({ icon, label, variant = 'ghost', size = 'md', className = '', type = 'button', ...props }) {
+  const iconElement = React.isValidElement(icon)
+    ? icon
+    : icon
+      ? React.createElement(icon, { className: 'w-4 h-4', 'aria-hidden': true })
+      : null;
+
   return (
     <button
       type={type}
@@ -90,7 +96,7 @@ export function IconButton({ icon, label, variant = 'ghost', size = 'md', classN
         ${className}
       `}
     >
-      {typeof icon === 'function' ? icon({ className: 'w-4 h-4' }) : icon}
+      {iconElement}
     </button>
   );
 }

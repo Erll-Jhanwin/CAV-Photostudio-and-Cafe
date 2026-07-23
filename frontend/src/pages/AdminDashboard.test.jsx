@@ -1,15 +1,19 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+
+const mockNavigate = jest.fn();
+const mockUser = { id: 1, username: 'admin', role: 'ADMIN' };
+const mockLogout = jest.fn();
 
 jest.mock('react-router-dom', () => ({
   MemoryRouter: ({ children }) => children,
-  useNavigate: () => jest.fn(),
+  useNavigate: () => mockNavigate,
 }));
 
 jest.mock('../context/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 1, username: 'admin', role: 'ADMIN' },
-    logout: jest.fn(),
+    user: mockUser,
+    logout: mockLogout,
   }),
 }));
 
@@ -45,7 +49,7 @@ jest.mock('../api/client', () => ({
 import AdminDashboard from './AdminDashboard';
 
 describe('AdminDashboard', () => {
-  it('renders the admin shell and accepts empty analytics data', async () => {
+  it('renders the admin shell and opens Accounts with Lucide action icons', async () => {
     render(
       <MemoryRouter>
         <AdminDashboard />
@@ -54,5 +58,9 @@ describe('AdminDashboard', () => {
 
     expect(await screen.findByText('Business Overview')).toBeInTheDocument();
     expect(screen.getAllByText('Booking Income').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accounts' }));
+    expect(await screen.findByText('Existing Accounts')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add account' })).toBeInTheDocument();
   });
 });
