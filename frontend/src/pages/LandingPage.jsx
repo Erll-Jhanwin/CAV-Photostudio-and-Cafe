@@ -693,27 +693,25 @@ export default function LandingPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  const sendChatMessage = useCallback(async (message) => {
+  const sendChatRequest = useCallback(async (message, action = null) => {
     const msg = message.trim();
     if (!msg || chatLoading) return;
     setChatMessages(p => [...p, { role: 'user', content: msg }]);
     setChatInput('');
     setChatLoading(true);
     try {
-      const res = await axios.post(`${API_BASE_URL}/api/chatbot/query/`, { question: msg });
-      setChatMessages(p => [...p, { role: 'assistant', content: res.data.response }]);
+      const payload = action ? { question: msg, action: { ...action, confirm: true } } : { question: msg };
+      const res = await axios.post(`${API_BASE_URL}/api/chatbot/query/`, payload);
+      setChatMessages(p => [...p, { role: 'assistant', content: res.data.response, action: res.data.action }]);
     } catch {
-      let answer = 'Thanks for asking!\n\nWe are open daily from 9:00 AM to 7:00 PM Philippine time (Asia/Manila, UTC+8) at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.';
-      const q = msg.toLowerCase();
-      if (q.includes('hour') || q.includes('time')) answer = 'CAV Photo Studio and Cafe is open daily from 9:00 AM to 7:00 PM Philippine time (Asia/Manila, UTC+8).';
-      else if (q.includes('price') || q.includes('package')) answer = 'Our packages include:\n- Solo, Couple, and Friends packages: PHP 1,000\n- Family and Birthday packages: PHP 1,500\n- Standard Event Package: PHP 2,500';
-      else if (q.includes('location') || q.includes('where')) answer = 'We are located at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.';
-      else if (q.includes('email') || q.includes('contact')) answer = 'You can reach us at cav.photostudio.cafe@gmail.com or find us on Facebook and Instagram as CAV Photo Studio & Cafe.';
-      setChatMessages(p => [...p, { role: 'assistant', content: answer }]);
+      setChatMessages(p => [...p, { role: 'assistant', content: 'I cannot verify that information right now. Please try again or contact CAV staff directly.' }]);
     } finally {
       setChatLoading(false);
     }
   }, [chatLoading]);
+
+  const sendChatMessage = useCallback((message) => sendChatRequest(message), [sendChatRequest]);
+  const sendChatAction = useCallback((action) => sendChatRequest('Confirm booking action', action), [sendChatRequest]);
 
   const handleChatSubmit = async (e) => {
     e.preventDefault();
@@ -1261,6 +1259,16 @@ export default function LandingPage() {
                       : 'bg-white text-espresso rounded-tl-md border border-espresso/5'
                   }`}>
                     {msg.role === 'assistant' ? <ChatbotMessageContent content={msg.content} /> : msg.content}
+                    {msg.role === 'assistant' && msg.action?.status === 'confirmation_required' && (
+                      <button
+                        type="button"
+                        onClick={() => sendChatAction(msg.action)}
+                        disabled={chatLoading}
+                        className="mt-2 w-full rounded-lg bg-gold px-2.5 py-2 text-[10px] font-black text-espresso disabled:opacity-50"
+                      >
+                        Confirm booking action
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

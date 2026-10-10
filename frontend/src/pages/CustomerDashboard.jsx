@@ -1266,21 +1266,25 @@ export default function CustomerDashboard() {
     }
   };
 
-  const sendChatMessage = useCallback(async (message) => {
+  const sendChatRequest = useCallback(async (message, action = null) => {
     const msg = message.trim();
     if (!msg || chatLoading) return;
     setChatMessages(p => [...p, { role: 'user', content: msg }]);
     setChatInput('');
     setChatLoading(true);
     try {
-      const res = await client.post('/api/chatbot/query/', { question: msg });
-      setChatMessages(p => [...p, { role: 'assistant', content: res.data.response }]);
+      const payload = action ? { question: msg, action: { ...action, confirm: true } } : { question: msg };
+      const res = await client.post('/api/chatbot/query/', payload);
+      setChatMessages(p => [...p, { role: 'assistant', content: res.data.response, action: res.data.action }]);
     } catch {
-      setChatMessages(p => [...p, { role: 'assistant', content: 'I am having trouble connecting. Let me know if you need help with hours or locations!' }]);
+      setChatMessages(p => [...p, { role: 'assistant', content: 'I cannot verify that information right now. Please try again or contact CAV staff directly.' }]);
     } finally {
       setChatLoading(false);
     }
   }, [chatLoading]);
+
+  const sendChatMessage = useCallback((message) => sendChatRequest(message), [sendChatRequest]);
+  const sendChatAction = useCallback((action) => sendChatRequest('Confirm booking action', action), [sendChatRequest]);
 
   const handleChatSubmit = async (e) => {
     e.preventDefault();
@@ -3350,6 +3354,16 @@ export default function CustomerDashboard() {
                         : 'bg-white text-espresso rounded-tl-md border border-espresso/5'
                     }`}>
                       {msg.role === 'assistant' ? <ChatbotMessageContent content={msg.content} /> : msg.content}
+                      {msg.role === 'assistant' && msg.action?.status === 'confirmation_required' && (
+                        <button
+                          type="button"
+                          onClick={() => sendChatAction(msg.action)}
+                          disabled={chatLoading}
+                          className="mt-2 w-full rounded-lg bg-gold px-2.5 py-2 text-[10px] font-black text-espresso disabled:opacity-50"
+                        >
+                          Confirm booking action
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

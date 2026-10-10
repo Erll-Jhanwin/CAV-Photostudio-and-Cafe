@@ -8,6 +8,13 @@ from rest_framework.response import Response
 from audit.models import AuditLog
 from users.permissions import IsAdmin
 from chatbot.booking_assistant import build_booking_chatbot_response, detect_language
+from chatbot.actions import (
+    ChatActionError,
+    draft_action_from_question,
+    execute_chat_action,
+    propose_chat_action,
+)
+from chatbot.rag import build_hybrid_response
 
 logger = logging.getLogger(__name__)
 MAX_CHATBOT_QUESTION_LENGTH = 500
@@ -105,7 +112,9 @@ def clean_response_text(value):
     }
     for old, new in replacements.items():
         value = value.replace(old, new)
-    return value
+    # Approved knowledge is still treated as untrusted content at the output
+    # boundary.  A mistakenly entered secret must not be echoed to a visitor.
+    return SENSITIVE_RE.sub('[sensitive detail removed]', value)
 
 
 def asks_for_sensitive_or_internal_data(question):
@@ -215,6 +224,26 @@ def log_chatbot_query(request, question, response_text, **metadata):
         logger.warning("Chatbot audit log skipped because the database is unavailable: %s", exc)
 
 
+def log_escalation(request, question, response_text, lang, reason='complex_concern'):
+    """Create a staff-visible escalation without persisting raw sensitive text."""
+    try:
+        log = AuditLog.objects.create(
+            user=request.user if request.user.is_authenticated else None,
+            action='CHATBOT_ESCALATION',
+            description=sanitize_for_log(question),
+            metadata={
+                'response': sanitize_for_log(response_text),
+                'language': lang,
+                'reason': reason,
+                'status': 'OPEN',
+            },
+        )
+        return log.id
+    except DatabaseError as exc:
+        logger.warning("Chatbot escalation could not be recorded: %s", exc)
+        return None
+
+
 class ChatbotQueryView(views.APIView):
     permission_classes = [permissions.AllowAny]
     throttle_scope = 'chatbot'
@@ -238,11 +267,56 @@ class ChatbotQueryView(views.APIView):
             return Response({"question": question, "response": response_text, "matched_faq": None, "source": "safety"})
 
         try:
+            # Mutations are always explicit API actions and always require a
+            # second request carrying confirm=true.  A natural-language
+            # request can only produce a proposal.
+            action = request.data.get('action')
+            if action is not None:
+                if not isinstance(action, dict):
+                    return Response({"detail": "Action must be an object."}, status=status.HTTP_400_BAD_REQUEST)
+                result = execute_chat_action(action, request, lang) if action.get('confirm') else propose_chat_action(action, request, lang)
+                response_text = clean_response_text(result['response'])
+                log_chatbot_query(request, question, response_text, source='booking_action', action=result.get('action'))
+                return Response({"question": question, "response": response_text, **result, "language": lang})
+
+            draft = draft_action_from_question(question, request)
+            if draft:
+                result = propose_chat_action(draft, request, lang)
+                response_text = clean_response_text(result['response'])
+                log_chatbot_query(request, question, response_text, source='booking_action_proposal', action=result.get('action'))
+                return Response({"question": question, "response": response_text, **result, "language": lang})
+
+            hybrid = build_hybrid_response(question, role)
+            if hybrid:
+                response_text, source, citations = hybrid
+                response_text = clean_response_text(response_text)
+                escalation_id = None
+                if source == 'escalation':
+                    escalation_id = log_escalation(request, question, response_text, lang)
+                log_chatbot_query(
+                    request,
+                    question,
+                    response_text,
+                    source=source,
+                    citations=citations,
+                    escalated=source == 'escalation',
+                )
+                return Response({
+                    "question": question,
+                    "response": response_text,
+                    "matched_faq": None,
+                    "source": source,
+                    "citations": citations,
+                    "escalated": source == 'escalation',
+                    "escalation_id": escalation_id,
+                    "language": lang,
+                })
+
             response_text = build_booking_chatbot_response(question, request.user if request.user.is_authenticated else None)
             if response_text:
                 response_text = clean_response_text(response_text)
                 log_chatbot_query(request, question, response_text, source="live_database")
-                return Response({"question": question, "response": response_text, "matched_faq": None, "source": "live_database"})
+                return Response({"question": question, "response": response_text, "matched_faq": None, "source": "live_database", "citations": [], "language": lang})
 
             best_faq = find_best_knowledge(question, role)
             response_text = clean_response_text(get_chatbot_fallback_response(best_faq, lang))
@@ -259,7 +333,29 @@ class ChatbotQueryView(views.APIView):
                 "response": response_text,
                 "matched_faq": best_faq["question"] if best_faq else None,
                 "source": best_faq.get("source", "approved_faq") if best_faq else "fallback",
+                "citations": [f"faq:{best_faq['id']}"] if best_faq and best_faq.get('id') else [],
+                "language": lang,
             })
+        except ChatActionError as exc:
+            response_text = clean_response_text(exc.message)
+            log_chatbot_query(request, question, response_text, source='booking_action_error', action_status=exc.status)
+            return Response({
+                "question": question,
+                "response": response_text,
+                "source": "booking_action",
+                "action": exc.action,
+                "action_status": exc.status,
+                "language": lang,
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except serializers.ValidationError as exc:
+            logger.info("Chatbot booking action validation failed: %s", exc.detail)
+            return Response({
+                "question": question,
+                "response": "I could not complete that booking change. Please check the package, date, and time.",
+                "source": "booking_action",
+                "action_status": "invalid",
+                "language": lang,
+            }, status=status.HTTP_400_BAD_REQUEST)
         except DatabaseError as exc:
             logger.exception("Chatbot database lookup failed: %s", exc)
             return Response({"detail": "Chatbot data is temporarily unavailable. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
