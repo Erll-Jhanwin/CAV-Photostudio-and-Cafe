@@ -9,7 +9,7 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -20,6 +20,8 @@ from users.serializers import (
     ProfileSerializer,
     UserSerializer,
     RegisterSerializer,
+    RegistrationOTPVerifySerializer,
+    is_phone_number_taken,
     PasswordResetRequestSerializer,
     PasswordResetVerifySerializer,
     PasswordResetConfirmSerializer,
@@ -27,6 +29,7 @@ from users.serializers import (
 from users.models import Customer, PasswordResetOTP
 from users.permissions import IsAdmin
 from users.sms_delivery import IProgSMSDeliveryError, send_password_reset_otp, verify_password_reset_otp
+from users.email_delivery import EmailDeliveryError, send_password_reset_email
 from users.phone_numbers import normalize_philippine_mobile_number
 from audit.models import AuditLog
 from booking.models import Booking
@@ -82,21 +85,145 @@ class RegisterView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        
-        # Log audit
-        AuditLog.objects.create(
-            user=user,
-            action="CUSTOMER_REGISTER",
-            description=f"New customer registered: {user.username}",
-            metadata={'registration_method': user.registration_method, 'target_user_id': user.id},
-            ip_address=get_client_ip(request),
+        data = serializer.validated_data
+        phone_number = normalize_philippine_mobile_number(data.get('phone_number'))
+        contact_type = 'phone' if phone_number else 'email'
+        contact = phone_number or data['email']
+        registration_token = secrets.token_urlsafe(32)
+        pending = {
+            'username': data['username'],
+            'email': data['email'],
+            'first_name': data.get('first_name', ''),
+            'last_name': data.get('last_name', ''),
+            'phone_number': data.get('phone_number', ''),
+            'address': data.get('address', ''),
+            'password_hash': make_password(data['password']),
+            'contact_type': contact_type,
+            'contact': contact,
+            'attempts': 0,
+            'expires_at': (timezone.now() + timezone.timedelta(minutes=PASSWORD_RESET_OTP_TTL_MINUTES)).timestamp(),
+        }
+
+        try:
+            if contact_type == 'phone':
+                send_password_reset_otp(contact, purpose='registration')
+            else:
+                registration_otp = f'{secrets.randbelow(1000000):06d}'
+                pending['otp_hash'] = make_password(registration_otp)
+                send_password_reset_email(contact, registration_otp, purpose='registration')
+        except (IProgSMSDeliveryError, EmailDeliveryError, OSError):
+            logger.exception('Registration OTP delivery failed.')
+            return Response(
+                {'detail': 'We could not send the verification code. Please try again later.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        cache.set(
+            f'registration_otp:{registration_token}',
+            pending,
+            timeout=PASSWORD_RESET_OTP_TTL_MINUTES * 60,
         )
-        
+        return Response({
+            'message': 'Verification code sent. Verify it to finish creating your account.',
+            'registration_token': registration_token,
+            'contact_type': contact_type,
+            'contact_hint': mask_registration_contact(contact, contact_type),
+            'expires_in_minutes': PASSWORD_RESET_OTP_TTL_MINUTES,
+        }, status=status.HTTP_200_OK)
+
+
+class RegistrationOTPVerifyView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'auth'
+
+    def post(self, request):
+        serializer = RegistrationOTPVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token = serializer.validated_data['registration_token']
+        otp = serializer.validated_data['otp']
+        cache_key = f'registration_otp:{token}'
+        pending = cache.get(cache_key)
+        invalid_response = {'detail': 'Invalid or expired OTP. Registration was not completed.'}
+
+        if (
+            not pending
+            or pending.get('attempts', 0) >= PASSWORD_RESET_OTP_MAX_ATTEMPTS
+            or timezone.now().timestamp() >= pending.get('expires_at', 0)
+        ):
+            return Response(invalid_response, status=status.HTTP_400_BAD_REQUEST)
+
+        if pending['contact_type'] == 'phone':
+            try:
+                verified = verify_password_reset_otp(pending['contact'], otp)
+            except IProgSMSDeliveryError:
+                logger.exception('Registration OTP verification failed at provider.')
+                return Response(
+                    {'detail': 'OTP verification is temporarily unavailable. Please try again later.'},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+        else:
+            verified = check_password(otp, pending.get('otp_hash', ''))
+
+        if not verified:
+            pending['attempts'] = pending.get('attempts', 0) + 1
+            remaining_seconds = max(1, int(pending['expires_at'] - timezone.now().timestamp()))
+            cache.set(cache_key, pending, timeout=remaining_seconds)
+            return Response(invalid_response, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                if User.objects.filter(username__iexact=pending['username']).exists():
+                    return Response({'username': 'Username already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+                if User.objects.filter(email__iexact=pending['email']).exists():
+                    return Response({'email': 'Email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+                if is_phone_number_taken(pending.get('phone_number')):
+                    return Response({'phone_number': 'Phone number already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+                user = User(
+                    username=pending['username'],
+                    password=pending['password_hash'],
+                    email=pending['email'],
+                    first_name=pending['first_name'],
+                    last_name=pending['last_name'],
+                    phone_number=normalize_philippine_mobile_number(pending['phone_number']) or pending['phone_number'],
+                    address=pending['address'],
+                    role='CUSTOMER',
+                    registration_method=User.RegistrationMethod.FORM,
+                )
+                user.save()
+                Customer.objects.get_or_create(user=user)
+                AuditLog.objects.create(
+                    user=user,
+                    action='CUSTOMER_REGISTER',
+                    description=f'New customer registered: {user.username}',
+                    metadata={'registration_method': user.registration_method, 'target_user_id': user.id},
+                    ip_address=get_client_ip(request),
+                )
+        except IntegrityError as exc:
+            constraint = str(exc).lower()
+            for field, label in (
+                ('username', 'Username'),
+                ('email', 'Email'),
+                ('phone', 'Phone number'),
+            ):
+                if field in constraint:
+                    return Response({f'{field}_number' if field == 'phone' else field: f'{label} already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'An account with these details already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception('Verified registration could not be completed.')
+            return Response({'detail': 'Account creation failed. Please try registration again.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        cache.delete(cache_key)
         return Response(
-            {"message": "Registration successful.", "user": UserSerializer(user).data},
-            status=status.HTTP_201_CREATED
+            {'message': 'Registration successful. Please log in.', 'user': UserSerializer(user).data},
+            status=status.HTTP_201_CREATED,
         )
+
+
+def mask_registration_contact(contact, contact_type):
+    if contact_type == 'phone':
+        return f'••••••{contact[-4:]}'
+    local, _, domain = contact.partition('@')
+    return f'{local[:1]}•••@{domain}'
 
 def build_auth_payload(user):
     refresh = RefreshToken.for_user(user)

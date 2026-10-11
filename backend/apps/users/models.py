@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models import Q
+from django.db.models.functions import Lower
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
 from django.utils import timezone
@@ -28,6 +30,24 @@ class CustomUser(AbstractUser):
     address = models.TextField(blank=True, default='')
     profile_picture = models.ImageField(upload_to=profile_picture_upload_path, blank=True, null=True)
     profile_picture_external_url = models.URLField(max_length=500, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                Lower('email'),
+                condition=~Q(email=''),
+                name='users_customuser_email_unique_nonblank',
+            ),
+            models.UniqueConstraint(
+                Lower('phone_number'),
+                condition=~Q(phone_number=''),
+                name='users_customuser_phone_unique_nonblank',
+            ),
+            models.UniqueConstraint(
+                Lower('username'),
+                name='users_customuser_username_ci_unique',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"

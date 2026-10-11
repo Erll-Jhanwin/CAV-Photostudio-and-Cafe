@@ -17,6 +17,7 @@ from users.views import (
     ForgotPasswordView,
     PasswordResetVerifyOTPView,
     PasswordResetConfirmView,
+    RegistrationOTPVerifyView,
     SystemDataResetView,
     GoogleAuthView,
 )
@@ -48,6 +49,7 @@ urlpatterns = [
     path('api/auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/register/', RegisterView.as_view(), name='auth_register'),
+    path('api/auth/register/verify/', RegistrationOTPVerifyView.as_view(), name='auth_register_verify'),
     path('api/auth/google/', GoogleAuthView.as_view(), name='auth_google'),
     path('api/auth/profile/', UserProfileView.as_view(), name='auth_profile'),
     path('api/auth/users/', StaffListView.as_view(), name='staff_list'),

@@ -161,7 +161,9 @@ class AccountCrudTests(TestCase):
             metadata__target_user_id=customer_id,
         ).exists())
 
-    def test_registration_form_persists_its_registration_method(self):
+    @patch('users.views.verify_password_reset_otp', side_effect=[False, True])
+    @patch('users.views.send_password_reset_otp')
+    def test_registration_requires_verified_otp_before_creating_account(self, mocked_send, mocked_verify):
         anonymous_client = APIClient()
         response = anonymous_client.post('/api/auth/register/', {
             'username': 'form-customer',
@@ -173,12 +175,56 @@ class AccountCrudTests(TestCase):
             'address': 'Cavite City',
         }, format='json')
 
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['user']['registration_method'], 'FORM')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(get_user_model().objects.filter(username='form-customer').exists())
+        mocked_send.assert_called_once_with('639171234567', purpose='registration')
+
+        invalid_response = anonymous_client.post('/api/auth/register/verify/', {
+            'registration_token': response.data['registration_token'],
+            'otp': '000000',
+        }, format='json')
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertIn('Invalid or expired OTP', invalid_response.data['detail'])
+        self.assertFalse(get_user_model().objects.filter(username='form-customer').exists())
+
+        verify_response = anonymous_client.post('/api/auth/register/verify/', {
+            'registration_token': response.data['registration_token'],
+            'otp': '123456',
+        }, format='json')
+
+        self.assertEqual(verify_response.status_code, 201)
+        self.assertEqual(verify_response.data['user']['registration_method'], 'FORM')
+        self.assertEqual(mocked_verify.call_count, 2)
+        mocked_verify.assert_called_with('639171234567', '123456')
         self.assertTrue(AuditLog.objects.filter(
             action='CUSTOMER_REGISTER',
             metadata__registration_method='FORM',
         ).exists())
+
+    @patch('users.views.send_password_reset_otp')
+    def test_registration_rejects_duplicate_username_email_and_phone_before_otp(self, mocked_send):
+        get_user_model().objects.create_user(
+            username='phone-owner',
+            email='phone-owner@example.com',
+            password='PhoneOwner123!',
+            phone_number='09171234567',
+        )
+        base = {
+            'username': 'new-registration',
+            'password': 'FormCustomer123!',
+            'email': 'new-registration@example.com',
+            'phone_number': '09179876543',
+        }
+        for field, value in {
+            'username': 'accounts-admin',
+            'email': 'admin@example.com',
+            'phone_number': '+63 917 123 4567',
+        }.items():
+            payload = {**base, field: value}
+            response = APIClient().post('/api/auth/register/', payload, format='json')
+            self.assertEqual(response.status_code, 400)
+            self.assertIn(field, response.data)
+        mocked_send.assert_not_called()
 
     def test_customer_profile_update_keeps_one_customer_profile(self):
         customer = get_user_model().objects.create_user(

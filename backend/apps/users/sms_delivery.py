@@ -32,12 +32,12 @@ def _post_i_progsms(path, payload):
     return data
 
 
-def send_password_reset_otp(phone_number):
+def send_password_reset_otp(phone_number, purpose='password reset'):
     data = _post_i_progsms(
         '/api/v1/otp/send_otp',
         {
             'phone_number': phone_number,
-            'message': f"Your CAV password reset code is :otp. It expires in {getattr(settings, 'PASSWORD_RESET_OTP_TTL_MINUTES', 10)} minutes. Do not share this code.",
+            'message': f"Your CAV {purpose} code is :otp. It expires in {getattr(settings, 'PASSWORD_RESET_OTP_TTL_MINUTES', 10)} minutes. Do not share this code.",
             'code_length': 6,
         },
     )

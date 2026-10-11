@@ -21,6 +21,28 @@ def validate_phone_number_format(value):
     return value
 
 
+def phone_number_key(value):
+    normalized = normalize_philippine_mobile_number(value)
+    return normalized or re.sub(r'\D', '', str(value or ''))
+
+
+def is_phone_number_taken(value, instance=None):
+    key = phone_number_key(value)
+    if not key:
+        return False
+    queryset = User.objects.filter(phone_number__isnull=False).exclude(phone_number='')
+    if instance:
+        queryset = queryset.exclude(pk=instance.pk)
+    return any(phone_number_key(candidate) == key for candidate in queryset.values_list('phone_number', flat=True))
+
+
+def validate_unique_phone_number(value, instance=None):
+    value = validate_phone_number_format(value)
+    if value and is_phone_number_taken(value, instance):
+        raise serializers.ValidationError('Phone number already exists.')
+    return value
+
+
 def normalize_email(value):
     return (value or '').strip().lower()
 
@@ -84,7 +106,7 @@ class UserSerializer(serializers.ModelSerializer):
         return validate_profile_picture(value)
 
     def validate_phone_number(self, value):
-        return validate_phone_number_format(value)
+        return validate_unique_phone_number(value, self.instance)
 
     def validate_username(self, value):
         return validate_unique_username(value, self.instance)
@@ -271,7 +293,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         return validate_unique_email(value, required=True)
 
     def validate_phone_number(self, value):
-        return validate_phone_number_format(value)
+        return validate_unique_phone_number(value)
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=20, trim_whitespace=True)
@@ -281,6 +303,16 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         if not normalized:
             raise serializers.ValidationError('Enter a valid Philippine mobile number.')
         return normalized
+
+
+class RegistrationOTPVerifySerializer(serializers.Serializer):
+    registration_token = serializers.CharField(min_length=32, max_length=128, trim_whitespace=True)
+    otp = serializers.CharField(min_length=6, max_length=6, trim_whitespace=True)
+
+    def validate_otp(self, value):
+        if not value.isdigit():
+            raise serializers.ValidationError('OTP must contain 6 digits.')
+        return value
 
 class PasswordResetVerifySerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=20, trim_whitespace=True)

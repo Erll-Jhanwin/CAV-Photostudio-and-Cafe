@@ -9,10 +9,10 @@ class EmailDeliveryError(Exception):
     pass
 
 
-def send_password_reset_email(recipient, otp):
-    subject = 'Your CAV password reset code'
+def send_password_reset_email(recipient, otp, purpose='password reset'):
+    subject = f'Your CAV {purpose} code'
     message = (
-        f'Your CAV password reset OTP is {otp}.\n\n'
+        f'Your CAV {purpose} OTP is {otp}.\n\n'
         f'This code expires in {settings.PASSWORD_RESET_OTP_TTL_MINUTES} minutes. '
         'If you did not request this, you can ignore this email.'
     )
@@ -42,10 +42,13 @@ def send_password_reset_email(recipient, otp):
             raise EmailDeliveryError('Resend email delivery failed.') from exc
         return
 
-    send_mail(
-        subject=subject,
-        message=message,
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[recipient],
-        fail_silently=False,
-    )
+    try:
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient],
+            fail_silently=False,
+        )
+    except Exception as exc:
+        raise EmailDeliveryError('Email delivery failed.') from exc

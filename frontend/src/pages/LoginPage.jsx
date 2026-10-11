@@ -43,6 +43,10 @@ export default function LoginPage() {
   const redirect = searchParams.get('redirect');
 
   const [isRegister, setIsRegister] = useState(false);
+  const [registerStep, setRegisterStep] = useState('details');
+  const [registrationToken, setRegistrationToken] = useState('');
+  const [registrationContactHint, setRegistrationContactHint] = useState('');
+  const [registrationOtp, setRegistrationOtp] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotStep, setForgotStep] = useState('phone');
   const [forgotPhone, setForgotPhone] = useState('');
@@ -114,7 +118,9 @@ export default function LoginPage() {
   };
 
   const isLoginValid = !isBlank(form.username) && !isBlank(form.password);
-  const isRegisterValid = !Object.keys(validateRegisterForm()).length;
+  const isRegisterValid = registerStep === 'otp'
+    ? registrationOtp.length === 6
+    : !Object.keys(validateRegisterForm()).length;
   const isForgotValid = !Object.keys(validateForgotForm()).length;
 
   const navigateAfterAuth = useCallback((authUser) => {
@@ -268,6 +274,33 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setSuccess('');
+    if (registerStep === 'otp') {
+      if (registrationOtp.length !== 6) {
+        setFormErrors({ otp: 'Enter the 6-digit verification code.' });
+        return;
+      }
+      setLoading(true);
+      try {
+        const response = await client.post('/api/auth/register/verify/', {
+          registration_token: registrationToken,
+          otp: registrationOtp,
+        });
+        setSuccess(response.data?.message || 'Account created successfully! Please log in.');
+        setIsRegister(false);
+        setRegisterStep('details');
+        setRegistrationToken('');
+        setRegistrationOtp('');
+        setRegistrationContactHint('');
+        setForm((f) => ({ ...f, password: '', passwordConfirm: '' }));
+        setFormErrors({});
+      } catch (err) {
+        setError(getApiErrorMessage(err, 'Invalid or expired OTP. Registration was not completed.'));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     const errors = validateRegisterForm();
     setFormErrors(errors);
     if (Object.keys(errors).length) return;
@@ -280,18 +313,22 @@ export default function LoginPage() {
     const res = await register(regData);
     setLoading(false);
     if (res.success) {
-      setSuccess('Account created successfully! Please log in.');
-      setIsRegister(false);
-      setForm((f) => ({ ...f, password: '', passwordConfirm: '' }));
+      setRegistrationToken(res.registration_token || '');
+      setRegistrationContactHint(res.contact_hint || 'your registered contact');
+      setRegistrationOtp('');
+      setRegisterStep('otp');
+      setSuccess(`We sent a verification code to ${res.contact_hint || 'your registered contact'}. Enter it to finish creating your account.`);
       setFormErrors({});
     } else {
       const apiErrors = res.errors || {};
       if (typeof apiErrors === 'object' && !Array.isArray(apiErrors)) {
+        const fieldError = value => Array.isArray(value) ? value.join(' ') : String(value || '');
         setFormErrors(current => ({
           ...current,
-          username: apiErrors.username?.join?.(' ') || current.username,
-          email: apiErrors.email?.join?.(' ') || current.email,
-          password: apiErrors.password?.join?.(' ') || current.password,
+          username: fieldError(apiErrors.username) || current.username,
+          email: fieldError(apiErrors.email) || current.email,
+          phone: fieldError(apiErrors.phone_number) || current.phone,
+          password: fieldError(apiErrors.password) || current.password,
         }));
       }
       const errorMsg = typeof apiErrors === 'object'
@@ -412,6 +449,13 @@ export default function LoginPage() {
     setSuccess('');
     setFormErrors({});
     setForgotErrors({});
+  };
+
+  const resetRegistrationFlow = () => {
+    setRegisterStep('details');
+    setRegistrationToken('');
+    setRegistrationContactHint('');
+    setRegistrationOtp('');
   };
 
   const formTitle = isRegister ? 'Join CAV today' : showForgotPassword ? 'Reset password' : 'Sign in to CAV';
@@ -785,109 +829,140 @@ export default function LoginPage() {
                 </form>
               ) : (
                 <form onSubmit={isRegister ? handleRegisterSubmit : handleLoginSubmit} className="space-y-4" noValidate>
-                  <Input
-                    label="Username"
-                    icon={User}
-                    type="text"
-                    required
-                    value={form.username}
-                    onChange={update('username')}
-                    placeholder="Enter username"
-                    error={formErrors.username}
-                  />
-
-                  {isRegister && (
-                    <>
-                      <Input
-                        label="Email"
-                        icon={Mail}
-                        type="email"
-                        required
-                        value={form.email}
-                        onChange={update('email')}
-                        placeholder="name@example.com"
-                        error={formErrors.email}
-                      />
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <Input
-                          label="First Name"
-                          value={form.firstName}
-                          onChange={update('firstName')}
-                          placeholder="First"
-                        />
-                        <Input
-                          label="Last Name"
-                          value={form.lastName}
-                          onChange={update('lastName')}
-                          placeholder="Last"
-                        />
+                  {isRegister && registerStep === 'otp' ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 rounded-2xl border border-gold/20 bg-gold/5 p-4">
+                        <CheckCircle2 className="h-6 w-6 shrink-0 text-gold-dark" />
+                        <div>
+                          <p className="text-sm font-bold text-espresso">Verify your contact</p>
+                          <p className="mt-1 text-xs leading-relaxed text-espresso/55">Enter the 6-digit code sent to {registrationContactHint}.</p>
+                        </div>
                       </div>
                       <Input
-                        label="Phone"
-                        type="tel"
-                        value={form.phone}
-                        onChange={update('phone')}
-                        placeholder="+63 917 123 4567"
-                        error={formErrors.phone}
+                        label="One-Time OTP"
+                        icon={Key}
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        required
+                        value={registrationOtp}
+                        onChange={(e) => {
+                          setRegistrationOtp(e.target.value.replace(/\D/g, '').slice(0, 6));
+                          setFormErrors(current => ({ ...current, otp: '' }));
+                        }}
+                        placeholder="000000"
+                        className="text-center font-mono text-lg tracking-[0.24em]"
+                        error={formErrors.otp}
                       />
-                      <Textarea
-                        label="Address"
-                        value={form.address}
-                        onChange={update('address')}
-                        placeholder="Enter your address"
-                        rows={2}
-                      />
-                    </>
-                  )}
-
-                  <Input
-                    label="Password"
-                    icon={Key}
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={form.password}
-                    onChange={update('password')}
-                    placeholder="Enter password"
-                    error={formErrors.password}
-                    suffix={
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="p-1 text-espresso/35 transition-colors hover:text-espresso/60"
-                        tabIndex={-1}
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    }
-                  />
-
-                  {isRegister && (
+                    </div>
+                  ) : (
                     <>
                       <Input
-                        label="Confirm Password"
+                        label="Username"
+                        icon={User}
+                        type="text"
+                        required
+                        value={form.username}
+                        onChange={update('username')}
+                        placeholder="Enter username"
+                        error={formErrors.username}
+                      />
+
+                      {isRegister && (
+                        <>
+                          <Input
+                            label="Email"
+                            icon={Mail}
+                            type="email"
+                            required
+                            value={form.email}
+                            onChange={update('email')}
+                            placeholder="name@example.com"
+                            error={formErrors.email}
+                          />
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <Input
+                              label="First Name"
+                              value={form.firstName}
+                              onChange={update('firstName')}
+                              placeholder="First"
+                            />
+                            <Input
+                              label="Last Name"
+                              value={form.lastName}
+                              onChange={update('lastName')}
+                              placeholder="Last"
+                            />
+                          </div>
+                          <Input
+                            label="Phone"
+                            type="tel"
+                            value={form.phone}
+                            onChange={update('phone')}
+                            placeholder="+63 917 123 4567"
+                            error={formErrors.phone}
+                          />
+                          <Textarea
+                            label="Address"
+                            value={form.address}
+                            onChange={update('address')}
+                            placeholder="Enter your address"
+                            rows={2}
+                          />
+                        </>
+                      )}
+
+                      <Input
+                        label="Password"
                         icon={Key}
                         type={showPassword ? 'text' : 'password'}
                         required
-                        value={form.passwordConfirm}
-                        onChange={update('passwordConfirm')}
-                        placeholder="Re-enter password"
-                        error={formErrors.passwordConfirm}
+                        value={form.password}
+                        onChange={update('password')}
+                        placeholder="Enter password"
+                        error={formErrors.password}
+                        suffix={
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="p-1 text-espresso/35 transition-colors hover:text-espresso/60"
+                            tabIndex={-1}
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                          >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        }
                       />
-                      <PasswordStrength password={form.password} />
-                    </>
-                  )}
 
-                  {!isRegister && (
-                    <div className="-mt-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => { setShowForgotPassword(true); clearModeMessages(); }}
-                        className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
-                      >
-                        Forgot password?
-                      </button>
-                    </div>
+                      {isRegister && (
+                        <>
+                          <Input
+                            label="Confirm Password"
+                            icon={Key}
+                            type={showPassword ? 'text' : 'password'}
+                            required
+                            value={form.passwordConfirm}
+                            onChange={update('passwordConfirm')}
+                            placeholder="Re-enter password"
+                            error={formErrors.passwordConfirm}
+                          />
+                          <PasswordStrength password={form.password} />
+                        </>
+                      )}
+
+                      {!isRegister && (
+                        <div className="-mt-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => { setShowForgotPassword(true); clearModeMessages(); }}
+                            className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
+                          >
+                            Forgot password?
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   <Button
@@ -898,7 +973,7 @@ export default function LoginPage() {
                     disabled={loading || (isRegister ? !isRegisterValid : !isLoginValid)}
                     className="mt-1 w-full"
                   >
-                    {isRegister ? 'Create My CAV Account' : 'Enter My Dashboard'}
+                    {isRegister ? (registerStep === 'otp' ? 'Verify & Create Account' : 'Send Verification Code') : 'Enter My Dashboard'}
                   </Button>
                 </form>
               )}
@@ -906,7 +981,7 @@ export default function LoginPage() {
               {!showForgotPassword && (
                 <div className="space-y-3 pt-1 text-center">
                   <button
-                    onClick={() => { setIsRegister(!isRegister); clearModeMessages(); }}
+                    onClick={() => { resetRegistrationFlow(); setIsRegister(!isRegister); clearModeMessages(); }}
                     className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
                   >
                     {isRegister ? 'Already booked with CAV? Sign In' : 'New to CAV? Create an account'}
