@@ -5,7 +5,8 @@ import {
   TrendingUp, BarChart2, Users, MessageSquare, Play, Package,
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
   X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
-  ArrowDownRight, Eye, Camera, Printer, ChevronLeft, ChevronRight
+  ArrowDownRight, Eye, Camera, Printer, ChevronLeft, ChevronRight,
+  Star, Quote, ThumbsUp, ThumbsDown, Minus
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -297,6 +298,7 @@ export default function AdminDashboard() {
   const [forecast, setForecast] = useState(null);
   const [staffList, setStaffList] = useState([]);
   const [faqs, setFaqs] = useState([]);
+  const [reviews, setReviews] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
   const [calendarBookings, setCalendarBookings] = useState([]);
   const [studioUnavailableDates, setStudioUnavailableDates] = useState([]);
@@ -356,6 +358,8 @@ export default function AdminDashboard() {
   const [staffPageSize, setStaffPageSize] = useState(10);
   const [faqPage, setFaqPage] = useState(1);
   const [faqPageSize, setFaqPageSize] = useState(10);
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewPageSize, setReviewPageSize] = useState(10);
   const [bookingSort, setBookingSort] = useState({ key: 'created_at', dir: 'desc' });
   const [posSort, setPosSort] = useState({ key: 'date', dir: 'desc' });
   const [reorderSort, setReorderSort] = useState({ key: 'projected_stock', dir: 'asc' });
@@ -412,6 +416,9 @@ export default function AdminDashboard() {
       } else if (tab === 'faq') {
         const response = await getCached('/api/chatbot/faqs/', {}, { force });
         setFaqs(normalizeRowsById(response.data, row => row?.question));
+      } else if (tab === 'reviews') {
+        const response = await getCached('/api/bookings/reviews/all/', {}, { force });
+        setReviews(normalizeRowsById(response.data, row => row?.id));
       }
     } catch (error) {
       setDataError(getApiErrorMessage(error, `Could not load ${tab} data.`));
@@ -1093,10 +1100,11 @@ export default function AdminDashboard() {
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'staff', label: 'Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
+    { key: 'reviews', label: 'Reviews & Feedback', icon: Star, active: activeTab === 'reviews', onClick: () => setActiveTab('reviews') },
     { key: 'system', label: 'System Controls', icon: AlertTriangle, active: activeTab === 'system', onClick: () => setActiveTab('system') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', system: 'System Controls' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', system: 'System Controls' };
   const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
   const metrics = asRecord(analytics?.metrics);
   const statusData = [
@@ -1162,6 +1170,15 @@ export default function AdminDashboard() {
   const sortedStaffList = sortRows(staffList, staffSort);
   const staffPageRows = paginateRows(sortedStaffList, staffPage, staffPageSize);
   const faqPageRows = paginateRows(faqs, faqPage, faqPageSize);
+  const reviewPageRows = paginateRows(reviews, reviewPage, reviewPageSize);
+  const reviewCounts = reviews.reduce((acc, review) => {
+    acc[review.sentiment] = (acc[review.sentiment] || 0) + 1;
+    return acc;
+  }, {});
+  const keyComments = [...reviews]
+    .filter(review => review.feedback || review.suggestions)
+    .sort((a, b) => (Math.abs(Number(b.rating) - 3) - Math.abs(Number(a.rating) - 3)) || String(b.created_at).localeCompare(String(a.created_at)))
+    .slice(0, 3);
   const paymentStatusCounts = bookingPayments.reduce((acc, payment) => {
     acc[payment.status] = (acc[payment.status] || 0) + 1;
     return acc;
@@ -2406,6 +2423,108 @@ export default function AdminDashboard() {
                   )}
                 </Card>
               </div>
+            </div>
+          )}
+
+          {/* REVIEWS & FEEDBACK */}
+          {activeTab === 'reviews' && (
+            <div className="w-full space-y-4 animate-in-up" key="reviews">
+              <div>
+                <p className="mb-1 text-[10px] font-black uppercase tracking-[0.24em] text-gold-dark">Customer Voice</p>
+                <h1 className="font-sans text-2xl font-extrabold text-espresso md:text-3xl">Reviews &amp; Feedback</h1>
+                <p className="mt-1 max-w-2xl text-xs leading-relaxed text-espresso/55">
+                  See what customers are saying about their completed studio sessions.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {[
+                  { label: 'All reviews', value: reviews.length, icon: MessageSquare, className: 'text-espresso' },
+                  { label: 'Positive', value: reviewCounts.Positive || 0, icon: ThumbsUp, className: 'text-emerald-600' },
+                  { label: 'Neutral', value: reviewCounts.Neutral || 0, icon: Minus, className: 'text-amber-600' },
+                  { label: 'Negative', value: reviewCounts.Negative || 0, icon: ThumbsDown, className: 'text-red-600' },
+                ].map(({ label, value, icon: Icon, className }) => (
+                  <Card key={label} className="!p-3.5 md:!p-4">
+                    <div className={`mb-2 flex items-center gap-2 text-xs font-bold ${className}`}>
+                      <Icon className="h-4 w-4" /> {label}
+                    </div>
+                    <p className="text-2xl font-black text-espresso">{value}</p>
+                  </Card>
+                ))}
+              </div>
+
+              {keyComments.length > 0 && (
+                <Card className="!p-4 md:!p-5">
+                  <CardHeader title="Key comments" />
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    {keyComments.map(review => (
+                      <div key={review.id} className="rounded-2xl border border-gold/20 bg-gold/5 p-4">
+                        <Quote className="mb-2 h-4 w-4 text-gold-dark" />
+                        <p className="line-clamp-4 text-sm font-semibold leading-relaxed text-espresso/80">
+                          “{review.feedback || review.suggestions}”
+                        </p>
+                        <div className="mt-3 flex items-center justify-between gap-2 text-[10px] font-bold text-espresso/50">
+                          <span className="truncate">{review.customer_details?.name || 'Customer'}</span>
+                          <span className="shrink-0 text-gold-dark">{review.rating}/5</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              <Card className="!p-4 md:!p-5">
+                <CardHeader title="All customer reviews" />
+                {reviewPageRows.length > 0 ? (
+                  <>
+                    <div className="space-y-3">
+                      {reviewPageRows.map((review, index) => {
+                        const booking = review.booking_details || {};
+                        const sentimentStyles = {
+                          Positive: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                          Neutral: 'border-amber-200 bg-amber-50 text-amber-700',
+                          Negative: 'border-red-200 bg-red-50 text-red-700',
+                        };
+                        return (
+                          <article key={review.id} className="rounded-2xl border border-espresso/[0.06] bg-cream/55 p-4 animate-in-up" style={{ animationDelay: `${index * 40}ms` }}>
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="font-black text-espresso">{review.customer_details?.name || 'Customer'}</p>
+                                  <span className="text-[10px] text-espresso/45">{review.customer_details?.email}</span>
+                                </div>
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-espresso/55">
+                                  <span className="font-bold">Booking #{booking.id}</span>
+                                  <span>•</span>
+                                  <span>{booking.package}</span>
+                                  <span>•</span>
+                                  <span>{booking.scheduled_date} at {booking.scheduled_time}</span>
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <div className="flex items-center gap-0.5 text-gold-dark" aria-label={`${review.rating} out of 5 stars`}>
+                                  {Array.from({ length: 5 }, (_, star) => <Star key={star} className={`h-4 w-4 ${star < review.rating ? 'fill-current' : ''}`} />)}
+                                </div>
+                                <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${sentimentStyles[review.sentiment] || sentimentStyles.Neutral}`}>
+                                  {review.sentiment || 'Neutral'}
+                                </span>
+                              </div>
+                            </div>
+                            {review.feedback ? <p className="mt-4 text-sm leading-relaxed text-espresso/75">{review.feedback}</p> : <p className="mt-4 text-xs italic text-espresso/40">No written feedback provided.</p>}
+                            {review.suggestions && (
+                              <p className="mt-2 border-l-2 border-gold/40 pl-3 text-xs leading-relaxed text-espresso/60"><span className="font-black text-espresso/70">Suggestion:</span> {review.suggestions}</p>
+                            )}
+                            <p className="mt-3 text-[10px] font-semibold text-espresso/40">Submitted {formatManilaDateTime(review.created_at)}</p>
+                          </article>
+                        );
+                      })}
+                    </div>
+                    <PaginationControls page={reviewPage} setPage={setReviewPage} total={reviews.length} pageSize={reviewPageSize} setPageSize={setReviewPageSize} />
+                  </>
+                ) : (
+                  <EmptyState icon={Star} title="No reviews yet" description="Customer reviews will appear here after completed bookings are submitted." />
+                )}
+              </Card>
             </div>
           )}
 

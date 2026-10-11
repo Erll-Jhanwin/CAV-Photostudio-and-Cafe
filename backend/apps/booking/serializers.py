@@ -119,18 +119,52 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
 
 class BookingReviewSerializer(serializers.ModelSerializer):
     customer = serializers.PrimaryKeyRelatedField(read_only=True)
+    customer_details = serializers.SerializerMethodField()
+    booking_details = serializers.SerializerMethodField()
+    sentiment = serializers.SerializerMethodField()
+
+    POSITIVE_WORDS = {'amazing', 'awesome', 'beautiful', 'best', 'excellent', 'friendly', 'good', 'great', 'love', 'perfect', 'pleasant', 'recommend', 'smooth', 'thank'}
+    NEGATIVE_WORDS = {'awful', 'bad', 'broken', 'cancel', 'delay', 'disappoint', 'late', 'messy', 'poor', 'rude', 'slow', 'terrible', 'unhappy', 'wait', 'worst'}
 
     class Meta:
         model = BookingReview
         fields = [
             'id', 'booking', 'customer', 'rating', 'feedback', 'suggestions',
-            'created_at', 'updated_at',
+            'created_at', 'updated_at', 'customer_details', 'booking_details', 'sentiment',
         ]
         read_only_fields = ['customer', 'created_at', 'updated_at']
         extra_kwargs = {
             'feedback': {'allow_blank': True, 'max_length': 2000, 'required': False},
             'suggestions': {'allow_blank': True, 'max_length': 2000, 'required': False},
         }
+
+    def get_customer_details(self, obj):
+        customer = obj.customer
+        return {
+            'name': customer.get_full_name() or customer.username,
+            'username': customer.username,
+            'email': customer.email,
+        }
+
+    def get_booking_details(self, obj):
+        booking = obj.booking
+        return {
+            'id': booking.id,
+            'package': booking.package.name,
+            'service': booking.package.service.name,
+            'scheduled_date': booking.scheduled_date,
+            'scheduled_time': booking.scheduled_time,
+            'status': booking.status,
+        }
+
+    def get_sentiment(self, obj):
+        words = set(re.findall(r"[a-z]+", f'{obj.feedback} {obj.suggestions}'.lower()))
+        score = (int(obj.rating) - 3) + len(words & self.POSITIVE_WORDS) - len(words & self.NEGATIVE_WORDS)
+        if score > 0:
+            return 'Positive'
+        if score < 0:
+            return 'Negative'
+        return 'Neutral'
 
     def validate_rating(self, value):
         if value < 1 or value > 5:

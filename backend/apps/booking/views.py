@@ -553,6 +553,16 @@ class BookingReviewCreateView(generics.CreateAPIView):
         )
 
 
+class BookingReviewListView(generics.ListAPIView):
+    serializer_class = BookingReviewSerializer
+    permission_classes = [IsStaffOrAdmin]
+
+    def get_queryset(self):
+        return BookingReview.objects.select_related(
+            'customer', 'booking', 'booking__package', 'booking__package__service'
+        ).order_by('-created_at', '-id')
+
+
 class BookingPaymentListCreateView(generics.ListCreateAPIView):
     serializer_class = BookingPaymentSerializer
     permission_classes = [permissions.IsAuthenticated]
