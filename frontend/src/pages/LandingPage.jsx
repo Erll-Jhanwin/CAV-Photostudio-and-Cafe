@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  Camera, Coffee, ChevronRight, ChevronLeft, MessageSquare, Send, X,
-  ArrowRight, Star, MapPin, Clock, Phone, Menu, Check,
+  Camera, Coffee, ChevronRight, ChevronLeft, Send, X,
+  ArrowRight, Star, Menu, Check,
   User, Users, Heart, Cake, CalendarCheck
 } from 'lucide-react';
 import axios from 'axios';
@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { LoadingSpinner, Skeleton, SkeletonCard } from '../components/ui/Skeleton';
 import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
+import SiteFooter from '../components/SiteFooter';
 import { normalizeGalleryImages, normalizeRowsById, normalizeServices, recordKey, uniqueBy } from '../utils/uniqueRecords';
 import { brandAssets, businessAssets, decorateServicesWithAssets, localGalleryImages } from '../utils/cavAssets';
 
@@ -790,7 +791,7 @@ export default function LandingPage({ page = 'home' }) {
               ) : (
                 <>
                   <Link to="/login" className="hidden rounded-2xl px-3 py-2 text-sm font-bold text-espresso/68 transition-colors hover:bg-cream hover:text-espresso focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold sm:block">
-                    Access Account
+                    Login
                   </Link>
                   <Button variant="gold" size="sm" onClick={handleBookNow} className="hidden rounded-2xl px-4 font-black sm:inline-flex">
                     Reserve <span className="hidden lg:inline">Your Session</span> <ArrowRight className="w-3.5 h-3.5" />
@@ -1207,55 +1208,11 @@ export default function LandingPage({ page = 'home' }) {
         </div>
       </section>}
 
-      {/* Info Bar */}
-      <section className="bg-cream-dark border-y border-espresso/[0.06] py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-center gap-6 md:gap-8 text-sm text-espresso/70">
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-gold" />
-            <span>028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas</span>
-          </div>
-          <div className="hidden sm:block w-px h-4 bg-espresso/10" />
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-gold" />
-            <span>Daily: 9:00 AM - 7:00 PM PHT</span>
-          </div>
-          <div className="hidden sm:block w-px h-4 bg-espresso/10" />
-          <div className="flex items-center gap-2">
-            <Phone className="w-4 h-4 text-gold" />
-            <span>cav.photostudio.cafe@gmail.com</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="bg-espresso-dark py-10 md:py-14 px-4 sm:px-6 border-t border-white/5 text-cream/65 text-xs md:text-sm">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6">
-          <div className="flex items-center gap-2.5">
-            <div className="bg-gold text-espresso p-1.5 rounded-lg">
-              <Camera className="w-4 h-4" />
-            </div>
-            <span className="font-sans text-base font-extrabold text-white">CAV Studio &amp; Café</span>
-          </div>
-          <p>&copy; 2026 CAV Capstone Project. All rights reserved.</p>
-          <div className="flex gap-4 md:gap-6">
-            <Link to="/login" className="hover:text-white transition-colors">Staff Login</Link>
-            <Link to="/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter onOpenChat={() => setChatOpen(true)} chatOpen={chatOpen} />
 
       {/* Chatbot */}
       <div className="fixed bottom-4 right-4 md:bottom-5 md:right-5 z-50">
-        {!chatOpen ? (
-          <button
-            onClick={() => setChatOpen(true)}
-            className="relative w-12 h-12 bg-espresso hover:bg-espresso-light text-gold rounded-full shadow-[0_16px_36px_rgba(28,15,10,0.28)] hover:scale-105 active:scale-95 transition-all border border-gold/25 flex items-center justify-center focus-visible:outline-gold"
-            aria-label="Open chat"
-          >
-            <span className="absolute inset-0 rounded-full bg-gold/20 animate-ping" />
-            <MessageSquare className="w-5 h-5" />
-          </button>
-        ) : (
+        {chatOpen && (
           <div className="w-72 sm:w-96 h-[480px] bg-white rounded-3xl shadow-2xl border border-espresso/10 flex flex-col overflow-hidden animate-in-up">
             <div className="bg-espresso text-cream px-4 py-3.5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">

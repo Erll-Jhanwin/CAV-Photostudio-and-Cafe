@@ -222,7 +222,7 @@ def get_matching_packages(question):
 
 def format_package_list(packages, lang, limit=8):
     if not packages:
-        return "Wala pang packages sa database." if lang == 'tl' else "There are no packages in the database yet."
+        return "Wala pang packages na available." if lang == 'tl' else "There are no packages available yet."
     rows = []
     for package in packages[:limit]:
         rows.append(f"- {package.name} ({package.service.name}): PHP {package.price}")
@@ -239,7 +239,7 @@ def get_live_services():
 
 def format_service_list(services, lang, limit=8):
     if not services:
-        return "Wala pang services sa database." if lang == 'tl' else "There are no services in the database yet."
+        return "Wala pang services na available." if lang == 'tl' else "There are no services available yet."
     rows = []
     for service in services[:limit]:
         package_count = len([package for package in service.packages.all() if package.service_id == service.id])
@@ -427,15 +427,15 @@ def build_booking_chatbot_response(question, user=None):
         return format_user_bookings(user, lang)
 
     if asks_for_services(question):
-        prefix = "Live services from the database:" if lang == 'en' else "Mga live service mula sa database:"
+        prefix = "Available services:" if lang == 'en' else "Mga available na service:"
         return f"{prefix}\n{format_service_list(get_live_services(), lang)}\n\n{business_hours_text(lang)}"
 
     if asks_for_packages(question):
-        prefix = "Available packages from the live database:" if lang == 'en' else "Mga package na nasa live database:"
+        prefix = "Available packages:" if lang == 'en' else "Mga available na package:"
         return f"{prefix}\n{format_package_list(all_packages, lang)}\n\n{business_hours_text(lang)}"
 
     if not all_packages:
-        return "Wala pang packages sa database kaya hindi pa ako makapag-check ng schedule." if lang == 'tl' else "There are no packages in the database yet, so I can't check schedules."
+        return "Wala pang packages na available kaya hindi pa ako makapag-check ng schedule." if lang == 'tl' else "There are no packages available yet, so I can't check schedules."
 
     if not packages:
         if day and any(term in q for term in ['booked', 'unavailable', 'taken', 'occupied', 'hindi available']):

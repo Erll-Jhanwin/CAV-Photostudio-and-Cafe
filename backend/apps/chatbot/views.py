@@ -21,6 +21,7 @@ MAX_CHATBOT_QUESTION_LENGTH = 500
 FAQ_ACTION = 'FAQ_RECORD'
 APPROVED_LEARNING_ACTION = 'CHATBOT_APPROVED_RESPONSE'
 CHATBOT_QUERY_ACTION = 'CHATBOT_QUERY'
+STUDIO_ADDRESS = '028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.'
 
 SENSITIVE_PATTERNS = [
     r'\b(api[_ -]?key|secret[_ -]?key|client[_ -]?secret|service[_ -]?role|database[_ -]?url|db[_ -]?url)\b',
@@ -42,7 +43,7 @@ DEFAULT_FAQS = [
     {"id": 2, "question": "How do I book a studio session?", "answer": "Log in, open Book Session, choose a package, select an available date and time, then submit your booking.", "tags": "book,booking,session,reserve"},
     {"id": 3, "question": "What packages do you offer for photo studio?", "answer": "We offer Studio Session packages for Solo, Couple, Friends, Family, and Birthday sessions, plus a Standard Event Package. Package details and prices are shown in the booking page.", "tags": "packages,price,studio,solo,couple,friends,family,birthday,event"},
     {"id": 4, "question": "Can we walk in for cafe or photo studio?", "answer": "Cafe walk-ins are welcome. Studio walk-ins depend on room availability, so advance booking is recommended.", "tags": "walkin,cafe,studio"},
-    {"id": 5, "question": "Where is CAV located?", "answer": "CAV is located at 028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.", "tags": "location,address,where,directions"},
+    {"id": 5, "question": "Where is CAV located?", "answer": STUDIO_ADDRESS, "tags": "location,address,where,directions"},
     {"id": 6, "question": "How do I reset my password?", "answer": "Open the sign-in page, choose Forgot password, enter your registered email, verify the OTP, then set a new strong password.", "tags": "password,reset,forgot,otp,login,sign in"},
 ]
 KNOWLEDGE_STOPWORDS = {
@@ -112,6 +113,7 @@ def clean_response_text(value):
     }
     for old, new in replacements.items():
         value = value.replace(old, new)
+    value = re.sub(r'\blive database\b', 'current information', value, flags=re.IGNORECASE)
     # Approved knowledge is still treated as untrusted content at the output
     # boundary.  A mistakenly entered secret must not be echoed to a visitor.
     return SENSITIVE_RE.sub('[sensitive detail removed]', value)
@@ -119,6 +121,19 @@ def clean_response_text(value):
 
 def asks_for_sensitive_or_internal_data(question):
     return bool(SENSITIVE_RE.search(question or ''))
+
+
+def asks_for_studio_address(question):
+    normalized = ' '.join(str(question or '').casefold().split())
+    if re.search(r'\b(my|customer|profile|account)\s+address\b', normalized):
+        return False
+    if re.search(r'\baddress\b', normalized):
+        return bool(re.search(r'\b(?:studio|cav|business|your)\b', normalized))
+    return bool(
+        re.search(r'\b(?:location|located|directions)\b', normalized)
+        or re.search(r'\bwhere\s+(?:is|are)\s+(?:cav|the studio|you)\b', normalized)
+        or re.search(r'\b(?:saan|nasaan)\b.*\b(?:cav|studio|kayo|ninyo)\b', normalized)
+    )
 
 
 def safe_refusal(lang='en'):
@@ -265,6 +280,11 @@ class ChatbotQueryView(views.APIView):
             response_text = safe_refusal(lang)
             log_chatbot_query(request, question, response_text, blocked=True, reason="sensitive_or_internal_request")
             return Response({"question": question, "response": response_text, "matched_faq": None, "source": "safety"})
+
+        if asks_for_studio_address(question):
+            response_text = STUDIO_ADDRESS
+            log_chatbot_query(request, question, response_text, source='studio_address')
+            return Response({"question": question, "response": response_text, "matched_faq": "Where is CAV located?", "source": "studio_address", "citations": [], "language": lang})
 
         try:
             # Mutations are always explicit API actions and always require a

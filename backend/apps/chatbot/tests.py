@@ -47,6 +47,16 @@ class ChatbotQueryTests(TestCase):
         self.assertEqual(response.data['source'], 'safety')
         self.assertNotIn('password is', response.data['response'].lower())
 
+    def test_studio_address_response_is_exact(self):
+        response = self.client.post('/api/chatbot/query/', {'question': 'What is the studio address?'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['response'], '028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.')
+
+    def test_chatbot_does_not_expose_live_database_phrase(self):
+        response = self.client.post('/api/chatbot/query/', {'question': 'What packages do you offer?'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('live database', response.data['response'].lower())
+
     def test_booking_message_only_proposes_until_confirmed(self):
         user = CustomUser.objects.create_user(
             username='chat-customer',

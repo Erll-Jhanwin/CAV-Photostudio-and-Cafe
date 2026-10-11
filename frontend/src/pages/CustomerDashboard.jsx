@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
-import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, QrCode, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
+import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -186,9 +186,6 @@ const createIdempotencyKey = (prefix) => {
 const DOWN_PAYMENT_RATE = 0.5;
 const PAYMENT_RECEIPT_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const PAYMENT_RECEIPT_MAX_SIZE = 5 * 1024 * 1024;
-const HIDDEN_PAYMENT_OCR_WARNINGS = new Set([
-  'Could not read the payment time. Please enter it manually.',
-]);
 const calculateDownPayment = (price) => Number(price || 0) * DOWN_PAYMENT_RATE;
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 const isValidPhone = (value) => String(value || '').replace(/[^\d+]/g, '').replace(/^\+/, '').length >= 7;
@@ -363,18 +360,8 @@ export default function CustomerDashboard() {
   const [paymentTime, setPaymentTime] = useState(getTimeInputValue());
   const [paymentReceipt, setPaymentReceipt] = useState(null);
   const [paymentReceiptPreview, setPaymentReceiptPreview] = useState('');
-  const [paymentOcrLoading, setPaymentOcrLoading] = useState(false);
-  const [paymentOcrResult, setPaymentOcrResult] = useState(null);
-  const [paymentOcrWarnings, setPaymentOcrWarnings] = useState([]);
-  const [paymentScanProgress, setPaymentScanProgress] = useState({
-    status: 'idle',
-    percent: 0,
-    message: 'Upload a screenshot to scan payment details.',
-    messages: [],
-  });
   const [paymentReferenceStatus, setPaymentReferenceStatus] = useState({ checking: false, exists: false, message: '' });
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
-  const [gcashQrMissing, setGcashQrMissing] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(getMonthValue());
   const [monthAvailability, setMonthAvailability] = useState({});
   const [dayAvailability, setDayAvailability] = useState(null);
@@ -404,7 +391,6 @@ export default function CustomerDashboard() {
   useEffect(() => {
     if (selectedPackage) {
       setPaymentAmount(calculateDownPayment(selectedPackage.price).toFixed(2));
-      setGcashQrMissing(false);
     }
   }, [selectedPackage]);
 
@@ -837,96 +823,21 @@ export default function CustomerDashboard() {
     return () => window.clearTimeout(timer);
   }, [paymentReference, checkPaymentReferenceDuplicate]);
 
-  const setPaymentScanStep = (status, percent, message) => {
-    setPaymentScanProgress(current => ({
-      status,
-      percent,
-      message,
-      messages: current.messages.includes(message)
-        ? current.messages
-        : [...current.messages, message].slice(-5),
-    }));
-  };
-
-  const handlePaymentReceiptUpload = async (file) => {
+  const handlePaymentReceiptUpload = (file) => {
     if (file && !PAYMENT_RECEIPT_ALLOWED_TYPES.includes(file.type)) {
-      alert('Receipt screenshot must be a JPG, PNG, or WEBP image.');
+      alert('Payment proof must be a JPG, PNG, or WEBP image.');
       file = null;
     }
     if (file && file.size > PAYMENT_RECEIPT_MAX_SIZE) {
-      alert('Receipt screenshot must be 5MB or smaller.');
+      alert('Payment proof must be 5MB or smaller.');
       file = null;
     }
     setPaymentReceipt(file || null);
-    setPaymentOcrResult(null);
-    setPaymentOcrWarnings([]);
     setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
-    setPaymentScanProgress({
-      status: file ? 'uploading' : 'idle',
-      percent: file ? 5 : 0,
-      message: file ? 'Uploading receipt to OCR API' : 'Upload a screenshot to scan payment details.',
-      messages: file ? ['Uploading receipt to OCR API'] : [],
-    });
     setPaymentReceiptPreview(current => {
       if (current) URL.revokeObjectURL(current);
       return file ? URL.createObjectURL(file) : '';
     });
-    if (!file) return;
-
-    try {
-      setPaymentOcrLoading(true);
-      const ocrData = new FormData();
-      ocrData.append('receipt', file);
-      const res = await client.post('/api/bookings/payments/ocr/', ocrData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: progressEvent => {
-          if (!progressEvent.total) return;
-          const uploadPercent = Math.round((progressEvent.loaded * 30) / progressEvent.total);
-          setPaymentScanProgress(current => ({
-            ...current,
-            status: progressEvent.loaded >= progressEvent.total ? 'reading' : 'uploading',
-            percent: Math.min(35, Math.max(current.percent, 5 + uploadPercent)),
-            message: progressEvent.loaded >= progressEvent.total ? 'Scanning receipt with OCR API' : 'Uploading receipt to OCR API',
-            messages: progressEvent.loaded >= progressEvent.total && !current.messages.includes('Scanning receipt with OCR API')
-              ? [...current.messages, 'Scanning receipt with OCR API'].slice(-5)
-              : current.messages,
-          }));
-        },
-      });
-      setPaymentScanStep('reading', 55, 'Extracting payment details');
-      const fields = res.data.fields || {};
-      const nextReference = fields.reference_number?.value || '';
-      setPaymentScanStep('validating', 72, 'Validating reference number');
-      if (nextReference) setPaymentReference(nextReference);
-      setPaymentScanStep('autofilling', 88, 'Autofilling fields');
-      if (fields.amount?.value) setPaymentAmount(fields.amount.value);
-      if (fields.payment_date?.value) setPaymentDate(fields.payment_date.value);
-      if (fields.payment_time?.value) setPaymentTime(fields.payment_time.value);
-      setPaymentOcrResult(res.data);
-      setPaymentOcrWarnings((res.data.warnings || []).filter(
-        warning => !HIDDEN_PAYMENT_OCR_WARNINGS.has(warning)
-      ));
-      if (res.data.duplicate_reference) {
-        setPaymentReferenceStatus({
-          checking: false,
-          exists: true,
-          message: 'This GCash reference number has already been submitted.',
-        });
-      }
-      const readableFields = Object.values(fields).filter(field => field?.value).length;
-      if (res.data.duplicate_reference) {
-        setPaymentScanStep('error', 100, 'Reference already submitted');
-      } else if (!res.data.ocr_available || readableFields === 0) {
-        setPaymentScanStep('error', 100, 'Scan failed');
-      } else {
-        setPaymentScanStep('success', 100, 'Scan complete');
-      }
-    } catch {
-      setPaymentOcrWarnings(['Could not scan this screenshot. Please enter the payment details manually.']);
-      setPaymentScanStep('error', 100, 'Scan failed');
-    } finally {
-      setPaymentOcrLoading(false);
-    }
   };
 
   const getPackageById = useCallback((packageId) => (
@@ -1096,7 +1007,7 @@ export default function CustomerDashboard() {
     const requiredDownPayment = calculateDownPayment(selectedPackage.price);
     const paidAmount = Number(paymentAmount);
     if (!paymentReference.trim() || !paymentDate || !paymentTime || !paymentReceipt) {
-      alert('Please complete the GCash payment proof fields and upload the receipt screenshot.');
+      alert('Please enter the payment details and upload your payment proof image.');
       return;
     }
     if (!isValidPaymentReference(paymentReference)) {
@@ -1105,10 +1016,6 @@ export default function CustomerDashboard() {
     }
     if (!Number.isFinite(paidAmount) || paidAmount < requiredDownPayment) {
       alert(`Amount paid must be at least ${formatPeso(requiredDownPayment)}.`);
-      return;
-    }
-    if (paymentOcrLoading) {
-      alert('Please wait until receipt scanning is complete.');
       return;
     }
     if (paymentReferenceStatus.checking) {
@@ -1206,14 +1113,6 @@ export default function CustomerDashboard() {
       setPaymentTime(getTimeInputValue());
       setPaymentReceipt(null);
       setPaymentReceiptPreview('');
-      setPaymentOcrResult(null);
-      setPaymentOcrWarnings([]);
-      setPaymentScanProgress({
-        status: 'idle',
-        percent: 0,
-        message: 'Upload a screenshot to scan payment details.',
-        messages: [],
-      });
       setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
       resetPendingBooking();
       setCurrentStep(1);
@@ -2139,24 +2038,7 @@ export default function CustomerDashboard() {
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-1 lg:grid-cols-[190px_1fr] gap-4 bg-white rounded-2xl border border-espresso/10 p-4 shadow-sm">
-                            <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-3 flex flex-col items-center justify-center text-center min-h-44">
-                              {!gcashQrMissing ? (
-                                <img
-                                  src="/gcash-business-qr.png"
-                                  alt="Official CAV GCash for Business QR code"
-                                  className="w-36 h-36 object-contain rounded-xl bg-white border border-blue-100 p-2"
-                                  onError={() => setGcashQrMissing(true)}
-                                />
-                              ) : (
-                                <div className="w-36 h-36 rounded-xl bg-white border border-dashed border-blue-200 flex flex-col items-center justify-center text-blue-700 p-3">
-                                  <QrCode className="w-8 h-8 mb-2" />
-                                  <p className="text-[10px] font-black leading-tight">Upload official QR as public/gcash-business-qr.png</p>
-                                </div>
-                              )}
-                              <p className="text-[10px] font-black text-blue-700 uppercase tracking-wider mt-3">GCash for Business</p>
-                            </div>
-
+                          <div className="bg-white rounded-2xl border border-espresso/10 p-4 shadow-sm">
                             <div className="space-y-3">
                               <div className="rounded-xl bg-cream/70 border border-espresso/5 p-3 text-xs space-y-1.5">
                                 <div className="flex justify-between gap-3">
@@ -2164,7 +2046,7 @@ export default function CustomerDashboard() {
                                   <span className="font-black text-gold-dark">{formatPeso(requiredDownPayment)}</span>
                                 </div>
                                 <p className="text-[11px] text-espresso/55 leading-relaxed">
-                                  Pay through the business GCash QR, then upload the receipt screenshot. OCR will autofill readable details, but staff must still verify the merchant record before confirming the booking.
+                                  Upload an image of your payment proof, then manually enter the reference number, amount, date, and time. Staff will verify the payment before confirming the booking.
                                 </p>
                               </div>
 
@@ -2205,25 +2087,18 @@ export default function CustomerDashboard() {
                                   required
                                 />
                               </div>
-                              {(paymentReferenceStatus.message || paymentOcrWarnings.length > 0) && (
+                              {paymentReferenceStatus.message && (
                                 <div className={`rounded-2xl border p-3 text-[11px] font-semibold leading-relaxed ${
                                   paymentReferenceStatus.exists
                                     ? 'border-red-100 bg-red-50 text-red-700'
-                                    : paymentOcrWarnings.length > 0
-                                    ? 'border-amber-100 bg-amber-50 text-amber-800'
                                     : 'border-emerald-100 bg-emerald-50 text-emerald-700'
                                 }`}>
-                                  {paymentReferenceStatus.message && (
-                                    <p>{paymentReferenceStatus.checking ? 'Checking reference number...' : paymentReferenceStatus.message}</p>
-                                  )}
-                                  {paymentOcrWarnings.map((warning, index) => (
-                                    <p key={`${warning}-${index}`}>{warning}</p>
-                                  ))}
+                                  <p>{paymentReferenceStatus.checking ? 'Checking reference number...' : paymentReferenceStatus.message}</p>
                                 </div>
                               )}
 
                               <div>
-                                <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70 mb-2">GCash Screenshot OCR</span>
+                                <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70 mb-2">Payment Proof Image</span>
                                 <div className="rounded-2xl border border-dashed border-espresso/15 bg-cream/35 p-3 grid grid-cols-1 sm:grid-cols-[112px_1fr] gap-3">
                                   <div className="h-28 rounded-xl bg-white text-gold-dark flex items-center justify-center border border-espresso/5 overflow-hidden">
                                     {paymentReceiptPreview ? (
@@ -2237,66 +2112,16 @@ export default function CustomerDashboard() {
                                       type="file"
                                       accept="image/jpeg,image/png,image/webp"
                                       onChange={e => handlePaymentReceiptUpload(e.target.files?.[0] || null)}
-                                      disabled={paymentOcrLoading || paymentSubmitting}
+                                      disabled={paymentSubmitting}
                                       className="block w-full text-xs text-espresso file:mr-3 file:rounded-xl file:border-0 file:bg-espresso file:px-3 file:py-2 file:text-xs file:font-bold file:text-gold disabled:opacity-60"
                                       required
                                     />
                                     <p className="text-[10px] text-espresso/45 mt-1 truncate">
-                                      {paymentReceipt ? paymentReceipt.name : 'Upload a clear GCash receipt screenshot.'}
+                                      {paymentReceipt ? paymentReceipt.name : 'Upload a clear image of your payment proof.'}
                                     </p>
-                                    <div className={`mt-2 rounded-xl border p-2 text-[10px] leading-relaxed ${
-                                      paymentScanProgress.status === 'success'
-                                        ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-                                        : paymentScanProgress.status === 'error'
-                                        ? 'border-red-100 bg-red-50 text-red-700'
-                                        : paymentOcrLoading
-                                        ? 'border-gold/20 bg-gold/10 text-espresso'
-                                        : 'border-espresso/5 bg-white/75 text-espresso/55'
-                                    }`}>
-                                      <div className="flex items-center justify-between gap-3">
-                                        <p className="font-black">
-                                          {paymentScanProgress.message}
-                                        </p>
-                                        {paymentReceipt && (paymentScanProgress.status === 'error' || paymentOcrWarnings.length > 0) && (
-                                          <button
-                                            type="button"
-                                            onClick={() => handlePaymentReceiptUpload(paymentReceipt)}
-                                            disabled={paymentOcrLoading || paymentSubmitting}
-                                            className="shrink-0 rounded-lg border border-current/20 px-2 py-1 text-[9px] font-black uppercase tracking-wider transition-all hover:bg-white/60 disabled:opacity-50"
-                                          >
-                                            Retry Scan
-                                          </button>
-                                        )}
-                                      </div>
-                                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/80 border border-current/10">
-                                        <div
-                                          className={`h-full rounded-full transition-all duration-500 ${
-                                            paymentScanProgress.status === 'success'
-                                              ? 'bg-emerald-500'
-                                              : paymentScanProgress.status === 'error'
-                                              ? 'bg-red-500'
-                                              : 'bg-gold'
-                                          }`}
-                                          style={{ width: `${paymentScanProgress.percent}%` }}
-                                        />
-                                      </div>
-                                      {paymentScanProgress.messages.length > 0 ? (
-                                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1">
-                                          {paymentScanProgress.messages.map((message, index) => (
-                                            <span key={`${message}-${index}`} className="font-semibold">
-                                              {message}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <p className="mt-2">OCR will try to fill the reference number, amount, payment date, and payment time automatically.</p>
-                                      )}
-                                      {paymentOcrResult && (
-                                        <div className="mt-2 border-t border-current/10 pt-2">
-                                          <p className="font-black text-espresso">Review and correct any field before submitting.</p>
-                                        </div>
-                                      )}
-                                    </div>
+                                    <p className="mt-2 rounded-xl border border-espresso/5 bg-white/75 p-2 text-[10px] leading-relaxed text-espresso/55">
+                                      JPG, PNG, or WEBP only, up to 5MB. Enter the payment details manually using the fields above.
+                                    </p>
                                   </div>
                                 </div>
                               </div>
@@ -2336,7 +2161,7 @@ export default function CustomerDashboard() {
                           size="sm" 
                           onClick={handleBookingSubmit}
                           loading={paymentSubmitting}
-                          disabled={paymentSubmitting || paymentOcrLoading || paymentReferenceStatus.checking || paymentReferenceStatus.exists}
+                          disabled={paymentSubmitting || paymentReferenceStatus.checking || paymentReferenceStatus.exists}
                           className="px-6 text-xs bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white"
                         >
                           {paymentSubmitting ? 'Securing Your Slot...' : 'Reserve Your Session'}

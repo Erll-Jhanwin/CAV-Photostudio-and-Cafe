@@ -9,6 +9,7 @@ import {
   UserCheck,
   FileText,
 } from 'lucide-react';
+import SiteFooter from '../components/SiteFooter';
 
 const policySections = [
   {
@@ -151,6 +152,7 @@ export default function PrivacyPolicyPage() {
           </p>
         </section>
       </main>
+      <SiteFooter />
     </div>
   );
 }

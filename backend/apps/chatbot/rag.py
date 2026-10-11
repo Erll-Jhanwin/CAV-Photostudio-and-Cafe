@@ -91,9 +91,9 @@ def get_live_menu():
 def format_menu(products, lang, query=''):
     if not products:
         return (
-            'Wala pang café menu items na aktibo sa database.'
+            'Wala pang aktibong café menu items sa ngayon.'
             if lang == 'tl'
-            else 'There are no active café menu items in the database.'
+            else 'There are no active café menu items available right now.'
         )
 
     query_tokens = _expanded_tokens(query)
@@ -105,7 +105,7 @@ def format_menu(products, lang, query=''):
         grouped[item.category_name or ('Menu' if lang == 'en' else 'Menu')].append(
             f"- {item.name}: {_money(item.price)}{stock_note}"
         )
-    prefix = 'Mga café menu item mula sa live database:' if lang == 'tl' else 'Café menu from the live database:'
+    prefix = 'Mga café menu item na available ngayon:' if lang == 'tl' else 'Available café menu items:'
     return prefix + '\n' + '\n'.join(
         f"{category}\n" + '\n'.join(lines) for category, lines in grouped.items()
     )
@@ -164,9 +164,9 @@ def _recommend_packages(query, lang):
     )
     if not packages:
         return (
-            'Wala pang packages sa database kaya hindi ako makapag-recommend.'
+            'Wala pang packages na available kaya hindi ako makapag-recommend.'
             if lang == 'tl'
-            else 'There are no packages in the database yet, so I cannot recommend one.'
+            else 'There are no packages available yet, so I cannot recommend one.'
         )
     query_tokens = _expanded_tokens(query)
     requested_day = parse_requested_date(query)
@@ -188,9 +188,9 @@ def _recommend_packages(query, lang):
     if not selected:
         if requested_day and requested_time:
             return (
-                f'Walang available na package sa {requested_day.isoformat()} ng {format_time(requested_time)} ayon sa live availability.'
+                f'Walang available na package sa {requested_day.isoformat()} ng {format_time(requested_time)} ayon sa kasalukuyang availability.'
                 if lang == 'tl'
-                else f'No package is available on {requested_day.isoformat()} at {format_time(requested_time)} according to live availability.'
+                else f'No package is available on {requested_day.isoformat()} at {format_time(requested_time)} according to current availability.'
             )
         selected = [package for _, package in scored[:3]]
     lines = [
@@ -198,8 +198,8 @@ def _recommend_packages(query, lang):
         for package in selected
     ]
     if lang == 'tl':
-        return 'Mga package na pinakamalapit sa kailangan mo, mula sa live database:\n' + '\n'.join(lines) + '\n\nSabihin ang petsa/oras para ma-filter ko ang hindi available.'
-    return 'Packages that best match your request, from the live database:\n' + '\n'.join(lines) + '\n\nTell me the date/time and I will remove unavailable options.'
+        return 'Mga package na pinakamalapit sa kailangan mo:\n' + '\n'.join(lines) + '\n\nSabihin ang petsa/oras para ma-filter ko ang hindi available.'
+    return 'Packages that best match your request:\n' + '\n'.join(lines) + '\n\nTell me the date/time and I will remove unavailable options.'
 
 
 def build_hybrid_response(question, role='PUBLIC'):
