@@ -10,12 +10,13 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from django.utils import timezone
-from booking.models import Service, Package, Booking, BookingDateLock, StudioUnavailableDate
+from booking.models import Service, Package, Booking, BookingDateLock, BookingReview, StudioUnavailableDate
 from booking.serializers import (
     ServiceSerializer,
     PackageSerializer,
     BookingSerializer,
     BookingPaymentSerializer,
+    BookingReviewSerializer,
     StudioUnavailableDateSerializer,
 )
 from booking.availability import ACTIVE_BOOKING_STATUSES, get_available_slots, is_slot_available, parse_date_value
@@ -219,7 +220,7 @@ class BookingListCreateView(generics.ListCreateAPIView):
         user = self.request.user
         if user.role in ['STAFF', 'ADMIN']:
             # Staff/Admin see all bookings, filterable by date
-            queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('payments').distinct()
+            queryset = Booking.objects.all().select_related('customer', 'package', 'package__service', 'review').prefetch_related('payments').distinct()
             date_param = self.request.query_params.get('date')
             status_param = self.request.query_params.get('status')
             if date_param:
@@ -238,7 +239,7 @@ class BookingListCreateView(generics.ListCreateAPIView):
                 queryset = queryset.filter(status__in=['PENDING', 'CONFIRMED', 'CONFIRMED_DP'])
             return apply_limit(queryset.order_by('scheduled_date', 'scheduled_time', 'id'), self.request, maximum=500)
         # Customers only see their own bookings
-        queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service').prefetch_related('payments').distinct().order_by('-scheduled_date', '-created_at', '-id')
+        queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service', 'review').prefetch_related('payments').distinct().order_by('-scheduled_date', '-created_at', '-id')
         return apply_limit(queryset, self.request)
 
     def create(self, request, *args, **kwargs):
@@ -341,7 +342,7 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = Booking.objects.all().select_related('customer', 'package', 'package__service').prefetch_related('payments').distinct()
+        queryset = Booking.objects.all().select_related('customer', 'package', 'package__service', 'review').prefetch_related('payments').distinct()
         user = self.request.user
         if user.role in ['STAFF', 'ADMIN']:
             return queryset
@@ -529,6 +530,28 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class BookingReviewCreateView(generics.CreateAPIView):
+    serializer_class = BookingReviewSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            with transaction.atomic():
+                review = serializer.save()
+        except IntegrityError:
+            return Response(
+                {'detail': 'This booking has already been reviewed.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(
+            self.get_serializer(review).data,
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class BookingPaymentListCreateView(generics.ListCreateAPIView):
     serializer_class = BookingPaymentSerializer

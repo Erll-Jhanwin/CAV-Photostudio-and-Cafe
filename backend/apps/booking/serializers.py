@@ -1,7 +1,7 @@
 from decimal import Decimal
 import re
 from rest_framework import serializers
-from booking.models import Service, Package, Booking, StudioUnavailableDate
+from booking.models import Service, Package, Booking, BookingReview, StudioUnavailableDate
 from booking.availability import is_slot_available
 from payment.models import Payment
 from users.serializers import UserSerializer
@@ -116,11 +116,53 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     def validate_receipt(self, value):
         return validate_receipt_upload(value)
 
+
+class BookingReviewSerializer(serializers.ModelSerializer):
+    customer = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = BookingReview
+        fields = [
+            'id', 'booking', 'customer', 'rating', 'feedback', 'suggestions',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['customer', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'feedback': {'allow_blank': True, 'max_length': 2000, 'required': False},
+            'suggestions': {'allow_blank': True, 'max_length': 2000, 'required': False},
+        }
+
+    def validate_rating(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError('Choose a rating from 1 to 5 stars.')
+        return value
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        booking = attrs.get('booking')
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError({'detail': 'Authentication is required.'})
+        if booking.customer_id != request.user.id:
+            raise serializers.ValidationError({'booking': 'You can only review your own booking.'})
+        if booking.status != 'COMPLETED':
+            raise serializers.ValidationError({'booking': 'Only completed bookings can be reviewed.'})
+        if BookingReview.objects.filter(booking=booking).exists():
+            raise serializers.ValidationError({'detail': 'This booking has already been reviewed.'})
+        return attrs
+
+    def create(self, validated_data):
+        return BookingReview.objects.create(
+            customer=self.context['request'].user,
+            **validated_data,
+        )
+
+
 class BookingSerializer(serializers.ModelSerializer):
     customer = UserSerializer(read_only=True)
     package_details = PackageSerializer(source='package', read_only=True)
     items = serializers.JSONField(read_only=True)
     payments = BookingPaymentSerializer(many=True, read_only=True)
+    review = serializers.SerializerMethodField()
     change_history = serializers.JSONField(read_only=True)
     required_down_payment = serializers.SerializerMethodField()
     can_edit = serializers.BooleanField(source='is_customer_editable', read_only=True)
@@ -139,6 +181,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'id', 'customer', 'package', 'package_details', 'scheduled_date', 
             'scheduled_time', 'status', 'notes', 'created_at', 'items',
             'payments', 'required_down_payment', 'change_history',
+            'review',
             'can_edit', 'edit_locked_reason', 'edit_deadline',
             'first_name', 'last_name', 'email', 'phone_number', 'address',
             'idempotency_key'
@@ -147,6 +190,10 @@ class BookingSerializer(serializers.ModelSerializer):
 
     def get_required_down_payment(self, obj):
         return obj.package.price * Decimal('0.50')
+
+    def get_review(self, obj):
+        review = getattr(obj, 'review', None)
+        return BookingReviewSerializer(review, context=self.context).data if review else None
 
     def validate(self, attrs):
         if self.instance is None:

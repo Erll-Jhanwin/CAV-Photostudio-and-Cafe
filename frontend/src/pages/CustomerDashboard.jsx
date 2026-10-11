@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
-import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, Upload, ReceiptText, Phone, Mail } from 'lucide-react';
+import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, Upload, ReceiptText, Phone, Mail, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -157,6 +157,7 @@ const getBookingActions = (booking) => {
     case 'COMPLETED':
       return [
         { key: 'details', label: 'Review Details', icon: Eye, primary: true },
+        { key: 'review', label: booking?.review ? 'View Review' : 'Leave a Review', icon: Star },
         ...receiptAction,
       ];
     case 'CANCELLED':
@@ -345,6 +346,11 @@ export default function CustomerDashboard() {
   const [bookingConfirmation, setBookingConfirmation] = useState(null);
   const [pendingPaymentBookingId, setPendingPaymentBookingId] = useState(null);
   const [selectedBookingDetails, setSelectedBookingDetails] = useState(null);
+  const [reviewingBooking, setReviewingBooking] = useState(null);
+  const [reviewForm, setReviewForm] = useState({ rating: 0, feedback: '', suggestions: '' });
+  const [reviewErrors, setReviewErrors] = useState({});
+  const [reviewNotice, setReviewNotice] = useState(null);
+  const [reviewSaving, setReviewSaving] = useState(false);
   const [cancellingBookingId, setCancellingBookingId] = useState(null);
   const [editingBooking, setEditingBooking] = useState(null);
   const [editForm, setEditForm] = useState(null);
@@ -1160,7 +1166,72 @@ export default function CustomerDashboard() {
     }
   };
 
+  const openBookingReview = (booking) => {
+    const review = booking?.review;
+    setReviewingBooking(booking);
+    setReviewForm({
+      rating: Number(review?.rating) || 0,
+      feedback: review?.feedback || '',
+      suggestions: review?.suggestions || '',
+    });
+    setReviewErrors({});
+    setReviewNotice(null);
+  };
+
+  const closeBookingReview = () => {
+    if (reviewSaving) return;
+    setReviewingBooking(null);
+    setReviewErrors({});
+    setReviewNotice(null);
+  };
+
+  const submitBookingReview = async (event) => {
+    event.preventDefault();
+    if (!reviewingBooking || reviewingBooking.review || reviewSaving) return;
+
+    const feedback = reviewForm.feedback.trim();
+    const suggestions = reviewForm.suggestions.trim();
+    const errors = {};
+    if (!Number.isInteger(Number(reviewForm.rating)) || Number(reviewForm.rating) < 1 || Number(reviewForm.rating) > 5) {
+      errors.rating = 'Please choose a star rating.';
+    }
+    if (feedback.length > 2000) errors.feedback = 'Feedback must be 2,000 characters or less.';
+    if (suggestions.length > 2000) errors.suggestions = 'Suggestions must be 2,000 characters or less.';
+    if (Object.keys(errors).length > 0) {
+      setReviewErrors(errors);
+      return;
+    }
+
+    setReviewErrors({});
+    setReviewNotice(null);
+    setReviewSaving(true);
+    try {
+      const response = await client.post('/api/bookings/reviews/', {
+        booking: reviewingBooking.id,
+        rating: Number(reviewForm.rating),
+        feedback,
+        suggestions,
+      });
+      const updatedBooking = normalizeBooking({ ...reviewingBooking, review: response.data });
+      setBookings(current => normalizeBookings(current.map(item => item.id === updatedBooking.id ? updatedBooking : item)));
+      setSelectedBookingDetails(current => current?.id === updatedBooking.id ? updatedBooking : current);
+      setReviewingBooking(updatedBooking);
+      setReviewNotice({ type: 'success', message: 'Thank you. Your review has been saved.' });
+    } catch (err) {
+      const responseData = err.response?.data || {};
+      const detail = responseData.detail || responseData.booking?.[0] || 'We could not save your review. Please try again.';
+      setReviewNotice({ type: 'error', message: detail });
+    } finally {
+      setReviewSaving(false);
+    }
+  };
+
   const handleBookingAction = async (booking, action) => {
+    if (action.key === 'review') {
+      openBookingReview(booking);
+      return;
+    }
+
     if (action.key === 'details') {
       setSelectedBookingDetails(booking);
       return;
@@ -3026,6 +3097,96 @@ export default function CustomerDashboard() {
                 </Button>
               </div>
             </div>
+          )}
+        </Modal>
+
+        <Modal
+          open={!!reviewingBooking}
+          onClose={closeBookingReview}
+          title={reviewingBooking?.review ? 'Your Review' : 'Leave a Review'}
+          size="md"
+        >
+          {reviewingBooking && (
+            <form onSubmit={submitBookingReview} className="space-y-5">
+              <div className="rounded-2xl bg-cream/70 border border-espresso/5 p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-espresso/45">Completed Session</p>
+                <p className="mt-1 text-base font-black text-espresso">{reviewingBooking.package_details?.name || 'Photography Package'}</p>
+                <p className="mt-1 text-xs text-espresso/55">
+                  {reviewingBooking.scheduled_date} at {reviewingBooking.scheduled_time}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-espresso/70">Star Rating</p>
+                <div className="mt-3 flex items-center gap-2" role="radiogroup" aria-label="Star rating">
+                  {Array.from({ length: 5 }, (_, index) => {
+                    const value = index + 1;
+                    const selected = value <= Number(reviewForm.rating || 0);
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-label={`${value} star${value === 1 ? '' : 's'}`}
+                        aria-checked={Number(reviewForm.rating) === value}
+                        disabled={!!reviewingBooking.review || reviewSaving}
+                        onClick={() => setReviewForm(current => ({ ...current, rating: value }))}
+                        className="rounded-lg p-1 transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold disabled:cursor-not-allowed"
+                      >
+                        <Star className={`h-7 w-7 ${selected ? 'fill-gold text-gold-dark' : 'text-espresso/20'}`} />
+                      </button>
+                    );
+                  })}
+                </div>
+                {reviewErrors.rating && <p className="mt-2 text-[11px] font-medium text-red-500">{reviewErrors.rating}</p>}
+              </div>
+
+              <Textarea
+                label="Feedback (Optional)"
+                rows={4}
+                maxLength={2000}
+                value={reviewForm.feedback}
+                onChange={(event) => setReviewForm(current => ({ ...current, feedback: event.target.value }))}
+                disabled={!!reviewingBooking.review || reviewSaving}
+                error={reviewErrors.feedback}
+                placeholder="Tell us about your studio experience..."
+              />
+
+              <Textarea
+                label="Suggestions (Optional)"
+                rows={3}
+                maxLength={2000}
+                value={reviewForm.suggestions}
+                onChange={(event) => setReviewForm(current => ({ ...current, suggestions: event.target.value }))}
+                disabled={!!reviewingBooking.review || reviewSaving}
+                error={reviewErrors.suggestions}
+                placeholder="How can we make your next visit even better?"
+              />
+
+              {reviewNotice && (
+                <div className={`rounded-2xl border px-4 py-3 text-xs font-bold leading-relaxed ${
+                  reviewNotice.type === 'success'
+                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                    : 'border-red-100 bg-red-50 text-red-700'
+                }`} role="status">
+                  {reviewNotice.message}
+                </div>
+              )}
+
+              {reviewingBooking.review ? (
+                <div className="flex items-center justify-between gap-3 border-t border-espresso/5 pt-4 text-xs text-espresso/50">
+                  <span>Submitted {formatManilaDateTime(reviewingBooking.review.created_at)}</span>
+                  <Button variant="outline" onClick={closeBookingReview}>Close</Button>
+                </div>
+              ) : (
+                <div className="flex flex-col-reverse gap-3 border-t border-espresso/5 pt-4 sm:flex-row sm:justify-end">
+                  <Button variant="outline" onClick={closeBookingReview} disabled={reviewSaving}>Cancel</Button>
+                  <Button type="submit" variant="gold" loading={reviewSaving} disabled={reviewSaving}>
+                    {reviewSaving ? 'Saving Review...' : 'Submit Review'}
+                  </Button>
+                </div>
+              )}
+            </form>
           )}
         </Modal>
 

@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from booking.availability import get_available_slots, is_slot_available
-from booking.models import Booking, BookingDateLock, Package, Service, StudioUnavailableDate
+from booking.models import Booking, BookingDateLock, BookingReview, Package, Service, StudioUnavailableDate
 
 
 class BookingAvailabilityPolicyTests(TestCase):
@@ -159,3 +159,89 @@ class BookingWriteSafetyTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(BookingDateLock.objects.filter(scheduled_date=scheduled_date).exists())
+
+
+class BookingReviewApiTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.customer = User.objects.create_user(
+            username='review-customer',
+            email='review-customer@example.com',
+            password='Customer123!',
+        )
+        self.other_customer = User.objects.create_user(
+            username='review-other-customer',
+            email='review-other@example.com',
+            password='Customer123!',
+        )
+        service = Service.objects.create(
+            name='Review Studio',
+            description='Studio sessions',
+            duration_minutes=60,
+            base_price='1500.00',
+        )
+        package = Package.objects.create(
+            service=service,
+            name='Review Package',
+            description='Completed session',
+            price='1500.00',
+            inclusions='Studio session',
+        )
+        self.completed_booking = Booking.objects.create(
+            customer=self.customer,
+            package=package,
+            scheduled_date=timezone.localdate() - timedelta(days=2),
+            scheduled_time='10:00',
+            status='COMPLETED',
+        )
+        self.pending_booking = Booking.objects.create(
+            customer=self.customer,
+            package=package,
+            scheduled_date=timezone.localdate() + timedelta(days=2),
+            scheduled_time='10:00',
+            status='PENDING',
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.customer)
+
+    def review_payload(self, booking_id=None):
+        return {
+            'booking': booking_id or self.completed_booking.id,
+            'rating': 5,
+            'feedback': 'The session was excellent.',
+            'suggestions': 'More themed backdrops would be nice.',
+        }
+
+    def test_customer_can_review_completed_booking_and_booking_list_returns_review(self):
+        response = self.client.post('/api/bookings/reviews/', self.review_payload(), format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['booking'], self.completed_booking.id)
+        self.assertEqual(response.data['customer'], self.customer.id)
+        self.assertEqual(BookingReview.objects.get(booking=self.completed_booking).rating, 5)
+
+        bookings_response = self.client.get('/api/bookings/')
+        completed = next(row for row in bookings_response.data if row['id'] == self.completed_booking.id)
+        self.assertEqual(completed['review']['feedback'], 'The session was excellent.')
+
+    def test_review_requires_completed_booking_and_customer_ownership(self):
+        pending_response = self.client.post('/api/bookings/reviews/', self.review_payload(self.pending_booking.id), format='json')
+        self.assertEqual(pending_response.status_code, 400)
+
+        other_booking = Booking.objects.create(
+            customer=self.other_customer,
+            package=self.completed_booking.package,
+            scheduled_date=timezone.localdate() - timedelta(days=3),
+            scheduled_time='11:00',
+            status='COMPLETED',
+        )
+        ownership_response = self.client.post('/api/bookings/reviews/', self.review_payload(other_booking.id), format='json')
+        self.assertEqual(ownership_response.status_code, 400)
+
+    def test_duplicate_review_is_rejected(self):
+        first_response = self.client.post('/api/bookings/reviews/', self.review_payload(), format='json')
+        duplicate_response = self.client.post('/api/bookings/reviews/', self.review_payload(), format='json')
+
+        self.assertEqual(first_response.status_code, 201)
+        self.assertEqual(duplicate_response.status_code, 400)
+        self.assertEqual(BookingReview.objects.filter(booking=self.completed_booking).count(), 1)

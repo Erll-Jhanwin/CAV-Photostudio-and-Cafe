@@ -114,6 +114,36 @@ class Booking(models.Model):
         return f"Booking {self.id}: {self.customer.username} - {self.package.name} on {self.scheduled_date} at {self.scheduled_time}"
 
 
+class BookingReview(models.Model):
+    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='review')
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='booking_reviews',
+    )
+    rating = models.PositiveSmallIntegerField()
+    feedback = models.TextField(blank=True)
+    suggestions = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(rating__gte=1, rating__lte=5),
+                name='booking_review_rating_1_to_5',
+            ),
+            models.UniqueConstraint(
+                fields=['booking', 'customer'],
+                name='booking_review_booking_customer_unique',
+            ),
+        ]
+
+    def __str__(self):
+        return f"Review for booking {self.booking_id} by {self.customer.username}"
+
+
 class BookingDateLock(models.Model):
     scheduled_date = models.DateField(unique=True)
 
