@@ -12,6 +12,7 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
+  Phone,
   CheckCircle2,
   Coffee,
   CalendarCheck,
@@ -26,6 +27,7 @@ import {
   getEmailError,
   getPasswordError,
   getPhoneError,
+  getPhilippineMobileError,
   getRequiredError,
   isBlank,
 } from '../utils/validation';
@@ -42,8 +44,8 @@ export default function LoginPage() {
 
   const [isRegister, setIsRegister] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [forgotStep, setForgotStep] = useState('email');
-  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotStep, setForgotStep] = useState('phone');
+  const [forgotPhone, setForgotPhone] = useState('');
   const [forgotOtp, setForgotOtp] = useState('');
   const [forgotResetToken, setForgotResetToken] = useState('');
   const [forgotPassword, setForgotPassword] = useState('');
@@ -51,6 +53,7 @@ export default function LoginPage() {
   const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotResult, setForgotResult] = useState(null);
+  const [forgotResendCooldown, setForgotResendCooldown] = useState(0);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -95,9 +98,9 @@ export default function LoginPage() {
   };
 
   const validateForgotForm = () => {
-    if (forgotStep === 'email') {
-      const email = getEmailError(forgotEmail, { required: true, label: 'Registered email' });
-      return email ? { email } : {};
+    if (forgotStep === 'phone') {
+      const phone = getPhilippineMobileError(forgotPhone);
+      return phone ? { phone } : {};
     }
     if (forgotStep === 'otp') {
       const otp = forgotOtp.length === 6 ? '' : 'Enter the 6-digit OTP.';
@@ -300,8 +303,8 @@ export default function LoginPage() {
 
   const resetForgotPasswordFlow = () => {
     setShowForgotPassword(false);
-    setForgotStep('email');
-    setForgotEmail('');
+    setForgotStep('phone');
+    setForgotPhone('');
     setForgotOtp('');
     setForgotResetToken('');
     setForgotPassword('');
@@ -309,16 +312,18 @@ export default function LoginPage() {
     setShowForgotNewPassword(false);
     setForgotResult(null);
     setForgotErrors({});
+    setForgotResendCooldown(0);
   };
 
-  const useDifferentResetEmail = () => {
-    setForgotStep('email');
+  const useDifferentResetPhone = () => {
+    setForgotStep('phone');
     setForgotOtp('');
     setForgotResetToken('');
     setForgotPassword('');
     setForgotPasswordConfirm('');
     setForgotResult(null);
     setForgotErrors({});
+    setForgotResendCooldown(0);
   };
 
   const handleForgotSubmit = async (e) => {
@@ -331,16 +336,17 @@ export default function LoginPage() {
     setForgotLoading(true);
 
     try {
-      if (forgotStep === 'email') {
-        const res = await client.post('/api/auth/forgot-password/', { email: forgotEmail });
-        setForgotResult({ detail: res.data?.detail || 'If that email is registered, a one-time password has been sent.' });
+      if (forgotStep === 'phone') {
+        const res = await client.post('/api/auth/forgot-password/', { phone_number: forgotPhone });
+        setForgotResult({ detail: res.data?.detail || 'If that mobile number is registered, a one-time password has been sent.' });
+        setForgotResendCooldown(60);
         setForgotStep('otp');
         return;
       }
 
       if (forgotStep === 'otp') {
         const res = await client.post('/api/auth/forgot-password/verify/', {
-          email: forgotEmail,
+          phone_number: forgotPhone,
           otp: forgotOtp,
         });
         setForgotResetToken(res.data?.reset_token || '');
@@ -350,16 +356,39 @@ export default function LoginPage() {
       }
 
       const res = await client.post('/api/auth/forgot-password/confirm/', {
-        email: forgotEmail,
+        phone_number: forgotPhone,
         reset_token: forgotResetToken,
         new_password: forgotPassword,
       });
       setSuccess(res.data?.detail || 'Password updated successfully. You can now sign in.');
       resetForgotPasswordFlow();
-      setForm((f) => ({ ...f, email: forgotEmail, password: '' }));
+      setForm((f) => ({ ...f, password: '' }));
     } catch (err) {
       const msg = getApiErrorMessage(err, 'Unable to complete password recovery. Please try again.');
       setForgotResult({ detail: msg, error: true });
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (forgotResendCooldown <= 0) return undefined;
+    const interval = window.setInterval(() => {
+      setForgotResendCooldown((current) => Math.max(current - 1, 0));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [forgotResendCooldown]);
+
+  const handleForgotResend = async () => {
+    if (forgotLoading || forgotResendCooldown > 0) return;
+    setForgotLoading(true);
+    setForgotResult(null);
+    try {
+      const res = await client.post('/api/auth/forgot-password/', { phone_number: forgotPhone });
+      setForgotResult({ detail: res.data?.detail || 'If that mobile number is registered, a one-time password has been sent.' });
+      setForgotResendCooldown(60);
+    } catch (err) {
+      setForgotResult({ detail: getApiErrorMessage(err, 'Unable to resend the OTP right now. Please try again later.'), error: true });
     } finally {
       setForgotLoading(false);
     }
@@ -390,17 +419,17 @@ export default function LoginPage() {
   const formDescription = isRegister
     ? 'Create an account to book studio sessions and stay connected with CAV.'
     : showForgotPassword
-      ? 'Use your registered email to receive an OTP, verify it, and choose a new password.'
+      ? 'Use your registered mobile number to receive an SMS OTP, verify it, and choose a new password.'
       : 'Access your dashboard, bookings, and account tools.';
   const forgotStepInfo = {
-    email: {
+    phone: {
       title: 'Request OTP',
-      description: "Enter the email registered to your CAV account. We'll send a one-time code if the account exists.",
+      description: "Enter the mobile number registered to your CAV account. We'll send a one-time code if the account exists.",
       button: 'Send OTP',
     },
     otp: {
       title: 'Verify OTP',
-      description: 'Enter the 6-digit code from your email. Codes expire quickly and can only be used once.',
+      description: 'Enter the 6-digit code from SMS. Codes expire quickly and can only be used once.',
       button: 'Verify OTP',
     },
     password: {
@@ -410,7 +439,7 @@ export default function LoginPage() {
     },
   };
   const forgotSteps = [
-    { key: 'email', label: 'Email' },
+    { key: 'phone', label: 'Mobile' },
     { key: 'otp', label: 'OTP' },
     { key: 'password', label: 'Password' },
   ];
@@ -634,19 +663,20 @@ export default function LoginPage() {
                     </div>
                   )}
 
-                  {forgotStep === 'email' && (
+                  {forgotStep === 'phone' && (
                     <Input
-                      label="Registered Email"
-                      icon={Mail}
-                      type="email"
+                      label="Registered Mobile Number"
+                      icon={Phone}
+                      type="tel"
+                      inputMode="tel"
                       required
-                      value={forgotEmail}
+                      value={forgotPhone}
                       onChange={(e) => {
-                        setForgotEmail(e.target.value);
-                        setForgotErrors(current => ({ ...current, email: '' }));
+                        setForgotPhone(e.target.value);
+                        setForgotErrors(current => ({ ...current, phone: '' }));
                       }}
-                      placeholder="name@example.com"
-                      error={forgotErrors.email}
+                      placeholder="0917 123 4567"
+                      error={forgotErrors.phone}
                     />
                   )}
 
@@ -669,13 +699,23 @@ export default function LoginPage() {
                         className="text-center font-mono text-lg tracking-[0.24em]"
                         error={forgotErrors.otp}
                       />
-                      <button
-                        type="button"
-                        onClick={useDifferentResetEmail}
-                        className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
-                      >
-                        Use a different email
-                      </button>
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={handleForgotResend}
+                          disabled={forgotLoading || forgotResendCooldown > 0}
+                          className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold disabled:cursor-not-allowed disabled:text-espresso/35"
+                        >
+                          {forgotResendCooldown > 0 ? `Resend code in ${forgotResendCooldown}s` : 'Resend code'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={useDifferentResetPhone}
+                          className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
+                        >
+                          Use a different mobile number
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -721,10 +761,10 @@ export default function LoginPage() {
                       <PasswordStrength password={forgotPassword} />
                       <button
                         type="button"
-                        onClick={useDifferentResetEmail}
+                        onClick={useDifferentResetPhone}
                         className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
                       >
-                        Use a different email
+                        Use a different mobile number
                       </button>
                     </div>
                   )}

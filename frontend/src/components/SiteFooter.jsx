@@ -8,6 +8,7 @@ const quickLinks = [
   { label: 'Photo Studio', to: '/photo-studio' },
   { label: 'Café Menu', to: '/cafe-menu' },
   { label: 'Gallery', to: '/gallery' },
+  { label: 'How to Book', to: '/how-to-book' },
   { label: 'Our Story', to: '/our-story' },
 ];
 

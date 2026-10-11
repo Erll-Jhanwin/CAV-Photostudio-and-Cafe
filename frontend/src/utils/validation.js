@@ -39,6 +39,18 @@ export const getPhoneError = (value) => {
   return isValidPhone(value) ? '' : 'Enter a valid phone number.';
 };
 
+export const isValidPhilippineMobile = (value) => {
+  const compact = String(value || '').trim().replace(/[\s().-]/g, '').replace(/^\+/, '');
+  if (compact.startsWith('09') && compact.length === 11) return /^09\d{9}$/.test(compact);
+  if (compact.startsWith('9') && compact.length === 10) return /^9\d{9}$/.test(compact);
+  return /^639\d{9}$/.test(compact);
+};
+
+export const getPhilippineMobileError = (value) => {
+  if (isBlank(value)) return 'Registered mobile number is required.';
+  return isValidPhilippineMobile(value) ? '' : 'Enter a valid Philippine mobile number.';
+};
+
 export const getPasswordChecks = (password = '') => {
   const normalized = String(password).trim().toLowerCase();
   return [

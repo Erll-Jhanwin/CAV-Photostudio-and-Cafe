@@ -746,6 +746,7 @@ export default function LandingPage({ page = 'home' }) {
     { label: 'Photo Studio', to: '/photo-studio', page: 'studio' },
     { label: 'Café Menu', to: '/cafe-menu', page: 'cafe' },
     { label: 'Gallery', to: '/gallery', page: 'gallery' },
+    { label: 'How to Book', to: '/how-to-book', page: 'booking' },
     { label: 'Our Story', to: '/our-story', page: 'story' },
   ];
 

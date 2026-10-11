@@ -26,7 +26,8 @@ from users.serializers import (
 )
 from users.models import Customer, PasswordResetOTP
 from users.permissions import IsAdmin
-from users.email_delivery import send_password_reset_email
+from users.sms_delivery import IProgSMSDeliveryError, send_password_reset_otp, verify_password_reset_otp
+from users.phone_numbers import normalize_philippine_mobile_number
 from audit.models import AuditLog
 from booking.models import Booking
 from inventory.models import InventoryEvent
@@ -40,6 +41,8 @@ logger = logging.getLogger(__name__)
 PASSWORD_RESET_OTP_TTL_MINUTES = int(getattr(settings, 'PASSWORD_RESET_OTP_TTL_MINUTES', 10))
 PASSWORD_RESET_OTP_MAX_ATTEMPTS = int(getattr(settings, 'PASSWORD_RESET_OTP_MAX_ATTEMPTS', 5))
 PASSWORD_RESET_TOKEN_TTL_MINUTES = int(getattr(settings, 'PASSWORD_RESET_TOKEN_TTL_MINUTES', 10))
+PASSWORD_RESET_RESEND_COOLDOWN_SECONDS = int(getattr(settings, 'PASSWORD_RESET_RESEND_COOLDOWN_SECONDS', 60))
+PASSWORD_RESET_MAX_REQUESTS_PER_HOUR = int(getattr(settings, 'PASSWORD_RESET_MAX_REQUESTS_PER_HOUR', 5))
 SYSTEM_RESET_CONFIRMATION = 'RESET SYSTEM DATA'
 SYSTEM_RESET_LOCK_KEY = 'system_data_reset_in_progress'
 
@@ -345,7 +348,7 @@ def account_changed_fields(user, validated_data):
 
 def generic_password_reset_response():
     return Response({
-        "detail": "If that email is registered, a one-time password has been sent."
+        "detail": "If that mobile number is registered, a one-time password has been sent."
     }, status=status.HTTP_200_OK)
 
 def delete_queryset(label, queryset):
@@ -431,53 +434,62 @@ class ForgotPasswordView(views.APIView):
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data['email']
+        phone_number = serializer.validated_data['phone_number']
 
-        user = User.objects.filter(email__iexact=email, is_active=True).first()
-        if not user or not user.email:
+        user = next(
+            (
+                candidate
+                for candidate in User.objects.filter(is_active=True).exclude(phone_number='').only('id', 'email', 'username', 'phone_number')
+                if normalize_philippine_mobile_number(candidate.phone_number) == phone_number
+            ),
+            None,
+        )
+        if not user:
             return generic_password_reset_response()
 
         now = timezone.now()
         recent_otp = PasswordResetOTP.objects.filter(
-            user=user,
-            created_at__gte=now - timezone.timedelta(minutes=1),
+            phone_number=phone_number,
+            created_at__gte=now - timezone.timedelta(seconds=PASSWORD_RESET_RESEND_COOLDOWN_SECONDS),
             used_at__isnull=True,
         ).first()
         if recent_otp:
             return generic_password_reset_response()
 
-        otp = f"{secrets.randbelow(1_000_000):06d}"
+        recent_request_count = PasswordResetOTP.objects.filter(
+            phone_number=phone_number,
+            created_at__gte=now - timezone.timedelta(hours=1),
+        ).count()
+        if recent_request_count >= PASSWORD_RESET_MAX_REQUESTS_PER_HOUR:
+            return generic_password_reset_response()
+
         expires_at = now + timezone.timedelta(minutes=PASSWORD_RESET_OTP_TTL_MINUTES)
         PasswordResetOTP.objects.filter(user=user, used_at__isnull=True).update(used_at=now)
         reset_otp = PasswordResetOTP.objects.create(
             user=user,
             email=user.email.lower(),
-            otp_hash=make_password(otp),
+            phone_number=phone_number,
             expires_at=expires_at,
             request_ip=get_client_ip(request),
         )
 
         try:
-            send_password_reset_email(user.email, otp)
-        except Exception:
-            logger.exception('Password reset email delivery failed for user_id=%s.', user.id)
+            send_password_reset_otp(phone_number)
+        except IProgSMSDeliveryError:
+            logger.exception('Password reset SMS delivery failed for user_id=%s.', user.id)
             reset_otp.used_at = timezone.now()
             reset_otp.save(update_fields=['used_at'])
-            return Response(
-                {"detail": "Password reset email could not be sent right now. Please try again later."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+            return generic_password_reset_response()
 
         AuditLog.objects.create(
             user=user,
             action="PASSWORD_RESET_REQUEST",
-            description=f"Password reset OTP requested for user {user.username}."
+            description=f"Password reset SMS OTP requested for user {user.username}.",
+            ip_address=get_client_ip(request),
         )
 
         return Response({
-            "detail": "If that email is registered, a one-time password has been sent.",
-            "expires_in_minutes": PASSWORD_RESET_OTP_TTL_MINUTES,
-            "request_id": reset_otp.id,
+            "detail": "If that mobile number is registered, a one-time password has been sent.",
         }, status=status.HTTP_200_OK)
 
 class PasswordResetVerifyOTPView(views.APIView):
@@ -487,37 +499,48 @@ class PasswordResetVerifyOTPView(views.APIView):
     def post(self, request):
         serializer = PasswordResetVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data['email']
+        phone_number = serializer.validated_data['phone_number']
         otp = serializer.validated_data['otp']
 
-        reset_otp = PasswordResetOTP.objects.filter(
-            email__iexact=email,
-            used_at__isnull=True,
-            verified_at__isnull=True,
-        ).select_related('user').order_by('-created_at').first()
+        with transaction.atomic():
+            reset_otp = PasswordResetOTP.objects.select_for_update().filter(
+                phone_number=phone_number,
+                used_at__isnull=True,
+                verified_at__isnull=True,
+            ).select_related('user').order_by('-created_at').first()
 
-        if (
-            not reset_otp
-            or reset_otp.is_expired
-            or reset_otp.attempts >= PASSWORD_RESET_OTP_MAX_ATTEMPTS
-            or not reset_otp.user.is_active
-        ):
-            return Response({"detail": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
+            if (
+                not reset_otp
+                or reset_otp.is_expired
+                or reset_otp.attempts >= PASSWORD_RESET_OTP_MAX_ATTEMPTS
+                or not reset_otp.user.is_active
+            ):
+                return Response({"detail": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not check_password(otp, reset_otp.otp_hash):
-            reset_otp.attempts += 1
-            reset_otp.save(update_fields=['attempts'])
-            return Response({"detail": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                verified = verify_password_reset_otp(phone_number, otp)
+            except IProgSMSDeliveryError:
+                logger.exception('Password reset OTP verification failed at provider.')
+                return Response(
+                    {"detail": "OTP verification is temporarily unavailable. Please try again later."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
 
-        reset_token = secrets.token_urlsafe(32)
-        reset_otp.verified_at = timezone.now()
-        reset_otp.reset_token_hash = make_password(reset_token)
-        reset_otp.save(update_fields=['verified_at', 'reset_token_hash'])
+            if not verified:
+                reset_otp.attempts += 1
+                reset_otp.save(update_fields=['attempts'])
+                return Response({"detail": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
+
+            reset_token = secrets.token_urlsafe(32)
+            reset_otp.verified_at = timezone.now()
+            reset_otp.reset_token_hash = make_password(reset_token)
+            reset_otp.save(update_fields=['verified_at', 'reset_token_hash'])
 
         AuditLog.objects.create(
             user=reset_otp.user,
             action="PASSWORD_RESET_OTP_VERIFIED",
-            description=f"Password reset OTP verified for user {reset_otp.user.username}."
+            description=f"Password reset OTP verified for user {reset_otp.user.username}.",
+            ip_address=get_client_ip(request),
         )
 
         return Response({
@@ -534,12 +557,12 @@ class PasswordResetConfirmView(views.APIView):
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data['email']
+        phone_number = serializer.validated_data['phone_number']
         reset_token = serializer.validated_data['reset_token']
         new_password = serializer.validated_data['new_password']
 
         reset_otp = PasswordResetOTP.objects.select_for_update().filter(
-            email__iexact=email,
+            phone_number=phone_number,
             used_at__isnull=True,
             verified_at__isnull=False,
         ).select_related('user').order_by('-verified_at').first()
@@ -563,13 +586,15 @@ class PasswordResetConfirmView(views.APIView):
         user.set_password(new_password)
         user.save(update_fields=['password'])
         reset_otp.used_at = now
-        reset_otp.save(update_fields=['used_at'])
+        reset_otp.reset_token_hash = ''
+        reset_otp.save(update_fields=['used_at', 'reset_token_hash'])
         PasswordResetOTP.objects.filter(user=user, used_at__isnull=True).exclude(pk=reset_otp.pk).update(used_at=now)
 
         AuditLog.objects.create(
             user=user,
             action="PASSWORD_RESET_COMPLETE",
-            description=f"Password reset completed for user {user.username}."
+            description=f"Password reset completed for user {user.username}.",
+            ip_address=get_client_ip(request),
         )
 
         return Response({"detail": "Password updated successfully. You can now sign in."}, status=status.HTTP_200_OK)

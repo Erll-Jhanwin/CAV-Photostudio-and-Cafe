@@ -44,8 +44,11 @@ class Customer(models.Model):
 
 class PasswordResetOTP(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='password_reset_otps')
-    email = models.EmailField()
-    otp_hash = models.CharField(max_length=128)
+    # Kept for compatibility with reset sessions created before the SMS flow.
+    email = models.EmailField(blank=True, default='')
+    phone_number = models.CharField(max_length=20, blank=True, default='')
+    # OTP generation and verification are handled by iProgSMS.
+    otp_hash = models.CharField(max_length=128, blank=True, default='')
     reset_token_hash = models.CharField(max_length=128, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
@@ -58,6 +61,7 @@ class PasswordResetOTP(models.Model):
         indexes = [
             models.Index(fields=['user', 'used_at', 'expires_at']),
             models.Index(fields=['email', 'created_at']),
+            models.Index(fields=['phone_number', 'created_at'], name='users_protp_phone_created_idx'),
         ]
         ordering = ['-created_at']
 

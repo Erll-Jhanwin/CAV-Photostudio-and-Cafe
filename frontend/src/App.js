@@ -9,6 +9,7 @@ import { LoadingSpinner } from './components/ui/Skeleton';
 import AdminDashboard from './pages/AdminDashboard';
 
 const LandingPage = lazy(() => lazyWithRetry(() => import('./pages/LandingPage')));
+const BookingGuidePage = lazy(() => lazyWithRetry(() => import('./pages/BookingGuidePage')));
 const LoginPage = lazy(() => lazyWithRetry(() => import('./pages/LoginPage')));
 const PrivacyPolicyPage = lazy(() => lazyWithRetry(() => import('./pages/PrivacyPolicyPage')));
 const CustomerDashboard = lazy(() => lazyWithRetry(() => import('./pages/CustomerDashboard')));
@@ -213,6 +214,7 @@ function App() {
                   <Route path="/cafe-menu" element={<LandingPage page="cafe" />} />
                   <Route path="/gallery" element={<LandingPage page="gallery" />} />
                   <Route path="/our-story" element={<LandingPage page="story" />} />
+                  <Route path="/how-to-book" element={<BookingGuidePage />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
                   <Route

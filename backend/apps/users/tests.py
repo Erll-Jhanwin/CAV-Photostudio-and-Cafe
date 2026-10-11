@@ -1,5 +1,5 @@
-from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 
 from django.contrib.auth import get_user_model
@@ -8,47 +8,104 @@ from unittest.mock import Mock, patch
 
 from users.models import Customer, PasswordResetOTP
 from audit.models import AuditLog
+from users.sms_delivery import send_password_reset_otp, verify_password_reset_otp
 
 
-@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
-class PasswordResetEmailTests(TestCase):
+class IProgSMSServicesTests(TestCase):
+    @override_settings(IPROG_SMS_API_TOKEN='test-token', IPROG_SMS_API_BASE_URL='https://sms.example.test')
+    @patch('users.sms_delivery.requests.post')
+    def test_provider_calls_use_the_documented_otp_endpoints(self, mocked_post):
+        mocked_post.return_value = Mock(status_code=200, json=Mock(return_value={'status': 'success'}))
+
+        send_password_reset_otp('639171234567')
+        self.assertEqual(mocked_post.call_args.args[0], 'https://sms.example.test/api/v1/otp/send_otp')
+        send_payload = mocked_post.call_args.kwargs['json']
+        self.assertEqual(send_payload['api_token'], 'test-token')
+        self.assertEqual(send_payload['phone_number'], '639171234567')
+        self.assertEqual(send_payload['code_length'], 6)
+
+        self.assertTrue(verify_password_reset_otp('639171234567', '123456'))
+        self.assertEqual(mocked_post.call_args.args[0], 'https://sms.example.test/api/v1/otp/verify_otp')
+        verify_payload = mocked_post.call_args.kwargs['json']
+        self.assertEqual(verify_payload['api_token'], 'test-token')
+        self.assertEqual(verify_payload['otp'], '123456')
+
+
+class PasswordResetSMSTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.user = get_user_model().objects.create_user(
             username='reset-customer',
             email='reset-customer@example.com',
             password='Customer123!',
+            phone_number='09171234567',
         )
         self.client = APIClient()
 
-    def test_registered_user_receives_a_password_reset_otp_email(self):
+    @patch('users.views.send_password_reset_otp')
+    def test_registered_user_receives_a_generic_sms_reset_response(self, mocked_send):
         response = self.client.post('/api/auth/forgot-password/', {
-            'email': self.user.email,
+            'phone_number': '0917 123 4567',
         }, format='json')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, [self.user.email])
-        self.assertIn('CAV password reset code', mail.outbox[0].subject)
-        self.assertTrue(PasswordResetOTP.objects.filter(user=self.user, used_at__isnull=True).exists())
+        self.assertIn('If that mobile number is registered', response.data['detail'])
+        mocked_send.assert_called_once_with('639171234567')
+        reset = PasswordResetOTP.objects.get(user=self.user)
+        self.assertEqual(reset.phone_number, '639171234567')
+        self.assertEqual(reset.otp_hash, '')
 
-    @override_settings(
-        EMAIL_PROVIDER='resend',
-        RESEND_API_KEY='re_test_key',
-        DEFAULT_FROM_EMAIL='CAV <onboarding@resend.dev>',
-    )
-    @patch('users.email_delivery.requests.post')
-    def test_password_reset_can_use_resend_https_delivery(self, mocked_post):
-        mocked_post.return_value = Mock(raise_for_status=Mock())
-
+    @patch('users.views.send_password_reset_otp')
+    def test_unregistered_mobile_gets_the_same_response(self, mocked_send):
         response = self.client.post('/api/auth/forgot-password/', {
-            'email': self.user.email,
+            'phone_number': '09179999999',
         }, format='json')
-
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(mocked_post.call_count, 1)
-        request_payload = mocked_post.call_args.kwargs['json']
-        self.assertEqual(request_payload['to'], [self.user.email])
-        self.assertIn('CAV password reset code', request_payload['subject'])
+        self.assertIn('If that mobile number is registered', response.data['detail'])
+        mocked_send.assert_not_called()
+
+    @patch('users.views.verify_password_reset_otp', return_value=True)
+    @patch('users.views.send_password_reset_otp')
+    def test_otp_verification_and_password_reset_are_one_time(self, mocked_send, mocked_verify):
+        self.client.post('/api/auth/forgot-password/', {'phone_number': '09171234567'}, format='json')
+        verify_response = self.client.post('/api/auth/forgot-password/verify/', {
+            'phone_number': '+63 917 123 4567',
+            'otp': '123456',
+        }, format='json')
+        self.assertEqual(verify_response.status_code, 200)
+        reset_token = verify_response.data['reset_token']
+        mocked_verify.assert_called_once_with('639171234567', '123456')
+
+        confirm_response = self.client.post('/api/auth/forgot-password/confirm/', {
+            'phone_number': '639171234567',
+            'reset_token': reset_token,
+            'new_password': 'NewSecurePass123!',
+        }, format='json')
+        self.assertEqual(confirm_response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('NewSecurePass123!'))
+        reset = PasswordResetOTP.objects.get(user=self.user)
+        self.assertTrue(reset.used_at)
+        self.assertEqual(reset.reset_token_hash, '')
+
+        cache.clear()
+        reused_response = self.client.post('/api/auth/forgot-password/confirm/', {
+            'phone_number': '639171234567',
+            'reset_token': reset_token,
+            'new_password': 'AnotherSecurePass123!',
+        }, format='json')
+        self.assertEqual(reused_response.status_code, 400)
+
+    @patch('users.views.verify_password_reset_otp', return_value=False)
+    @patch('users.views.send_password_reset_otp')
+    def test_incorrect_otp_increments_attempts(self, mocked_send, mocked_verify):
+        self.client.post('/api/auth/forgot-password/', {'phone_number': '09171234567'}, format='json')
+        response = self.client.post('/api/auth/forgot-password/verify/', {
+            'phone_number': '09171234567',
+            'otp': '000000',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(PasswordResetOTP.objects.get(user=self.user).attempts, 1)
 
 
 class AccountCrudTests(TestCase):

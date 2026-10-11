@@ -22,6 +22,7 @@ from booking.availability import ACTIVE_BOOKING_STATUSES, get_available_slots, i
 from booking.payment_ocr import analyze_gcash_receipt
 from payment.models import Payment
 from audit.models import AuditLog
+from notifications.services import create_booking_notification
 from users.permissions import IsAdmin, IsStaffOrAdmin
 from users.uploads import validate_receipt_image
 
@@ -351,6 +352,8 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         updated_booking = booking
         user = request.user
         is_staff_user = user.role in ['STAFF', 'ADMIN']
+        status_changed = False
+        customer_cancel = False
         editable_fields = {'package', 'scheduled_date', 'scheduled_time', 'notes'}
         customer_fields = {'first_name', 'last_name', 'email', 'phone_number', 'address'}
         requested_edit_fields = editable_fields.intersection(request.data.keys())
@@ -375,18 +378,7 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                 return Response({"detail": "Only staff members can update booking status."}, status=status.HTTP_403_FORBIDDEN)
             
             booking.status = new_status
-            booking.save(update_fields=['status'])
-            
-            # Log Audit
-            AuditLog.objects.create(
-                user=user,
-                action="BOOKING_CANCEL" if customer_cancel else "BOOKING_STATUS_CHANGE",
-                description=(
-                    f"Customer cancelled booking #{booking.id}."
-                    if customer_cancel
-                    else f"Updated booking #{booking.id} status to {new_status}."
-                )
-            )
+            status_changed = True
 
         if not is_staff_user and (requested_edit_fields or requested_customer_fields):
             if booking.customer_id != user.id:
@@ -424,6 +416,17 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
             serializer = self.get_serializer(booking, data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
             updated_booking = serializer.save()
+
+            if status_changed:
+                AuditLog.objects.create(
+                    user=user,
+                    action="BOOKING_CANCEL" if customer_cancel else "BOOKING_STATUS_CHANGE",
+                    description=(
+                        f"Customer cancelled booking #{booking.id}."
+                        if customer_cancel
+                        else f"Updated booking #{booking.id} status to {new_status}."
+                    )
+                )
 
             if requested_customer_fields:
                 customer = updated_booking.customer
@@ -469,6 +472,37 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                     user=user,
                     action="BOOKING_UPDATE",
                     description=f"Updated booking #{updated_booking.id}: {', '.join(sorted(changed_values.keys()))}."
+                )
+
+            if status_changed and is_staff_user:
+                status_messages = {
+                    'CONFIRMED': (
+                        'Booking confirmed',
+                        f'Your booking #{updated_booking.id} for {updated_booking.package.name} is confirmed.'
+                    ),
+                    'CANCELLED': (
+                        'Booking cancelled',
+                        f'Your booking #{updated_booking.id} for {updated_booking.package.name} has been cancelled.'
+                    ),
+                }
+                title, message = status_messages.get(
+                    new_status,
+                    ('Booking status updated', f'Your booking #{updated_booking.id} status is now {new_status.replace("_", " ").title()}.')
+                )
+                create_booking_notification(
+                    booking=updated_booking,
+                    notification_type=f'BOOKING_{new_status}',
+                    title=title,
+                    message=message,
+                )
+
+            if changed_values and is_staff_user:
+                changed_labels = ', '.join(sorted(changed_values))
+                create_booking_notification(
+                    booking=updated_booking,
+                    notification_type='BOOKING_UPDATED',
+                    title='Booking details updated',
+                    message=f'Staff updated your booking #{updated_booking.id}: {changed_labels}.',
                 )
 
         updated_booking = Booking.objects.select_related('customer', 'package', 'package__service').prefetch_related(
@@ -621,22 +655,32 @@ class BookingPaymentVerifyView(generics.UpdateAPIView):
         if new_status not in ['APPROVED', 'REJECTED']:
             return Response({"status": "Use APPROVED or REJECTED."}, status=status.HTTP_400_BAD_REQUEST)
 
+        previous_status = payment.status
         payment.status = new_status
         payment.verified_by = request.user
         payment.verified_at = timezone.now()
         payment.admin_note = str(request.data.get('admin_note', payment.admin_note or '') or '').strip()[:1000]
-        payment.save()
+        with transaction.atomic():
+            payment.save()
 
-        if new_status == 'APPROVED':
-            payment.booking.status = 'CONFIRMED_DP'
-            payment.booking.save(update_fields=['status'])
-            title = "Down Payment Verified"
-            message = f"Your booking #{payment.booking.id} is confirmed. Down payment has been received."
-            action = "BOOKING_PAYMENT_APPROVE"
-        else:
-            title = "Down Payment Rejected"
-            message = f"Your GCash payment for booking #{payment.booking.id} was rejected after verification."
-            action = "BOOKING_PAYMENT_REJECT"
+            if new_status == 'APPROVED':
+                payment.booking.status = 'CONFIRMED_DP'
+                payment.booking.save(update_fields=['status'])
+                title = "Payment approved"
+                message = f"Your payment for booking #{payment.booking.id} was approved. Your booking is confirmed with the down payment received."
+                action = "BOOKING_PAYMENT_APPROVED"
+            else:
+                title = "Payment verification update"
+                message = f"Your GCash payment for booking #{payment.booking.id} was rejected after verification."
+                action = "BOOKING_PAYMENT_REJECTED"
+
+            if previous_status != new_status:
+                create_booking_notification(
+                    booking=payment.booking,
+                    notification_type=action,
+                    title=title,
+                    message=message,
+                )
 
         AuditLog.objects.create(
             user=request.user,

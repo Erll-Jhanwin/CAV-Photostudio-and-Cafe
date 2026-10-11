@@ -38,6 +38,7 @@ from dashboard.views import DashboardAnalyticsView
 from forecasting.views import ForecastingDataView
 from gallery.views import GalleryImageListView
 from audit.views import ClientRuntimeErrorView
+from notifications.views import NotificationListView, NotificationReadView, NotificationMarkAllReadView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -100,6 +101,11 @@ urlpatterns = [
     path('api/dashboard/analytics/', DashboardAnalyticsView.as_view(), name='dashboard_analytics'),
     path('api/forecasting/predictions/', ForecastingDataView.as_view(), name='forecasting_predictions'),
     path('api/audit/client-runtime-errors/', ClientRuntimeErrorView.as_view(), name='client_runtime_errors'),
+
+    # Customer notifications
+    path('api/notifications/', NotificationListView.as_view(), name='notification_list'),
+    path('api/notifications/read-all/', NotificationMarkAllReadView.as_view(), name='notification_mark_all_read'),
+    path('api/notifications/<int:pk>/read/', NotificationReadView.as_view(), name='notification_read'),
 
     # Landing gallery
     path('api/gallery/images/', GalleryImageListView.as_view(), name='gallery_image_list'),

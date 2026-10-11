@@ -375,6 +375,19 @@ export default function CustomerDashboard() {
   const paymentIdempotencyKeyRef = useRef('');
   const dashboardFetchSeqRef = useRef(0);
 
+  const fetchNotifications = useCallback(async ({ force = false } = {}) => {
+    try {
+      const response = await getCached(
+        '/api/notifications/',
+        { params: { limit: 100 } },
+        { force, maxAge: 10_000 },
+      );
+      setNotifications(Array.isArray(response.data) ? response.data : []);
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
   const resetPendingBooking = () => {
     setPendingPaymentBookingId(null);
     bookingIdempotencyKeyRef.current = '';
@@ -522,7 +535,7 @@ export default function CustomerDashboard() {
       const [servicesRes, bookingsRes, profileRes] = await Promise.all([
         getCached('/api/bookings/services/', {}, { force: background }),
         getCached('/api/bookings/', {}, { force: background }),
-        getCached('/api/auth/profile/', {}, { force: background })
+        getCached('/api/auth/profile/', {}, { force: background }),
       ]);
       const uniqueServices = decorateServicesWithAssets(normalizeServices(servicesRes.data));
       const uniqueBookings = normalizeBookings(bookingsRes.data);
@@ -555,19 +568,9 @@ export default function CustomerDashboard() {
         setPoints(p.customer_profile.points || 0);
         setLoyaltyTier(p.customer_profile.loyalty_tier || 'Bronze');
       }
-      const mockNotifications = [
-        { id: 1, title: 'Welcome to CAV!', message: 'Enjoy 10% off on your first photo shoot session.', created_at: 'Just now', read: false }
-      ];
-      uniqueBookings.forEach(b => {
-        if (['CONFIRMED', 'CONFIRMED_DP'].includes(b.status)) {
-          mockNotifications.push({
-            id: `b-${b.id}`, title: 'Booking Confirmed',
-            message: `Your session for ${b.package_details?.name} on ${b.scheduled_date} is confirmed!`,
-            created_at: 'Earlier today', read: false
-          });
-        }
-      });
-      setNotifications(mockNotifications);
+      // Notifications are supplemental to the account view. Keep older backend
+      // deployments from blocking the dashboard while they receive the API migration.
+      void fetchNotifications({ force: background });
     } catch (err) {
       console.error(err);
       if (requestSeq === dashboardFetchSeqRef.current) {
@@ -579,7 +582,30 @@ export default function CustomerDashboard() {
         setInitialDataReady(true);
       }
     }
-  }, [user?.email, updateStoredUser]);
+  }, [user?.email, updateStoredUser, fetchNotifications]);
+
+  useEffect(() => {
+    if (!userId) return undefined;
+    const intervalId = window.setInterval(() => {
+      void fetchNotifications({ force: true });
+    }, 10_000);
+    return () => window.clearInterval(intervalId);
+  }, [userId, fetchNotifications]);
+
+  const handleNotificationRead = async (notification) => {
+    if (!notification || notification.is_read) return;
+    setNotifications(current => current.map(item => (
+      item.id === notification.id ? { ...item, is_read: true, read_at: new Date().toISOString() } : item
+    )));
+    try {
+      await client.patch(`/api/notifications/${notification.id}/read/`);
+    } catch (err) {
+      setNotifications(current => current.map(item => (
+        item.id === notification.id ? { ...item, is_read: false, read_at: null } : item
+      )));
+      console.error(err);
+    }
+  };
 
   const handleProfilePictureChange = (file) => {
     if (!file) return;
@@ -769,10 +795,13 @@ export default function CustomerDashboard() {
         void fetchMonthAvailability();
         if (selectedDate) void fetchDayAvailability(selectedDate);
       }
+      if (url.includes('/api/notifications/')) {
+        void fetchNotifications({ force: true });
+      }
     };
     window.addEventListener(DATA_CHANGED_EVENT, refreshChangedData);
     return () => window.removeEventListener(DATA_CHANGED_EVENT, refreshChangedData);
-  }, [userId, selectedDate, fetchDashboardData, fetchMonthAvailability, fetchDayAvailability]);
+  }, [userId, selectedDate, fetchDashboardData, fetchMonthAvailability, fetchDayAvailability, fetchNotifications]);
 
   const handleDateSelect = (dateValue) => {
     const dateStatus = monthAvailability[dateValue]?.status;
@@ -1209,7 +1238,7 @@ export default function CustomerDashboard() {
     { key: 'history', label: 'Booking History', icon: Clock, active: activeTab === 'history', onClick: () => setActiveTab('history') },
     { key: 'profile', label: 'My Profile', icon: User, active: activeTab === 'profile', onClick: () => setActiveTab('profile') },
     { key: 'notifications', label: 'Notifications', icon: Bell, active: activeTab === 'notifications', onClick: () => setActiveTab('notifications'),
-      badge: notifications.length },
+      badge: notifications.filter(notification => !notification.is_read).length },
   ];
 
   const pageTitles = { book: 'Book a Session', history: 'Booking History', profile: 'My Profile', notifications: 'Notifications' };
@@ -2597,23 +2626,38 @@ export default function CustomerDashboard() {
             <div className="space-y-6 animate-in-up" key="notifications">
               <div>
                 <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Your Notifications</h1>
-                <p className="text-xs text-espresso/50 mt-1">Stay updated on your photo shoot approvals and promotions.</p>
+                <p className="text-xs text-espresso/50 mt-1">Stay updated on your booking approvals and changes.</p>
               </div>
 
               {notifications.length > 0 ? (
                 <div className="space-y-3">
-                  {notifications.map((n, i) => (
-                    <div key={n.id} className="bg-white p-5 rounded-2xl border border-espresso/5 shadow-sm flex items-start gap-4 hover:shadow-md transition-all animate-in-up" style={{ animationDelay: `${i * 50}ms` }}>
-                      <div className="bg-gold/10 text-gold-dark p-2.5 rounded-xl shrink-0">
+                  {notifications.map((n, i) => {
+                    const unread = !n.is_read;
+                    return (
+                    <button
+                      type="button"
+                      key={n.id}
+                      onClick={() => handleNotificationRead(n)}
+                      className={`w-full text-left p-5 rounded-2xl border shadow-sm flex items-start gap-4 hover:shadow-md transition-all animate-in-up ${unread ? 'bg-gold/[0.06] border-gold/30' : 'bg-white border-espresso/5'}`}
+                      style={{ animationDelay: `${i * 50}ms` }}
+                      aria-label={`${unread ? 'Unread' : 'Read'} notification: ${n.title}`}
+                    >
+                      <div className={`${unread ? 'bg-gold/20 text-gold-dark' : 'bg-espresso/5 text-espresso/50'} p-2.5 rounded-xl shrink-0`}>
                         <Bell className="w-5 h-5" />
                       </div>
-                      <div className="space-y-1">
-                        <h4 className="font-bold text-sm text-espresso">{n.title}</h4>
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <h4 className="font-bold text-sm text-espresso">{n.title}</h4>
+                          <span className={`shrink-0 text-[9px] uppercase tracking-wider font-black ${unread ? 'text-gold-dark' : 'text-espresso/30'}`}>
+                            {unread ? 'Unread' : 'Read'}
+                          </span>
+                        </div>
                         <p className="text-xs text-espresso/60 font-light">{n.message}</p>
-                        <p className="text-[10px] text-espresso/30">{n.created_at}</p>
+                        <p className="text-[10px] text-espresso/40">{formatManilaDateTime(n.created_at)}</p>
                       </div>
-                    </div>
-                  ))}
+                    </button>
+                    );
+                  })}
                 </div>
               ) : (
                 <EmptyState icon={Bell} title="No notifications" description="You're all caught up!" />
