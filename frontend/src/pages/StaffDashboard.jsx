@@ -13,7 +13,7 @@ import { StatusBadge } from '../components/ui/Badge';
 import { Input, Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { EmptyState } from '../components/ui/EmptyState';
-import { Skeleton, SkeletonTable, SkeletonProfileCard } from '../components/ui/Skeleton';
+import { LoadingSpinner, Skeleton, SkeletonTable, SkeletonProfileCard } from '../components/ui/Skeleton';
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { DataTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
@@ -36,6 +36,10 @@ export function StaffSkeleton() {
         <Skeleton className="h-10 w-full rounded-xl bg-white/5 mt-3" />
       </aside>
       <main className="flex-1 p-6 md:p-8">
+        <div className="mb-6 flex items-center gap-3 text-xs font-bold text-espresso/60" role="status">
+          <LoadingSpinner className="text-gold-dark" label="Loading staff dashboard" />
+          Loading your dashboard...
+        </div>
         <Skeleton className="h-8 w-48 mb-6" />
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-8"><SkeletonTable rows={6} cols={4} /></div>
@@ -194,6 +198,7 @@ export default function StaffDashboard() {
   const [bookingPayments, setBookingPayments] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [initialDataReady, setInitialDataReady] = useState(false);
   const [loadingResources, setLoadingResources] = useState({});
   const [loadedTabs, setLoadedTabs] = useState({});
   const [error, setError] = useState('');
@@ -321,6 +326,7 @@ export default function StaffDashboard() {
       tabLoadInFlightRef.current.delete(tab);
       setLoadingResources(current => ({ ...current, [tab]: false }));
       setLoading(false);
+      setInitialDataReady(true);
     }
   }, [activeTab, loadedTabs, ensureDefaultRecipesOnce, loadStaticInventoryOptions]);
 
@@ -919,6 +925,10 @@ export default function StaffDashboard() {
   ));
   const pagedBookingPayments = paginateRows(filteredBookingPayments, paymentPage, TABLE_PAGE_SIZE);
 
+  if (!initialDataReady && (loading || isCurrentTabLoading)) {
+    return <StaffSkeleton />;
+  }
+
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row" aria-busy={loading}>
       <Sidebar
@@ -979,7 +989,7 @@ export default function StaffDashboard() {
 
           {isCurrentTabLoading && (
             <div className="mb-4 flex items-center gap-3 rounded-xl border border-gold/20 bg-gold/10 px-4 py-3" role="status">
-              <Skeleton className="h-4 w-4 rounded-full bg-gold/30" />
+              <LoadingSpinner size="sm" className="text-gold-dark" label={`Loading ${pageTitles[activeTab]}`} />
               <span className="text-xs font-bold text-espresso">Loading {pageTitles[activeTab]}...</span>
             </div>
           )}

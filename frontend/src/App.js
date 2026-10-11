@@ -5,6 +5,7 @@ import { StyledAlertProvider } from './components/ui/StyledAlert';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { brandAssets } from './utils/cavAssets';
 import { API_BASE_URL } from './api/config';
+import { LoadingSpinner } from './components/ui/Skeleton';
 import AdminDashboard from './pages/AdminDashboard';
 
 const LandingPage = lazy(() => lazyWithRetry(() => import('./pages/LandingPage')));
@@ -53,7 +54,7 @@ function AppLoader() {
   return (
     <div className="min-h-screen bg-cream flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
-        <div className="w-10 h-10 border-[3px] border-espresso/10 border-t-gold rounded-full animate-spin" />
+        <LoadingSpinner size="lg" className="text-gold" label="Loading application" />
         <p className="text-xs text-espresso/40 font-medium">Loading...</p>
       </div>
     </div>
@@ -207,7 +208,11 @@ function App() {
             <StartupSplashGate>
               <Suspense fallback={<AppLoader />}>
                 <Routes>
-                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/" element={<LandingPage page="home" />} />
+                  <Route path="/photo-studio" element={<LandingPage page="studio" />} />
+                  <Route path="/cafe-menu" element={<LandingPage page="cafe" />} />
+                  <Route path="/gallery" element={<LandingPage page="gallery" />} />
+                  <Route path="/our-story" element={<LandingPage page="story" />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
                   <Route

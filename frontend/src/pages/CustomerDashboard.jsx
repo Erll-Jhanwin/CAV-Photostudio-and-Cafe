@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
 import { Input, Textarea } from '../components/ui/Input';
 import { EmptyState } from '../components/ui/EmptyState';
-import { Skeleton, SkeletonProfileCard } from '../components/ui/Skeleton';
+import { LoadingSpinner, Skeleton, SkeletonProfileCard } from '../components/ui/Skeleton';
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { Modal } from '../components/ui/Modal';
@@ -272,6 +272,10 @@ export function CustomerSkeleton() {
         <Skeleton className="h-10 w-full rounded-xl bg-white/5" />
       </aside>
       <main className="flex-1 p-6 md:p-10">
+        <div className="mb-6 flex items-center gap-3 text-xs font-bold text-espresso/60" role="status">
+          <LoadingSpinner className="text-gold-dark" label="Loading customer dashboard" />
+          Loading your dashboard...
+        </div>
         <Skeleton className="h-8 w-56 mb-8" />
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-8 space-y-6">
@@ -312,6 +316,7 @@ export default function CustomerDashboard() {
   const [bookings, setBookings] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [initialDataReady, setInitialDataReady] = useState(false);
   const [dashboardError, setDashboardError] = useState('');
 
   const [firstName, setFirstName] = useState('');
@@ -583,7 +588,10 @@ export default function CustomerDashboard() {
         setDashboardError(getApiErrorMessage(err, 'Could not refresh your bookings and profile.'));
       }
     } finally {
-      if (!background && requestSeq === dashboardFetchSeqRef.current) setLoading(false);
+      if (!background && requestSeq === dashboardFetchSeqRef.current) {
+        setLoading(false);
+        setInitialDataReady(true);
+      }
     }
   }, [user?.email, updateStoredUser]);
 
@@ -1422,6 +1430,10 @@ export default function CustomerDashboard() {
     };
   };
 
+  if (loading && !initialDataReady) {
+    return <CustomerSkeleton />;
+  }
+
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row" aria-busy={loading}>
       <Sidebar
@@ -1444,9 +1456,8 @@ export default function CustomerDashboard() {
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
           {loading && (
             <div className="mb-4 flex items-center gap-3 rounded-xl border border-espresso/[0.08] bg-white px-4 py-3" role="status">
-              <Skeleton className="h-4 w-4 rounded-full" />
-              <Skeleton className="h-3 w-44" />
-              <span className="sr-only">Loading account and booking information</span>
+              <LoadingSpinner size="sm" className="text-gold-dark" label="Loading account and booking information" />
+              <span className="text-xs font-bold text-espresso/60">Loading account and booking information...</span>
             </div>
           )}
           {dashboardError && (
@@ -1872,7 +1883,10 @@ export default function CustomerDashboard() {
                                   </button>
                                   <div className="text-center">
                                     <p className="font-black text-sm text-espresso">{getMonthLabel(calendarMonth)}</p>
-                                    <p className="text-[10px] text-espresso/45">{availabilityLoading ? 'Checking available dates...' : 'Live availability'}</p>
+                                    <p className="flex items-center gap-1.5 text-[10px] text-espresso/45">
+                                      {availabilityLoading && <LoadingSpinner size="sm" className="text-gold-dark" label="Checking available dates" />}
+                                      {availabilityLoading ? 'Checking available dates...' : 'Live availability'}
+                                    </p>
                                   </div>
                                   <button
                                     type="button"
@@ -1935,7 +1949,10 @@ export default function CustomerDashboard() {
                                   <p className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Selected Date</p>
                                   <p className="font-black text-espresso">{selectedDate || 'Choose an available date'}</p>
                                   {selectedDate && (
-                                    <p className="text-[11px] text-espresso/50">{slotLoading ? 'Refreshing slots...' : `${availableSlotsCount} available time slot${availableSlotsCount === 1 ? '' : 's'}`}</p>
+                                    <p className="flex items-center gap-1.5 text-[11px] text-espresso/50">
+                                      {slotLoading && <LoadingSpinner size="sm" className="text-gold-dark" label="Refreshing time slots" />}
+                                      {slotLoading ? 'Refreshing slots...' : `${availableSlotsCount} available time slot${availableSlotsCount === 1 ? '' : 's'}`}
+                                    </p>
                                   )}
                                 </div>
 
@@ -2987,6 +3004,12 @@ export default function CustomerDashboard() {
                     />
                     <label className="block space-y-2">
                       <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70">Available Time Slot</span>
+                      {editSlotLoading && (
+                        <span className="flex items-center gap-1.5 text-[10px] text-espresso/50">
+                          <LoadingSpinner size="sm" className="text-gold-dark" label="Loading available time slots" />
+                          Loading available slots...
+                        </span>
+                      )}
                       <select
                         value={editForm.scheduled_time}
                         onChange={(e) => setEditForm(current => ({ ...current, scheduled_time: e.target.value }))}

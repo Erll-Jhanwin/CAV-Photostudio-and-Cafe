@@ -18,7 +18,7 @@ import { StatusBadge } from '../components/ui/Badge';
 import { Input, Select, Textarea } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { EmptyState } from '../components/ui/EmptyState';
-import { Skeleton, SkeletonChart, SkeletonStatsCard, SkeletonTable, SkeletonProfileCard } from '../components/ui/Skeleton';
+import { LoadingSpinner, Skeleton, SkeletonChart, SkeletonStatsCard, SkeletonTable, SkeletonProfileCard } from '../components/ui/Skeleton';
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { DataTable as DashboardTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
@@ -265,6 +265,10 @@ export function AdminSkeleton({ pageTitle }) {
         </div>
       </aside>
       <main className="flex-1 p-6 md:p-8 overflow-y-auto">
+        <div className="mb-6 flex items-center gap-3 text-xs font-bold text-espresso/60" role="status">
+          <LoadingSpinner className="text-gold-dark" label={`Loading ${pageTitle}`} />
+          Loading {pageTitle}...
+        </div>
         <Skeleton className="h-8 w-64 mb-6" />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
           <SkeletonStatsCard />
@@ -298,6 +302,7 @@ export default function AdminDashboard() {
   const [studioUnavailableDates, setStudioUnavailableDates] = useState([]);
   const [endOfDayReports, setEndOfDayReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [initialDataReady, setInitialDataReady] = useState(false);
   const [dataError, setDataError] = useState('');
 
   const [faqQuestion, setFaqQuestion] = useState('');
@@ -443,7 +448,10 @@ export default function AdminDashboard() {
         setDataError(getApiErrorMessage(err, 'Failed to load dashboard data.'));
       }
     } finally {
-      if (!background && requestSeq === dashboardFetchSeqRef.current) setLoading(false);
+      if (!background && requestSeq === dashboardFetchSeqRef.current) {
+        setLoading(false);
+        setInitialDataReady(true);
+      }
     }
   }, [datePreset, customStart, customEnd, chartGrain]);
 
@@ -1186,6 +1194,10 @@ export default function AdminDashboard() {
   const calendarBookingStatusOptions = ['PENDING', 'CONFIRMED', 'CONFIRMED_DP', 'COMPLETED', 'CANCELLED'];
   const displayedEndOfDayExpectedCash = endOfDayExpectedCash || getEndOfDayExpectedCashValue().toFixed(2);
 
+  if (loading && !initialDataReady) {
+    return <AdminSkeleton pageTitle={pageTitles[activeTab]} />;
+  }
+
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
       <Sidebar
@@ -1229,9 +1241,8 @@ export default function AdminDashboard() {
 
           {isActiveTabLoading && (
             <div className="mb-4 flex items-center gap-3 rounded-xl border border-espresso/[0.08] bg-white px-4 py-3" role="status">
-              <Skeleton className="h-4 w-4 rounded-full" />
-              <Skeleton className="h-3 w-40" />
-              <span className="sr-only">Loading {pageTitles[activeTab]}</span>
+              <LoadingSpinner size="sm" className="text-gold-dark" label={`Loading ${pageTitles[activeTab]}`} />
+              <span className="text-xs font-bold text-espresso/60">Loading {pageTitles[activeTab]}...</span>
             </div>
           )}
 

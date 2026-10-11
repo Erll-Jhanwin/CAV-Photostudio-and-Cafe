@@ -1,10 +1,11 @@
 const pic = (path) => encodeURI(`/assets/pics/${path}`);
 
-const makeImage = ({ id, title, category, categoryLabel, path, alt, caption, objectPosition = '50% 34%' }) => ({
+const makeImage = ({ id, title, category, categoryLabel, packageCategory = category, path, alt, caption, objectPosition = '50% 34%' }) => ({
   id,
   title,
   category,
   category_label: categoryLabel,
+  package_category: packageCategory,
   image_url: pic(path),
   alt_text: alt || title,
   caption: caption || '',
@@ -32,10 +33,10 @@ const packageAssets = {
     primary: pic('solo/solo pic portrait.jpg'),
     primaryPosition: '52% 24%',
     gallery: [
-      makeImage({ id: 'solo-portrait-1', title: 'Solo Portrait Session', category: 'STUDIO', categoryLabel: 'Solo', path: 'solo/solo pic portrait.jpg', alt: 'Solo portrait studio session', objectPosition: '52% 24%' }),
-      makeImage({ id: 'solo-portrait-2', title: 'Solo Studio Portrait', category: 'STUDIO', categoryLabel: 'Solo', path: 'solo/solo pic portrait (2).jpg', alt: 'Solo studio portrait sample', objectPosition: '50% 24%' }),
-      makeImage({ id: 'solo-portrait-3', title: 'Solo Creative Portrait', category: 'STUDIO', categoryLabel: 'Solo', path: 'solo/solo pic portrait (3).jpg', alt: 'Solo creative portrait sample', objectPosition: '50% 24%' }),
-      makeImage({ id: 'solo-landscape', title: 'Solo Landscape Portrait', category: 'STUDIO', categoryLabel: 'Solo', path: 'solo/solo pic landscape.jpg', alt: 'Solo landscape studio portrait', objectPosition: '50% 38%' }),
+      makeImage({ id: 'solo-portrait-1', title: 'Solo Portrait Session', category: 'STUDIO', categoryLabel: 'Solo Package', packageCategory: 'SOLO', path: 'solo/solo pic portrait.jpg', alt: 'Solo portrait studio session', objectPosition: '52% 24%' }),
+      makeImage({ id: 'solo-portrait-2', title: 'Solo Studio Portrait', category: 'STUDIO', categoryLabel: 'Solo Package', packageCategory: 'SOLO', path: 'solo/solo pic portrait (2).jpg', alt: 'Solo studio portrait sample', objectPosition: '50% 24%' }),
+      makeImage({ id: 'solo-portrait-3', title: 'Solo Creative Portrait', category: 'STUDIO', categoryLabel: 'Solo Package', packageCategory: 'SOLO', path: 'solo/solo pic portrait (3).jpg', alt: 'Solo creative portrait sample', objectPosition: '50% 24%' }),
+      makeImage({ id: 'solo-landscape', title: 'Solo Landscape Portrait', category: 'STUDIO', categoryLabel: 'Solo Package', packageCategory: 'SOLO', path: 'solo/solo pic landscape.jpg', alt: 'Solo landscape studio portrait', objectPosition: '50% 38%' }),
     ],
   },
   couple: {
@@ -44,9 +45,9 @@ const packageAssets = {
     primary: pic('couple/studio session couple.jpg'),
     primaryPosition: '50% 24%',
     gallery: [
-      makeImage({ id: 'couple-studio-1', title: 'Couple Studio Session', category: 'STUDIO', categoryLabel: 'Couple', path: 'couple/studio session couple.jpg', alt: 'Couple studio session sample', objectPosition: '50% 24%' }),
-      makeImage({ id: 'couple-studio-2', title: 'Couple Portrait Session', category: 'STUDIO', categoryLabel: 'Couple', path: 'couple/studio session couple (2).jpg', alt: 'Couple portrait studio sample', objectPosition: '50% 24%' }),
-      makeImage({ id: 'couple-studio-5', title: 'Couple Props Session', category: 'STUDIO', categoryLabel: 'Couple', path: 'couple/studio session couple5.jpg', alt: 'Couple studio props session sample', objectPosition: '50% 24%' }),
+      makeImage({ id: 'couple-studio-1', title: 'Couple Studio Session', category: 'STUDIO', categoryLabel: 'Couple Package', packageCategory: 'COUPLE', path: 'couple/studio session couple.jpg', alt: 'Couple studio session sample', objectPosition: '50% 24%' }),
+      makeImage({ id: 'couple-studio-2', title: 'Couple Portrait Session', category: 'STUDIO', categoryLabel: 'Couple Package', packageCategory: 'COUPLE', path: 'couple/studio session couple (2).jpg', alt: 'Couple portrait studio sample', objectPosition: '50% 24%' }),
+      makeImage({ id: 'couple-studio-5', title: 'Couple Props Session', category: 'STUDIO', categoryLabel: 'Couple Package', packageCategory: 'COUPLE', path: 'couple/studio session couple5.jpg', alt: 'Couple studio props session sample', objectPosition: '50% 24%' }),
     ],
   },
   friends: {
@@ -55,8 +56,8 @@ const packageAssets = {
     primary: pic('friends/studio session friends.jpg'),
     primaryPosition: '50% 26%',
     gallery: [
-      makeImage({ id: 'friends-studio-1', title: 'Friends Studio Session', category: 'STUDIO', categoryLabel: 'Friends', path: 'friends/studio session friends.jpg', alt: 'Friends studio session sample', objectPosition: '50% 26%' }),
-      makeImage({ id: 'friends-studio-2', title: 'Friends Group Portrait', category: 'STUDIO', categoryLabel: 'Friends', path: 'friends/studio session friends (2).jpg', alt: 'Friends group portrait sample', objectPosition: '50% 34%' }),
+      makeImage({ id: 'friends-studio-1', title: 'Friends Studio Session', category: 'STUDIO', categoryLabel: 'Friends Package', packageCategory: 'FRIENDS', path: 'friends/studio session friends.jpg', alt: 'Friends studio session sample', objectPosition: '50% 26%' }),
+      makeImage({ id: 'friends-studio-2', title: 'Friends Group Portrait', category: 'STUDIO', categoryLabel: 'Friends Package', packageCategory: 'FRIENDS', path: 'friends/studio session friends (2).jpg', alt: 'Friends group portrait sample', objectPosition: '50% 34%' }),
     ],
   },
   family: {
@@ -65,8 +66,8 @@ const packageAssets = {
     primary: pic('family/studio session family.jpg'),
     primaryPosition: '50% 30%',
     gallery: [
-      makeImage({ id: 'family-studio-1', title: 'Family Studio Session', category: 'STUDIO', categoryLabel: 'Family', path: 'family/studio session family.jpg', alt: 'Family studio session sample', objectPosition: '50% 30%' }),
-      makeImage({ id: 'family-studio-2', title: 'Family Portrait Session', category: 'STUDIO', categoryLabel: 'Family', path: 'family/studio session family (2).jpg', alt: 'Family portrait studio sample', objectPosition: '50% 24%' }),
+      makeImage({ id: 'family-studio-1', title: 'Family Studio Session', category: 'STUDIO', categoryLabel: 'Family Package', packageCategory: 'FAMILY', path: 'family/studio session family.jpg', alt: 'Family studio session sample', objectPosition: '50% 30%' }),
+      makeImage({ id: 'family-studio-2', title: 'Family Portrait Session', category: 'STUDIO', categoryLabel: 'Family Package', packageCategory: 'FAMILY', path: 'family/studio session family (2).jpg', alt: 'Family portrait studio sample', objectPosition: '50% 24%' }),
     ],
   },
   birthday: {
@@ -75,11 +76,11 @@ const packageAssets = {
     primary: pic('birthday/studio session bday.jpg'),
     primaryPosition: '48% 34%',
     gallery: [
-      makeImage({ id: 'birthday-studio-1', title: 'Birthday Studio Session', category: 'EVENTS', categoryLabel: 'Birthday', path: 'birthday/studio session bday.jpg', alt: 'Birthday studio session sample', objectPosition: '48% 34%' }),
-      makeImage({ id: 'birthday-studio-2', title: 'Birthday Portrait Setup', category: 'EVENTS', categoryLabel: 'Birthday', path: 'birthday/studio session bday1.jpg', alt: 'Birthday portrait setup sample', objectPosition: '50% 32%' }),
-      makeImage({ id: 'birthday-studio-3', title: 'Birthday Photo Session', category: 'EVENTS', categoryLabel: 'Birthday', path: 'birthday/studio session bday (2).jpg', alt: 'Birthday photo session sample', objectPosition: '50% 34%' }),
-      makeImage({ id: 'birthday-studio-4', title: 'Birthday Celebration Portrait', category: 'EVENTS', categoryLabel: 'Birthday', path: 'birthday/studio session bday (3).jpg', alt: 'Birthday celebration portrait sample', objectPosition: '50% 24%' }),
-      makeImage({ id: 'birthday-studio-5', title: 'Birthday Package Session', category: 'EVENTS', categoryLabel: 'Birthday', path: 'birthday/studio session bday (4).jpg', alt: 'Birthday package session sample', objectPosition: '50% 34%' }),
+      makeImage({ id: 'birthday-studio-1', title: 'Birthday Studio Session', category: 'EVENTS', categoryLabel: 'Birthday Package', packageCategory: 'BIRTHDAY', path: 'birthday/studio session bday.jpg', alt: 'Birthday studio session sample', objectPosition: '48% 34%' }),
+      makeImage({ id: 'birthday-studio-2', title: 'Birthday Portrait Setup', category: 'EVENTS', categoryLabel: 'Birthday Package', packageCategory: 'BIRTHDAY', path: 'birthday/studio session bday1.jpg', alt: 'Birthday portrait setup sample', objectPosition: '50% 32%' }),
+      makeImage({ id: 'birthday-studio-3', title: 'Birthday Photo Session', category: 'EVENTS', categoryLabel: 'Birthday Package', packageCategory: 'BIRTHDAY', path: 'birthday/studio session bday (2).jpg', alt: 'Birthday photo session sample', objectPosition: '50% 34%' }),
+      makeImage({ id: 'birthday-studio-4', title: 'Birthday Celebration Portrait', category: 'EVENTS', categoryLabel: 'Birthday Package', packageCategory: 'BIRTHDAY', path: 'birthday/studio session bday (3).jpg', alt: 'Birthday celebration portrait sample', objectPosition: '50% 24%' }),
+      makeImage({ id: 'birthday-studio-5', title: 'Birthday Package Session', category: 'EVENTS', categoryLabel: 'Birthday Package', packageCategory: 'BIRTHDAY', path: 'birthday/studio session bday (4).jpg', alt: 'Birthday package session sample', objectPosition: '50% 34%' }),
     ],
   },
   event: {
@@ -88,17 +89,17 @@ const packageAssets = {
     primary: pic('events/standard event package.jpg'),
     primaryPosition: '50% 26%',
     gallery: [
-      makeImage({ id: 'event-standard-package', title: 'Standard Event Package', category: 'EVENTS', categoryLabel: 'Events', path: 'events/standard event package.jpg', alt: 'Standard event package sample', objectPosition: '50% 26%' }),
-      makeImage({ id: 'event-session-1', title: 'Event Photo Coverage', category: 'EVENTS', categoryLabel: 'Events', path: 'events/event.jpg', alt: 'Event photo coverage sample', objectPosition: '50% 34%' }),
-      makeImage({ id: 'event-session-2', title: 'Event Program Session', category: 'EVENTS', categoryLabel: 'Events', path: 'events/event (2).jpg', alt: 'Event program session sample', objectPosition: '50% 34%' }),
-      makeImage({ id: 'event-session-3', title: 'Event Celebration Coverage', category: 'EVENTS', categoryLabel: 'Events', path: 'events/event (3).jpg', alt: 'Event celebration coverage sample', objectPosition: '50% 34%' }),
+      makeImage({ id: 'event-standard-package', title: 'Standard Event Package', category: 'EVENTS', categoryLabel: 'Event Package', packageCategory: 'EVENT', path: 'events/standard event package.jpg', alt: 'Standard event package sample', objectPosition: '50% 26%' }),
+      makeImage({ id: 'event-session-1', title: 'Event Photo Coverage', category: 'EVENTS', categoryLabel: 'Event Package', packageCategory: 'EVENT', path: 'events/event.jpg', alt: 'Event photo coverage sample', objectPosition: '50% 34%' }),
+      makeImage({ id: 'event-session-2', title: 'Event Program Session', category: 'EVENTS', categoryLabel: 'Event Package', packageCategory: 'EVENT', path: 'events/event (2).jpg', alt: 'Event program session sample', objectPosition: '50% 34%' }),
+      makeImage({ id: 'event-session-3', title: 'Event Celebration Coverage', category: 'EVENTS', categoryLabel: 'Event Package', packageCategory: 'EVENT', path: 'events/event (3).jpg', alt: 'Event celebration coverage sample', objectPosition: '50% 34%' }),
     ],
   },
 };
 
 export const localGalleryImages = [
-  makeImage({ id: 'business-main', title: 'CAV Studio Main Room', category: 'BEHIND_THE_SCENES', categoryLabel: 'Business', path: 'business/main.jpg', alt: 'CAV main studio room' }),
-  makeImage({ id: 'business-store', title: 'CAV Storefront', category: 'BEHIND_THE_SCENES', categoryLabel: 'Business', path: 'business/Store.jpg', alt: 'CAV Photo Studio and Cafe storefront' }),
+  makeImage({ id: 'business-main', title: 'CAV Studio Main Room', category: 'BEHIND_THE_SCENES', categoryLabel: 'Studio & Café', packageCategory: 'BUSINESS', path: 'business/main.jpg', alt: 'CAV main studio room' }),
+  makeImage({ id: 'business-store', title: 'CAV Storefront', category: 'BEHIND_THE_SCENES', categoryLabel: 'Studio & Café', packageCategory: 'BUSINESS', path: 'business/Store.jpg', alt: 'CAV Photo Studio and Cafe storefront' }),
   ...packageAssets.solo.gallery,
   ...packageAssets.couple.gallery,
   ...packageAssets.friends.gallery,

@@ -10,7 +10,7 @@ import { API_BASE_URL } from '../api/config';
 import { getCached } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
-import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
+import { LoadingSpinner, Skeleton, SkeletonCard } from '../components/ui/Skeleton';
 import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
 import { normalizeGalleryImages, normalizeRowsById, normalizeServices, recordKey, uniqueBy } from '../utils/uniqueRecords';
 import { brandAssets, businessAssets, decorateServicesWithAssets, localGalleryImages } from '../utils/cavAssets';
@@ -18,6 +18,10 @@ import { brandAssets, businessAssets, decorateServicesWithAssets, localGalleryIm
 export function LandingSkeleton() {
   return (
     <div className="min-h-screen bg-cream">
+      <div className="flex items-center justify-center gap-2 py-3 text-xs font-bold text-espresso/60" role="status">
+        <LoadingSpinner size="sm" className="text-gold-dark" label="Loading website" />
+        Loading website...
+      </div>
       <header className="sticky top-0 z-40 bg-white border-b border-espresso/[0.08] shadow-[0_8px_24px_rgba(46,26,17,0.06)]">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -79,7 +83,7 @@ export function LandingSkeleton() {
   );
 }
 
-function CafeCarousel({ items = [] }) {
+function CafeCarousel({ items = [], loading = false }) {
   const viewportRef = useRef(null);
   const trackRef = useRef(null);
   const resumeTimerRef = useRef(null);
@@ -244,12 +248,17 @@ function CafeCarousel({ items = [] }) {
     }
   };
 
-  if (!items.length) {
+  if (!items.length && loading) {
     return (
-      <div className="rounded-3xl border border-gold/15 bg-espresso-dark/95 p-8 text-center text-cream/60">
-        Café menu items are loading.
+      <div className="flex min-h-40 items-center justify-center gap-3 rounded-3xl border border-gold/15 bg-espresso-dark/95 p-8 text-sm font-bold text-cream/70" role="status" aria-label="Loading café menu">
+        <LoadingSpinner className="text-gold" label="Loading café menu" />
+        Loading café menu...
       </div>
     );
+  }
+
+  if (!items.length) {
+    return <div className="rounded-3xl border border-gold/15 bg-espresso-dark/95 p-8 text-center text-cream/60">No café menu items are available right now.</div>;
   }
 
   return (
@@ -376,11 +385,14 @@ function CafeCarousel({ items = [] }) {
 }
 
 const GALLERY_CATEGORIES = [
-  { label: 'All', value: 'ALL' },
-  { label: 'Studio', value: 'STUDIO' },
-  { label: 'Café', value: 'CAFE' },
-  { label: 'Events', value: 'EVENTS' },
-  { label: 'Behind the Scenes', value: 'BEHIND_THE_SCENES' },
+  { label: 'All Packages', value: 'ALL' },
+  { label: 'Solo Packages', value: 'SOLO' },
+  { label: 'Couple Packages', value: 'COUPLE' },
+  { label: 'Friends Packages', value: 'FRIENDS' },
+  { label: 'Family Packages', value: 'FAMILY' },
+  { label: 'Birthday Packages', value: 'BIRTHDAY' },
+  { label: 'Event Packages', value: 'EVENT' },
+  { label: 'Studio & Café', value: 'BUSINESS' },
 ];
 
 const fallbackGalleryImages = localGalleryImages;
@@ -391,11 +403,11 @@ function GallerySection({ images = [] }) {
   const touchStartRef = useRef(null);
   const galleryImages = (images.length ? images : fallbackGalleryImages).filter(item => item.image_url);
   const availableCategories = GALLERY_CATEGORIES.filter(category => (
-    category.value === 'ALL' || galleryImages.some(item => item.category === category.value)
+    category.value === 'ALL' || galleryImages.some(item => (item.package_category || item.category) === category.value)
   ));
   const filteredImages = activeCategory === 'ALL'
     ? galleryImages
-    : galleryImages.filter(item => item.category === activeCategory);
+    : galleryImages.filter(item => (item.package_category || item.category) === activeCategory);
   const activeImage = lightboxIndex !== null ? filteredImages[lightboxIndex] : null;
 
   const closeLightbox = useCallback(() => setLightboxIndex(null), []);
@@ -457,7 +469,7 @@ function GallerySection({ images = [] }) {
               Studio moments, café details, and finished sessions
             </h2>
             <p className="text-espresso/70 text-base md:text-lg leading-relaxed">
-              Browse recent scenes from CAV, curated by category and updated from the admin gallery.
+              Browse recent scenes from CAV, organized by the package they represent and updated from the gallery catalog.
             </p>
           </div>
 
@@ -574,7 +586,7 @@ function GallerySection({ images = [] }) {
   );
 }
 
-export default function LandingPage() {
+export default function LandingPage({ page = 'home' }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [services, setServices] = useState([]);
@@ -585,6 +597,11 @@ export default function LandingPage() {
   const [landingSelectedService, setLandingSelectedService] = useState(null);
   const [landingPackageSlide, setLandingPackageSlide] = useState(0);
   const [landingCardsPerSlide, setLandingCardsPerSlide] = useState(2);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    setMobileNavOpen(false);
+  }, [page]);
 
   useEffect(() => {
     const handleResize = () => setLandingCardsPerSlide(window.innerWidth < 640 ? 1 : 2);
@@ -724,11 +741,11 @@ export default function LandingPage() {
   };
 
   const navLinks = [
-    { label: 'Home', href: '#hero' },
-    { label: 'Photo Studio', href: '#studio' },
-    { label: 'Café Menu', href: '#cafe' },
-    { label: 'Gallery', href: '#gallery' },
-    { label: 'Our Story', href: '#about' },
+    { label: 'Home', to: '/', page: 'home' },
+    { label: 'Photo Studio', to: '/photo-studio', page: 'studio' },
+    { label: 'Café Menu', to: '/cafe-menu', page: 'cafe' },
+    { label: 'Gallery', to: '/gallery', page: 'gallery' },
+    { label: 'Our Story', to: '/our-story', page: 'story' },
   ];
 
   return (
@@ -749,13 +766,16 @@ export default function LandingPage() {
 
             <nav className="hidden items-center justify-center gap-1 text-sm font-bold md:flex">
               {navLinks.map(item => (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  className="rounded-2xl px-3.5 py-2 text-espresso/68 transition-colors hover:bg-cream hover:text-espresso focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold lg:px-4"
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  aria-current={page === item.page ? 'page' : undefined}
+                  className={`rounded-2xl px-3.5 py-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold lg:px-4 ${
+                    page === item.page ? 'bg-cream text-espresso' : 'text-espresso/68 hover:bg-cream hover:text-espresso'
+                  }`}
                 >
                   {item.label}
-                </a>
+                </Link>
               ))}
             </nav>
 
@@ -792,14 +812,17 @@ export default function LandingPage() {
           <div className="border-t border-espresso/[0.08] bg-white md:hidden">
             <div className="mx-auto max-w-7xl space-y-1 px-4 py-3">
               {navLinks.map((item) => (
-                <a
-                  key={item.href}
-                  href={item.href}
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  aria-current={page === item.page ? 'page' : undefined}
                   onClick={() => setMobileNavOpen(false)}
-                  className="block rounded-2xl px-4 py-3 text-sm font-bold text-espresso/72 transition-colors hover:bg-cream hover:text-espresso focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+                  className={`block rounded-2xl px-4 py-3 text-sm font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold ${
+                    page === item.page ? 'bg-cream text-espresso' : 'text-espresso/72 hover:bg-cream hover:text-espresso'
+                  }`}
                 >
                   {item.label}
-                </a>
+                </Link>
               ))}
               {!user && (
                 <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-2">
@@ -823,15 +846,14 @@ export default function LandingPage() {
       {!loaded && (
         <div className="sticky top-16 z-30 border-b border-gold/15 bg-cream/95 px-4 py-2 backdrop-blur" role="status">
           <div className="mx-auto flex max-w-7xl items-center gap-3">
-            <Skeleton className="h-3 w-3 rounded-full bg-gold/35" />
-            <Skeleton className="h-2.5 w-40" />
-            <span className="sr-only">Loading services and cafe menu</span>
+            <LoadingSpinner size="sm" className="text-gold-dark" label="Loading services and café menu" />
+            <span className="text-xs font-bold text-espresso/60">Loading services and café menu...</span>
           </div>
         </div>
       )}
 
       {/* Hero Section */}
-      <section id="hero" className="relative flex-grow flex items-center min-h-[calc(100vh-4rem)] premium-section bg-gradient-to-br from-espresso-dark via-espresso to-espresso-light text-cream overflow-hidden">
+      {page === 'home' && <section id="hero" className="relative flex-grow flex items-center min-h-[calc(100vh-4rem)] premium-section bg-gradient-to-br from-espresso-dark via-espresso to-espresso-light text-cream overflow-hidden">
         <div className="absolute inset-0 opacity-[0.07] bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-gold via-transparent to-transparent" />
         <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(28,15,10,0.22),transparent_45%,rgba(212,175,55,0.05))]" />
         <div className="relative z-10 mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 lg:grid-cols-12 lg:gap-20">
@@ -853,9 +875,9 @@ export default function LandingPage() {
                 Start Your Studio Session
                 <ArrowRight className="h-5 w-5 shrink-0 transition-transform duration-300 group-hover:translate-x-1" />
               </Button>
-              <a href="#cafe" className="inline-flex items-center justify-center gap-2 rounded-[20px] border border-cream/20 px-6 py-4 text-sm font-semibold text-cream shadow-[0_12px_30px_rgba(0,0,0,0.10)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-cream/45 hover:bg-white/8 hover:shadow-[0_16px_36px_rgba(0,0,0,0.16)] active:translate-y-0 active:scale-[0.98] md:px-8">
+              <Link to="/cafe-menu" className="inline-flex items-center justify-center gap-2 rounded-[20px] border border-cream/20 px-6 py-4 text-sm font-semibold text-cream shadow-[0_12px_30px_rgba(0,0,0,0.10)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-cream/45 hover:bg-white/8 hover:shadow-[0_16px_36px_rgba(0,0,0,0.16)] active:translate-y-0 active:scale-[0.98] md:px-8">
                 Explore Café Favorites
-              </a>
+              </Link>
             </div>
           </div>
           <div className="min-w-0 lg:col-span-5">
@@ -877,10 +899,10 @@ export default function LandingPage() {
             </div>
           </div>
         </div>
-      </section>
+      </section>}
 
       {/* Studio Section */}
-      <section id="studio" className="premium-section bg-cream-dark">
+      {page === 'studio' && <section id="studio" className="premium-section bg-cream-dark">
         <div className="max-w-5xl mx-auto space-y-14 md:space-y-[4.5rem]">
           {/* Section Header */}
           <div className="text-center space-y-5 max-w-3xl mx-auto">
@@ -893,7 +915,7 @@ export default function LandingPage() {
 
           {/* Service Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-            {services.map((svc) => (
+            {!loaded ? [1, 2].map((item) => <SkeletonCard key={`service-skeleton-${item}`} />) : services.map((svc) => (
               <button
                 key={recordKey(svc, svc.name)}
                 type="button"
@@ -1134,10 +1156,10 @@ export default function LandingPage() {
             </div>
           )}
         </div>
-      </section>
+      </section>}
 
       {/* Cafe Section */}
-      <section id="cafe" className="premium-section bg-cream">
+      {page === 'cafe' && <section id="cafe" className="premium-section bg-cream">
         <div className="max-w-7xl mx-auto space-y-12 md:space-y-[4.5rem]">
           <div className="text-center space-y-5 max-w-3xl mx-auto">
             <span className="text-gold font-bold uppercase tracking-[0.18em] text-xs md:text-sm">Artisanal Café</span>
@@ -1147,14 +1169,14 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <CafeCarousel items={cafeItems} />
+          <CafeCarousel items={cafeItems} loading={!loaded} />
         </div>
-      </section>
+      </section>}
 
-      <GallerySection images={galleryImages} />
+      {page === 'gallery' && <GallerySection images={galleryImages} />}
 
       {/* About Section */}
-      <section id="about" className="premium-section bg-espresso-dark text-cream relative overflow-hidden">
+      {page === 'story' && <section id="about" className="premium-section bg-espresso-dark text-cream relative overflow-hidden">
         <div className="absolute inset-0 opacity-[0.05] bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-gold via-transparent to-transparent" />
         <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-20 items-center relative z-10">
           <div className="space-y-6 md:space-y-7">
@@ -1183,7 +1205,7 @@ export default function LandingPage() {
             <img src={businessAssets.hero} alt="CAV studio interior" loading="lazy" style={{ objectPosition: '50% 32%' }} className="rounded-[24px] h-44 md:h-60 w-full object-cover shadow-[0_24px_70px_rgba(0,0,0,0.28)] mt-6 md:mt-10" />
           </div>
         </div>
-      </section>
+      </section>}
 
       {/* Info Bar */}
       <section className="bg-cream-dark border-y border-espresso/[0.06] py-8">
