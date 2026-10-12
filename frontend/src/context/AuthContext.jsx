@@ -29,8 +29,7 @@ export const AuthProvider = ({ children }) => {
 
     const restoreSession = async () => {
       const savedUser = readStoredValue('user');
-      const token = readStoredValue('access_token');
-      if (!savedUser || !token) {
+      if (!savedUser) {
         if (active) {
           setUser(null);
           setLoading(false);
@@ -68,15 +67,16 @@ export const AuthProvider = ({ children }) => {
     return () => { active = false; };
   }, []);
 
-  const login = async (username, password) => {
+  const login = async (username, password, verification = {}) => {
     try {
-      const response = await client.post('/api/auth/login/', { username, password });
-      const { access, refresh, role, email, id, profile_picture_url } = response.data;
+      const response = await client.post('/api/auth/login/', { username, password, ...verification });
+      if (response.data.mfa_required) {
+        return { success: false, mfaRequired: true, ...response.data };
+      }
+      const { role, email, id, profile_picture_url } = response.data;
       
       const userData = { id, username, email, role, profile_picture_url };
       
-      localStorage.setItem('access_token', access);
-      localStorage.setItem('refresh_token', refresh);
       localStorage.setItem('user', JSON.stringify(userData));
       
       setUser(userData);
@@ -90,15 +90,16 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginWithGoogle = async (credential) => {
+  const loginWithGoogle = async (credential, phoneNumber = '') => {
     try {
-      const response = await client.post('/api/auth/google/', { credential });
-      const { access, refresh, role, username, email, id, profile_picture_url } = response.data;
+      const response = await client.post('/api/auth/google/', { credential, phone_number: phoneNumber });
+      if (response.data.pending_verification) {
+        return { success: false, pendingVerification: true, ...response.data };
+      }
+      const { role, username, email, id, profile_picture_url } = response.data;
 
       const userData = { id, username, email, role, profile_picture_url };
 
-      localStorage.setItem('access_token', access);
-      localStorage.setItem('refresh_token', refresh);
       localStorage.setItem('user', JSON.stringify(userData));
 
       setUser(userData);
@@ -106,21 +107,20 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error("Google login failed:", error);
       const message = error.response?.data?.detail || getApiErrorMessage(error, 'Google authentication failed.');
-      return { success: false, error: message };
+      return { success: false, error: message, errors: error.response?.data || {} };
     }
   };
 
-  const logout = () => {
-    clearStoredAuth();
-    sessionStorage.clear();
-    document.cookie.split(';').forEach((cookie) => {
-      const name = cookie.split('=')[0].trim();
-      if (name) {
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
-      }
-    });
-    delete client.defaults.headers.common.Authorization;
-    setUser(null);
+  const logout = async () => {
+    try {
+      await client.post('/api/auth/logout/');
+    } catch (error) {
+      console.warn('Server logout failed; clearing local session state.', error);
+    } finally {
+      clearStoredAuth();
+      sessionStorage.clear();
+      setUser(null);
+    }
   };
 
   const updateStoredUser = useCallback((updates) => {

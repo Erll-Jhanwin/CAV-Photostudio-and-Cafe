@@ -212,6 +212,19 @@ class ProductSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class PublicProductSerializer(serializers.ModelSerializer):
+    """Expose only menu-safe fields to anonymous visitors."""
+
+    category_details = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Product
+        fields = ['id', 'name', 'category', 'category_details', 'price', 'is_cafe_item', 'is_active', 'image_url']
+
+    def get_category_details(self, obj):
+        return category_for(obj.category) or {'id': obj.category, 'name': obj.category_name or 'Uncategorized', 'description': obj.category_description}
+
+
 class StockMovementSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
     user_name = serializers.CharField(source='user.username', read_only=True)

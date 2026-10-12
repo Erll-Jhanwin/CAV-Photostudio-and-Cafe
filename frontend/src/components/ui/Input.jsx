@@ -2,6 +2,7 @@ import { forwardRef } from 'react';
 
 export const Input = forwardRef(({ label, icon: Icon, suffix, error, className = '', ...props }, ref) => {
   const id = props.id || `input-${label?.toLowerCase().replace(/\s+/g, '-')}`;
+  const errorId = `${id}-error`;
   const isDarkField = className.includes('text-white') || className.includes('bg-white/[');
   const labelClass = isDarkField ? 'text-cream/85' : 'text-espresso/70';
   const iconClass = isDarkField ? 'text-cream/45' : 'text-espresso/40';
@@ -22,6 +23,8 @@ export const Input = forwardRef(({ label, icon: Icon, suffix, error, className =
         <input
           ref={ref}
           id={id}
+          aria-invalid={error ? 'true' : undefined}
+          aria-describedby={error ? errorId : props['aria-describedby']}
           className={`
             w-full bg-white/90 border rounded-xl px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)]
             placeholder:text-espresso/40
@@ -41,13 +44,14 @@ export const Input = forwardRef(({ label, icon: Icon, suffix, error, className =
           </div>
         )}
       </div>
-      {error && <p className="text-[11px] text-red-500 font-medium mt-1">{error}</p>}
+      {error && <p id={errorId} role="alert" className="text-[11px] text-red-500 font-medium mt-1">{error}</p>}
     </div>
   );
 });
 
 export const Select = forwardRef(({ label, icon: Icon, error, options = [], className = '', ...props }, ref) => {
   const id = props.id || `select-${label?.toLowerCase().replace(/\s+/g, '-')}`;
+  const errorId = `${id}-error`;
   const isDarkField = className.includes('text-white') || className.includes('bg-white/[');
   const labelClass = isDarkField ? 'text-cream/85' : 'text-espresso/70';
   const iconClass = isDarkField ? 'text-cream/45' : 'text-espresso/40';
@@ -68,6 +72,8 @@ export const Select = forwardRef(({ label, icon: Icon, error, options = [], clas
         <select
           ref={ref}
           id={id}
+          aria-invalid={error ? 'true' : undefined}
+          aria-describedby={error ? errorId : props['aria-describedby']}
           className={`
             w-full bg-white/90 border rounded-xl px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)]
             transition-all duration-300 ease-out
@@ -86,13 +92,14 @@ export const Select = forwardRef(({ label, icon: Icon, error, options = [], clas
           ))}
         </select>
       </div>
-      {error && <p className="text-[11px] text-red-500 font-medium mt-1">{error}</p>}
+      {error && <p id={errorId} role="alert" className="text-[11px] text-red-500 font-medium mt-1">{error}</p>}
     </div>
   );
 });
 
 export const Textarea = forwardRef(({ label, error, className = '', ...props }, ref) => {
   const id = props.id || `textarea-${label?.toLowerCase().replace(/\s+/g, '-')}`;
+  const errorId = `${id}-error`;
   const isDarkField = className.includes('text-white') || className.includes('bg-white/[');
   const labelClass = isDarkField ? 'text-cream/85' : 'text-espresso/70';
 
@@ -106,6 +113,8 @@ export const Textarea = forwardRef(({ label, error, className = '', ...props }, 
       <textarea
         ref={ref}
         id={id}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={error ? errorId : props['aria-describedby']}
         className={`
           w-full bg-white/90 border rounded-xl px-4 py-3 text-sm text-espresso
           placeholder:text-espresso/40 resize-none shadow-[0_10px_26px_rgba(46,26,17,0.04)]
@@ -117,7 +126,7 @@ export const Textarea = forwardRef(({ label, error, className = '', ...props }, 
         `}
         {...props}
       />
-      {error && <p className="text-[11px] text-red-500 font-medium mt-1">{error}</p>}
+      {error && <p id={errorId} role="alert" className="text-[11px] text-red-500 font-medium mt-1">{error}</p>}
     </div>
   );
 });

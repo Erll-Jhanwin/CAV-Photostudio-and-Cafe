@@ -197,7 +197,7 @@ export function Sidebar({
           <div className="space-y-2">
             <p className="text-base font-black text-espresso">Are you sure you want to sign out?</p>
             <p className="text-xs text-espresso/55 leading-relaxed">
-              This will clear your current session, saved tokens, cookies, and cached dashboard data from this browser.
+              This will revoke your server session, clear local profile state, and remove cached dashboard data from this browser.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">

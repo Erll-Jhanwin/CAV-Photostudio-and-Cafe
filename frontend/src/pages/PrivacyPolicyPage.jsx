@@ -52,6 +52,15 @@ const policySections = [
       'Report suspicious account activity or incorrect records to CAV staff.',
     ],
   },
+  {
+    title: 'Your Privacy Choices',
+    icon: UserCheck,
+    items: [
+      'Request access, correction, export, objection, or deletion review through your account or by contacting CAV.',
+      'Withdraw optional marketing consent at any time; service and legal records may still be retained when required.',
+      'Privacy requests are verified, logged, and handled within the applicable legal response period.',
+    ],
+  },
 ];
 
 export default function PrivacyPolicyPage() {
@@ -92,6 +101,7 @@ export default function PrivacyPolicyPage() {
             <p className="mt-4 max-w-3xl text-sm leading-7 text-espresso/65 md:text-base">
               CAV Photo Studio & Cafe collects only the information needed to operate bookings, payments, accounts, inventory, support, and analytics. This policy explains how data is used and what safeguards help keep it protected.
             </p>
+            <p className="mt-4 text-xs font-bold text-espresso/55">Policy version 2026-10-01 · Effective 1 October 2026 · Controller: CAV Photo Studio &amp; Cafe, Lipa City · Contact: cav.photostudio.cafe@gmail.com</p>
             </div>
             <div className="flex h-full flex-col justify-center rounded-3xl border border-espresso/[0.06] bg-white p-6 shadow-[0_18px_45px_rgba(46,26,17,0.06)]">
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-espresso/45">Important Note</p>
@@ -101,7 +111,7 @@ export default function PrivacyPolicyPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
             {policySections.map(({ title, icon: Icon, items }) => (
               <article key={title} className="flex h-full flex-col rounded-2xl border border-espresso/[0.06] bg-white p-5 shadow-[0_18px_45px_rgba(46,26,17,0.06)]">
                 <div className="mb-4 flex items-center gap-3">
@@ -124,7 +134,7 @@ export default function PrivacyPolicyPage() {
         </section>
 
         <section className="mt-5 rounded-3xl bg-espresso p-5 text-cream shadow-[0_28px_70px_rgba(46,26,17,0.18)] md:p-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl bg-white/[0.04] p-4">
               <p className="text-xs font-black uppercase tracking-[0.2em] text-gold">Payment Data</p>
               <p className="mt-2 text-sm leading-6 text-cream/70">
@@ -140,7 +150,13 @@ export default function PrivacyPolicyPage() {
             <div className="rounded-2xl bg-white/[0.04] p-4">
               <p className="text-xs font-black uppercase tracking-[0.2em] text-gold">Data Retention</p>
               <p className="mt-2 text-sm leading-6 text-cream/70">
-                Records may be retained for booking history, payment verification, reports, inventory tracking, audit logs, accounting, and legal requirements.
+                Records are retained only for the documented business or legal period. Expired records are reviewed for secure deletion or anonymization; audit records are immutable.
+              </p>
+            </div>
+            <div className="rounded-2xl bg-white/[0.04] p-4">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-gold">Processors &amp; Transfers</p>
+              <p className="mt-2 text-sm leading-6 text-cream/70">
+                Hosting/database, email, SMS, OCR, Google authentication, and payment providers may process data only to provide configured services. International transfers require documented safeguards and supplier review.
               </p>
             </div>
           </div>
@@ -148,7 +164,7 @@ export default function PrivacyPolicyPage() {
 
         <section className="mt-5 rounded-2xl border border-gold/25 bg-gold/10 p-5">
           <p className="text-sm font-bold text-espresso">
-            By using this website, you agree that CAV may collect and process information only for booking, payment verification, account management, inventory, analytics, support, and service operations described in this policy.
+            Required service processing is based on account/service performance and applicable legal obligations. Optional communications require separate consent. By creating an account, you acknowledge this notice and can request access, correction, export, objection, or deletion review through CAV.
           </p>
         </section>
       </main>

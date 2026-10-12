@@ -4,6 +4,7 @@ from django.test import TestCase, override_settings
 
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 from unittest.mock import Mock, patch
 
 from users.models import Customer, PasswordResetOTP
@@ -129,6 +130,7 @@ class AccountCrudTests(TestCase):
             'last_name': 'Customer',
             'phone_number': '09171234567',
             'address': 'Cavite City',
+            'privacy_consent': True,
             'role': 'CUSTOMER',
         }, format='json')
 
@@ -173,6 +175,7 @@ class AccountCrudTests(TestCase):
             'last_name': 'Customer',
             'phone_number': '09171234567',
             'address': 'Cavite City',
+            'privacy_consent': True,
         }, format='json')
 
         self.assertEqual(response.status_code, 200)
@@ -182,6 +185,7 @@ class AccountCrudTests(TestCase):
         invalid_response = anonymous_client.post('/api/auth/register/verify/', {
             'registration_token': response.data['registration_token'],
             'otp': '000000',
+            'privacy_consent': True,
         }, format='json')
         self.assertEqual(invalid_response.status_code, 400)
         self.assertIn('Invalid or expired OTP', invalid_response.data['detail'])
@@ -190,6 +194,7 @@ class AccountCrudTests(TestCase):
         verify_response = anonymous_client.post('/api/auth/register/verify/', {
             'registration_token': response.data['registration_token'],
             'otp': '123456',
+            'privacy_consent': True,
         }, format='json')
 
         self.assertEqual(verify_response.status_code, 201)
@@ -214,6 +219,7 @@ class AccountCrudTests(TestCase):
             'password': 'FormCustomer123!',
             'email': 'new-registration@example.com',
             'phone_number': '09179876543',
+            'privacy_consent': True,
         }
         for field, value in {
             'username': 'accounts-admin',
@@ -225,6 +231,96 @@ class AccountCrudTests(TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertIn(field, response.data)
         mocked_send.assert_not_called()
+
+    @patch('users.views.send_password_reset_otp')
+    def test_registration_requires_a_philippine_mobile_number_before_otp(self, mocked_send):
+        response = APIClient().post('/api/auth/register/', {
+            'username': 'missing-phone',
+            'password': 'FormCustomer123!',
+            'email': 'missing-phone@example.com',
+            'privacy_consent': True,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('phone_number', response.data)
+        mocked_send.assert_not_called()
+        self.assertFalse(get_user_model().objects.filter(username='missing-phone').exists())
+
+    def test_login_uses_httponly_cookies_and_logout_revokes_refresh(self):
+        admin = get_user_model().objects.create_user(
+            username='cookie-customer',
+            email='cookie-customer@example.com',
+            password='CookieCustomer123!',
+            role='CUSTOMER',
+        )
+        client = APIClient()
+        login_response = client.post('/api/auth/login/', {'username': admin.username, 'password': 'CookieCustomer123!'}, format='json')
+        self.assertEqual(login_response.status_code, 200)
+        self.assertNotIn('access', login_response.data)
+        self.assertNotIn('refresh', login_response.data)
+        self.assertTrue(login_response.cookies['cav_access']['httponly'])
+        self.assertTrue(login_response.cookies['cav_refresh']['httponly'])
+        self.assertEqual(client.get('/api/auth/profile/').status_code, 200)
+        refresh_value = client.cookies['cav_refresh'].value
+        logout_response = client.post('/api/auth/logout/', format='json')
+        self.assertEqual(logout_response.status_code, 200)
+        self.assertEqual(client.post('/api/auth/token/refresh/', format='json').status_code, 401)
+        self.assertEqual(client.cookies.get('cav_refresh').value, '')
+
+    @override_settings(IPROG_SMS_API_TOKEN='test-token')
+    @patch('users.views.verify_password_reset_otp', side_effect=[False, True])
+    @patch('users.views.send_password_reset_otp')
+    def test_admin_login_requires_valid_sms_otp(self, mocked_send, mocked_verify):
+        self.admin.phone_number = '09171234567'
+        self.admin.save(update_fields=['phone_number'])
+        client = APIClient()
+        client.cookies['cav_access'] = str(RefreshToken.for_user(self.admin).access_token)
+
+        challenge_response = client.post('/api/auth/login/', {
+            'username': self.admin.username,
+            'password': 'AdminPass123!',
+        }, format='json')
+        self.assertEqual(challenge_response.status_code, 202)
+        self.assertEqual(challenge_response.data['mfa_method'], 'sms')
+        self.assertEqual(challenge_response.data['mfa_methods'], ['sms'])
+        mocked_send.assert_called_once_with('639171234567', purpose='admin security verification')
+
+        invalid_response = client.post('/api/auth/login/', {
+            'username': self.admin.username,
+            'password': 'AdminPass123!',
+            'mfa_token': challenge_response.data['mfa_token'],
+            'mfa_code': '000000',
+        }, format='json')
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertNotIn('cav_access', invalid_response.cookies)
+
+        login_response = client.post('/api/auth/login/', {
+            'username': self.admin.username,
+            'password': 'AdminPass123!',
+            'mfa_token': challenge_response.data['mfa_token'],
+            'mfa_code': '123456',
+        }, format='json')
+        self.assertEqual(login_response.status_code, 200)
+        self.assertEqual(mocked_verify.call_args_list[0].args, ('639171234567', '000000'))
+        self.assertEqual(mocked_verify.call_args_list[1].args, ('639171234567', '123456'))
+        self.assertTrue(login_response.cookies['cav_access']['httponly'])
+
+    def test_privacy_consent_request_and_export_are_user_scoped(self):
+        consent_response = self.client.post('/api/privacy/consents/', {
+            'consent_type': 'MARKETING',
+            'policy_version': '2026-10-01',
+            'granted': True,
+        }, format='json')
+        self.assertEqual(consent_response.status_code, 200)
+        request_response = self.client.post('/api/privacy/requests/', {
+            'request_type': 'ACCESS',
+            'details': 'Please provide my account data.',
+        }, format='json')
+        self.assertEqual(request_response.status_code, 201)
+        export_response = self.client.get('/api/privacy/export/')
+        self.assertEqual(export_response.status_code, 200)
+        self.assertEqual(export_response.data['user']['username'], self.admin.username)
+        self.assertTrue(export_response.data['consents'])
 
     def test_customer_profile_update_keeps_one_customer_profile(self):
         customer = get_user_model().objects.create_user(

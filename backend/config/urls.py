@@ -5,11 +5,11 @@ from django.contrib import admin
 from django.conf import settings
 from django.conf.urls.static import static
 from django.urls import path
-from rest_framework_simplejwt.views import TokenRefreshView
 
 # Import views directly from apps since apps are added to sys.path
 from users.views import (
     CustomTokenObtainPairView,
+    csrf_cookie_view,
     RegisterView,
     UserProfileView,
     StaffListView,
@@ -20,6 +20,11 @@ from users.views import (
     RegistrationOTPVerifyView,
     SystemDataResetView,
     GoogleAuthView,
+    CookieTokenRefreshView,
+    LogoutView,
+    PrivacyConsentView,
+    PrivacyRequestView,
+    PrivacyExportView,
 )
 from booking.views import (
     ServiceListView, PackageListView, BookingListCreateView, BookingDetailUpdateView,
@@ -40,18 +45,25 @@ from dashboard.views import DashboardAnalyticsView
 from forecasting.views import ForecastingDataView
 from gallery.views import GalleryImageListView
 from audit.views import ClientRuntimeErrorView
+from config.health import health_check
 from notifications.views import NotificationListView, NotificationReadView, NotificationMarkAllReadView
 
 urlpatterns = [
+    path('health/', health_check, name='health_check'),
     path('admin/', admin.site.urls),
     
     # Auth endpoints
     path('api/auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/auth/csrf/', csrf_cookie_view, name='auth_csrf'),
+    path('api/auth/token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
+    path('api/auth/logout/', LogoutView.as_view(), name='auth_logout'),
     path('api/auth/register/', RegisterView.as_view(), name='auth_register'),
     path('api/auth/register/verify/', RegistrationOTPVerifyView.as_view(), name='auth_register_verify'),
     path('api/auth/google/', GoogleAuthView.as_view(), name='auth_google'),
     path('api/auth/profile/', UserProfileView.as_view(), name='auth_profile'),
+    path('api/privacy/consents/', PrivacyConsentView.as_view(), name='privacy_consents'),
+    path('api/privacy/requests/', PrivacyRequestView.as_view(), name='privacy_requests'),
+    path('api/privacy/export/', PrivacyExportView.as_view(), name='privacy_export'),
     path('api/auth/users/', StaffListView.as_view(), name='staff_list'),
     path('api/auth/users/<int:pk>/', StaffDetailView.as_view(), name='staff_detail'),
     path('api/auth/forgot-password/', ForgotPasswordView.as_view(), name='auth_forgot_password'),

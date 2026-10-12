@@ -15,6 +15,7 @@ from inventory.serializers import (
     IngredientStockMovementSerializer,
     ProductSerializer,
     PurchaseOrderSerializer,
+    PublicProductSerializer,
     RecipeIngredientSerializer,
     StockMovementSerializer,
     supplier_for,
@@ -64,6 +65,11 @@ class ProductListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         queryset = Product.objects.filter(item_type=Product.PRODUCT, is_active=True).order_by('name')
         return apply_limit(queryset, self.request)
+
+    def get_serializer_class(self):
+        if self.request.method == 'GET' and (not self.request.user.is_authenticated or self.request.user.role == 'CUSTOMER'):
+            return PublicProductSerializer
+        return ProductSerializer
 
     def get_permissions(self):
         if self.request.method == 'GET':

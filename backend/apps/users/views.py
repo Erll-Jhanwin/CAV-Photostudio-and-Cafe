@@ -9,10 +9,13 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.cache import cache
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.http import JsonResponse
+from django.middleware.csrf import get_token
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from users.serializers import (
@@ -26,10 +29,9 @@ from users.serializers import (
     PasswordResetVerifySerializer,
     PasswordResetConfirmSerializer,
 )
-from users.models import Customer, PasswordResetOTP
+from users.models import Customer, PasswordResetOTP, PrivacyConsent, PrivacyRequest
 from users.permissions import IsAdmin
 from users.sms_delivery import IProgSMSDeliveryError, send_password_reset_otp, verify_password_reset_otp
-from users.email_delivery import EmailDeliveryError, send_password_reset_email
 from users.phone_numbers import normalize_philippine_mobile_number
 from audit.models import AuditLog
 from booking.models import Booking
@@ -48,6 +50,115 @@ PASSWORD_RESET_RESEND_COOLDOWN_SECONDS = int(getattr(settings, 'PASSWORD_RESET_R
 PASSWORD_RESET_MAX_REQUESTS_PER_HOUR = int(getattr(settings, 'PASSWORD_RESET_MAX_REQUESTS_PER_HOUR', 5))
 SYSTEM_RESET_CONFIRMATION = 'RESET SYSTEM DATA'
 SYSTEM_RESET_LOCK_KEY = 'system_data_reset_in_progress'
+ADMIN_MFA_TTL_MINUTES = int(getattr(settings, 'ADMIN_MFA_TTL_MINUTES', 10))
+ADMIN_MFA_MAX_ATTEMPTS = int(getattr(settings, 'ADMIN_MFA_MAX_ATTEMPTS', 5))
+
+
+@ensure_csrf_cookie
+def csrf_cookie_view(request):
+    return JsonResponse({'detail': 'CSRF cookie ready.'})
+
+
+def set_auth_cookies(response, access, refresh=None, request=None):
+    if request is not None:
+        get_token(request)
+    cookie_kwargs = {
+        'httponly': True,
+        'secure': settings.AUTH_COOKIE_SECURE,
+        'samesite': settings.AUTH_COOKIE_SAMESITE,
+        'domain': settings.AUTH_COOKIE_DOMAIN,
+        'path': '/',
+    }
+    response.set_cookie(
+        settings.AUTH_ACCESS_COOKIE_NAME,
+        access,
+        max_age=int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
+        **cookie_kwargs,
+    )
+    if refresh:
+        response.set_cookie(
+            settings.AUTH_REFRESH_COOKIE_NAME,
+            refresh,
+            max_age=int(settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'].total_seconds()),
+            **cookie_kwargs,
+        )
+    return response
+
+
+def remove_auth_cookies(response):
+    response.delete_cookie(settings.AUTH_ACCESS_COOKIE_NAME, path='/', domain=settings.AUTH_COOKIE_DOMAIN, samesite=settings.AUTH_COOKIE_SAMESITE)
+    response.delete_cookie(settings.AUTH_REFRESH_COOKIE_NAME, path='/', domain=settings.AUTH_COOKIE_DOMAIN, samesite=settings.AUTH_COOKIE_SAMESITE)
+    return response
+
+
+def get_admin_mfa_methods(user):
+    if normalize_philippine_mobile_number(user.phone_number) and getattr(settings, 'IPROG_SMS_API_TOKEN', '').strip():
+        return ['sms']
+    return []
+
+
+def create_admin_mfa_challenge(user, method='sms'):
+    method = str(method or '').lower()
+    phone_number = normalize_philippine_mobile_number(user.phone_number)
+    if method == 'sms' and not phone_number:
+        return None
+    if method != 'sms':
+        return None
+    token = secrets.token_urlsafe(32)
+    pending = {
+        'user_id': user.pk,
+        'method': method,
+        'phone_number': phone_number,
+        'attempts': 0,
+        'expires_at': (timezone.now() + timezone.timedelta(minutes=ADMIN_MFA_TTL_MINUTES)).timestamp(),
+    }
+    send_password_reset_otp(phone_number, purpose='admin security verification')
+    cache.set(f'admin_mfa:{token}', pending, timeout=ADMIN_MFA_TTL_MINUTES * 60)
+    return token
+
+
+def admin_mfa_is_valid(token, otp, user):
+    pending = cache.get(f'admin_mfa:{token}')
+    if (
+        not pending
+        or pending.get('user_id') != user.pk
+        or pending.get('attempts', 0) >= ADMIN_MFA_MAX_ATTEMPTS
+        or timezone.now().timestamp() >= pending.get('expires_at', 0)
+    ):
+        return False
+    verified = verify_password_reset_otp(pending.get('phone_number', ''), otp)
+    if not verified:
+        pending['attempts'] = pending.get('attempts', 0) + 1
+        remaining = max(1, int(pending['expires_at'] - timezone.now().timestamp()))
+        cache.set(f'admin_mfa:{token}', pending, timeout=remaining)
+        return False
+    cache.delete(f'admin_mfa:{token}')
+    return True
+
+
+def begin_admin_mfa(request, user):
+    methods = get_admin_mfa_methods(user)
+    if not methods:
+        return Response({'detail': 'Admin account needs a registered mobile number and configured SMS service for verification.'}, status=status.HTTP_400_BAD_REQUEST)
+    method = str(request.data.get('mfa_method') or 'sms').lower()
+    if method not in methods:
+        return Response({'detail': 'Admin verification is available by SMS only.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        challenge = create_admin_mfa_challenge(user, method)
+    except (IProgSMSDeliveryError, OSError):
+        logger.exception('Admin MFA delivery failed.')
+        return Response({'detail': 'Admin SMS verification could not be sent. Check the configured delivery service.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if not challenge:
+        return Response({'detail': 'The selected admin verification method is not configured.'}, status=status.HTTP_400_BAD_REQUEST)
+    contact = normalize_philippine_mobile_number(user.phone_number)
+    return Response({
+        'mfa_required': True,
+        'mfa_token': challenge,
+        'mfa_method': method,
+        'mfa_methods': methods,
+        'contact_hint': mask_registration_contact(contact, 'phone'),
+        'expires_in_minutes': ADMIN_MFA_TTL_MINUTES,
+    }, status=status.HTTP_202_ACCEPTED)
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -65,17 +176,71 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['id'] = self.user.id
         data['profile_picture_url'] = UserSerializer(self.user, context=self.context).data.get('profile_picture_url', '')
         
-        # Log login audit
-        AuditLog.objects.create(
-            user=self.user,
-            action="USER_LOGIN",
-            description=f"User {self.user.username} logged in successfully."
-        )
         return data
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+    authentication_classes = []
     throttle_scope = 'auth'
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == status.HTTP_200_OK:
+            user = User.objects.filter(pk=response.data.get('id')).first()
+            mfa_token = request.data.get('mfa_token')
+            mfa_code = str(request.data.get('mfa_code') or '')
+            if user and user.role == 'ADMIN' and not mfa_token:
+                return begin_admin_mfa(request, user)
+            if user and user.role == 'ADMIN':
+                try:
+                    valid_mfa = len(mfa_code) == 6 and admin_mfa_is_valid(mfa_token, mfa_code, user)
+                except IProgSMSDeliveryError:
+                    logger.exception('Admin SMS MFA verification failed.')
+                    return Response({'detail': 'Admin SMS verification is temporarily unavailable. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+                if not valid_mfa:
+                    return Response({'detail': 'Invalid or expired admin verification code.'}, status=status.HTTP_400_BAD_REQUEST)
+            access = response.data.pop('access', None)
+            refresh = response.data.pop('refresh', None)
+            if access and refresh:
+                set_auth_cookies(response, access, refresh, request)
+                AuditLog.objects.create(
+                    user=user,
+                    action='USER_LOGIN',
+                    description=f'User {user.username} logged in successfully.',
+                    ip_address=get_client_ip(request),
+                )
+        return response
+
+
+class CookieTokenRefreshView(TokenRefreshView):
+    """Rotate the refresh cookie without returning JWTs to browser JavaScript."""
+
+    def post(self, request, *args, **kwargs):
+        refresh = request.COOKIES.get(settings.AUTH_REFRESH_COOKIE_NAME)
+        if not refresh:
+            return Response({'detail': 'Refresh session not found.'}, status=status.HTTP_401_UNAUTHORIZED)
+        serializer = self.get_serializer(data={'refresh': refresh})
+        serializer.is_valid(raise_exception=True)
+        access = serializer.validated_data.pop('access', None)
+        rotated_refresh = serializer.validated_data.pop('refresh', None)
+        response = Response({}, status=status.HTTP_200_OK)
+        if access:
+            set_auth_cookies(response, access, rotated_refresh, request)
+        return response
+
+
+class LogoutView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'auth'
+
+    def post(self, request):
+        refresh = request.COOKIES.get(settings.AUTH_REFRESH_COOKIE_NAME)
+        if refresh:
+            try:
+                RefreshToken(refresh).blacklist()
+            except Exception:
+                logger.info('Logout received an expired or already revoked refresh token.', exc_info=True)
+        return remove_auth_cookies(Response({'detail': 'Signed out securely.'}, status=status.HTTP_200_OK))
 
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
@@ -86,16 +251,18 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        if not data.get('privacy_consent'):
+            return Response({'privacy_consent': 'Accept the privacy notice before creating an account.'}, status=status.HTTP_400_BAD_REQUEST)
         phone_number = normalize_philippine_mobile_number(data.get('phone_number'))
-        contact_type = 'phone' if phone_number else 'email'
-        contact = phone_number or data['email']
+        contact_type = 'phone'
+        contact = phone_number
         registration_token = secrets.token_urlsafe(32)
         pending = {
             'username': data['username'],
             'email': data['email'],
             'first_name': data.get('first_name', ''),
             'last_name': data.get('last_name', ''),
-            'phone_number': data.get('phone_number', ''),
+            'phone_number': phone_number,
             'address': data.get('address', ''),
             'password_hash': make_password(data['password']),
             'contact_type': contact_type,
@@ -105,13 +272,8 @@ class RegisterView(generics.CreateAPIView):
         }
 
         try:
-            if contact_type == 'phone':
-                send_password_reset_otp(contact, purpose='registration')
-            else:
-                registration_otp = f'{secrets.randbelow(1000000):06d}'
-                pending['otp_hash'] = make_password(registration_otp)
-                send_password_reset_email(contact, registration_otp, purpose='registration')
-        except (IProgSMSDeliveryError, EmailDeliveryError, OSError):
+            send_password_reset_otp(contact, purpose='registration')
+        except (IProgSMSDeliveryError, OSError):
             logger.exception('Registration OTP delivery failed.')
             return Response(
                 {'detail': 'We could not send the verification code. Please try again later.'},
@@ -141,6 +303,8 @@ class RegistrationOTPVerifyView(views.APIView):
         serializer.is_valid(raise_exception=True)
         token = serializer.validated_data['registration_token']
         otp = serializer.validated_data['otp']
+        if not serializer.validated_data.get('privacy_consent'):
+            return Response({'privacy_consent': 'Accept the privacy notice before creating an account.'}, status=status.HTTP_400_BAD_REQUEST)
         cache_key = f'registration_otp:{token}'
         pending = cache.get(cache_key)
         invalid_response = {'detail': 'Invalid or expired OTP. Registration was not completed.'}
@@ -152,17 +316,16 @@ class RegistrationOTPVerifyView(views.APIView):
         ):
             return Response(invalid_response, status=status.HTTP_400_BAD_REQUEST)
 
-        if pending['contact_type'] == 'phone':
-            try:
-                verified = verify_password_reset_otp(pending['contact'], otp)
-            except IProgSMSDeliveryError:
-                logger.exception('Registration OTP verification failed at provider.')
-                return Response(
-                    {'detail': 'OTP verification is temporarily unavailable. Please try again later.'},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-        else:
-            verified = check_password(otp, pending.get('otp_hash', ''))
+        if pending.get('contact_type') != 'phone':
+            return Response(invalid_response, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            verified = verify_password_reset_otp(pending['contact'], otp)
+        except IProgSMSDeliveryError:
+            logger.exception('Registration OTP verification failed at provider.')
+            return Response(
+                {'detail': 'OTP verification is temporarily unavailable. Please try again later.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         if not verified:
             pending['attempts'] = pending.get('attempts', 0) + 1
@@ -178,6 +341,7 @@ class RegistrationOTPVerifyView(views.APIView):
                     return Response({'email': 'Email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
                 if is_phone_number_taken(pending.get('phone_number')):
                     return Response({'phone_number': 'Phone number already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+                registration_method = pending.get('registration_method', User.RegistrationMethod.FORM)
                 user = User(
                     username=pending['username'],
                     password=pending['password_hash'],
@@ -187,13 +351,19 @@ class RegistrationOTPVerifyView(views.APIView):
                     phone_number=normalize_philippine_mobile_number(pending['phone_number']) or pending['phone_number'],
                     address=pending['address'],
                     role='CUSTOMER',
-                    registration_method=User.RegistrationMethod.FORM,
+                    registration_method=registration_method,
                 )
                 user.save()
+                if registration_method == User.RegistrationMethod.GOOGLE:
+                    user.set_unusable_password()
+                    user.profile_picture_external_url = pending.get('profile_picture_external_url', '')
+                    user.save(update_fields=['password', 'profile_picture_external_url'])
                 Customer.objects.get_or_create(user=user)
+                PrivacyConsent.objects.get_or_create(user=user, consent_type='PRIVACY_NOTICE', policy_version='2026-10-01', defaults={'source': 'registration'})
+                PrivacyConsent.objects.get_or_create(user=user, consent_type='SERVICE_PROCESSING', policy_version='2026-10-01', defaults={'source': 'registration'})
                 AuditLog.objects.create(
                     user=user,
-                    action='CUSTOMER_REGISTER',
+                    action='CUSTOMER_REGISTER_GOOGLE' if registration_method == User.RegistrationMethod.GOOGLE else 'CUSTOMER_REGISTER',
                     description=f'New customer registered: {user.username}',
                     metadata={'registration_method': user.registration_method, 'target_user_id': user.id},
                     ip_address=get_client_ip(request),
@@ -290,29 +460,67 @@ class GoogleAuthView(views.APIView):
         user = User.objects.filter(email__iexact=email).first()
         created = False
         if not user:
-            user = User.objects.create_user(
-                username=unique_username_from_email(email),
-                email=email,
-                first_name=profile.get('given_name', ''),
-                last_name=profile.get('family_name', ''),
-                role='CUSTOMER',
-                registration_method=User.RegistrationMethod.GOOGLE,
+            phone_number = normalize_philippine_mobile_number(request.data.get('phone_number'))
+            if not phone_number:
+                return Response(
+                    {'phone_number': 'A valid Philippine mobile number is required for Google registration.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if is_phone_number_taken(phone_number):
+                return Response({'phone_number': 'Phone number already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+            registration_token = secrets.token_urlsafe(32)
+            pending = {
+                'username': unique_username_from_email(email),
+                'email': email,
+                'first_name': profile.get('given_name', ''),
+                'last_name': profile.get('family_name', ''),
+                'phone_number': phone_number,
+                'address': '',
+                'password_hash': make_password(secrets.token_urlsafe(32)),
+                'registration_method': User.RegistrationMethod.GOOGLE,
+                'profile_picture_external_url': google_picture_url[:500],
+                'contact_type': 'phone',
+                'contact': phone_number,
+                'attempts': 0,
+                'expires_at': (timezone.now() + timezone.timedelta(minutes=PASSWORD_RESET_OTP_TTL_MINUTES)).timestamp(),
+            }
+            try:
+                send_password_reset_otp(phone_number, purpose='registration')
+            except (IProgSMSDeliveryError, OSError):
+                logger.exception('Google registration OTP delivery failed.')
+                return Response(
+                    {'detail': 'We could not send the verification code. Please try again later.'},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            cache.set(
+                f'registration_otp:{registration_token}',
+                pending,
+                timeout=PASSWORD_RESET_OTP_TTL_MINUTES * 60,
             )
-            user.set_unusable_password()
-            user.profile_picture_external_url = google_picture_url[:500]
-            user.save()
-            Customer.objects.get_or_create(user=user)
-            created = True
-            AuditLog.objects.create(
-                user=user,
-                action="CUSTOMER_REGISTER_GOOGLE",
-                description=f"New customer registered with Google: {user.username}",
-                metadata={'registration_method': user.registration_method, 'target_user_id': user.id},
-                ip_address=get_client_ip(request),
-            )
+            return Response({
+                'message': 'Verification code sent. Verify it to finish creating your account.',
+                'pending_verification': True,
+                'registration_token': registration_token,
+                'contact_type': 'phone',
+                'contact_hint': mask_registration_contact(phone_number, 'phone'),
+                'expires_in_minutes': PASSWORD_RESET_OTP_TTL_MINUTES,
+            }, status=status.HTTP_200_OK)
 
         if user.role == 'CUSTOMER':
             Customer.objects.get_or_create(user=user)
+
+        if user.role == 'ADMIN':
+            mfa_token = request.data.get('mfa_token')
+            mfa_code = str(request.data.get('mfa_code') or '')
+            if not mfa_token:
+                return begin_admin_mfa(request, user)
+            try:
+                valid_mfa = len(mfa_code) == 6 and admin_mfa_is_valid(mfa_token, mfa_code, user)
+            except IProgSMSDeliveryError:
+                logger.exception('Admin SMS MFA verification failed.')
+                return Response({'detail': 'Admin SMS verification is temporarily unavailable. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            if not valid_mfa:
+                return Response({'detail': 'Invalid or expired admin verification code.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if google_picture_url and not user.profile_picture and user.profile_picture_external_url != google_picture_url:
             user.profile_picture_external_url = google_picture_url[:500]
@@ -326,7 +534,9 @@ class GoogleAuthView(views.APIView):
 
         payload = build_auth_payload(user)
         payload['created'] = created
-        return Response(payload, status=status.HTTP_200_OK)
+        access = payload.pop('access', None)
+        refresh = payload.pop('refresh', None)
+        return set_auth_cookies(Response(payload, status=status.HTTP_200_OK), access, refresh, request)
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = ProfileSerializer
@@ -359,6 +569,102 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
             ),
             ip_address=get_client_ip(self.request),
         )
+
+
+class PrivacyConsentView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'sensitive'
+
+    def get(self, request):
+        return Response([
+            {
+                'id': item.id,
+                'consent_type': item.consent_type,
+                'policy_version': item.policy_version,
+                'granted_at': item.granted_at,
+                'withdrawn_at': item.withdrawn_at,
+                'source': item.source,
+            }
+            for item in PrivacyConsent.objects.filter(user=request.user)
+        ])
+
+    def post(self, request):
+        consent_type = str(request.data.get('consent_type') or '').strip().upper()
+        version = str(request.data.get('policy_version') or '2026-10-01').strip()[:30]
+        granted_value = request.data.get('granted', True)
+        granted = granted_value if isinstance(granted_value, bool) else str(granted_value).strip().lower() not in {'false', '0', 'no', 'off'}
+        valid_types = {value for value, _ in PrivacyConsent.CONSENT_TYPES}
+        if consent_type not in valid_types:
+            return Response({'consent_type': 'Unsupported consent type.'}, status=status.HTTP_400_BAD_REQUEST)
+        consent, _ = PrivacyConsent.objects.get_or_create(
+            user=request.user,
+            consent_type=consent_type,
+            policy_version=version,
+            defaults={'source': 'web'},
+        )
+        consent.withdrawn_at = None if granted else timezone.now()
+        consent.save(update_fields=['withdrawn_at'])
+        AuditLog.objects.create(user=request.user, action='PRIVACY_CONSENT_UPDATED', description=f'{consent_type} consent updated.', metadata={'consent_type': consent_type, 'policy_version': version, 'granted': granted}, ip_address=get_client_ip(request))
+        return Response({'detail': 'Consent preference saved.', 'granted': granted}, status=status.HTTP_200_OK)
+
+
+class PrivacyRequestView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'sensitive'
+
+    def get(self, request):
+        return Response([
+            {
+                'id': item.id,
+                'request_type': item.request_type,
+                'details': item.details,
+                'status': item.status,
+                'response_notes': item.response_notes,
+                'created_at': item.created_at,
+                'updated_at': item.updated_at,
+            }
+            for item in PrivacyRequest.objects.filter(user=request.user)
+        ])
+
+    def post(self, request):
+        request_type = str(request.data.get('request_type') or '').strip().upper()
+        details = str(request.data.get('details') or '').strip()[:4000]
+        valid_types = {value for value, _ in PrivacyRequest.REQUEST_TYPES}
+        if request_type not in valid_types:
+            return Response({'request_type': 'Unsupported privacy request type.'}, status=status.HTTP_400_BAD_REQUEST)
+        item = PrivacyRequest.objects.create(user=request.user, request_type=request_type, details=details)
+        AuditLog.objects.create(user=request.user, action='PRIVACY_REQUEST_CREATED', description=f'Privacy request created: {request_type}.', metadata={'request_id': item.id, 'request_type': request_type}, ip_address=get_client_ip(request))
+        return Response({'id': item.id, 'request_type': item.request_type, 'status': item.status, 'created_at': item.created_at}, status=status.HTTP_201_CREATED)
+
+
+class PrivacyExportView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'sensitive'
+
+    def get(self, request):
+        user = request.user
+        bookings = Booking.objects.filter(customer=user).select_related('package', 'package__service')
+        export = {
+            'exported_at': timezone.now(),
+            'user': UserSerializer(user, context={'request': request}).data,
+            'bookings': [
+                {
+                    'id': booking.id,
+                    'package': booking.package.name,
+                    'service': booking.package.service.name,
+                    'scheduled_date': booking.scheduled_date,
+                    'scheduled_time': booking.scheduled_time,
+                    'status': booking.status,
+                    'notes': booking.notes,
+                    'created_at': booking.created_at,
+                }
+                for booking in bookings
+            ],
+            'consents': list(PrivacyConsent.objects.filter(user=user).values('consent_type', 'policy_version', 'granted_at', 'withdrawn_at', 'source')),
+            'privacy_requests': list(PrivacyRequest.objects.filter(user=user).values('request_type', 'details', 'status', 'response_notes', 'created_at', 'updated_at')),
+        }
+        AuditLog.objects.create(user=user, action='PRIVACY_EXPORT', description='User data export generated.', ip_address=get_client_ip(request))
+        return Response(export)
 
 class StaffListView(generics.ListCreateAPIView):
     serializer_class = UserSerializer
@@ -523,8 +829,7 @@ class SystemDataResetView(views.APIView):
                     delete_queryset('non_admin_users', User.objects.exclude(role='ADMIN')),
                 ])
 
-                deleted['audit_logs'] = AuditLog.objects.count()
-                AuditLog.objects.all().delete()
+                deleted['audit_logs'] = 0
                 AuditLog.objects.create(
                     user=admin_user,
                     action="SYSTEM_DATA_RESET",

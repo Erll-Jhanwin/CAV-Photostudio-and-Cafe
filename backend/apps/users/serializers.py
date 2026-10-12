@@ -258,29 +258,15 @@ class AccountSerializer(UserSerializer):
                 Customer.objects.get_or_create(user=instance)
         return instance
 
-class RegisterSerializer(serializers.ModelSerializer):
+class RegisterSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150, trim_whitespace=True)
     password = serializers.CharField(write_only=True, trim_whitespace=False)
     email = serializers.EmailField(required=True)
-
-    class Meta:
-        model = User
-        fields = ['username', 'password', 'email', 'first_name', 'last_name', 'phone_number', 'address']
-
-    def create(self, validated_data):
-        with transaction.atomic():
-            user = User.objects.create_user(
-                username=validated_data['username'],
-                password=validated_data['password'],
-                email=validated_data.get('email', ''),
-                first_name=validated_data.get('first_name', ''),
-                last_name=validated_data.get('last_name', ''),
-                phone_number=validated_data.get('phone_number', ''),
-                address=validated_data.get('address', ''),
-                role='CUSTOMER',
-                registration_method=User.RegistrationMethod.FORM,
-            )
-            Customer.objects.get_or_create(user=user)
-        return user
+    first_name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    last_name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    phone_number = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)
+    address = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+    privacy_consent = serializers.BooleanField(write_only=True, required=False, default=False)
 
     def validate_username(self, value):
         return validate_unique_username(value)
@@ -293,7 +279,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         return validate_unique_email(value, required=True)
 
     def validate_phone_number(self, value):
-        return validate_unique_phone_number(value)
+        normalized = normalize_philippine_mobile_number(value)
+        if not normalized:
+            raise serializers.ValidationError('Enter a valid Philippine mobile number.')
+        if is_phone_number_taken(normalized):
+            raise serializers.ValidationError('Phone number already exists.')
+        return normalized
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=20, trim_whitespace=True)
@@ -308,6 +299,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 class RegistrationOTPVerifySerializer(serializers.Serializer):
     registration_token = serializers.CharField(min_length=32, max_length=128, trim_whitespace=True)
     otp = serializers.CharField(min_length=6, max_length=6, trim_whitespace=True)
+    privacy_consent = serializers.BooleanField(required=False, default=False)
 
     def validate_otp(self, value):
         if not value.isdigit():

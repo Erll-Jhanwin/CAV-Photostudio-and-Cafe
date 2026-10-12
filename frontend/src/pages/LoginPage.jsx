@@ -26,7 +26,6 @@ import {
   getConfirmPasswordError,
   getEmailError,
   getPasswordError,
-  getPhoneError,
   getPhilippineMobileError,
   getRequiredError,
   isBlank,
@@ -47,6 +46,11 @@ export default function LoginPage() {
   const [registrationToken, setRegistrationToken] = useState('');
   const [registrationContactHint, setRegistrationContactHint] = useState('');
   const [registrationOtp, setRegistrationOtp] = useState('');
+  const [registrationConsent, setRegistrationConsent] = useState(false);
+  const [adminMfaStep, setAdminMfaStep] = useState(false);
+  const [adminMfaToken, setAdminMfaToken] = useState('');
+  const [adminMfaContactHint, setAdminMfaContactHint] = useState('');
+  const [adminMfaOtp, setAdminMfaOtp] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotStep, setForgotStep] = useState('phone');
   const [forgotPhone, setForgotPhone] = useState('');
@@ -94,7 +98,7 @@ export default function LoginPage() {
     const errors = {
       username: getRequiredError(values.username, 'Username'),
       email: getEmailError(values.email, { required: true }),
-      phone: getPhoneError(values.phone),
+      phone: getPhilippineMobileError(values.phone),
       password: getPasswordError(values.password),
       passwordConfirm: getConfirmPasswordError(values.password, values.passwordConfirm),
     };
@@ -117,10 +121,12 @@ export default function LoginPage() {
     return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
   };
 
-  const isLoginValid = !isBlank(form.username) && !isBlank(form.password);
+  const isLoginValid = adminMfaStep
+    ? adminMfaToken && adminMfaOtp.length === 6
+    : !isBlank(form.username) && !isBlank(form.password);
   const isRegisterValid = registerStep === 'otp'
-    ? registrationOtp.length === 6
-    : !Object.keys(validateRegisterForm()).length;
+    ? registrationOtp.length === 6 && registrationConsent
+    : !Object.keys(validateRegisterForm()).length && registrationConsent;
   const isForgotValid = !Object.keys(validateForgotForm()).length;
 
   const navigateAfterAuth = useCallback((authUser) => {
@@ -143,15 +149,27 @@ export default function LoginPage() {
     setError('');
     setSuccess('');
     setLoading(true);
-    const res = await loginWithGoogle(credential);
+    const res = await loginWithGoogle(credential, isRegister ? form.phone : '');
     setLoading(false);
-    if (res.success) {
+    if (res.pendingVerification) {
+      setIsRegister(true);
+      setRegisterStep('otp');
+      setRegistrationToken(res.registration_token || '');
+      setRegistrationContactHint(res.contact_hint || 'your mobile number');
+      setRegistrationOtp('');
+      setRegistrationConsent(false);
+      setSuccess(`We sent an SMS verification code to ${res.contact_hint || 'your mobile number'}. Enter it to finish creating your account.`);
+      setFormErrors({});
+    } else if (res.success) {
       showLoginSuccess(res.user);
       navigateAfterAuth(res.user);
     } else {
+      if (res.errors?.phone_number) {
+        setFormErrors({ phone: Array.isArray(res.errors.phone_number) ? res.errors.phone_number.join(' ') : res.errors.phone_number });
+      }
       setError(res.error);
     }
-  }, [loginWithGoogle, navigateAfterAuth]);
+  }, [form.phone, isRegister, loginWithGoogle, navigateAfterAuth]);
 
   useEffect(() => {
     if (!googleClientId) return undefined;
@@ -238,11 +256,23 @@ export default function LoginPage() {
         setError('Google did not return a sign-in token. Please try again.');
         return;
       }
-      const res = await loginWithGoogle(credential);
-      if (res.success) {
+      const res = await loginWithGoogle(credential, isRegister ? form.phone : '');
+      if (res.pendingVerification) {
+        setIsRegister(true);
+        setRegisterStep('otp');
+        setRegistrationToken(res.registration_token || '');
+        setRegistrationContactHint(res.contact_hint || 'your mobile number');
+        setRegistrationOtp('');
+        setRegistrationConsent(false);
+        setSuccess(`We sent an SMS verification code to ${res.contact_hint || 'your mobile number'}. Enter it to finish creating your account.`);
+        setFormErrors({});
+      } else if (res.success) {
         showLoginSuccess(res.user);
         navigateAfterAuth(res.user);
       } else {
+        if (res.errors?.phone_number) {
+          setFormErrors({ phone: Array.isArray(res.errors.phone_number) ? res.errors.phone_number.join(' ') : res.errors.phone_number });
+        }
         setError(res.error);
       }
     } catch (nativeError) {
@@ -260,9 +290,35 @@ export default function LoginPage() {
     setFormErrors(errors);
     if (Object.keys(errors).length) return;
     setLoading(true);
-    const res = await login(form.username, form.password);
+    const res = await login(
+      form.username,
+      form.password,
+      adminMfaStep
+        ? {
+          mfa_token: adminMfaToken,
+          mfa_code: adminMfaOtp,
+        }
+        : {},
+    );
     setLoading(false);
-    if (res.success) {
+    if (res.mfaRequired) {
+      const contactHint = String(res.contact_hint || '');
+      if (res.mfa_method !== 'sms' || contactHint.includes('@')) {
+        setAdminMfaStep(false);
+        setAdminMfaToken('');
+        setAdminMfaContactHint('');
+        setAdminMfaOtp('');
+        setSuccess('');
+        setError('Admin verification must use SMS. Please sign in again to request a new code.');
+        return;
+      }
+      setAdminMfaStep(true);
+      setAdminMfaToken(res.mfa_token || '');
+      setAdminMfaContactHint(contactHint || 'your registered mobile number');
+      setAdminMfaOtp('');
+      setSuccess(`Admin SMS verification code sent to ${contactHint || 'your registered mobile number'}.`);
+      setFormErrors({});
+    } else if (res.success) {
       showLoginSuccess(res.user);
       navigateAfterAuth(res.user);
     } else {
@@ -284,12 +340,14 @@ export default function LoginPage() {
         const response = await client.post('/api/auth/register/verify/', {
           registration_token: registrationToken,
           otp: registrationOtp,
+          privacy_consent: registrationConsent,
         });
         setSuccess(response.data?.message || 'Account created successfully! Please log in.');
         setIsRegister(false);
         setRegisterStep('details');
         setRegistrationToken('');
         setRegistrationOtp('');
+        setRegistrationConsent(false);
         setRegistrationContactHint('');
         setForm((f) => ({ ...f, password: '', passwordConfirm: '' }));
         setFormErrors({});
@@ -309,15 +367,17 @@ export default function LoginPage() {
       username: form.username, password: form.password, email: form.email,
       first_name: form.firstName, last_name: form.lastName,
       phone_number: form.phone, address: form.address,
+      privacy_consent: registrationConsent,
     };
     const res = await register(regData);
     setLoading(false);
     if (res.success) {
       setRegistrationToken(res.registration_token || '');
-      setRegistrationContactHint(res.contact_hint || 'your registered contact');
+      setRegistrationContactHint(res.contact_hint || 'your mobile number');
       setRegistrationOtp('');
+      setRegistrationConsent(true);
       setRegisterStep('otp');
-      setSuccess(`We sent a verification code to ${res.contact_hint || 'your registered contact'}. Enter it to finish creating your account.`);
+      setSuccess(`We sent an SMS verification code to ${res.contact_hint || 'your mobile number'}. Enter it to finish creating your account.`);
       setFormErrors({});
     } else {
       const apiErrors = res.errors || {};
@@ -431,19 +491,6 @@ export default function LoginPage() {
     }
   };
 
-  const quickLogin = async (user, pass) => {
-    setError('');
-    setLoading(true);
-    const res = await login(user, pass);
-    setLoading(false);
-    if (res.success) {
-      showLoginSuccess(res.user);
-      navigateAfterAuth(res.user);
-    } else {
-      setError(res.error);
-    }
-  };
-
   const clearModeMessages = () => {
     setError('');
     setSuccess('');
@@ -456,14 +503,24 @@ export default function LoginPage() {
     setRegistrationToken('');
     setRegistrationContactHint('');
     setRegistrationOtp('');
+    setRegistrationConsent(false);
   };
 
-  const formTitle = isRegister ? 'Join CAV today' : showForgotPassword ? 'Reset password' : 'Sign in to CAV';
+  const resetAdminMfaFlow = () => {
+    setAdminMfaStep(false);
+    setAdminMfaToken('');
+    setAdminMfaContactHint('');
+    setAdminMfaOtp('');
+  };
+
+  const formTitle = isRegister ? 'Join CAV today' : showForgotPassword ? 'Reset password' : adminMfaStep ? 'Verify admin access' : 'Sign in to CAV';
   const formKicker = isRegister ? 'Create account' : showForgotPassword ? 'Account recovery' : 'Member access';
   const formDescription = isRegister
     ? 'Create an account to book studio sessions and stay connected with CAV.'
     : showForgotPassword
       ? 'Use your registered mobile number to receive an SMS OTP, verify it, and choose a new password.'
+    : adminMfaStep
+      ? `Enter the 6-digit SMS code sent to ${adminMfaContactHint}.`
       : 'Access your dashboard, bookings, and account tools.';
   const forgotStepInfo = {
     phone: {
@@ -565,62 +622,6 @@ export default function LoginPage() {
               <h2 className="text-3xl font-black tracking-tight text-espresso sm:text-4xl">{formTitle}</h2>
               <p className="text-sm leading-relaxed text-espresso/62">{formDescription}</p>
             </div>
-
-            {!isRegister && !showForgotPassword && (
-              <div className="space-y-3 rounded-[22px] border border-espresso/[0.06] bg-white p-4 shadow-[0_18px_45px_rgba(46,26,17,0.08)]">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-espresso/45">Quick Login Accounts</p>
-                  <span className="rounded-full bg-gold/10 px-2.5 py-1 text-[10px] font-black text-gold-dark">Click to sign in</span>
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  {[
-                    {
-                      label: 'Customer',
-                      user: 'customer',
-                      pass: 'Customer123!',
-                      icon: User,
-                      helper: 'Bookings and rewards',
-                      accent: 'text-emerald-700 bg-emerald-50 border-emerald-200 group-hover:bg-emerald-100',
-                      ring: 'group-hover:border-emerald-300 group-hover:shadow-[0_18px_36px_rgba(5,150,105,0.12)]',
-                    },
-                    {
-                      label: 'Staff',
-                      user: 'staff',
-                      pass: 'Staff123!',
-                      icon: Coffee,
-                      helper: 'POS and inventory',
-                      accent: 'text-gold-dark bg-gold/10 border-gold/30 group-hover:bg-gold/20',
-                      ring: 'group-hover:border-gold/45 group-hover:shadow-[0_18px_36px_rgba(212,175,55,0.16)]',
-                    },
-                    {
-                      label: 'Admin',
-                      user: 'admin',
-                      pass: 'Admin123!',
-                      icon: ShieldAlert,
-                      helper: 'System controls',
-                      accent: 'text-red-700 bg-red-50 border-red-200 group-hover:bg-red-100',
-                      ring: 'group-hover:border-red-200 group-hover:shadow-[0_18px_36px_rgba(220,38,38,0.12)]',
-                    },
-                  ].map(({ label, user, pass, icon: Icon, helper, accent, ring }) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => quickLogin(user, pass)}
-                      disabled={loading}
-                      className={`group flex min-h-[148px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-espresso/[0.07] bg-cream px-3 py-4 text-center transition-all duration-300 hover:-translate-y-1 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${ring}`}
-                    >
-                      <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border shadow-[0_10px_22px_rgba(46,26,17,0.07)] transition-colors ${accent}`}>
-                        <Icon className="h-6 w-6" />
-                      </span>
-                      <span className="flex min-w-0 flex-col items-center gap-1">
-                        <span className="block text-sm font-black leading-tight text-espresso">{label}</span>
-                        <span className="block max-w-[8.5rem] text-[11px] font-semibold leading-snug text-espresso/52">{helper}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <div className="space-y-6 rounded-[24px] border border-espresso/[0.06] bg-white p-5 shadow-[0_24px_65px_rgba(46,26,17,0.10)] sm:p-6">
               {error && (
@@ -835,7 +836,7 @@ export default function LoginPage() {
                         <CheckCircle2 className="h-6 w-6 shrink-0 text-gold-dark" />
                         <div>
                           <p className="text-sm font-bold text-espresso">Verify your contact</p>
-                          <p className="mt-1 text-xs leading-relaxed text-espresso/55">Enter the 6-digit code sent to {registrationContactHint}.</p>
+                          <p className="mt-1 text-xs leading-relaxed text-espresso/55">Enter the 6-digit SMS code sent to {registrationContactHint}.</p>
                         </div>
                       </div>
                       <Input
@@ -849,6 +850,42 @@ export default function LoginPage() {
                         value={registrationOtp}
                         onChange={(e) => {
                           setRegistrationOtp(e.target.value.replace(/\D/g, '').slice(0, 6));
+                          setFormErrors(current => ({ ...current, otp: '' }));
+                        }}
+                        placeholder="000000"
+                        className="text-center font-mono text-lg tracking-[0.24em]"
+                        error={formErrors.otp}
+                      />
+                      <label className="flex items-start gap-3 text-xs leading-5 text-espresso/72">
+                        <input
+                          type="checkbox"
+                          checked={registrationConsent}
+                          onChange={(e) => setRegistrationConsent(e.target.checked)}
+                          className="mt-1 h-4 w-4 rounded border-espresso/30 text-gold focus:ring-gold"
+                        />
+                        <span>I agree to the <Link to="/privacy-policy" className="font-bold text-gold-dark underline">Privacy Notice</Link> and service data processing.</span>
+                      </label>
+                    </div>
+                  ) : adminMfaStep ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 rounded-2xl border border-gold/20 bg-gold/5 p-4">
+                        <CheckCircle2 className="h-6 w-6 shrink-0 text-gold-dark" />
+                        <div>
+                          <p className="text-sm font-bold text-espresso">Admin verification required</p>
+                          <p className="mt-1 text-xs leading-relaxed text-espresso/55">This extra step protects privileged access.</p>
+                        </div>
+                      </div>
+                      <Input
+                        label="SMS one-time code"
+                        icon={Key}
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        required
+                        value={adminMfaOtp}
+                        onChange={(e) => {
+                          setAdminMfaOtp(e.target.value.replace(/\D/g, '').slice(0, 6));
                           setFormErrors(current => ({ ...current, otp: '' }));
                         }}
                         placeholder="000000"
@@ -896,7 +933,7 @@ export default function LoginPage() {
                             />
                           </div>
                           <Input
-                            label="Phone"
+                            label="Mobile number"
                             type="tel"
                             value={form.phone}
                             onChange={update('phone')}
@@ -948,6 +985,18 @@ export default function LoginPage() {
                             error={formErrors.passwordConfirm}
                           />
                           <PasswordStrength password={form.password} />
+                          <label className="flex items-start gap-3 text-xs leading-5 text-espresso/72">
+                            <input
+                              type="checkbox"
+                              checked={registrationConsent}
+                              onChange={(e) => {
+                                setRegistrationConsent(e.target.checked);
+                                setFormErrors(current => ({ ...current, privacyConsent: '' }));
+                              }}
+                              className="mt-1 h-4 w-4 rounded border-espresso/30 text-gold focus:ring-gold"
+                            />
+                            <span>I agree to the <Link to="/privacy-policy" className="font-bold text-gold-dark underline">Privacy Notice</Link> and service data processing.</span>
+                          </label>
                         </>
                       )}
 
@@ -973,15 +1022,19 @@ export default function LoginPage() {
                     disabled={loading || (isRegister ? !isRegisterValid : !isLoginValid)}
                     className="mt-1 w-full"
                   >
-                    {isRegister ? (registerStep === 'otp' ? 'Verify & Create Account' : 'Send Verification Code') : 'Enter My Dashboard'}
+                    {isRegister
+                      ? (registerStep === 'otp' ? 'Verify & Create Account' : 'Send Verification Code')
+                      : adminMfaStep
+                        ? 'Verify Admin Access'
+                        : 'Enter My Dashboard'}
                   </Button>
                 </form>
               )}
 
-              {!showForgotPassword && (
+              {!showForgotPassword && !adminMfaStep && (
                 <div className="space-y-3 pt-1 text-center">
                   <button
-                    onClick={() => { resetRegistrationFlow(); setIsRegister(!isRegister); clearModeMessages(); }}
+                    onClick={() => { resetRegistrationFlow(); resetAdminMfaFlow(); setIsRegister(!isRegister); clearModeMessages(); }}
                     className="text-xs font-semibold text-gold-dark transition-colors hover:text-gold"
                   >
                     {isRegister ? 'Already booked with CAV? Sign In' : 'New to CAV? Create an account'}

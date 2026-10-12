@@ -37,4 +37,13 @@ class StockMovementWriteTests(TestCase):
         self.assertEqual(self.product.stock_level, 2)
         self.assertTrue(InventoryEvent.objects.filter(product=self.product, movement_type='OUT').exists())
 
+    def test_public_product_response_excludes_internal_inventory_fields(self):
+        self.client.force_authenticate(None)
+        response = self.client.get('/api/inventory/products/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]['id'], self.product.id)
+        self.assertNotIn('stock_level', response.data[0])
+        self.assertNotIn('cost', response.data[0])
+        self.assertNotIn('recipe_items', response.data[0])
+
 # Create your tests here.

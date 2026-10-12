@@ -46,3 +46,15 @@ class ClientRuntimeErrorViewTests(TestCase):
         }, format='json')
 
         self.assertEqual(response.status_code, 403)
+
+    def test_audit_logs_cannot_be_deleted(self):
+        record = AuditLog.objects.create(user=self.admin, action='TEST', description='immutable')
+        with self.assertRaises(PermissionError):
+            AuditLog.objects.filter(pk=record.pk).delete()
+        with self.assertRaises(PermissionError):
+            record.delete()
+
+    def test_health_endpoint_exposes_only_service_status(self):
+        response = self.client.get('/health/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data if hasattr(response, 'data') else response.json(), {'status': 'ok', 'database': 'ok'})

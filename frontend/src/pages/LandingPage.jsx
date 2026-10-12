@@ -102,6 +102,7 @@ function CafeCarousel({ items = [], loading = false }) {
   const [cardWidth, setCardWidth] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isInteracting, setIsInteracting] = useState(false);
+  const [isPausedByUser, setIsPausedByUser] = useState(false);
 
   const visibleCards = Math.min(cardsPerView, Math.max(items.length, 1));
   const maxIndex = Math.max(0, items.length - visibleCards);
@@ -136,9 +137,10 @@ function CafeCarousel({ items = [], loading = false }) {
   }, []);
 
   const resumeAutoplaySoon = useCallback(() => {
+    if (isPausedByUser) return;
     window.clearTimeout(resumeTimerRef.current);
     resumeTimerRef.current = window.setTimeout(() => setIsInteracting(false), 3500);
-  }, []);
+  }, [isPausedByUser]);
 
   useEffect(() => {
     const updateMeasurements = () => {
@@ -158,7 +160,7 @@ function CafeCarousel({ items = [], loading = false }) {
   }, [cardWidth, currentIndex, snapToIndex, visibleCards]);
 
   useEffect(() => {
-    if (!canSlide || isInteracting) {
+    if (!canSlide || isInteracting || isPausedByUser || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       window.clearInterval(autoplayTimerRef.current);
       return undefined;
     }
@@ -172,7 +174,7 @@ function CafeCarousel({ items = [], loading = false }) {
     }, 4200);
 
     return () => window.clearInterval(autoplayTimerRef.current);
-  }, [applyTranslate, canSlide, cardWidth, isInteracting, maxIndex]);
+  }, [applyTranslate, canSlide, cardWidth, isInteracting, isPausedByUser, maxIndex]);
 
   useEffect(() => () => {
     window.clearTimeout(resumeTimerRef.current);
@@ -346,6 +348,19 @@ function CafeCarousel({ items = [], loading = false }) {
 
       {canSlide && (
         <>
+          <button
+            type="button"
+            onClick={() => {
+              setIsPausedByUser(current => !current);
+              setIsInteracting(false);
+              window.clearTimeout(resumeTimerRef.current);
+            }}
+            aria-pressed={isPausedByUser}
+            aria-label={isPausedByUser ? 'Resume café menu carousel' : 'Pause café menu carousel'}
+            className="absolute right-1 top-2 z-10 rounded-lg border border-gold/25 bg-espresso-dark px-2.5 py-1.5 text-[10px] font-bold text-gold shadow-lg"
+          >
+            {isPausedByUser ? 'Resume' : 'Pause'}
+          </button>
           <button
             type="button"
             onClick={() => goToIndex(currentIndex <= 0 ? maxIndex : currentIndex - 1)}

@@ -46,6 +46,37 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-gold;
   }
+
+  .skip-link {
+    position: fixed;
+    left: 1rem;
+    top: 0.75rem;
+    z-index: 100;
+    transform: translateY(-150%);
+    border-radius: 0.75rem;
+    background: #fff;
+    color: #2e1a11;
+    padding: 0.75rem 1rem;
+    font-weight: 800;
+    box-shadow: 0 12px 30px rgba(46, 26, 17, 0.2);
+  }
+
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+
+  #main-content:focus {
+    outline: none;
+  }
+
+  /* Keep muted body text readable on the light CAV surfaces. */
+  [class~="text-espresso/45"],
+  [class~="text-espresso/55"],
+  [class~="text-espresso/60"],
+  [class~="text-espresso/62"],
+  [class~="text-espresso/65"] {
+    color: rgb(46 26 17 / 0.72) !important;
+  }
 }
 
 @layer components {

@@ -32,6 +32,8 @@ class CustomUser(AbstractUser):
     profile_picture_external_url = models.URLField(max_length=500, blank=True)
 
     class Meta:
+        verbose_name = 'user'
+        verbose_name_plural = 'users'
         constraints = [
             models.UniqueConstraint(
                 Lower('email'),
@@ -61,6 +63,52 @@ class Customer(models.Model):
 
     def __str__(self):
         return f"Customer Profile: {self.user.username}"
+
+
+class PrivacyConsent(models.Model):
+    CONSENT_TYPES = (
+        ('PRIVACY_NOTICE', 'Privacy notice'),
+        ('SERVICE_PROCESSING', 'Service processing'),
+        ('MARKETING', 'Marketing communications'),
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='privacy_consents')
+    consent_type = models.CharField(max_length=40, choices=CONSENT_TYPES)
+    policy_version = models.CharField(max_length=30)
+    granted_at = models.DateTimeField(auto_now_add=True)
+    withdrawn_at = models.DateTimeField(null=True, blank=True)
+    source = models.CharField(max_length=40, default='web')
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'consent_type', 'policy_version'], name='privacy_consent_version_unique'),
+        ]
+        ordering = ['-granted_at']
+
+
+class PrivacyRequest(models.Model):
+    REQUEST_TYPES = (
+        ('ACCESS', 'Access'),
+        ('CORRECTION', 'Correction'),
+        ('DELETION', 'Deletion'),
+        ('OBJECTION', 'Objection'),
+        ('EXPORT', 'Data export'),
+    )
+    STATUS_CHOICES = (
+        ('OPEN', 'Open'),
+        ('IN_PROGRESS', 'In progress'),
+        ('COMPLETED', 'Completed'),
+        ('REJECTED', 'Rejected'),
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='privacy_requests')
+    request_type = models.CharField(max_length=20, choices=REQUEST_TYPES)
+    details = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='OPEN')
+    response_notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
 class PasswordResetOTP(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='password_reset_otps')

@@ -34,11 +34,39 @@ if (typeof window !== 'undefined') {
 const client = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
+  withCredentials: true,
+  xsrfCookieName: 'csrftoken',
+  xsrfHeaderName: 'X-CSRFToken',
 });
 
+let csrfPromise = null;
 let refreshPromise = null;
 const queryCache = new Map();
 const pendingQueries = new Map();
+
+const getCsrfCookie = () => {
+  if (typeof document === 'undefined') return '';
+  const cookie = document.cookie
+    .split('; ')
+    .find(item => item.startsWith('csrftoken='));
+  return cookie ? decodeURIComponent(cookie.slice('csrftoken='.length)) : '';
+};
+
+const ensureCsrfToken = () => {
+  const existingToken = getCsrfCookie();
+  if (existingToken) return Promise.resolve(existingToken);
+  if (!csrfPromise) {
+    csrfPromise = axios.get(`${API_BASE_URL}/api/auth/csrf/`, {
+      timeout: 15000,
+      withCredentials: true,
+    })
+      .then(() => getCsrfCookie())
+      .finally(() => {
+        csrfPromise = null;
+      });
+  }
+  return csrfPromise;
+};
 
 const stableValue = (value) => {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -115,12 +143,16 @@ const redirectToLogin = () => {
   window.location.assign(`/login?redirect=${encodeURIComponent(destination)}`);
 };
 
-// Request Interceptor: Inject JWT token from localStorage
+// Browser authentication uses HttpOnly cookies; tokens never enter JavaScript storage.
 client.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+  async (config) => {
+    const method = String(config.method || 'get').toLowerCase();
+    if (['post', 'put', 'patch', 'delete'].includes(method)) {
+      const csrfToken = await ensureCsrfToken();
+      if (csrfToken) {
+        config.headers = config.headers || {};
+        config.headers['X-CSRFToken'] = csrfToken;
+      }
     }
     return config;
   },
@@ -161,29 +193,20 @@ client.interceptors.response.use(
       !isPublicAuthRequest
     ) {
       originalRequest._retry = true;
-      const refreshToken = localStorage.getItem('refresh_token');
-      
-      if (refreshToken) {
-        try {
-          if (!refreshPromise) {
-            refreshPromise = axios.post(`${API_BASE_URL}/api/auth/token/refresh/`, {
-              refresh: refreshToken,
-            }, { timeout: 15000 }).finally(() => {
-              refreshPromise = null;
-            });
-          }
-          const res = await refreshPromise;
-          
-          if (res.status === 200) {
-            const newAccess = res.data.access;
-            localStorage.setItem('access_token', newAccess);
-            originalRequest.headers.Authorization = `Bearer ${newAccess}`;
-            return client(originalRequest);
-          }
-        } catch (refreshError) {
-          redirectToLogin();
-          return Promise.reject(refreshError);
+      try {
+        if (!refreshPromise) {
+          refreshPromise = axios.post(`${API_BASE_URL}/api/auth/token/refresh/`, {}, {
+            timeout: 15000,
+            withCredentials: true,
+          }).finally(() => {
+            refreshPromise = null;
+          });
         }
+        const res = await refreshPromise;
+        if (res.status === 200) return client(originalRequest);
+      } catch (refreshError) {
+        redirectToLogin();
+        return Promise.reject(refreshError);
       }
 
       redirectToLogin();

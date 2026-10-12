@@ -53,6 +53,15 @@ IPROG_SMS_API_BASE_URL = os.environ.get('IPROG_SMS_API_BASE_URL', 'https://www.i
 IPROG_SMS_API_TIMEOUT = int(os.environ.get('IPROG_SMS_API_TIMEOUT', '15'))
 PASSWORD_RESET_RESEND_COOLDOWN_SECONDS = int(os.environ.get('PASSWORD_RESET_RESEND_COOLDOWN_SECONDS', '60'))
 PASSWORD_RESET_MAX_REQUESTS_PER_HOUR = int(os.environ.get('PASSWORD_RESET_MAX_REQUESTS_PER_HOUR', '5'))
+AUTH_ACCESS_COOKIE_NAME = os.environ.get('AUTH_ACCESS_COOKIE_NAME', 'cav_access')
+AUTH_REFRESH_COOKIE_NAME = os.environ.get('AUTH_REFRESH_COOKIE_NAME', 'cav_refresh')
+AUTH_COOKIE_SECURE = env_bool('AUTH_COOKIE_SECURE', not DEBUG)
+AUTH_COOKIE_SAMESITE = os.environ.get('AUTH_COOKIE_SAMESITE', 'Lax')
+AUTH_COOKIE_DOMAIN = os.environ.get('AUTH_COOKIE_DOMAIN') or None
+ADMIN_MFA_TTL_MINUTES = int(os.environ.get('ADMIN_MFA_TTL_MINUTES', '10'))
+ADMIN_MFA_MAX_ATTEMPTS = int(os.environ.get('ADMIN_MFA_MAX_ATTEMPTS', '5'))
+PRIVACY_REQUEST_RETENTION_DAYS = int(os.environ.get('PRIVACY_REQUEST_RETENTION_DAYS', '2555'))
+PASSWORD_RESET_RETENTION_DAYS = int(os.environ.get('PASSWORD_RESET_RETENTION_DAYS', '30'))
 
 # Application definition
 INSTALLED_APPS = [
@@ -196,7 +205,7 @@ OCR_FALLBACK_TESSERACT = env_bool('OCR_FALLBACK_TESSERACT', True)
 # REST Framework configurations
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'users.authentication.CookieJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -252,7 +261,7 @@ CORS_ALLOWED_ORIGINS = list(dict.fromkeys([
     ]),
     *CAPACITOR_ALLOWED_ORIGINS,
 ]))
-CORS_ALLOW_CREDENTIALS = env_bool('CORS_ALLOW_CREDENTIALS', False)
+CORS_ALLOW_CREDENTIALS = env_bool('CORS_ALLOW_CREDENTIALS', True)
 CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
 CORS_ALLOW_HEADERS = [
     *default_headers,

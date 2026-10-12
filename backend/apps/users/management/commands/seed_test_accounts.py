@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
+from django.core.exceptions import ImproperlyConfigured
+import os
 
 from audit.models import AuditLog
 from booking.models import Package, Service
@@ -11,7 +13,7 @@ User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = 'Seeds compact-schema demo accounts, services, products, ingredients, recipes, and FAQs.'
+    help = 'Seeds local test data using passwords supplied through environment variables.'
 
     def handle(self, *args, **options):
         self.stdout.write('Seeding compact database...')
@@ -23,10 +25,20 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('Database seeded successfully!'))
 
     def seed_users(self):
+        admin_username = os.environ.get('SEED_ADMIN_USERNAME', 'admin').strip() or 'admin'
+        password_by_role = {
+            'ADMIN': os.environ.get('SEED_ADMIN_PASSWORD', ''),
+            'STAFF': os.environ.get('SEED_STAFF_PASSWORD', ''),
+            'CUSTOMER': os.environ.get('SEED_CUSTOMER_PASSWORD', ''),
+        }
+        if not all(password_by_role.values()):
+            raise ImproperlyConfigured(
+                'Set SEED_ADMIN_PASSWORD, SEED_STAFF_PASSWORD, and SEED_CUSTOMER_PASSWORD before seeding test accounts.'
+            )
         for spec in [
-            ('admin', 'admin@test.com', 'ADMIN', 'CAV', 'Admin', 'Admin123!', True, True),
-            ('staff', 'staff@test.com', 'STAFF', 'CAV', 'Staff', 'Staff123!', True, False),
-            ('customer', 'customer@test.com', 'CUSTOMER', 'CAV', 'Customer', 'Customer123!', False, False),
+            (admin_username, 'admin@test.com', 'ADMIN', 'CAV', 'Admin', password_by_role['ADMIN'], True, True),
+            ('staff', 'staff@test.com', 'STAFF', 'CAV', 'Staff', password_by_role['STAFF'], True, False),
+            ('customer', 'customer@test.com', 'CUSTOMER', 'CAV', 'Customer', password_by_role['CUSTOMER'], False, False),
         ]:
             username, email, role, first_name, last_name, password, is_staff, is_superuser = spec
             user, _ = User.objects.get_or_create(username=username)

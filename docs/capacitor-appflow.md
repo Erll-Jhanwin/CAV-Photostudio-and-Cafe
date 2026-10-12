@@ -13,7 +13,7 @@ REACT_APP_MOBILE_API_BASE_URL=https://cav-photostudio-and-cafe.onrender.com
 
 `REACT_APP_*` values are embedded when Create React App builds the bundle. Changing a variable requires a new web build and Android build.
 
-The backend CORS configuration accepts Capacitor's `https://localhost` origin. Keep your deployed frontend URL in `CORS_ALLOWED_ORIGINS` as well; the app uses JWT authorization and does not depend on browser cookies.
+The backend CORS configuration accepts Capacitor's `https://localhost` origin. Keep your deployed frontend URL in `CORS_ALLOWED_ORIGINS` as well; the app uses credentialed Secure/HttpOnly authentication cookies. For a production Capacitor origin, configure `AUTH_COOKIE_SECURE=true`, `AUTH_COOKIE_SAMESITE=None`, and `CORS_ALLOW_CREDENTIALS=true`.
 
 ## Build command
 

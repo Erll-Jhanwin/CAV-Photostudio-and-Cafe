@@ -15,7 +15,7 @@ Review and adapt [supabase-rls.sql](backend/docs/supabase-rls.sql) before applyi
 
 ## Deploy checklist
 
-1. Set production environment variables in Render; never commit real secrets. Rotate the exposed OCR key before redeploying.
+1. Set production environment variables in Render; never commit real secrets. Rotate the previously exposed OCR and SMS provider keys before redeploying, and confirm the old keys are revoked.
 2. Apply the RLS script with the actual backend database role and run migrations using that same role.
 3. Keep the `render.yaml` security headers enabled. The Google CSP entries are required for Google Identity Services.
 4. Review audit logs for account, booking, payment, inventory, POS, and system-reset actions. Export or retain them according to the business retention policy.

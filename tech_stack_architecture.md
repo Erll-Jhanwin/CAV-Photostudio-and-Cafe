@@ -194,13 +194,13 @@ The chatbot can answer questions about: operating hours, available packages, boo
 
 ## Test Accounts (Draft)
 
-To make testing and the capstone defense demo easier, seed the database with a draft account for each role:
+For local testing only, seed accounts with passwords supplied through environment variables. Never publish or reuse test credentials:
 
 | Role | Email | Password | Purpose |
 |------|-------|----------|---------|
-| Customer | `customer@test.com` | `Customer123!` | Test booking, packages, chatbot, and booking history flows |
-| Staff | `staff@test.com` | `Staff123!` | Test POS, inventory, orders, and booking validation flows |
-| Admin | `admin@test.com` | `Admin123!` | Test dashboard, analytics, reports, and ML forecasting flows |
+| Customer | `customer@test.com` | `SEED_CUSTOMER_PASSWORD` | Test booking, packages, chatbot, and booking history flows |
+| Staff | `staff@test.com` | `SEED_STAFF_PASSWORD` | Test POS, inventory, orders, and booking validation flows |
+| Admin | `admin@test.com` | `SEED_ADMIN_PASSWORD` | Test dashboard, analytics, reports, and ML forecasting flows |
 
 **Notes:**
 - These are placeholder credentials for development/testing only — never use them in a production deployment.

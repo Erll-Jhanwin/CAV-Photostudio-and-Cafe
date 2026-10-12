@@ -12,6 +12,7 @@ const LandingPage = lazy(() => lazyWithRetry(() => import('./pages/LandingPage')
 const BookingGuidePage = lazy(() => lazyWithRetry(() => import('./pages/BookingGuidePage')));
 const LoginPage = lazy(() => lazyWithRetry(() => import('./pages/LoginPage')));
 const PrivacyPolicyPage = lazy(() => lazyWithRetry(() => import('./pages/PrivacyPolicyPage')));
+const NotFoundPage = lazy(() => lazyWithRetry(() => import('./pages/NotFoundPage')));
 const CustomerDashboard = lazy(() => lazyWithRetry(() => import('./pages/CustomerDashboard')));
 const StaffDashboard = lazy(() => lazyWithRetry(() => import('./pages/StaffDashboard')));
 const SPLASH_SEEN_KEY = 'cav:splash-seen';
@@ -24,13 +25,15 @@ const redactDiagnostic = (value, limit) => String(value || '')
 const reportClientRuntimeError = (error, errorInfo) => {
   if (typeof window === 'undefined') return;
 
-  let token = '';
+  let savedUser = '';
   try {
-    token = localStorage.getItem('access_token') || '';
+    savedUser = localStorage.getItem('user') || '';
   } catch {
     return;
   }
-  if (!token) return;
+  if (!savedUser) return;
+
+  const csrfToken = document.cookie.split('; ').find(item => item.startsWith('csrftoken='))?.split('=').slice(1).join('=') || '';
 
   const payload = {
     message: redactDiagnostic(error?.message || error, 500),
@@ -40,10 +43,8 @@ const reportClientRuntimeError = (error, errorInfo) => {
 
   window.fetch(`${API_BASE_URL}/api/audit/client-runtime-errors/`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRFToken': decodeURIComponent(csrfToken) } : {}) },
     body: JSON.stringify(payload),
     keepalive: true,
   }).catch(() => {
@@ -205,9 +206,11 @@ function App() {
     <AuthProvider>
       <StyledAlertProvider>
         <BrowserRouter>
+          <a href="#main-content" className="skip-link">Skip to main content</a>
           <AppErrorBoundary>
             <StartupSplashGate>
               <Suspense fallback={<AppLoader />}>
+                <div id="main-content" tabIndex="-1">
                 <Routes>
                   <Route path="/" element={<LandingPage page="home" />} />
                   <Route path="/photo-studio" element={<LandingPage page="studio" />} />
@@ -241,8 +244,9 @@ function App() {
                       </ProtectedRoute>
                     }
                   />
-                  <Route path="*" element={<Navigate to="/" replace />} />
+                  <Route path="*" element={<NotFoundPage />} />
                 </Routes>
+                </div>
               </Suspense>
             </StartupSplashGate>
           </AppErrorBoundary>
