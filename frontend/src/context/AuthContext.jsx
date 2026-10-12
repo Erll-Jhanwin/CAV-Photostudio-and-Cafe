@@ -53,11 +53,18 @@ export const AuthProvider = ({ children }) => {
           role: profile.role,
           profile_picture_url: profile.profile_picture_url || '',
         };
-        localStorage.setItem('user', JSON.stringify(userData));
-        if (active) setUser(userData);
+        // A login can complete while this restore request is in flight. Do not
+        // let the older session overwrite the newly authenticated account.
+        if (readStoredValue('user') === savedUser) {
+          localStorage.setItem('user', JSON.stringify(userData));
+          if (active) setUser(userData);
+        }
       } catch {
-        clearStoredAuth();
-        if (active) setUser(null);
+        // Keep a newer login intact when an older cached session fails to restore.
+        if (readStoredValue('user') === savedUser) {
+          clearStoredAuth();
+          if (active) setUser(null);
+        }
       } finally {
         if (active) setLoading(false);
       }
