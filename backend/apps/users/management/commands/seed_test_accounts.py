@@ -1,6 +1,5 @@
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
-from django.core.exceptions import ImproperlyConfigured
 import os
 
 from audit.models import AuditLog
@@ -13,7 +12,7 @@ User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = 'Seeds local test data using passwords supplied through environment variables.'
+    help = 'Seeds local test data; test accounts are created when seed passwords are configured.'
 
     def handle(self, *args, **options):
         self.stdout.write('Seeding compact database...')
@@ -32,9 +31,11 @@ class Command(BaseCommand):
             'CUSTOMER': os.environ.get('SEED_CUSTOMER_PASSWORD', ''),
         }
         if not all(password_by_role.values()):
-            raise ImproperlyConfigured(
-                'Set SEED_ADMIN_PASSWORD, SEED_STAFF_PASSWORD, and SEED_CUSTOMER_PASSWORD before seeding test accounts.'
-            )
+            self.stdout.write(self.style.WARNING(
+                'Skipping test account creation; set SEED_ADMIN_PASSWORD, SEED_STAFF_PASSWORD, '
+                'and SEED_CUSTOMER_PASSWORD to create the demo accounts.'
+            ))
+            return
         for spec in [
             (admin_username, 'admin@test.com', 'ADMIN', 'CAV', 'Admin', password_by_role['ADMIN'], True, True),
             ('staff', 'staff@test.com', 'STAFF', 'CAV', 'Staff', password_by_role['STAFF'], True, False),
