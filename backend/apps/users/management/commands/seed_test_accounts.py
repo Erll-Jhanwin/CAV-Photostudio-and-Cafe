@@ -7,6 +7,7 @@ from booking.models import Package, Service
 from inventory.models import InventoryEvent, Product
 from inventory.recipe_defaults import ensure_default_ingredients_and_recipes
 from users.models import Customer
+from users.phone_numbers import normalize_philippine_mobile_number
 
 User = get_user_model()
 
@@ -25,28 +26,42 @@ class Command(BaseCommand):
 
     def seed_users(self):
         admin_username = os.environ.get('SEED_ADMIN_USERNAME', 'admin').strip() or 'admin'
+        admin_phone = normalize_philippine_mobile_number(os.environ.get('SEED_ADMIN_PHONE', ''))
         password_by_role = {
             'ADMIN': os.environ.get('SEED_ADMIN_PASSWORD', ''),
             'STAFF': os.environ.get('SEED_STAFF_PASSWORD', ''),
             'CUSTOMER': os.environ.get('SEED_CUSTOMER_PASSWORD', ''),
         }
         if not all(password_by_role.values()):
+            if admin_phone:
+                existing_admin = User.objects.filter(username=admin_username, role='ADMIN').first()
+                if existing_admin and existing_admin.phone_number != admin_phone:
+                    existing_admin.phone_number = admin_phone
+                    existing_admin.save(update_fields=['phone_number'])
+                    self.stdout.write(self.style.SUCCESS('Updated the seeded admin phone number.'))
             self.stdout.write(self.style.WARNING(
                 'Skipping test account creation; set SEED_ADMIN_PASSWORD, SEED_STAFF_PASSWORD, '
-                'and SEED_CUSTOMER_PASSWORD to create the demo accounts.'
+                'SEED_CUSTOMER_PASSWORD, and a valid SEED_ADMIN_PHONE to create usable demo accounts.'
+            ))
+            return
+        if not admin_phone:
+            self.stdout.write(self.style.WARNING(
+                'Skipping test account creation; set a valid SEED_ADMIN_PHONE for SMS admin verification.'
             ))
             return
         for spec in [
-            (admin_username, 'admin@test.com', 'ADMIN', 'CAV', 'Admin', password_by_role['ADMIN'], True, True),
-            ('staff', 'staff@test.com', 'STAFF', 'CAV', 'Staff', password_by_role['STAFF'], True, False),
-            ('customer', 'customer@test.com', 'CUSTOMER', 'CAV', 'Customer', password_by_role['CUSTOMER'], False, False),
+            (admin_username, 'admin@test.com', 'ADMIN', 'CAV', 'Admin', password_by_role['ADMIN'], True, True, admin_phone),
+            ('staff', 'staff@test.com', 'STAFF', 'CAV', 'Staff', password_by_role['STAFF'], True, False, None),
+            ('customer', 'customer@test.com', 'CUSTOMER', 'CAV', 'Customer', password_by_role['CUSTOMER'], False, False, None),
         ]:
-            username, email, role, first_name, last_name, password, is_staff, is_superuser = spec
+            username, email, role, first_name, last_name, password, is_staff, is_superuser, phone_number = spec
             user, _ = User.objects.get_or_create(username=username)
             user.email = email
             user.role = role
             user.first_name = first_name
             user.last_name = last_name
+            if phone_number is not None:
+                user.phone_number = phone_number
             user.is_staff = is_staff
             user.is_superuser = is_superuser
             user.is_active = True
