@@ -1,5 +1,5 @@
-import React, { createContext, useCallback, useState, useEffect, useContext } from 'react';
-import client, { clearStoredAuth, getApiErrorMessage } from '../api/client';
+import React, { createContext, useCallback, useState, useEffect, useContext, useRef } from 'react';
+import client, { beginAuthTransition, clearStoredAuth, getApiErrorMessage } from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -22,7 +22,9 @@ const readStoredValue = (key) => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(readStoredUser);
-  const [loading, setLoading] = useState(() => !readStoredUser());
+  const [loading, setLoading] = useState(() => Boolean(readStoredUser()));
+  const restoreControllerRef = useRef(null);
+  const loginInFlightRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -37,14 +39,21 @@ export const AuthProvider = ({ children }) => {
         return;
       }
 
+      const controller = new AbortController();
+      restoreControllerRef.current = controller;
+
       try {
         const cachedUser = JSON.parse(savedUser);
-        // The cached role lets the correct shell paint immediately while this request verifies the session.
+        // Keep the cached user in memory only while the session is verified. A
+        // stale role must not render a dashboard and start requests of its own.
         if (active) {
           setUser(cachedUser);
-          setLoading(false);
+          setLoading(true);
         }
-        const response = await client.get('/api/auth/profile/');
+        const response = await client.get('/api/auth/profile/', {
+          signal: controller.signal,
+          skipAuthRedirect: true,
+        });
         const profile = response.data || {};
         const userData = {
           id: profile.id,
@@ -61,12 +70,13 @@ export const AuthProvider = ({ children }) => {
         }
       } catch {
         // Keep a newer login intact when an older cached session fails to restore.
-        if (readStoredValue('user') === savedUser) {
+        if (readStoredValue('user') === savedUser && !loginInFlightRef.current) {
           clearStoredAuth();
           if (active) setUser(null);
         }
       } finally {
-        if (active) setLoading(false);
+        if (active && !loginInFlightRef.current) setLoading(false);
+        if (restoreControllerRef.current === controller) restoreControllerRef.current = null;
       }
     };
 
@@ -74,51 +84,75 @@ export const AuthProvider = ({ children }) => {
     return () => { active = false; };
   }, []);
 
+  const completeLogin = async (fallbackUser) => {
+    // Do not report success until the browser has proved that the HttpOnly
+    // cookie issued by the login response can authenticate a protected call.
+    const profileResponse = await client.get('/api/auth/profile/', { skipAuthRedirect: true });
+    const profile = profileResponse.data || {};
+    const userData = {
+      id: profile.id ?? fallbackUser.id,
+      username: profile.username || fallbackUser.username,
+      email: profile.email || fallbackUser.email,
+      role: profile.role || fallbackUser.role,
+      profile_picture_url: profile.profile_picture_url || fallbackUser.profile_picture_url || '',
+    };
+
+    localStorage.setItem('user', JSON.stringify(userData));
+    setUser(userData);
+    return userData;
+  };
+
   const login = async (username, password, verification = {}) => {
+    beginAuthTransition();
+    loginInFlightRef.current = true;
+    restoreControllerRef.current?.abort();
     try {
       const response = await client.post('/api/auth/login/', { username, password, ...verification });
       if (response.data.mfa_required) {
         return { success: false, mfaRequired: true, ...response.data };
       }
       const { role, email, id, profile_picture_url } = response.data;
-      
-      const userData = { id, username, email, role, profile_picture_url };
-      
-      localStorage.setItem('user', JSON.stringify(userData));
-      
-      setUser(userData);
+      const userData = await completeLogin({ id, username, email, role, profile_picture_url });
       return { success: true, user: userData };
     } catch (error) {
       console.error("Login failed:", error);
       const message = error.response?.status === 401
-        ? 'Invalid username or password.'
+        ? (error.config?.skipAuthRedirect
+          ? 'Your credentials were accepted, but the authenticated session could not be established. Please try again.'
+          : 'Invalid username or password.')
         : getApiErrorMessage(error, 'Unable to sign in. Please try again.');
       return { success: false, error: message };
+    } finally {
+      loginInFlightRef.current = false;
+      setLoading(false);
     }
   };
 
   const loginWithGoogle = async (credential, phoneNumber = '') => {
+    beginAuthTransition();
+    loginInFlightRef.current = true;
+    restoreControllerRef.current?.abort();
     try {
       const response = await client.post('/api/auth/google/', { credential, phone_number: phoneNumber });
       if (response.data.pending_verification) {
         return { success: false, pendingVerification: true, ...response.data };
       }
       const { role, username, email, id, profile_picture_url } = response.data;
-
-      const userData = { id, username, email, role, profile_picture_url };
-
-      localStorage.setItem('user', JSON.stringify(userData));
-
-      setUser(userData);
+      const userData = await completeLogin({ id, username, email, role, profile_picture_url });
       return { success: true, user: userData, created: response.data.created };
     } catch (error) {
       console.error("Google login failed:", error);
       const message = error.response?.data?.detail || getApiErrorMessage(error, 'Google authentication failed.');
       return { success: false, error: message, errors: error.response?.data || {} };
+    } finally {
+      loginInFlightRef.current = false;
+      setLoading(false);
     }
   };
 
   const logout = async () => {
+    beginAuthTransition();
+    restoreControllerRef.current?.abort();
     try {
       await client.post('/api/auth/logout/');
     } catch (error) {

@@ -56,7 +56,12 @@ PASSWORD_RESET_MAX_REQUESTS_PER_HOUR = int(os.environ.get('PASSWORD_RESET_MAX_RE
 AUTH_ACCESS_COOKIE_NAME = os.environ.get('AUTH_ACCESS_COOKIE_NAME', 'cav_access')
 AUTH_REFRESH_COOKIE_NAME = os.environ.get('AUTH_REFRESH_COOKIE_NAME', 'cav_refresh')
 AUTH_COOKIE_SECURE = env_bool('AUTH_COOKIE_SECURE', not DEBUG)
-AUTH_COOKIE_SAMESITE = os.environ.get('AUTH_COOKIE_SAMESITE', 'Lax')
+# The browser and API are deployed on separate origins. Production therefore
+# needs cross-site cookies, while local HTTP development must keep SameSite=Lax
+# because browsers reject SameSite=None unless Secure is also enabled.
+AUTH_COOKIE_SAMESITE = os.environ.get('AUTH_COOKIE_SAMESITE', 'None' if not DEBUG else 'Lax')
+if AUTH_COOKIE_SAMESITE.lower() == 'none' and not AUTH_COOKIE_SECURE:
+    AUTH_COOKIE_SAMESITE = 'Lax'
 AUTH_COOKIE_DOMAIN = os.environ.get('AUTH_COOKIE_DOMAIN') or None
 ADMIN_MFA_TTL_MINUTES = int(os.environ.get('ADMIN_MFA_TTL_MINUTES', '10'))
 ADMIN_MFA_MAX_ATTEMPTS = int(os.environ.get('ADMIN_MFA_MAX_ATTEMPTS', '5'))
@@ -249,7 +254,11 @@ CAPACITOR_ALLOWED_ORIGINS = [
     'https://localhost',
     'capacitor://localhost',
 ]
+DEPLOYED_FRONTEND_ORIGINS = [
+    'https://cav-photostudio-and-cafe-frontend.onrender.com',
+]
 CORS_ALLOWED_ORIGINS = list(dict.fromkeys([
+    *DEPLOYED_FRONTEND_ORIGINS,
     *env_list('CORS_ALLOWED_ORIGINS', [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
@@ -268,17 +277,19 @@ CORS_ALLOW_HEADERS = [
     'idempotency-key',
     'x-idempotency-key',
 ]
-CSRF_TRUSTED_ORIGINS = env_list(
-    'CSRF_TRUSTED_ORIGINS',
-    [origin for origin in CORS_ALLOWED_ORIGINS if origin.startswith(('http://', 'https://'))],
-)
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys([
+    *[origin for origin in CORS_ALLOWED_ORIGINS if origin.startswith(('http://', 'https://'))],
+    *env_list('CSRF_TRUSTED_ORIGINS'),
+]))
 
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False
 SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', not DEBUG)
 CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE', not DEBUG)
 SESSION_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = os.environ.get('CSRF_COOKIE_SAMESITE', AUTH_COOKIE_SAMESITE)
+if CSRF_COOKIE_SAMESITE.lower() == 'none' and not CSRF_COOKIE_SECURE:
+    CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_AGE = int(os.environ.get('SESSION_COOKIE_AGE', str(60 * 60 * 8)))
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_BROWSER_XSS_FILTER = True

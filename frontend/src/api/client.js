@@ -41,6 +41,9 @@ const client = axios.create({
 
 let csrfPromise = null;
 let refreshPromise = null;
+let refreshController = null;
+let csrfTokenCache = '';
+let authGeneration = 0;
 const queryCache = new Map();
 const pendingQueries = new Map();
 
@@ -52,15 +55,35 @@ const getCsrfCookie = () => {
   return cookie ? decodeURIComponent(cookie.slice('csrftoken='.length)) : '';
 };
 
+// A request started before a new login/logout must never be allowed to clear
+// the newer session when its response arrives later.
+export const beginAuthTransition = () => {
+  authGeneration += 1;
+  refreshController?.abort();
+  refreshController = null;
+  refreshPromise = null;
+  return authGeneration;
+};
+
 const ensureCsrfToken = () => {
   const existingToken = getCsrfCookie();
-  if (existingToken) return Promise.resolve(existingToken);
+  if (existingToken) {
+    csrfTokenCache = existingToken;
+    return Promise.resolve(existingToken);
+  }
+  if (csrfTokenCache) return Promise.resolve(csrfTokenCache);
   if (!csrfPromise) {
     csrfPromise = axios.get(`${API_BASE_URL}/api/auth/csrf/`, {
       timeout: 15000,
       withCredentials: true,
     })
-      .then(() => getCsrfCookie())
+      .then(response => {
+        // The CSRF cookie belongs to the API origin, so document.cookie on a
+        // separately hosted frontend cannot read it. The endpoint also
+        // returns the token explicitly for that deployment shape.
+        csrfTokenCache = response.data?.csrf_token || response.data?.csrfToken || getCsrfCookie();
+        return csrfTokenCache;
+      })
       .finally(() => {
         csrfPromise = null;
       });
@@ -146,6 +169,9 @@ const redirectToLogin = () => {
 // Browser authentication uses HttpOnly cookies; tokens never enter JavaScript storage.
 client.interceptors.request.use(
   async (config) => {
+    if (typeof config.authGeneration !== 'number') {
+      config.authGeneration = authGeneration;
+    }
     const method = String(config.method || 'get').toLowerCase();
     if (['post', 'put', 'patch', 'delete'].includes(method)) {
       const csrfToken = await ensureCsrfToken();
@@ -183,6 +209,10 @@ client.interceptors.response.use(
       '/api/auth/google/',
       '/api/auth/forgot-password/',
     ].some(path => requestUrl.includes(path));
+    const isStaleAuthRequest = (
+      typeof originalRequest.authGeneration === 'number'
+      && originalRequest.authGeneration !== authGeneration
+    );
     
     // If we get a 401 and we haven't retried yet
     if (
@@ -190,26 +220,40 @@ client.interceptors.response.use(
       error.response.status === 401 &&
       !originalRequest._retry &&
       !requestUrl.includes('/api/auth/token/refresh/') &&
-      !isPublicAuthRequest
+      !isPublicAuthRequest &&
+      !originalRequest.skipAuthRecovery &&
+      !isStaleAuthRequest
     ) {
       originalRequest._retry = true;
       try {
         if (!refreshPromise) {
+          const refreshControllerForRequest = new AbortController();
+          refreshController = refreshControllerForRequest;
           refreshPromise = axios.post(`${API_BASE_URL}/api/auth/token/refresh/`, {}, {
             timeout: 15000,
             withCredentials: true,
+            signal: refreshControllerForRequest.signal,
           }).finally(() => {
-            refreshPromise = null;
+            if (refreshController === refreshControllerForRequest) {
+              refreshPromise = null;
+              refreshController = null;
+            }
           });
         }
         const res = await refreshPromise;
-        if (res.status === 200) return client(originalRequest);
+        if (res.status === 200 && originalRequest.authGeneration === authGeneration) {
+          return client(originalRequest);
+        }
       } catch (refreshError) {
-        redirectToLogin();
+        if (originalRequest.authGeneration === authGeneration && !originalRequest.skipAuthRedirect) {
+          redirectToLogin();
+        }
         return Promise.reject(refreshError);
       }
 
-      redirectToLogin();
+      if (originalRequest.authGeneration === authGeneration && !originalRequest.skipAuthRedirect) {
+        redirectToLogin();
+      }
     }
 
     error.userMessage = getApiErrorMessage(error);

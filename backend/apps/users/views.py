@@ -56,7 +56,10 @@ ADMIN_MFA_MAX_ATTEMPTS = int(getattr(settings, 'ADMIN_MFA_MAX_ATTEMPTS', 5))
 
 @ensure_csrf_cookie
 def csrf_cookie_view(request):
-    return JsonResponse({'detail': 'CSRF cookie ready.'})
+    # Return the token as well as setting the cookie. A separately hosted SPA
+    # cannot read document.cookie for the API origin, but it can safely echo
+    # this token in the X-CSRFToken header on state-changing requests.
+    return JsonResponse({'detail': 'CSRF cookie ready.', 'csrf_token': get_token(request)})
 
 
 def set_auth_cookies(response, access, refresh=None, request=None):

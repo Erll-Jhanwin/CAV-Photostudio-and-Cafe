@@ -1,3 +1,5 @@
+import json
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.cache import cache
 from django.test import TestCase, override_settings
@@ -266,6 +268,21 @@ class AccountCrudTests(TestCase):
         self.assertEqual(logout_response.status_code, 200)
         self.assertEqual(client.post('/api/auth/token/refresh/', format='json').status_code, 401)
         self.assertEqual(client.cookies.get('cav_refresh').value, '')
+
+    def test_cross_origin_csrf_bootstrap_returns_a_token_and_cors_headers(self):
+        response = self.client.get(
+            '/api/auth/csrf/',
+            HTTP_ORIGIN='https://cav-photostudio-and-cafe-frontend.onrender.com',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(json.loads(response.content)['csrf_token'])
+        self.assertTrue(response.cookies['csrftoken'].value)
+        self.assertEqual(
+            response.headers['Access-Control-Allow-Origin'],
+            'https://cav-photostudio-and-cafe-frontend.onrender.com',
+        )
+        self.assertEqual(response.headers['Access-Control-Allow-Credentials'], 'true')
 
     @override_settings(IPROG_SMS_API_TOKEN='test-token')
     @patch('users.views.verify_password_reset_otp', side_effect=[False, True])
