@@ -14,14 +14,15 @@ from chatbot.actions import (
     execute_chat_action,
     propose_chat_action,
 )
-from chatbot.rag import build_hybrid_response
+from chatbot.knowledge import DEFAULT_FAQS, STUDIO_ADDRESS
+from chatbot.llm import generate_grounded_response, normalize_history
+from chatbot.rag import build_hybrid_response, rank_knowledge
 
 logger = logging.getLogger(__name__)
 MAX_CHATBOT_QUESTION_LENGTH = 500
 FAQ_ACTION = 'FAQ_RECORD'
 APPROVED_LEARNING_ACTION = 'CHATBOT_APPROVED_RESPONSE'
 CHATBOT_QUERY_ACTION = 'CHATBOT_QUERY'
-STUDIO_ADDRESS = '028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas.'
 
 SENSITIVE_PATTERNS = [
     r'\b(api[_ -]?key|secret[_ -]?key|client[_ -]?secret|service[_ -]?role|database[_ -]?url|db[_ -]?url)\b',
@@ -37,21 +38,6 @@ EMAIL_RE = re.compile(r'[\w.\-+]+@[\w.\-]+\.\w+')
 PHONE_RE = re.compile(r'(?<!\d)(?:\+?63|0)?9\d{9}(?!\d)')
 LONG_NUMBER_RE = re.compile(r'(?<!\d)\d{10,}(?!\d)')
 URL_RE = re.compile(r'https?://\S+')
-
-DEFAULT_FAQS = [
-    {"id": 1, "question": "What are your operating hours?", "answer": "CAV Photo Studio and Cafe is open daily from 9:00 AM to 7:00 PM Philippine time (Asia/Manila, UTC+8).", "tags": "hours,schedule,open"},
-    {"id": 2, "question": "How do I book a studio session?", "answer": "Log in, open Book Session, choose a package, select an available date and time, then submit your booking.", "tags": "book,booking,session,reserve"},
-    {"id": 3, "question": "What packages do you offer for photo studio?", "answer": "We offer Studio Session packages for Solo, Couple, Friends, Family, and Birthday sessions, plus a Standard Event Package. Package details and prices are shown in the booking page.", "tags": "packages,price,studio,solo,couple,friends,family,birthday,event"},
-    {"id": 4, "question": "Can we walk in for cafe or photo studio?", "answer": "Cafe walk-ins are welcome. Studio walk-ins depend on room availability, so advance booking is recommended.", "tags": "walkin,cafe,studio"},
-    {"id": 5, "question": "Where is CAV located?", "answer": STUDIO_ADDRESS, "tags": "location,address,where,directions"},
-    {"id": 6, "question": "How do I reset my password?", "answer": "Open the sign-in page, choose Forgot password, enter your registered email, verify the OTP, then set a new strong password.", "tags": "password,reset,forgot,otp,login,sign in"},
-]
-KNOWLEDGE_STOPWORDS = {
-    'a', 'an', 'and', 'are', 'can', 'do', 'does', 'for', 'how', 'i', 'is',
-    'me', 'my', 'of', 'or', 'our', 'the', 'to', 'what', 'where', 'you',
-    'your', 'ba', 'ko', 'ng', 'sa',
-}
-
 
 class FAQSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
@@ -131,8 +117,8 @@ def asks_for_studio_address(question):
         return bool(re.search(r'\b(?:studio|cav|business|your)\b', normalized))
     return bool(
         re.search(r'\b(?:location|located|directions)\b', normalized)
-        or re.search(r'\bwhere\s+(?:is|are)\s+(?:cav|the studio|you)\b', normalized)
-        or re.search(r'\b(?:saan|nasaan)\b.*\b(?:cav|studio|kayo|ninyo)\b', normalized)
+        or re.search(r'\bwhere\s+(?:is|are)\s+(?:cav|the studio|the cafe|the café|cafe|café|you)\b', normalized)
+        or re.search(r'\b(?:saan|nasaan)\b.*\b(?:cav|studio|cafe|café|kayo|ninyo)\b', normalized)
     )
 
 
@@ -194,31 +180,48 @@ def get_chatbot_fallback_response(best_faq=None, lang='en'):
     if best_faq:
         return clean_response_text(best_faq["answer"])
     if lang == 'tl':
-        return "Hindi ko makita ang eksaktong sagot. Open ang CAV araw-araw mula 9:00 AM hanggang 7:00 PM Philippine time (Asia/Manila, UTC+8)."
-    return "I couldn't find a direct answer. CAV is open daily from 9:00 AM to 7:00 PM Philippine time (Asia/Manila, UTC+8)."
+        return "Hindi ko sigurado kung ano ang kailangan mo. Makakatulong ako sa hours, packages, café menu, availability, bookings, at password reset. Ano ang gusto mong malaman?"
+    return "I’m not sure I understood. I can help with hours, packages, the café menu, availability, bookings, and password reset. What would you like to know?"
 
 
 def score_knowledge_match(question, entry):
-    words = set(re.sub(r'[^a-z0-9\s]', ' ', question.lower()).split()) - KNOWLEDGE_STOPWORDS
-    q_words = set(re.sub(r'[^a-z0-9\s]', ' ', str(entry.get("question", "")).lower()).split()) - KNOWLEDGE_STOPWORDS
-    t_words = set(str(entry.get("tags", "")).lower().replace(',', ' ').split()) - KNOWLEDGE_STOPWORDS
-    if not words:
-        return 0
-    score = len(words.intersection(q_words.union(t_words)))
-    if str(entry.get("question", "")).lower() in question.lower():
-        score += 5
-    return score
+    """Compatibility helper for callers that still need a FAQ score."""
+    query = set(re.findall(r'[a-z0-9]+', str(question or '').casefold()))
+    faq = set(re.findall(r'[a-z0-9]+', str(entry.get('question', '')).casefold()))
+    tags = set(re.findall(r'[a-z0-9]+', str(entry.get('tags', '')).casefold()))
+    return len(query.intersection(faq)) * 2 + len(query.intersection(tags))
 
 
 def find_best_knowledge(question, role):
-    best_entry = None
-    best_score = 0
-    for entry in get_approved_knowledge(role):
-        score = score_knowledge_match(question, entry)
-        if score > best_score:
-            best_score = score
-            best_entry = entry
-    return best_entry if best_score > 0 else None
+    matches = rank_knowledge(question, role, limit=1)
+    return matches[0] if matches else None
+
+
+def localized_knowledge_answer(entry, lang):
+    if not entry:
+        return ''
+    if lang == 'tl' and entry.get('answer_tl'):
+        return entry['answer_tl']
+    return entry.get('answer', '')
+
+
+def contextual_question(question, history):
+    """Resolve short follow-ups without treating assistant text as facts."""
+    user_messages = [item['content'] for item in normalize_history(history) if item['role'] == 'user']
+    if not user_messages:
+        return question
+    previous = user_messages[-1]
+    if previous.casefold() == question.casefold():
+        return question
+    normalized = question.casefold()
+    if normalized in {'thanks', 'thank you', 'salamat', 'got it', 'okay', 'ok', 'sige'}:
+        return question
+    continuation = (
+        len(normalized.split()) <= 5
+        or normalized.startswith(('and ', 'what about', 'how about', 'how much', 'is it', 'what is it', 'paano ', 'magkano '))
+        or normalized in {'yes', 'no', 'okay', 'sige', 'oo', 'hindi'}
+    )
+    return f'{previous} {question}' if continuation else question
 
 
 def log_chatbot_query(request, question, response_text, **metadata):
@@ -273,15 +276,17 @@ class ChatbotQueryView(views.APIView):
         if len(question) > MAX_CHATBOT_QUESTION_LENGTH:
             return Response({"detail": f"Question must be {MAX_CHATBOT_QUESTION_LENGTH} characters or fewer."}, status=status.HTTP_400_BAD_REQUEST)
 
+        history = normalize_history(request.data.get('history'))
+        intent_question = contextual_question(question, history)
         lang = detect_language(question)
         role = current_role(request.user)
 
         if asks_for_sensitive_or_internal_data(question):
             response_text = safe_refusal(lang)
             log_chatbot_query(request, question, response_text, blocked=True, reason="sensitive_or_internal_request")
-            return Response({"question": question, "response": response_text, "matched_faq": None, "source": "safety"})
+            return Response({"question": question, "response": response_text, "matched_faq": None, "source": "safety", "language": lang})
 
-        if asks_for_studio_address(question):
+        if asks_for_studio_address(intent_question):
             response_text = STUDIO_ADDRESS
             log_chatbot_query(request, question, response_text, source='studio_address')
             return Response({"question": question, "response": response_text, "matched_faq": "Where is CAV located?", "source": "studio_address", "citations": [], "language": lang})
@@ -306,7 +311,7 @@ class ChatbotQueryView(views.APIView):
                 log_chatbot_query(request, question, response_text, source='booking_action_proposal', action=result.get('action'))
                 return Response({"question": question, "response": response_text, **result, "language": lang})
 
-            hybrid = build_hybrid_response(question, role)
+            hybrid = build_hybrid_response(intent_question, role, lang)
             if hybrid:
                 response_text, source, citations = hybrid
                 response_text = clean_response_text(response_text)
@@ -332,27 +337,47 @@ class ChatbotQueryView(views.APIView):
                     "language": lang,
                 })
 
-            response_text = build_booking_chatbot_response(question, request.user if request.user.is_authenticated else None)
+            response_text = build_booking_chatbot_response(
+                intent_question,
+                request.user if request.user.is_authenticated else None,
+                lang,
+            )
             if response_text:
                 response_text = clean_response_text(response_text)
                 log_chatbot_query(request, question, response_text, source="live_database")
                 return Response({"question": question, "response": response_text, "matched_faq": None, "source": "live_database", "citations": [], "language": lang})
 
-            best_faq = find_best_knowledge(question, role)
-            response_text = clean_response_text(get_chatbot_fallback_response(best_faq, lang))
+            knowledge_matches = rank_knowledge(intent_question, role, limit=4)
+            best_faq = knowledge_matches[0] if knowledge_matches else None
+            model_response = generate_grounded_response(
+                question,
+                language=lang,
+                context=knowledge_matches,
+                history=history,
+                role=role,
+            )
+            response_text = clean_response_text(
+                model_response
+                or localized_knowledge_answer(best_faq, lang)
+                or get_chatbot_fallback_response(best_faq, lang)
+            )
+            response_source = 'openrouter' if model_response else (
+                best_faq.get('source', 'approved_faq') if best_faq else 'fallback'
+            )
             log_chatbot_query(
                 request,
                 question,
                 response_text,
-                source=best_faq.get("source", "approved_faq") if best_faq else "fallback",
+                source=response_source,
                 matched_faq=best_faq.get("question") if best_faq else None,
                 needs_review=best_faq is None,
+                history_items=len(history),
             )
             return Response({
                 "question": question,
                 "response": response_text,
                 "matched_faq": best_faq["question"] if best_faq else None,
-                "source": best_faq.get("source", "approved_faq") if best_faq else "fallback",
+                "source": response_source,
                 "citations": [f"faq:{best_faq['id']}"] if best_faq and best_faq.get('id') else [],
                 "language": lang,
             })

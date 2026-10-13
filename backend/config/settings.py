@@ -207,6 +207,16 @@ OCR_API_TIMEOUT = int(os.environ.get('OCR_API_TIMEOUT', '20'))
 OCR_SPACE_ENGINE = os.environ.get('OCR_SPACE_ENGINE', '2')
 OCR_FALLBACK_TESSERACT = env_bool('OCR_FALLBACK_TESSERACT', True)
 
+# Optional grounded language generation. Live prices, schedules, and booking
+# mutations are answered locally; OpenRouter only rewrites approved context.
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '')
+OPENROUTER_API_URL = os.environ.get('OPENROUTER_API_URL', 'https://openrouter.ai/api/v1/chat/completions')
+OPENROUTER_MODEL = os.environ.get('OPENROUTER_MODEL', 'openai/gpt-4o-mini')
+OPENROUTER_TIMEOUT_SECONDS = int(os.environ.get('OPENROUTER_TIMEOUT_SECONDS', '12'))
+OPENROUTER_MAX_TOKENS = int(os.environ.get('OPENROUTER_MAX_TOKENS', '240'))
+OPENROUTER_SITE_URL = os.environ.get('OPENROUTER_SITE_URL', '')
+OPENROUTER_APP_NAME = os.environ.get('OPENROUTER_APP_NAME', 'CAV Photo Studio and Cafe')
+
 # REST Framework configurations
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

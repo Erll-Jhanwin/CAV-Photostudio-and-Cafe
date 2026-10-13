@@ -1280,15 +1280,24 @@ export default function CustomerDashboard() {
     setChatInput('');
     setChatLoading(true);
     try {
-      const payload = action ? { question: msg, action: { ...action, confirm: true } } : { question: msg };
+      const history = chatMessages
+        .slice(-8)
+        .filter(item => item && (item.role === 'user' || item.role === 'assistant') && item.content)
+        .map(item => ({ role: item.role, content: String(item.content).slice(0, 500) }));
+      const payload = action
+        ? { question: msg, history, action: { ...action, confirm: true } }
+        : { question: msg, history };
       const res = await client.post('/api/chatbot/query/', payload);
       setChatMessages(p => [...p, { role: 'assistant', content: res.data.response, action: res.data.action }]);
     } catch {
-      setChatMessages(p => [...p, { role: 'assistant', content: 'I cannot verify that information right now. Please try again or contact CAV staff directly.' }]);
+      const fallback = /\b(ba|po|paano|magkano|pakete|saan|nasaan|bukas|ngayon)\b/i.test(msg)
+        ? 'Hindi ko ma-verify ang impormasyon ngayon. Subukan muli o makipag-ugnayan sa staff ng CAV.'
+        : 'I cannot verify that information right now. Please try again or contact CAV staff directly.';
+      setChatMessages(p => [...p, { role: 'assistant', content: fallback }]);
     } finally {
       setChatLoading(false);
     }
-  }, [chatLoading]);
+  }, [chatLoading, chatMessages]);
 
   const sendChatMessage = useCallback((message) => sendChatRequest(message), [sendChatRequest]);
   const sendChatAction = useCallback((action) => sendChatRequest('Confirm booking action', action), [sendChatRequest]);

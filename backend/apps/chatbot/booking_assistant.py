@@ -15,12 +15,17 @@ from booking.models import Booking, Package, Service
 
 
 TAGALOG_MARKERS = {
-    'ako', 'akin', 'ang', 'ano', 'anong', 'araw', 'ba', 'bakante', 'bukas',
-    'gusto', 'hanggang', 'kailan', 'kailangan', 'kamusta', 'kung', 'lang',
-    'may', 'meron', 'ng', 'ngayon', 'oras', 'pa', 'pakete', 'para', 'petsa',
-    'po', 'puwede', 'pwede', 'sa', 'saan',
-    'sinong', 'tanong', 'wala',
+    'ako', 'akin', 'ano', 'anong', 'araw', 'bakante', 'bukas', 'gusto',
+    'hanggang', 'kailan', 'kailangan', 'kamusta', 'kung', 'lang',
+    'magkano', 'magbook', 'mag-book', 'meron', 'ngayon', 'nasaan', 'oras',
+    'pakete', 'paano', 'para', 'petsa', 'presyo', 'po', 'puwede', 'pwede',
+    'saan', 'salamat', 'sinong', 'tanong', 'wala', 'walang', 'mga', 'ninyo',
+    'kayo', 'kami', 'namin', 'ko', 'mo',
 }
+
+# Function words such as ``sa``, ``ng``, and ``ang`` occur naturally in
+# English names and should not make an otherwise English question Tagalog.
+TAGALOG_WEAK_MARKERS = {'ang', 'ba', 'ng', 'pa', 'sa'}
 
 BOOKING_TERMS = {
     'appointment', 'appointments', 'availability', 'available', 'book',
@@ -73,8 +78,12 @@ def normalize_text(value):
 
 def detect_language(question):
     words = set(normalize_text(question).split())
-    tagalog_hits = len(words.intersection(TAGALOG_MARKERS))
-    return 'tl' if tagalog_hits >= 1 else 'en'
+    strong_hits = len(words.intersection(TAGALOG_MARKERS - TAGALOG_WEAK_MARKERS))
+    weak_hits = len(words.intersection(TAGALOG_WEAK_MARKERS))
+    # A single strong Tagalog word (magkano, paano, po, etc.) is enough. Weak
+    # grammatical markers need to appear twice so English is not misclassified.
+    short_ba_question = 'ba' in words and len(words) <= 4
+    return 'tl' if strong_hits >= 1 or weak_hits >= 2 or short_ba_question else 'en'
 
 
 def is_booking_related(question):
@@ -393,11 +402,11 @@ def asks_how_to_book(question):
     return procedural and not any(term in q for term in availability_terms)
 
 
-def build_booking_chatbot_response(question, user=None):
+def build_booking_chatbot_response(question, user=None, language=None):
     if not is_booking_related(question):
         return None
 
-    lang = detect_language(question)
+    lang = language or detect_language(question)
     q = normalize_text(question)
     day = parse_requested_date(question)
     requested_time = parse_requested_time(question)
@@ -419,6 +428,11 @@ def build_booking_chatbot_response(question, user=None):
             "enter the customer details, then submit the booking."
         )
 
+    if any(term in q for term in ['walk in', 'walk-in', 'walkin', 'drop in', 'drop-in']):
+        if lang == 'tl':
+            return 'Tumatanggap ng walk-in sa cafe. Depende sa room availability ang studio walk-in, kaya mas mainam ang advance booking.'
+        return 'Cafe walk-ins are welcome. Studio walk-ins depend on room availability, so advance booking is recommended.'
+
     if any(term in q for term in ['hour', 'hours', 'open', 'closing', 'sarado', 'bukas ba', 'oras']):
         if not any(term in q for term in ['slot', 'available', 'availability', 'schedule', 'booked', 'date']):
             return business_hours_text(lang)
@@ -432,7 +446,8 @@ def build_booking_chatbot_response(question, user=None):
 
     if asks_for_packages(question):
         prefix = "Available packages:" if lang == 'en' else "Mga available na package:"
-        return f"{prefix}\n{format_package_list(all_packages, lang)}\n\n{business_hours_text(lang)}"
+        selected_packages = packages or all_packages
+        return f"{prefix}\n{format_package_list(selected_packages, lang)}\n\n{business_hours_text(lang)}"
 
     if not all_packages:
         return "Wala pang packages na available kaya hindi pa ako makapag-check ng schedule." if lang == 'tl' else "There are no packages available yet, so I can't check schedules."
