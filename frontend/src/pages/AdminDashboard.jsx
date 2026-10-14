@@ -5,13 +5,13 @@ import {
   TrendingUp, BarChart2, Users, MessageSquare, Play, Package,
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
   X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
-  ArrowDownRight, Eye, Camera, Printer, ChevronLeft, ChevronRight,
+  ArrowDownRight, Eye, Camera, Printer, Upload, ChevronLeft, ChevronRight,
   Star, Quote, ThumbsUp, ThumbsDown, Minus
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart
+  Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, BarChart, Bar
 } from 'recharts';
 import { Button, IconButton } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -139,8 +139,6 @@ const getRangeDates = (preset, customStart, customEnd) => {
 
 const sumBy = (rows, key) => rows.reduce((total, row) => total + Number(row?.[key] || 0), 0);
 
-const getAverage = (rows, key) => rows.length ? sumBy(rows, key) / rows.length : 0;
-
 const emptyAccountForm = () => ({
   username: '',
   password: '',
@@ -187,6 +185,9 @@ function SalesForecastTooltip({ active, payload, label }) {
       <p className="mb-2 font-black text-espresso">{formatChartDate(label || row.date)}</p>
       {row.actual_sales != null && (
         <p className="font-bold text-espresso/75">Actual: {formatCurrency(row.actual_sales)}</p>
+      )}
+      {row.is_imputed && (
+        <p className="font-semibold text-amber-700">No recorded sale (gap filled for the model)</p>
       )}
       {row.forecast_sales != null && (
         <p className="font-bold text-gold-dark">Forecast: {formatCurrency(row.forecast_sales)}</p>
@@ -306,6 +307,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
   const [dataError, setDataError] = useState('');
+  const [forecastError, setForecastError] = useState('');
 
   const [faqQuestion, setFaqQuestion] = useState('');
   const [faqAnswer, setFaqAnswer] = useState('');
@@ -326,10 +328,12 @@ export default function AdminDashboard() {
   const [faqErrors, setFaqErrors] = useState({});
 
   const [retrainLoading, setRetrainLoading] = useState(false);
+  const [salesHistoryFile, setSalesHistoryFile] = useState(null);
+  const [salesHistoryUploadLoading, setSalesHistoryUploadLoading] = useState(false);
   const [datePreset, setDatePreset] = useState('month');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-  const [chartGrain, setChartGrain] = useState('daily');
+  const [forecastView, setForecastView] = useState('next_7_days');
   const [visibleSeries, setVisibleSeries] = useState({
     actual: true,
     forecast: true,
@@ -434,7 +438,7 @@ export default function AdminDashboard() {
       if (!background) setLoading(true);
       const range = getRangeDates(datePreset, customStart, customEnd);
       const responses = await Promise.allSettled([
-        getCached('/api/dashboard/analytics/', { params: { ...range, grain: chartGrain } }, { force: background }),
+        getCached('/api/dashboard/analytics/', { params: { ...range, grain: 'daily' } }, { force: background }),
         getCached('/api/forecasting/predictions/', {}, { force: background }),
       ]);
       if (requestSeq !== dashboardFetchSeqRef.current) return;
@@ -443,7 +447,10 @@ export default function AdminDashboard() {
         return response?.status === 'fulfilled' ? response.value?.data || null : null;
       };
       if (data(0)) setAnalytics(normalizeDashboardAnalytics(data(0)));
-      if (data(1)) setForecast(data(1));
+      if (data(1)) {
+        setForecast(data(1));
+        setForecastError(data(1)?.status && data(1).status !== 'ok' ? (data(1).detail || 'Sales history is not ready for forecasting.') : '');
+      }
 
       const failedResponse = responses.find(response => response.status === 'rejected');
       setDataError(failedResponse
@@ -460,7 +467,7 @@ export default function AdminDashboard() {
         setInitialDataReady(true);
       }
     }
-  }, [datePreset, customStart, customEnd, chartGrain]);
+  }, [datePreset, customStart, customEnd]);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') {
@@ -701,10 +708,31 @@ export default function AdminDashboard() {
 
   const handleRetrain = async () => {
     setRetrainLoading(true);
-    setTimeout(() => {
+    try {
+      await fetchData();
+    } finally {
       setRetrainLoading(false);
-      fetchData();
-    }, 1500);
+    }
+  };
+
+  const handleSalesHistoryUpload = async () => {
+    if (!salesHistoryFile) {
+      setForecastError('Choose a CSV file before importing sales history.');
+      return;
+    }
+    setSalesHistoryUploadLoading(true);
+    setForecastError('');
+    try {
+      const formData = new FormData();
+      formData.append('file', salesHistoryFile);
+      await client.post('/api/forecasting/history/import/', formData);
+      setSalesHistoryFile(null);
+      await fetchData({ background: true });
+    } catch (error) {
+      setForecastError(getApiErrorMessage(error, 'Sales history could not be imported.'));
+    } finally {
+      setSalesHistoryUploadLoading(false);
+    }
   };
 
   const handleDeleteFAQ = async (id) => {
@@ -1121,13 +1149,22 @@ export default function AdminDashboard() {
   const sortedPos = sortRows(analytics?.recent_pos_transactions, posSort);
   const bookingPageRows = paginateRows(sortedBookings, bookingPage, bookingPageSize);
   const posPageRows = paginateRows(sortedPos, posPage, posPageSize);
-  const salesForecastRows = asArray(forecast?.sales_forecast);
-  const salesHistoryRows = asArray(analytics?.sales_history_chart);
+  const allForecastRows = asArray(forecast?.sales_forecast);
+  const monthlyForecastRows = asArray(forecast?.monthly_forecast);
+  const salesForecastRows = forecastView === 'next_week'
+    ? allForecastRows.slice(7, 14)
+    : forecastView === 'upcoming_months'
+      ? monthlyForecastRows
+      : allForecastRows.slice(0, 7);
+  const csvHistoryRows = asArray(forecast?.actual_history);
+  const dashboardHistoryRows = asArray(analytics?.sales_history_chart);
+  const salesHistoryRows = csvHistoryRows.length ? csvHistoryRows : dashboardHistoryRows;
   const forecastChartData = [
     ...salesHistoryRows.map(row => ({
       date: row.date,
-      actual_sales: Number(row.total_revenue || 0),
-      combined_sales: Number(row.total_revenue || 0),
+      actual_sales: Number(row.actual_sales ?? row.total_revenue ?? 0),
+      combined_sales: Number(row.actual_sales ?? row.total_revenue ?? 0),
+      is_imputed: Boolean(row.is_imputed),
     })),
     ...salesForecastRows.map(row => ({
       date: row.target_date,
@@ -1137,18 +1174,16 @@ export default function AdminDashboard() {
       upper_bound: Number(row.upper_bound || 0),
     })),
   ];
-  const nextDayForecast = Number(salesForecastRows[0]?.predicted_sales || 0);
-  const nextWeekForecast = sumBy(salesForecastRows, 'predicted_sales');
-  const nextMonthForecast = Math.round(getAverage(salesForecastRows, 'predicted_sales') * 30);
-  const forecastAccuracy = salesForecastRows.length
-    ? Math.round(Math.max(0, Math.min(99, 100 - (
-      salesForecastRows.reduce((total, row) => {
-        const predicted = Math.max(Number(row.predicted_sales || 0), 1);
-        const intervalWidth = Math.max(Number(row.upper_bound || 0) - Number(row.lower_bound || 0), 0);
-        return total + ((intervalWidth / predicted) * 35);
-      }, 0) / salesForecastRows.length
-    ))))
-    : 0;
+  const next7Summary = asRecord(forecast?.forecast_ranges?.next_7_days);
+  const nextWeekSummary = asRecord(forecast?.forecast_ranges?.next_week);
+  const next7Forecast = Number(next7Summary.total_predicted_sales ?? sumBy(allForecastRows.slice(0, 7), 'predicted_sales'));
+  const nextWeekForecast = Number(nextWeekSummary.total_predicted_sales ?? sumBy(allForecastRows.slice(7, 14), 'predicted_sales'));
+  const forecastMetrics = asRecord(forecast?.metrics);
+  const forecastAccuracy = forecastMetrics.accuracy_available && forecastMetrics.wape != null
+    ? Math.round(Math.max(0, Math.min(100, (1 - Math.min(Number(forecastMetrics.wape), 1)) * 100)))
+    : null;
+  const productForecastSummary = asArray(forecast?.product_forecast_summary);
+  const forecastQualityMessage = forecast?.data_sufficiency?.message || 'No model evaluation is available.';
   const topProducts = asArray(analytics?.top_selling_products);
   const topPackages = asArray(analytics?.top_booked_packages);
   const topProductRows = paginateRows(topProducts, topProductsPage, topProductsPageSize);
@@ -1433,23 +1468,23 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {[
                   {
-                    label: 'Predicted Sales',
-                    value: formatCurrency(nextDayForecast),
-                    detail: salesForecastRows[0] ? `Next day: ${formatChartDate(salesForecastRows[0].target_date)}` : 'Run forecast to generate next-day projection',
+                    label: 'Next 7 Days',
+                    value: formatCurrency(next7Forecast),
+                    detail: next7Summary.start_date ? `${formatChartDate(next7Summary.start_date)} – ${formatChartDate(next7Summary.end_date)}` : 'No forecast available',
                     icon: TrendingUp,
                     className: 'bg-gold/10 text-gold-dark border-gold/20',
                   },
                   {
-                    label: 'Expected Revenue',
+                    label: 'Following Week',
                     value: formatCurrency(nextWeekForecast),
-                    detail: `7-day forecast · 30-day outlook ${formatCurrency(nextMonthForecast)}`,
+                    detail: nextWeekSummary.start_date ? `${formatChartDate(nextWeekSummary.start_date)} – ${formatChartDate(nextWeekSummary.end_date)}` : 'No forecast available',
                     icon: DollarSign,
                     className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
                   },
                   {
-                    label: 'Forecast Accuracy',
-                    value: salesForecastRows.length ? `${forecastAccuracy}%` : 'N/A',
-                    detail: 'Estimated from ML confidence interval width',
+                    label: 'Backtest Reliability',
+                    value: forecastAccuracy == null ? 'N/A' : `${forecastAccuracy}%`,
+                    detail: forecastAccuracy == null ? forecastQualityMessage : `Held-out WAPE ${Number(forecastMetrics.wape).toLocaleString('en-PH', { style: 'percent', maximumFractionDigits: 1 })}`,
                     icon: BarChart2,
                     className: 'bg-blue-50 text-blue-700 border-blue-200',
                   },
@@ -1469,15 +1504,40 @@ export default function AdminDashboard() {
                 ))}
               </div>
 
+              {forecastError && (
+                <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">
+                  Forecast unavailable: {forecastError}
+                </div>
+              )}
+              {!forecastError && forecast?.status === 'ok' && (
+                <div className={`rounded-2xl border px-4 py-3 text-xs ${forecast?.data_sufficiency?.is_sufficient ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                  <p className="font-black">{forecast?.data_sufficiency?.is_sufficient ? 'Backtested forecast available' : 'Baseline forecast only'}</p>
+                  <p className="mt-1 font-semibold opacity-80">{forecast?.data_sufficiency?.message}</p>
+                  <p className="mt-1 opacity-70">Source: {forecast.source_file} · Imported {forecast.imported_at ? formatChartDate(forecast.imported_at) : 'unknown'} · Refresh after importing a new sales-history snapshot.</p>
+                </div>
+              )}
+
               <div className="animate-in-up">
                 <Card className="rounded-[24px]" padding={false}>
                   <div className="p-5 md:p-6">
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
-                      <CardHeader title="Sales Analytics" subtitle="Actual sales with ML forecast, projected revenue, and confidence bounds" className="p-0" />
-                      <div className="flex flex-wrap gap-2">
-                        {['daily', 'weekly', 'monthly'].map(grain => (
-                          <button key={grain} onClick={() => setChartGrain(grain)} className={`px-3 py-2 rounded-2xl text-[11px] font-black capitalize transition-all ${chartGrain === grain ? 'bg-espresso text-gold' : 'bg-cream text-espresso/60 hover:text-espresso'}`}>
-                            {grain}
+                      <CardHeader title="Sales Analytics" subtitle={`${forecast?.history_start && forecast?.history_end ? `CSV actuals ${formatChartDate(forecast.history_start)} – ${formatChartDate(forecast.history_end)}` : 'Recorded sales'} with ${forecast?.data_sufficiency?.is_sufficient ? 'backtested' : 'baseline'} forecast. Missing dates are marked in the tooltip.`} className="p-0" />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="inline-flex cursor-pointer items-center rounded-2xl bg-cream px-3 py-2 text-[11px] font-black text-espresso/70 hover:text-espresso">
+                          <Upload className="mr-1.5 h-3.5 w-3.5" />
+                          {salesHistoryFile ? salesHistoryFile.name : 'Choose sales CSV'}
+                          <input type="file" accept=".csv,text/csv" className="sr-only" onChange={event => setSalesHistoryFile(event.target.files?.[0] || null)} />
+                        </label>
+                        <Button size="sm" variant="outline" loading={salesHistoryUploadLoading} disabled={!salesHistoryFile} icon={Upload} onClick={handleSalesHistoryUpload}>
+                          Import & Refresh
+                        </Button>
+                        {[
+                          ['next_7_days', 'Next 7 days'],
+                          ['next_week', 'Following week'],
+                          ['upcoming_months', 'Upcoming months'],
+                        ].map(([key, label]) => (
+                          <button key={key} onClick={() => setForecastView(key)} className={`px-3 py-2 rounded-2xl text-[11px] font-black transition-all ${forecastView === key ? 'bg-espresso text-gold' : 'bg-cream text-espresso/60 hover:text-espresso'}`}>
+                            {label}
                           </button>
                         ))}
                         {[
@@ -1493,7 +1553,7 @@ export default function AdminDashboard() {
                     </div>
                     <div className="h-[300px] 2xl:h-[360px] w-full">
                       {forecastChartData.length > 0 ? (
-                        <DashboardChartBoundary resetKey={`${chartGrain}:${forecastChartData.length}:${visibleSeries.actual}:${visibleSeries.forecast}:${visibleSeries.combined}`}>
+                        <DashboardChartBoundary resetKey={`${forecastView}:${forecastChartData.length}:${visibleSeries.actual}:${visibleSeries.forecast}:${visibleSeries.combined}`}>
                           <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart data={forecastChartData} margin={{ top: 12, right: 20, left: 0, bottom: 5 }}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
@@ -1511,6 +1571,31 @@ export default function AdminDashboard() {
                         </DashboardChartBoundary>
                       ) : (
                         <EmptyState icon={BarChart2} title="No sales or forecast data" description="Run forecasting or select a date range with completed revenue." />
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              </div>
+
+              <div className="animate-in-up">
+                <Card className="rounded-[24px]" padding={false}>
+                  <div className="p-5 md:p-6">
+                    <CardHeader title="Product Forecast" subtitle={`Next 7 days · ${productForecastSummary.length ? 'sales allocated from transaction totals by item quantity' : 'No parsed product history available'}`} className="mb-4" />
+                    <div className="h-[320px] w-full">
+                      {productForecastSummary.length > 0 ? (
+                        <DashboardChartBoundary resetKey={JSON.stringify(productForecastSummary)}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={productForecastSummary.slice(0, 20)} layout="vertical" margin={{ top: 4, right: 20, left: 12, bottom: 4 }}>
+                              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#F5ECE1" />
+                              <XAxis type="number" stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `PHP ${Math.round(Number(value || 0) / 1000)}k`} />
+                              <YAxis type="category" dataKey="product_name" width={150} stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} />
+                              <Tooltip formatter={(value) => [formatCurrency(value), 'Predicted sales']} />
+                              <Bar dataKey="predicted_sales" name="Predicted sales" fill="#D4AF37" radius={[0, 7, 7, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </DashboardChartBoundary>
+                      ) : (
+                        <EmptyState icon={ShoppingBag} title="No product forecast data" description="The sales CSV does not contain parseable product history yet." />
                       )}
                     </div>
                   </div>

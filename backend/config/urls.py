@@ -42,7 +42,7 @@ from inventory.views import (
 from pos.views import OrderListCreateView, OrderDetailView, PaymentCreateView, EndOfDayReportListCreateView, EndOfDayReportReprintView, EndOfDayReportMarkPrintedView, EndOfDayReportSummaryView
 from chatbot.views import ChatbotQueryView, FAQListCreateView, FAQDetailUpdateView
 from dashboard.views import DashboardAnalyticsView
-from forecasting.views import ForecastingDataView
+from forecasting.views import ForecastingDataView, SalesHistoryImportView
 from gallery.views import GalleryImageListView
 from audit.views import ClientRuntimeErrorView
 from config.health import health_check
@@ -117,6 +117,7 @@ urlpatterns = [
     # Analytics / Dashboard
     path('api/dashboard/analytics/', DashboardAnalyticsView.as_view(), name='dashboard_analytics'),
     path('api/forecasting/predictions/', ForecastingDataView.as_view(), name='forecasting_predictions'),
+    path('api/forecasting/history/import/', SalesHistoryImportView.as_view(), name='forecasting_history_import'),
     path('api/audit/client-runtime-errors/', ClientRuntimeErrorView.as_view(), name='client_runtime_errors'),
 
     # Customer notifications

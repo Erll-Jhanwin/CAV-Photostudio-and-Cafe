@@ -217,6 +217,10 @@ OPENROUTER_MAX_TOKENS = int(os.environ.get('OPENROUTER_MAX_TOKENS', '240'))
 OPENROUTER_SITE_URL = os.environ.get('OPENROUTER_SITE_URL', '')
 OPENROUTER_APP_NAME = os.environ.get('OPENROUTER_APP_NAME', 'CAV Photo Studio and Cafe')
 
+# Optional uploaded sales export used by the CSV-backed forecasting module.
+# When blank, the module discovers the project-level Cafe/Sparkling Drinks CSV.
+SALES_HISTORY_CSV_PATH = os.environ.get('SALES_HISTORY_CSV_PATH', '')
+
 # REST Framework configurations
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
