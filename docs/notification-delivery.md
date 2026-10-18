@@ -32,9 +32,11 @@ Email can use SMTP instead of Resend by setting `EMAIL_PROVIDER=smtp` and the
 standard Django `EMAIL_*` variables. The default console backend is treated as
 non-delivery and produces a `skipped / console_backend` log entry.
 
-Generate a VAPID key pair with the `pywebpush`/`py-vapid` tooling or another
+Generate one VAPID key pair with the `pywebpush`/`py-vapid` tooling or another
 trusted Web Push key generator. Keep the private key server-side; only the
-public key is returned by `/api/notifications/push/config/`.
+public key is returned by `/api/notifications/push/config/`. Do not rotate the
+pair casually: existing browser subscriptions are tied to the public key and
+must be re-created after a rotation.
 
 ## API paths
 
@@ -49,6 +51,41 @@ public key is returned by `/api/notifications/push/config/`.
 
 The frontend asks for browser permission from the customer Notifications tab;
 permission is never requested during login or page load.
+
+## Deployment checklist
+
+1. Add `pywebpush` (already pinned in `backend/requirements.txt`) and run the
+   notification migration in the target environment:
+
+   ```text
+   python manage.py migrate notifications
+   ```
+
+2. Set the five `PUSH_*` variables in the backend environment. Never place the
+   private key in frontend variables, source control, or `frontend/public`.
+   Keep `PUSH_DELIVERY_ENABLED=false` until all three VAPID values are valid.
+
+3. Serve the frontend from HTTPS. The service worker is published at
+   `/push-sw.js`; reverse proxies must not rewrite or block that root-level
+   file. `localhost` is also accepted by browsers for local development.
+
+4. Sign in as a customer, open Notifications, choose **Enable push**, and
+   grant the browser permission. The authenticated subscription is stored per
+   user and per browser endpoint. Disabling push removes that endpoint from
+   the backend and unsubscribes the browser.
+
+5. Trigger a booking event (new request, staff confirmation/cancellation, or
+   booking-payment approval/rejection). Inspect the resulting
+   `NotificationDelivery` rows or the admin delivery endpoint. `sent` means
+   the Web Push provider accepted the request; it does not guarantee that a
+   device displayed the notification.
+
+The current implementation is browser Web Push (VAPID). The Capacitor Android
+shell does not yet have an FCM registration/token flow; native Android push
+requires a separate Firebase project, `google-services.json`, the Capacitor
+Push Notifications plugin, and an FCM server credential before it can be
+enabled safely. The web workflow remains unaffected by that optional native
+setup.
 
 ## Verification
 

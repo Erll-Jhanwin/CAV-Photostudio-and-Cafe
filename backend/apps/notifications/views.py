@@ -10,6 +10,7 @@ from .models import Notification, NotificationDelivery, PushSubscription
 from .serializers import (
     NotificationDeliverySerializer,
     NotificationSerializer,
+    PushSubscriptionDeleteSerializer,
     PushSubscriptionSerializer,
 )
 
@@ -78,6 +79,10 @@ class PushSubscriptionView(views.APIView):
         serializer = PushSubscriptionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        # A browser endpoint represents one active device subscription. If the
+        # browser account changes, detach it from the previous user before
+        # associating it with the authenticated user.
+        PushSubscription.objects.filter(endpoint=data['endpoint']).exclude(user=request.user).delete()
         subscription, created = PushSubscription.objects.update_or_create(
             user=request.user,
             endpoint=data['endpoint'],
@@ -94,9 +99,10 @@ class PushSubscriptionView(views.APIView):
         )
 
     def delete(self, request):
-        endpoint = str(request.data.get('endpoint') or request.query_params.get('endpoint') or '').strip()
-        if not endpoint:
-            return Response({'endpoint': 'This field is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        endpoint = request.data.get('endpoint') or request.query_params.get('endpoint')
+        serializer = PushSubscriptionDeleteSerializer(data={'endpoint': endpoint})
+        serializer.is_valid(raise_exception=True)
+        endpoint = serializer.validated_data['endpoint']
         deleted, _ = PushSubscription.objects.filter(user=request.user, endpoint=endpoint).delete()
         return Response({'deleted': deleted > 0}, status=status.HTTP_200_OK)
 

@@ -335,6 +335,13 @@ class BookingListCreateView(generics.ListCreateAPIView):
             description=f"Created booking #{booking.id} for {booking.package.name}."
         )
 
+        create_booking_notification(
+            booking=booking,
+            notification_type='BOOKING_CREATED',
+            title='Booking request received',
+            message=f'Your booking request #{booking.id} for {booking.package.name} has been received and is pending confirmation.',
+        )
+
         return Response(BookingSerializer(booking, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):

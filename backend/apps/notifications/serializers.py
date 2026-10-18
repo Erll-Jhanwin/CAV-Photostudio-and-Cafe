@@ -38,6 +38,16 @@ class PushSubscriptionSerializer(serializers.Serializer):
         return {'p256dh': p256dh, 'auth': auth}
 
 
+class PushSubscriptionDeleteSerializer(serializers.Serializer):
+    endpoint = serializers.URLField(max_length=2048)
+
+    def validate_endpoint(self, value):
+        parsed = urlparse(value)
+        if parsed.scheme != 'https' or not parsed.netloc:
+            raise serializers.ValidationError('Push endpoint must be a valid HTTPS URL.')
+        return value
+
+
 class NotificationDeliverySerializer(serializers.ModelSerializer):
     class Meta:
         model = NotificationDelivery

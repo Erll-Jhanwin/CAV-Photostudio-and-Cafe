@@ -278,13 +278,17 @@ def _send_push_notification(notification):
             code='disabled',
             message='Push delivery is disabled by configuration.',
         )]
-    if not getattr(settings, 'PUSH_VAPID_PUBLIC_KEY', '').strip() or not getattr(settings, 'PUSH_VAPID_PRIVATE_KEY', '').strip():
+    if (
+        not getattr(settings, 'PUSH_VAPID_PUBLIC_KEY', '').strip()
+        or not getattr(settings, 'PUSH_VAPID_PRIVATE_KEY', '').strip()
+        or not getattr(settings, 'PUSH_VAPID_SUBJECT', '').strip()
+    ):
         delivery = _new_delivery(notification, NotificationDelivery.CHANNEL_PUSH, provider=provider)
         return [_skip(
             delivery,
             provider=provider,
             code='missing_credentials',
-            message='PUSH_VAPID_PUBLIC_KEY and PUSH_VAPID_PRIVATE_KEY are required.',
+            message='PUSH_VAPID_PUBLIC_KEY, PUSH_VAPID_PRIVATE_KEY, and PUSH_VAPID_SUBJECT are required.',
         )]
     if not subscriptions:
         delivery = _new_delivery(notification, NotificationDelivery.CHANNEL_PUSH, provider=provider)
@@ -312,6 +316,8 @@ def _send_push_notification(notification):
             if exc.code == 'subscription_expired':
                 push_subscription.is_active = False
                 push_subscription.save(update_fields=['is_active', 'updated_at'])
+            if exc.status_code:
+                metadata['provider_status_code'] = exc.status_code
             deliveries.append(_fail(
                 delivery,
                 provider=provider,

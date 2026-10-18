@@ -80,6 +80,25 @@ class BookingNotificationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data['is_read'])
 
+    def test_booking_creation_creates_a_pushable_notification(self):
+        self.client.force_authenticate(self.customer)
+        response = self.client.post('/api/bookings/', {
+            'package': self.booking.package_id,
+            'scheduled_date': (timezone.localdate() + timedelta(days=21)).isoformat(),
+            'scheduled_time': '10:00',
+            'first_name': 'Notification',
+            'last_name': 'Customer',
+            'email': self.customer.email,
+            'phone_number': '09171234567',
+            'address': 'CAV Studio',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        notification = Notification.objects.get()
+        self.assertEqual(notification.user_id, self.customer.id)
+        self.assertEqual(notification.booking_id, response.data['id'])
+        self.assertEqual(notification.notification_type, 'BOOKING_CREATED')
+
     def test_approved_payment_notifies_customer_and_confirms_down_payment(self):
         payment = Payment.objects.create(
             payment_type=Payment.BOOKING,
@@ -197,6 +216,40 @@ class BookingNotificationTests(TestCase):
         subscription.refresh_from_db()
         self.assertTrue(subscription.is_active)
 
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=False,
+        PUSH_DELIVERY_ENABLED=True,
+        PUSH_VAPID_PUBLIC_KEY='public-key',
+        PUSH_VAPID_PRIVATE_KEY='private-key',
+        PUSH_VAPID_SUBJECT='mailto:ops@example.com',
+    )
+    def test_expired_web_push_subscription_is_deactivated_and_logged(self):
+        subscription = PushSubscription.objects.create(
+            user=self.customer,
+            endpoint='https://push.example.test/subscription/expired',
+            p256dh='public-client-key',
+            auth='auth-secret',
+        )
+        notification = self._notification()
+
+        class FakeWebPushException(Exception):
+            response = SimpleNamespace(status_code=410)
+
+        fake_pywebpush = SimpleNamespace(
+            webpush=Mock(side_effect=FakeWebPushException()),
+            WebPushException=FakeWebPushException,
+        )
+        with patch.dict('sys.modules', {'pywebpush': fake_pywebpush}):
+            dispatch_notification(notification)
+
+        delivery = NotificationDelivery.objects.get(notification=notification, channel='push')
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_FAILED)
+        self.assertEqual(delivery.error_code, 'subscription_expired')
+        self.assertEqual(delivery.metadata['provider_status_code'], 410)
+        subscription.refresh_from_db()
+        self.assertFalse(subscription.is_active)
+
     @override_settings(PUSH_DELIVERY_ENABLED=True, PUSH_VAPID_PUBLIC_KEY='public-key')
     def test_push_subscription_endpoint_can_be_upserted_and_removed(self):
         self.client.force_authenticate(self.customer)
@@ -219,6 +272,39 @@ class BookingNotificationTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertFalse(PushSubscription.objects.filter(user=self.customer).exists())
+
+    @override_settings(
+        PUSH_DELIVERY_ENABLED=True,
+        PUSH_VAPID_PUBLIC_KEY='public-key',
+        PUSH_VAPID_PRIVATE_KEY='private-key',
+        PUSH_VAPID_SUBJECT='mailto:ops@example.com',
+    )
+    def test_push_config_exposes_only_the_public_vapid_key(self):
+        response = self.client.get('/api/notifications/push/config/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {'enabled': True, 'public_key': 'public-key'})
+        self.assertNotIn('private-key', response.content.decode())
+
+    def test_push_subscription_endpoint_moves_with_the_authenticated_account(self):
+        endpoint = 'https://push.example.test/subscription/account-switch'
+        PushSubscription.objects.create(
+            user=self.other_customer,
+            endpoint=endpoint,
+            p256dh='old-public-client-key',
+            auth='old-auth-secret',
+        )
+        self.client.force_authenticate(self.customer)
+
+        response = self.client.post('/api/notifications/push/subscription/', {
+            'endpoint': endpoint,
+            'keys': {'p256dh': 'new-public-client-key', 'auth': 'new-auth-secret'},
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(PushSubscription.objects.filter(user=self.other_customer, endpoint=endpoint).exists())
+        subscription = PushSubscription.objects.get(user=self.customer, endpoint=endpoint)
+        self.assertEqual(subscription.p256dh, 'new-public-client-key')
 
     @override_settings(
         EMAIL_DELIVERY_ENABLED=False,
@@ -249,3 +335,33 @@ class BookingNotificationTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('endpoint', response.data)
+
+    def test_push_subscription_delete_rejects_non_https_endpoint(self):
+        self.client.force_authenticate(self.customer)
+        response = self.client.delete('/api/notifications/push/subscription/', {
+            'endpoint': 'http://push.example.test/subscription/123',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('endpoint', response.data)
+
+    @override_settings(
+        PUSH_DELIVERY_ENABLED=True,
+        PUSH_VAPID_PUBLIC_KEY='public-key',
+        PUSH_VAPID_PRIVATE_KEY='private-key',
+        PUSH_VAPID_SUBJECT='',
+    )
+    def test_push_delivery_skips_without_vapid_subject(self):
+        notification = self._notification()
+        PushSubscription.objects.create(
+            user=self.customer,
+            endpoint='https://push.example.test/subscription/missing-subject',
+            p256dh='public-client-key',
+            auth='auth-secret',
+        )
+
+        dispatch_notification(notification)
+
+        delivery = NotificationDelivery.objects.get(notification=notification, channel='push')
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_SKIPPED)
+        self.assertEqual(delivery.error_code, 'missing_credentials')

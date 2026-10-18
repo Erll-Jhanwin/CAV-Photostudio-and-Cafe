@@ -29,7 +29,13 @@ import {
   localGalleryImages,
 } from '../utils/cavAssets';
 import { formatManilaDateTime, getManilaDateInputValue, getManilaMonthValue, getManilaTimeInputValue } from '../utils/dateTime';
-import { disablePushNotifications, enablePushNotifications, isPushSupported } from '../utils/pushNotifications';
+import {
+  disablePushNotifications,
+  enablePushNotifications,
+  getPushSubscription,
+  isPushSupported,
+  syncPushSubscription,
+} from '../utils/pushNotifications';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -316,7 +322,7 @@ export default function CustomerDashboard() {
   const [services, setServices] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [pushState, setPushState] = useState({ supported: false, enabled: false, loading: false, error: '' });
+  const [pushState, setPushState] = useState({ supported: false, enabled: false, permission: 'default', loading: false, error: '' });
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
   const [dashboardError, setDashboardError] = useState('');
@@ -400,10 +406,27 @@ export default function CustomerDashboard() {
 
   useEffect(() => {
     if (!isPushSupported()) return;
-    navigator.serviceWorker.getRegistration('/push-sw.js')
-      .then(registration => registration?.pushManager?.getSubscription())
-      .then(subscription => setPushState({ supported: true, enabled: Boolean(subscription), loading: false, error: '' }))
-      .catch(() => setPushState({ supported: true, enabled: false, loading: false, error: '' }));
+    const permission = window.Notification.permission;
+    getPushSubscription()
+      .then(async (subscription) => {
+        if (subscription) await syncPushSubscription(subscription);
+        setPushState({
+          supported: true,
+          enabled: Boolean(subscription),
+          permission,
+          loading: false,
+          error: permission === 'denied'
+            ? 'Push notifications are blocked for this site. Enable them in your browser site settings.'
+            : '',
+        });
+      })
+      .catch(() => setPushState({
+        supported: true,
+        enabled: false,
+        permission,
+        loading: false,
+        error: '',
+      }));
   }, []);
 
   const handlePushToggle = async () => {
@@ -411,13 +434,18 @@ export default function CustomerDashboard() {
     try {
       if (pushState.enabled) {
         await disablePushNotifications();
-        setPushState({ supported: true, enabled: false, loading: false, error: '' });
+        setPushState({ supported: true, enabled: false, permission: window.Notification.permission, loading: false, error: '' });
       } else {
         await enablePushNotifications();
-        setPushState({ supported: true, enabled: true, loading: false, error: '' });
+        setPushState({ supported: true, enabled: true, permission: window.Notification.permission, loading: false, error: '' });
       }
     } catch (error) {
-      setPushState(current => ({ ...current, loading: false, error: error.message || 'Push notifications could not be enabled.' }));
+      setPushState(current => ({
+        ...current,
+        permission: window.Notification.permission,
+        loading: false,
+        error: error.message || 'Push notifications could not be enabled.',
+      }));
     }
   };
 
@@ -2745,7 +2773,11 @@ export default function CustomerDashboard() {
                     <div>
                       <p className="font-bold text-sm text-espresso">Browser push notifications</p>
                       <p className="text-xs text-espresso/55 mt-1">
-                        {pushState.enabled ? 'Push alerts are enabled on this device.' : 'Get booking updates even when CAV is not open.'}
+                        {pushState.enabled
+                          ? 'Push alerts are enabled on this device.'
+                          : pushState.permission === 'denied'
+                            ? 'Push is blocked in your browser. Update this site’s notification permission to enable it.'
+                            : 'Get booking updates even when CAV is not open.'}
                       </p>
                       {pushState.error && <p className="text-xs text-red-600 mt-2">{pushState.error}</p>}
                     </div>
@@ -2755,9 +2787,15 @@ export default function CustomerDashboard() {
                     variant={pushState.enabled ? 'outline' : 'primary'}
                     size="sm"
                     onClick={handlePushToggle}
-                    disabled={pushState.loading}
+                    disabled={pushState.loading || pushState.permission === 'denied'}
                   >
-                    {pushState.loading ? 'Updating…' : pushState.enabled ? 'Disable push' : 'Enable push'}
+                    {pushState.loading
+                      ? 'Updating…'
+                      : pushState.enabled
+                        ? 'Disable push'
+                        : pushState.permission === 'denied'
+                          ? 'Blocked in browser'
+                          : 'Enable push'}
                   </Button>
                 </div>
               )}
