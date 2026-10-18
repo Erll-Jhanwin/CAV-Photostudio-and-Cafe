@@ -17,11 +17,13 @@ export const isPushSupported = () => (
   && 'Notification' in window
 );
 
-const getServiceWorkerRegistration = async ({ register = false } = {}) => {
+const getServiceWorkerRegistration = async ({ register = false, waitForActive = false } = {}) => {
   if (!isPushSupported()) return null;
   const registration = await navigator.serviceWorker.getRegistration();
-  if (registration || !register) return registration;
-  return navigator.serviceWorker.register(PUSH_SERVICE_WORKER_PATH, { scope: '/' });
+  if (!registration && !register) return null;
+  const registered = registration || await navigator.serviceWorker.register(PUSH_SERVICE_WORKER_PATH, { scope: '/' });
+  if (!waitForActive || registered.active) return registered;
+  return waitForReadyRegistration();
 };
 
 export const getPushSubscription = async () => {
@@ -32,6 +34,22 @@ export const getPushSubscription = async () => {
 const getPushError = (error, fallback) => {
   if (error?.response) return new Error(getApiErrorMessage(error, fallback));
   return error instanceof Error ? error : new Error(fallback);
+};
+
+const waitForReadyRegistration = async () => {
+  let timeoutId;
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((resolve, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error(
+          'The push service worker did not become active. Confirm that /push-sw.js is available over HTTPS, then reload the page.',
+        )), 15000);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
 };
 
 const getSubscriptionPayload = (subscription) => {
@@ -85,7 +103,9 @@ export const enablePushNotifications = async () => {
 
   let subscription;
   try {
-    const registration = await getServiceWorkerRegistration({ register: true });
+    // Registration can resolve while the worker is still installing. PushManager
+    // requires an active worker, so wait for the browser's ready registration.
+    const registration = await getServiceWorkerRegistration({ register: true, waitForActive: true });
     const existingSubscription = await registration.pushManager.getSubscription();
     subscription = existingSubscription || await registration.pushManager.subscribe({
       userVisibleOnly: true,

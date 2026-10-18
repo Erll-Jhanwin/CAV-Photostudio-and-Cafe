@@ -63,6 +63,7 @@ test('enables a browser subscription and persists it for the signed-in user', as
   };
   setPushBrowser({ registration: null });
   navigator.serviceWorker.register.mockResolvedValue(registration);
+  navigator.serviceWorker.ready = Promise.resolve(registration);
   client.get.mockResolvedValue({ data: { enabled: true, public_key: 'AQID' } });
   client.post.mockResolvedValue({ data: { active: true } });
 
