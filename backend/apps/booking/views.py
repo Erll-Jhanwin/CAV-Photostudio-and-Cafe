@@ -339,7 +339,7 @@ class BookingListCreateView(generics.ListCreateAPIView):
             booking=booking,
             notification_type='BOOKING_CREATED',
             title='Booking request received',
-            message=f'Your booking request #{booking.id} for {booking.package.name} has been received and is pending confirmation.',
+            message=f'Your booking request #{booking.id} for {booking.package.name} was submitted. Payment is awaiting verification. Please wait for confirmation.',
         )
 
         return Response(BookingSerializer(booking, context={'request': request}).data, status=status.HTTP_201_CREATED)
@@ -707,7 +707,7 @@ class BookingPaymentVerifyView(generics.UpdateAPIView):
                 payment.booking.status = 'CONFIRMED_DP'
                 payment.booking.save(update_fields=['status'])
                 title = "Payment approved"
-                message = f"Your payment for booking #{payment.booking.id} was approved. Your booking is confirmed with the down payment received."
+                message = f"Your payment for booking #{payment.booking.id} has been verified. Your booking status is now confirmed with the down payment received."
                 action = "BOOKING_PAYMENT_APPROVED"
             else:
                 title = "Payment verification update"

@@ -98,6 +98,8 @@ class BookingNotificationTests(TestCase):
         self.assertEqual(notification.user_id, self.customer.id)
         self.assertEqual(notification.booking_id, response.data['id'])
         self.assertEqual(notification.notification_type, 'BOOKING_CREATED')
+        self.assertIn('Payment is awaiting verification', notification.message)
+        self.assertIn('Please wait for confirmation', notification.message)
 
     def test_approved_payment_notifies_customer_and_confirms_down_payment(self):
         payment = Payment.objects.create(
@@ -121,6 +123,8 @@ class BookingNotificationTests(TestCase):
         notification = Notification.objects.get()
         self.assertEqual(notification.user_id, self.customer.id)
         self.assertEqual(notification.notification_type, 'BOOKING_PAYMENT_APPROVED')
+        self.assertIn('has been verified', notification.message)
+        self.assertIn('booking status is now confirmed', notification.message)
 
     def _notification(self, title='Booking update', message='Your booking was updated.'):
         return Notification.objects.create(
@@ -186,6 +190,66 @@ class BookingNotificationTests(TestCase):
         self.assertEqual(delivery.provider_message_id, 'sms_123')
         self.assertEqual(mocked_post.call_args.args[0], 'https://sms.example.test/api/v1/sms_messages')
         self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_booking_sms_uses_the_booking_customer_and_requested_message(self, mocked_post):
+        mocked_post.return_value = Mock(status_code=200, json=Mock(return_value={'status': 200, 'message_id': 'sms_booking'}))
+        self.customer.phone_number = '09171234567'
+        self.customer.save(update_fields=['phone_number'])
+        self.other_customer.phone_number = '09987654321'
+        self.other_customer.save(update_fields=['phone_number'])
+        notification = Notification.objects.create(
+            user=self.other_customer,
+            booking=self.booking,
+            notification_type='BOOKING_CREATED',
+            title='Booking request received',
+            message='Your booking request #1 was submitted. Payment is awaiting verification. Please wait for confirmation.',
+        )
+
+        dispatch_notification(notification)
+
+        delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_SENT)
+        self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
+        self.assertEqual(
+            mocked_post.call_args.kwargs['json']['message'],
+            notification.message,
+        )
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_sent_sms_is_not_resent_when_notification_dispatch_repeats(self, mocked_post):
+        mocked_post.return_value = Mock(status_code=200, json=Mock(return_value={'status': 'queued', 'message_id': 'sms_once'}))
+        self.customer.phone_number = '09171234567'
+        self.customer.save(update_fields=['phone_number'])
+        notification = self._notification(
+            title='Booking request received',
+            message='Your booking request was submitted. Payment is awaiting verification. Please wait for confirmation.',
+        )
+
+        dispatch_notification(notification)
+        dispatch_notification(notification)
+
+        deliveries = NotificationDelivery.objects.filter(
+            notification=notification,
+            channel=NotificationDelivery.CHANNEL_SMS,
+        )
+        self.assertEqual(mocked_post.call_count, 1)
+        self.assertEqual(deliveries.count(), 1)
+        self.assertEqual(deliveries.get().status, NotificationDelivery.STATUS_SENT)
 
     @override_settings(
         EMAIL_DELIVERY_ENABLED=False,

@@ -176,8 +176,22 @@ def _send_email_notification(notification):
 
 def _send_sms_notification(notification):
     provider = 'iprogsms'
+    existing_delivery = NotificationDelivery.objects.filter(
+        notification=notification,
+        channel=NotificationDelivery.CHANNEL_SMS,
+        status=NotificationDelivery.STATUS_SENT,
+    ).first()
+    if existing_delivery:
+        logger.info(
+            'Skipping duplicate SMS delivery: notification_id=%s delivery_id=%s',
+            notification.id,
+            existing_delivery.id,
+        )
+        return existing_delivery
+
     delivery = _new_delivery(notification, NotificationDelivery.CHANNEL_SMS, provider=provider)
-    raw_phone = (notification.user.phone_number or '').strip()
+    customer = notification.booking.customer if notification.booking_id and notification.booking else notification.user
+    raw_phone = (customer.phone_number or '').strip()
     normalized_phone = normalize_philippine_mobile_number(raw_phone)
 
     if not _enabled('SMS_DELIVERY_ENABLED'):
@@ -339,7 +353,9 @@ def _send_push_notification(notification):
 def dispatch_notification(notification):
     """Attempt every configured channel and persist one status per attempt."""
     if isinstance(notification, (int, str)):
-        notification = Notification.objects.select_related('user').get(pk=notification)
+        notification = Notification.objects.select_related(
+            'user', 'booking', 'booking__customer',
+        ).get(pk=notification)
 
     deliveries = [
         _send_email_notification(notification),

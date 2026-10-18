@@ -52,6 +52,14 @@ must be re-created after a rotation.
 The frontend asks for browser permission from the customer Notifications tab;
 permission is never requested during login or page load.
 
+Booking submission and approved booking-payment verification create customer
+notifications that use the registered phone number on the booking's customer
+account. When SMS delivery is enabled, iProgSMS sends the booking-submitted
+message (payment awaiting verification) and the approved-payment message
+(payment verified and booking status updated). Already-sent SMS deliveries are
+not sent again if the same notification is dispatched again; failed deliveries
+remain logged and can be retried safely.
+
 ## Deployment checklist
 
 1. Add `pywebpush` (already pinned in `backend/requirements.txt`) and run the
