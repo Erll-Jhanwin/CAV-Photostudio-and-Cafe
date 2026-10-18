@@ -1127,6 +1127,8 @@ export default function CustomerDashboard() {
       bookingSubmitInFlightRef.current = false;
       return;
     }
+    let bookingId = pendingPaymentBookingId;
+    let bookingSavedForPayment = Boolean(bookingId);
     try {
       setPaymentSubmitting(true);
       if (!bookingIdempotencyKeyRef.current) {
@@ -1147,7 +1149,6 @@ export default function CustomerDashboard() {
         setPaymentSubmitting(false);
         return;
       }
-      let bookingId = pendingPaymentBookingId;
       let createdBooking = null;
       if (!bookingId) {
         const latestAvailability = await fetchDayAvailability(selectedDate);
@@ -1168,6 +1169,7 @@ export default function CustomerDashboard() {
           idempotency_key: bookingIdempotencyKeyRef.current,
         });
         bookingId = bookingRes.data.id;
+        bookingSavedForPayment = true;
         createdBooking = normalizeBooking(bookingRes.data);
         setPendingPaymentBookingId(bookingId);
       }
@@ -1210,7 +1212,15 @@ export default function CustomerDashboard() {
       setActiveTab('history');
       alert('Booking submitted successfully.');
     } catch (err) {
-      alert(formatApiError(err, 'Failed to submit booking payment. Please check your payment details and try again.'));
+      const errorMessage = formatApiError(err, 'The request could not be completed. Please try again.');
+      if (bookingSavedForPayment && bookingId) {
+        alert(
+          `Booking #${bookingId} was saved, but the payment proof was not submitted. `
+          + `${errorMessage} You can retry the payment without creating another booking.`
+        );
+      } else {
+        alert(errorMessage);
+      }
       if (err.response?.status === 409) {
         fetchDayAvailability(selectedDate);
         fetchMonthAvailability();

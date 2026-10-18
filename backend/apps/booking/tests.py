@@ -1,12 +1,18 @@
 from datetime import timedelta
+from io import BytesIO
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
+from PIL import Image
 
 from booking.availability import get_available_slots, is_slot_available
 from booking.models import Booking, BookingDateLock, BookingReview, Package, Service, StudioUnavailableDate
+from notifications.models import NotificationDelivery
+from payment.models import Payment
 
 
 class BookingAvailabilityPolicyTests(TestCase):
@@ -159,6 +165,128 @@ class BookingWriteSafetyTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertTrue(BookingDateLock.objects.filter(scheduled_date=scheduled_date).exists())
+
+
+class BookingEndToEndApiTests(TestCase):
+    def setUp(self):
+        self.customer = get_user_model().objects.create_user(
+            username='booking-e2e-customer',
+            email='booking-e2e@example.com',
+            password='Customer123!',
+        )
+        service = Service.objects.create(
+            name='Booking E2E Studio',
+            description='Studio sessions',
+            duration_minutes=60,
+            base_price='1000.00',
+        )
+        self.package = Package.objects.create(
+            service=service,
+            name='Booking E2E Package',
+            description='Studio shoot',
+            price='1000.00',
+            inclusions='Studio session',
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.customer)
+
+    @staticmethod
+    def receipt_upload():
+        content = BytesIO()
+        Image.new('RGB', (12, 12), 'white').save(content, format='JPEG')
+        return SimpleUploadedFile(
+            'gcash-receipt.jpg',
+            content.getvalue(),
+            content_type='image/jpeg',
+        )
+
+    def booking_payload(self, scheduled_date, scheduled_time='09:00', idempotency_key='booking-e2e-1'):
+        return {
+            'package': self.package.id,
+            'scheduled_date': scheduled_date.isoformat(),
+            'scheduled_time': scheduled_time,
+            'first_name': 'E2E',
+            'last_name': 'Customer',
+            'email': self.customer.email,
+            'phone_number': '09171234567',
+            'address': 'Lipa City',
+            'idempotency_key': idempotency_key,
+        }
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_available_slot_booking_payment_and_sms_are_one_workflow(self, mocked_post):
+        mocked_post.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={'status': 200, 'message_id': 'sms-e2e-1'}),
+        )
+        scheduled_date = timezone.localdate() + timedelta(days=21)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            booking_response = self.client.post(
+                '/api/bookings/',
+                self.booking_payload(scheduled_date),
+                format='json',
+            )
+
+        self.assertEqual(booking_response.status_code, 201)
+        booking_id = booking_response.data['id']
+        self.assertEqual(Booking.objects.filter(pk=booking_id).count(), 1)
+        sms_delivery = NotificationDelivery.objects.get(channel='sms')
+        self.assertEqual(sms_delivery.status, NotificationDelivery.STATUS_SENT)
+        self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
+        self.assertIn(scheduled_date.isoformat(), mocked_post.call_args.kwargs['json']['message'])
+        self.assertIn('Time: 09:00', mocked_post.call_args.kwargs['json']['message'])
+        self.assertIn('Package: Booking E2E Package', mocked_post.call_args.kwargs['json']['message'])
+        self.assertIn('Payment status: Awaiting verification', mocked_post.call_args.kwargs['json']['message'])
+
+        payment_response = self.client.post(
+            '/api/bookings/payments/',
+            {
+                'booking': booking_id,
+                'reference_number': 'E2E-REF-001',
+                'amount': '500.00',
+                'paid_at': '2026-10-18T08:00:00+08:00',
+                'receipt': self.receipt_upload(),
+                'idempotency_key': 'payment-e2e-1',
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(payment_response.status_code, 201)
+        self.assertEqual(Payment.objects.filter(booking_id=booking_id).count(), 1)
+        replay_response = self.client.post(
+            '/api/bookings/payments/',
+            {'booking': booking_id, 'idempotency_key': 'payment-e2e-1'},
+            format='json',
+        )
+        self.assertEqual(replay_response.status_code, 200)
+        self.assertEqual(Payment.objects.filter(booking_id=booking_id).count(), 1)
+        self.assertEqual(mocked_post.call_count, 1)
+
+    def test_conflicting_active_slot_is_rejected_without_a_second_booking(self):
+        scheduled_date = timezone.localdate() + timedelta(days=22)
+        first_response = self.client.post(
+            '/api/bookings/',
+            self.booking_payload(scheduled_date, idempotency_key='booking-e2e-conflict-1'),
+            format='json',
+        )
+        second_response = self.client.post(
+            '/api/bookings/',
+            self.booking_payload(scheduled_date, idempotency_key='booking-e2e-conflict-2'),
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, 201)
+        self.assertEqual(second_response.status_code, 400)
+        self.assertIn('scheduled_time', second_response.data)
+        self.assertEqual(Booking.objects.filter(scheduled_date=scheduled_date, scheduled_time='09:00').count(), 1)
 
 
 class BookingReviewApiTests(TestCase):

@@ -15,9 +15,13 @@ def secure_exception_handler(exc, context):
         return response
 
     view = context.get('view')
+    request = context.get('request')
     logger.exception(
-        'Unhandled API exception in %s.',
+        'Unhandled API exception in %s method=%s path=%s user_id=%s.',
         view.__class__.__name__ if view else 'unknown view',
+        getattr(request, 'method', 'unknown'),
+        getattr(request, 'path', 'unknown'),
+        getattr(getattr(request, 'user', None), 'id', None),
         exc_info=(type(exc), exc, exc.__traceback__),
     )
     return Response(

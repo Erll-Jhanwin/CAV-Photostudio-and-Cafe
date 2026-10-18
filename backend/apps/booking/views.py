@@ -1,4 +1,5 @@
 import calendar
+import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -31,6 +32,8 @@ User = get_user_model()
 
 IDEMPOTENCY_KEY_MAX_LENGTH = 100
 OBSOLETE_SERVICE_NAMES = ['Self-Shoot Studio', 'Boutique Portrait']
+
+logger = logging.getLogger(__name__)
 
 
 def format_booking_confirmation_message(booking, payment_status='Awaiting verification'):
@@ -340,19 +343,35 @@ class BookingListCreateView(generics.ListCreateAPIView):
                 status=status.HTTP_409_CONFLICT
             )
 
-        # Log Audit
-        AuditLog.objects.create(
-            user=request.user,
-            action="BOOKING_CREATE",
-            description=f"Created booking #{booking.id} for {booking.package.name}."
-        )
+        # These are post-save side effects. A failure here must not turn a
+        # successful reservation into a generic 500 or invite the customer to
+        # submit the same slot again with a new request.
+        try:
+            AuditLog.objects.create(
+                user=request.user,
+                action="BOOKING_CREATE",
+                description=f"Created booking #{booking.id} for {booking.package.name}."
+            )
+        except Exception:
+            logger.exception(
+                'Booking saved but audit logging failed: booking_id=%s user_id=%s',
+                booking.id,
+                request.user.id,
+            )
 
-        create_booking_notification(
-            booking=booking,
-            notification_type='BOOKING_CREATED',
-            title='Booking request received',
-            message=format_booking_confirmation_message(booking),
-        )
+        try:
+            create_booking_notification(
+                booking=booking,
+                notification_type='BOOKING_CREATED',
+                title='Booking request received',
+                message=format_booking_confirmation_message(booking),
+            )
+        except Exception:
+            logger.exception(
+                'Booking saved but notification enqueue failed: booking_id=%s user_id=%s',
+                booking.id,
+                request.user.id,
+            )
 
         return Response(BookingSerializer(booking, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
@@ -605,6 +624,14 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
         return apply_limit(queryset.filter(booking__customer=user), self.request, default=100)
 
     def create(self, request, *args, **kwargs):
+        request_metadata = {
+            'user_id': request.user.id,
+            'idempotency_present': bool(get_idempotency_key(request)),
+            'reference_length': len(str(request.data.get('reference_number') or '').strip()),
+            'receipt_present': bool(request.FILES.get('receipt')),
+            'receipt_content_type': str(getattr(request.FILES.get('receipt'), 'content_type', '') or '')[:80],
+            'receipt_size': getattr(request.FILES.get('receipt'), 'size', 0) or 0,
+        }
         idempotency_key = get_idempotency_key(request)
         payment_queryset = Payment.objects.filter(payment_type=Payment.BOOKING)
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -619,13 +646,14 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            payment = serializer.save(
-                payment_type=Payment.BOOKING,
-                method='GCASH',
-                status='PENDING_VERIFICATION',
-                paid_at=serializer.validated_data.get('paid_at') or timezone.now(),
-                idempotency_key=idempotency_key or None,
-            )
+            with transaction.atomic():
+                payment = serializer.save(
+                    payment_type=Payment.BOOKING,
+                    method='GCASH',
+                    status='PENDING_VERIFICATION',
+                    paid_at=serializer.validated_data.get('paid_at') or timezone.now(),
+                    idempotency_key=idempotency_key or None,
+                )
         except IntegrityError:
             if idempotency_key:
                 existing_payment = payment_queryset.filter(idempotency_key=idempotency_key).select_related(
@@ -637,12 +665,36 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                 {"reference_number": "This GCash reference number has already been submitted."},
                 status=status.HTTP_409_CONFLICT
             )
+        except Exception:
+            booking_id = serializer.validated_data.get('booking').id if serializer.validated_data.get('booking') else None
+            logger.exception(
+                'Booking payment could not be saved: booking_id=%s metadata=%s',
+                booking_id,
+                request_metadata,
+            )
+            return Response(
+                {
+                    'detail': (
+                        'Payment proof could not be saved. Your booking is still reserved; '
+                        'please retry the payment submission.'
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
-        AuditLog.objects.create(
-            user=request.user,
-            action="BOOKING_PAYMENT_SUBMIT",
-            description=f"Submitted GCash payment reference {payment.reference_number} for booking #{payment.booking.id}."
-        )
+        try:
+            AuditLog.objects.create(
+                user=request.user,
+                action="BOOKING_PAYMENT_SUBMIT",
+                description=f"Submitted GCash payment reference {payment.reference_number} for booking #{payment.booking.id}."
+            )
+        except Exception:
+            logger.exception(
+                'Payment saved but audit logging failed: payment_id=%s booking_id=%s user_id=%s',
+                payment.id,
+                payment.booking_id,
+                request.user.id,
+            )
 
         return Response(self.get_serializer(payment).data, status=status.HTTP_201_CREATED)
 

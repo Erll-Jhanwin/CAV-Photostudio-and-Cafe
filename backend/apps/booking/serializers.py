@@ -221,6 +221,11 @@ class BookingSerializer(serializers.ModelSerializer):
             'idempotency_key'
         ]
         read_only_fields = ['customer', 'status', 'created_at']
+        # Availability is status-aware and is checked in validate() while the
+        # create view also rechecks under the date lock. DRF's generated
+        # UniqueTogetherValidator would otherwise replace that useful field
+        # error with a generic non_field_errors response.
+        validators = []
 
     def get_required_down_payment(self, obj):
         return obj.package.price * Decimal('0.50')
