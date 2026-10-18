@@ -84,10 +84,13 @@ def _skip(delivery, *, provider, code, message, metadata=None):
 
 def _fail(delivery, *, provider, code, message, metadata=None):
     logger.warning(
-        'Notification delivery failed: notification_id=%s channel=%s code=%s',
+        'Notification delivery failed: notification_id=%s channel=%s provider=%s code=%s message=%s metadata=%s',
         delivery.notification_id,
         delivery.channel,
+        provider,
         code,
+        message,
+        metadata or {},
     )
     return _set_delivery(
         delivery,
@@ -176,63 +179,73 @@ def _send_email_notification(notification):
 
 def _send_sms_notification(notification):
     provider = 'iprogsms'
-    existing_delivery = NotificationDelivery.objects.filter(
-        notification=notification,
-        channel=NotificationDelivery.CHANNEL_SMS,
-        status=NotificationDelivery.STATUS_SENT,
-    ).first()
-    if existing_delivery:
-        logger.info(
-            'Skipping duplicate SMS delivery: notification_id=%s delivery_id=%s',
-            notification.id,
-            existing_delivery.id,
-        )
-        return existing_delivery
+    # Lock the notification row while creating and sending its SMS delivery.
+    # This closes the race where two workers both see no sent row and both call
+    # iProgSMS. A terminal delivery is never re-attempted automatically.
+    with transaction.atomic():
+        locked_notification = Notification.objects.select_for_update().select_related(
+            'user', 'booking', 'booking__customer',
+        ).get(pk=notification.pk)
+        existing_delivery = NotificationDelivery.objects.filter(
+            notification=locked_notification,
+            channel=NotificationDelivery.CHANNEL_SMS,
+        ).order_by('-id').first()
+        if existing_delivery:
+            logger.info(
+                'Skipping duplicate SMS delivery: notification_id=%s delivery_id=%s status=%s',
+                locked_notification.id,
+                existing_delivery.id,
+                existing_delivery.status,
+            )
+            return existing_delivery
 
-    delivery = _new_delivery(notification, NotificationDelivery.CHANNEL_SMS, provider=provider)
-    customer = notification.booking.customer if notification.booking_id and notification.booking else notification.user
-    raw_phone = (customer.phone_number or '').strip()
-    normalized_phone = normalize_philippine_mobile_number(raw_phone)
+        delivery = _new_delivery(locked_notification, NotificationDelivery.CHANNEL_SMS, provider=provider)
+        customer = locked_notification.booking.customer if locked_notification.booking_id and locked_notification.booking else locked_notification.user
+        raw_phone = (customer.phone_number or '').strip()
+        normalized_phone = normalize_philippine_mobile_number(raw_phone)
 
-    if not _enabled('SMS_DELIVERY_ENABLED'):
-        return _skip(
-            delivery,
-            provider=provider,
-            code='disabled',
-            message='SMS delivery is disabled by configuration.',
-        )
-    if not getattr(settings, 'IPROG_SMS_API_TOKEN', '').strip():
-        return _skip(
-            delivery,
-            provider=provider,
-            code='missing_credentials',
-            message='IPROG_SMS_API_TOKEN is not configured.',
-        )
-    if not normalized_phone:
-        return _skip(
-            delivery,
-            provider=provider,
-            code='invalid_recipient',
-            message='The user does not have a valid Philippine mobile number.',
-        )
+        if not _enabled('SMS_DELIVERY_ENABLED'):
+            return _skip(
+                delivery,
+                provider=provider,
+                code='disabled',
+                message='SMS delivery is disabled by configuration.',
+            )
+        if not getattr(settings, 'IPROG_SMS_API_TOKEN', '').strip():
+            return _skip(
+                delivery,
+                provider=provider,
+                code='missing_credentials',
+                message='IPROG_SMS_API_TOKEN is not configured.',
+            )
+        if not normalized_phone:
+            return _skip(
+                delivery,
+                provider=provider,
+                code='invalid_recipient',
+                message='The user does not have a valid Philippine mobile number.',
+            )
 
-    try:
-        result = send_transactional_sms(normalized_phone, notification.message)
-    except IProgSMSDeliveryError as exc:
-        return _fail(
+        try:
+            result = send_transactional_sms(normalized_phone, locked_notification.message)
+        except IProgSMSDeliveryError as exc:
+            metadata = _safe_phone_metadata(normalized_phone)
+            if exc.status_code:
+                metadata['provider_status_code'] = exc.status_code
+            return _fail(
+                delivery,
+                provider=provider,
+                code=exc.code,
+                message=str(exc),
+                metadata=metadata,
+            )
+        return _set_delivery(
             delivery,
-            provider=provider,
-            code='provider_error',
-            message=str(exc),
+            status=NotificationDelivery.STATUS_SENT,
+            provider=result.get('provider', provider),
+            provider_message_id=result.get('provider_message_id', ''),
             metadata=_safe_phone_metadata(normalized_phone),
         )
-    return _set_delivery(
-        delivery,
-        status=NotificationDelivery.STATUS_SENT,
-        provider=result.get('provider', provider),
-        provider_message_id=result.get('provider_message_id', ''),
-        metadata=_safe_phone_metadata(normalized_phone),
-    )
 
 
 def _webpush(subscription):
@@ -374,5 +387,5 @@ def create_booking_notification(*, booking, notification_type, title, message):
         title=title,
         message=message,
     )
-    transaction.on_commit(partial(dispatch_notification, notification.id))
+    transaction.on_commit(partial(dispatch_notification, notification.id), robust=True)
     return notification

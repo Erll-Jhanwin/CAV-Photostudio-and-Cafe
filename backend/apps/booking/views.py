@@ -32,6 +32,18 @@ User = get_user_model()
 IDEMPOTENCY_KEY_MAX_LENGTH = 100
 OBSOLETE_SERVICE_NAMES = ['Self-Shoot Studio', 'Boutique Portrait']
 
+
+def format_booking_confirmation_message(booking, payment_status='Awaiting verification'):
+    """Build one concise SMS-safe booking confirmation with current details."""
+    scheduled_date = booking.scheduled_date.strftime('%Y-%m-%d')
+    scheduled_time = booking.scheduled_time.strftime('%H:%M')
+    return (
+        f'CAV booking #{booking.id} saved. '
+        f'Date: {scheduled_date}; Time: {scheduled_time}; '
+        f'Package: {booking.package.name}; '
+        f'Payment status: {payment_status}.'
+    )
+
 def get_idempotency_key(request):
     value = request.headers.get('Idempotency-Key') or request.headers.get('X-Idempotency-Key') or request.data.get('idempotency_key')
     value = str(value or '').strip()
@@ -339,7 +351,7 @@ class BookingListCreateView(generics.ListCreateAPIView):
             booking=booking,
             notification_type='BOOKING_CREATED',
             title='Booking request received',
-            message=f'Your booking request #{booking.id} for {booking.package.name} was submitted. Payment is awaiting verification. Please wait for confirmation.',
+            message=format_booking_confirmation_message(booking),
         )
 
         return Response(BookingSerializer(booking, context={'request': request}).data, status=status.HTTP_201_CREATED)

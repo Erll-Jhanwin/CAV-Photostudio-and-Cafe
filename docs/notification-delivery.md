@@ -56,10 +56,12 @@ permission is never requested during login or page load.
 Booking submission and approved booking-payment verification create customer
 notifications that use the registered phone number on the booking's customer
 account. When SMS delivery is enabled, iProgSMS sends the booking-submitted
-message (payment awaiting verification) and the approved-payment message
-(payment verified and booking status updated). Already-sent SMS deliveries are
-not sent again if the same notification is dispatched again; failed deliveries
-remain logged and can be retried safely.
+message with the booking date, time, selected package, and payment status.
+Already-attempted SMS deliveries are not sent again if the same notification is
+dispatched again, including after a provider failure. The failed delivery and
+provider-safe error details remain available in `NotificationDelivery` for
+operator review; a retry must create an explicit new notification so a timeout
+cannot accidentally duplicate a message.
 
 ## Booking reminders
 
@@ -112,16 +114,20 @@ notifications or contacting iProgSMS.
    private key in frontend variables, source control, or `frontend/public`.
    Keep `PUSH_DELIVERY_ENABLED=false` until all three VAPID values are valid.
 
-3. Serve the frontend from HTTPS. The service worker is published at
+3. Set `SMS_DELIVERY_ENABLED=true` alongside a valid iProgSMS token and
+   sufficient credits before expecting booking SMS. Keep it false in local
+   development unless the configured recipient is an authorized test number.
+
+4. Serve the frontend from HTTPS. The service worker is published at
    `/push-sw.js`; reverse proxies must not rewrite or block that root-level
    file. `localhost` is also accepted by browsers for local development.
 
-4. Sign in as a customer, open Notifications, choose **Enable push**, and
+5. Sign in as a customer, open Notifications, choose **Enable push**, and
    grant the browser permission. The authenticated subscription is stored per
    user and per browser endpoint. Disabling push removes that endpoint from
    the backend and unsubscribes the browser.
 
-5. Trigger a booking event (new request, staff confirmation/cancellation, or
+6. Trigger a booking event (new request, staff confirmation/cancellation, or
    booking-payment approval/rejection). Inspect the resulting
    `NotificationDelivery` rows or the admin delivery endpoint. `sent` means
    the Web Push provider accepted the request; it does not guarantee that a

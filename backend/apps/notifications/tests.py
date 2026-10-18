@@ -99,8 +99,116 @@ class BookingNotificationTests(TestCase):
         self.assertEqual(notification.user_id, self.customer.id)
         self.assertEqual(notification.booking_id, response.data['id'])
         self.assertEqual(notification.notification_type, 'BOOKING_CREATED')
-        self.assertIn('Payment is awaiting verification', notification.message)
-        self.assertIn('Please wait for confirmation', notification.message)
+        self.assertIn('Payment status: Awaiting verification', notification.message)
+        self.assertIn('Date:', notification.message)
+        self.assertIn('Time:', notification.message)
+        self.assertIn('Package: Notification Package', notification.message)
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_booking_creation_sends_sms_with_booking_details(self, mocked_post):
+        mocked_post.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={'status': 200, 'message_id': 'sms_booking_created'}),
+        )
+        scheduled_date = timezone.localdate() + timedelta(days=21)
+        self.client.force_authenticate(self.customer)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post('/api/bookings/', {
+                'package': self.booking.package_id,
+                'scheduled_date': scheduled_date.isoformat(),
+                'scheduled_time': '10:00',
+                'first_name': 'Notification',
+                'last_name': 'Customer',
+                'email': self.customer.email,
+                'phone_number': '09171234567',
+                'address': 'CAV Studio',
+                'idempotency_key': 'notification-sms-booking-1',
+            }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        notification = Notification.objects.get(notification_type='BOOKING_CREATED')
+        self.assertIn(f'Date: {scheduled_date.isoformat()}', notification.message)
+        self.assertIn('Time: 10:00', notification.message)
+        self.assertIn('Package: Notification Package', notification.message)
+        self.assertIn('Payment status: Awaiting verification', notification.message)
+        delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_SENT)
+        self.assertEqual(mocked_post.call_count, 1)
+        self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
+        self.assertIn('Payment status: Awaiting verification', mocked_post.call_args.kwargs['json']['message'])
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_booking_creation_survives_sms_failure_and_logs_it(self, mocked_post):
+        mocked_post.return_value = Mock(
+            status_code=503,
+            json=Mock(return_value={'status': 'error', 'message': 'Service unavailable'}),
+        )
+        scheduled_date = timezone.localdate() + timedelta(days=22)
+        self.client.force_authenticate(self.customer)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post('/api/bookings/', {
+                'package': self.booking.package_id,
+                'scheduled_date': scheduled_date.isoformat(),
+                'scheduled_time': '11:00',
+                'first_name': 'Notification',
+                'last_name': 'Customer',
+                'email': self.customer.email,
+                'phone_number': '09171234567',
+                'address': 'CAV Studio',
+                'idempotency_key': 'notification-sms-booking-failure-1',
+            }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Booking.objects.filter(pk=response.data['id']).exists())
+        notification = Notification.objects.get(notification_type='BOOKING_CREATED')
+        delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_FAILED)
+        self.assertEqual(delivery.error_code, 'provider_unavailable')
+        self.assertIn('HTTP 503', delivery.error_message)
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_failed_sms_is_not_retried_by_repeated_dispatch(self, mocked_post):
+        mocked_post.return_value = Mock(
+            status_code=503,
+            json=Mock(return_value={'status': 'error'}),
+        )
+        self.customer.phone_number = '09171234567'
+        self.customer.save(update_fields=['phone_number'])
+        notification = self._notification(
+            title='Booking request received',
+            message='CAV booking #1 saved. Payment status: Awaiting verification.',
+        )
+
+        dispatch_notification(notification)
+        dispatch_notification(notification)
+
+        delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
+        self.assertEqual(mocked_post.call_count, 1)
+        self.assertEqual(NotificationDelivery.objects.filter(notification=notification, channel='sms').count(), 1)
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_FAILED)
 
     def test_approved_payment_notifies_customer_and_confirms_down_payment(self):
         payment = Payment.objects.create(
@@ -308,7 +416,7 @@ class BookingNotificationTests(TestCase):
             channel=NotificationDelivery.CHANNEL_SMS,
         )
         self.assertEqual(delivery.status, NotificationDelivery.STATUS_FAILED)
-        self.assertEqual(delivery.error_code, 'provider_error')
+        self.assertEqual(delivery.error_code, 'provider_unavailable')
         self.assertEqual(Notification.objects.filter(notification_type='BOOKING_REMINDER_24H').count(), 1)
         self.assertEqual(mocked_post.call_count, 1)
 
@@ -565,7 +673,7 @@ class BookingNotificationTests(TestCase):
 
         delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
         self.assertEqual(delivery.status, NotificationDelivery.STATUS_FAILED)
-        self.assertEqual(delivery.error_code, 'provider_error')
+        self.assertEqual(delivery.error_code, 'provider_unavailable')
         self.assertTrue(Notification.objects.filter(pk=notification.pk).exists())
 
     def test_push_subscription_rejects_non_https_endpoint(self):
