@@ -35,7 +35,7 @@ from booking.views import (
 )
 from inventory.views import (
     ProductListCreateView, ProductDetailUpdateView, StockMovementListView, 
-    CategoryListCreateView, SupplierListCreateView, PurchaseOrderListCreateView, 
+    CategoryListCreateView, CategoryDetailView, SupplierListCreateView, SupplierDetailView, PurchaseOrderListCreateView,
     PurchaseOrderDetailUpdateView, IngredientListCreateView, IngredientDetailUpdateView,
     RecipeIngredientListCreateView, IngredientStockMovementListView, GenerateRecipeIngredientsView
 )
@@ -96,7 +96,9 @@ urlpatterns = [
     path('api/inventory/recipes/generate/', GenerateRecipeIngredientsView.as_view(), name='recipe_generate'),
     path('api/inventory/movements/', StockMovementListView.as_view(), name='stock_movement_list'),
     path('api/inventory/categories/', CategoryListCreateView.as_view(), name='category_list'),
+    path('api/inventory/categories/<int:pk>/', CategoryDetailView.as_view(), name='category_detail'),
     path('api/inventory/suppliers/', SupplierListCreateView.as_view(), name='supplier_list'),
+    path('api/inventory/suppliers/<int:pk>/', SupplierDetailView.as_view(), name='supplier_detail'),
     path('api/inventory/purchase-orders/', PurchaseOrderListCreateView.as_view(), name='po_list'),
     path('api/inventory/purchase-orders/<int:pk>/', PurchaseOrderDetailUpdateView.as_view(), name='po_detail'),
     

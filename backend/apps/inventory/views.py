@@ -5,11 +5,9 @@ from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 
 from audit.models import AuditLog
-from inventory.models import InventoryEvent, Product
+from inventory.models import Category, InventoryEvent, Product, Supplier
 from inventory.recipe_defaults import ensure_default_ingredients_and_recipes
 from inventory.serializers import (
-    DEFAULT_CATEGORIES,
-    DEFAULT_SUPPLIERS,
     CategorySerializer,
     IngredientSerializer,
     IngredientStockMovementSerializer,
@@ -18,6 +16,8 @@ from inventory.serializers import (
     PublicProductSerializer,
     RecipeIngredientSerializer,
     StockMovementSerializer,
+    SupplierSerializer,
+    active_supplier,
     supplier_for,
 )
 from users.permissions import IsStaffOrAdmin
@@ -34,8 +34,9 @@ def apply_limit(queryset, request, default=None, maximum=300):
     return queryset[:limit]
 
 
-def normalize_purchase_order_items(items_data):
+def normalize_purchase_order_items(items_data, allow_inactive=False):
     normalized = {}
+    unit_costs = {}
     for item in items_data:
         if not isinstance(item, dict):
             return None, 'Each purchase order item must be an object.'
@@ -46,15 +47,34 @@ def normalize_purchase_order_items(items_data):
             return None, 'Each purchase order item needs a product and whole-number quantity.'
         if quantity <= 0:
             return None, 'Purchase order quantities must be greater than zero.'
+        raw_unit_cost = item.get('unit_cost', item.get('cost_price'))
+        if raw_unit_cost in (None, ''):
+            raw_unit_cost = None
+        if raw_unit_cost is not None:
+            try:
+                unit_cost = Decimal(str(raw_unit_cost))
+            except (InvalidOperation, TypeError, ValueError):
+                return None, 'Each purchase order unit cost must be a valid number.'
+            if unit_cost < 0:
+                return None, 'Purchase order unit costs cannot be negative.'
+            unit_costs.setdefault(product_id, unit_cost)
         normalized[product_id] = normalized.get(product_id, 0) + quantity
 
     products = Product.objects.filter(id__in=normalized, item_type=Product.PRODUCT)
+    if not allow_inactive:
+        products = products.filter(is_active=True)
     products_by_id = {product.id: product for product in products}
     missing = set(normalized) - set(products_by_id)
     if missing:
-        return None, f'Product with ID {next(iter(missing))} was not found.'
+        return None, f'Product with ID {next(iter(missing))} was not found or is inactive.'
     return [
-        {'product_id': product_id, 'quantity': quantity, 'product_name': products_by_id[product_id].name}
+        {
+            'product_id': product_id,
+            'quantity': quantity,
+            'product_name': products_by_id[product_id].name,
+            'unit_cost': str(unit_costs.get(product_id, products_by_id[product_id].cost)),
+            'line_total': str(unit_costs.get(product_id, products_by_id[product_id].cost) * quantity),
+        }
         for product_id, quantity in normalized.items()
     ], None
 
@@ -63,7 +83,15 @@ class ProductListCreateView(generics.ListCreateAPIView):
     serializer_class = ProductSerializer
 
     def get_queryset(self):
-        queryset = Product.objects.filter(item_type=Product.PRODUCT, is_active=True).order_by('name')
+        include_inactive = (
+            self.request.user.is_authenticated
+            and self.request.user.role in ['STAFF', 'ADMIN']
+            and str(self.request.query_params.get('include_inactive', '')).lower() in {'1', 'true', 'yes'}
+        )
+        queryset = Product.objects.filter(item_type=Product.PRODUCT)
+        if not include_inactive:
+            queryset = queryset.filter(is_active=True)
+        queryset = queryset.order_by('name')
         return apply_limit(queryset, self.request)
 
     def get_serializer_class(self):
@@ -347,24 +375,68 @@ class CategoryListCreateView(views.APIView):
     permission_classes = [IsStaffOrAdmin]
 
     def get(self, request):
-        return Response(CategorySerializer(DEFAULT_CATEGORIES, many=True).data)
+        queryset = Category.objects.all()
+        if str(request.query_params.get('include_inactive', '')).lower() not in {'1', 'true', 'yes'}:
+            queryset = queryset.filter(is_active=True)
+        return Response(CategorySerializer(queryset, many=True).data)
 
     def post(self, request):
         if request.user.role not in ['STAFF', 'ADMIN']:
             return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
-        return Response({"detail": "Categories are fixed in the compact schema."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = CategorySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        category = serializer.save()
+        AuditLog.objects.create(user=request.user, action='CATEGORY_CREATE', description=f'Created category: {category.name}.')
+        return Response(CategorySerializer(category).data, status=status.HTTP_201_CREATED)
 
 
 class SupplierListCreateView(views.APIView):
     permission_classes = [IsStaffOrAdmin]
 
     def get(self, request):
-        return Response(DEFAULT_SUPPLIERS)
+        queryset = Supplier.objects.all()
+        if str(request.query_params.get('include_inactive', '')).lower() not in {'1', 'true', 'yes'}:
+            queryset = queryset.filter(is_active=True)
+        return Response(SupplierSerializer(queryset, many=True).data)
 
     def post(self, request):
         if request.user.role not in ['STAFF', 'ADMIN']:
             return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
-        return Response({"detail": "Suppliers are fixed in the compact schema."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = SupplierSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        supplier = serializer.save()
+        AuditLog.objects.create(user=request.user, action='SUPPLIER_CREATE', description=f'Created supplier: {supplier.name}.')
+        return Response(SupplierSerializer(supplier).data, status=status.HTTP_201_CREATED)
+
+
+class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+    permission_classes = [IsStaffOrAdmin]
+
+    def perform_update(self, serializer):
+        category = serializer.save()
+        AuditLog.objects.create(user=self.request.user, action='CATEGORY_UPDATE', description=f'Updated category: {category.name}.')
+
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=['is_active', 'updated_at'])
+        AuditLog.objects.create(user=self.request.user, action='CATEGORY_DEACTIVATE', description=f'Deactivated category: {instance.name}.')
+
+
+class SupplierDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Supplier.objects.all()
+    serializer_class = SupplierSerializer
+    permission_classes = [IsStaffOrAdmin]
+
+    def perform_update(self, serializer):
+        supplier = serializer.save()
+        AuditLog.objects.create(user=self.request.user, action='SUPPLIER_UPDATE', description=f'Updated supplier: {supplier.name}.')
+
+    def perform_destroy(self, instance):
+        instance.is_active = False
+        instance.save(update_fields=['is_active', 'updated_at'])
+        AuditLog.objects.create(user=self.request.user, action='SUPPLIER_DEACTIVATE', description=f'Deactivated supplier: {instance.name}.')
 
 
 class PurchaseOrderListCreateView(generics.ListCreateAPIView):
@@ -381,9 +453,12 @@ class PurchaseOrderListCreateView(generics.ListCreateAPIView):
         items_data = request.data.get('items', [])
         if not items_data or not isinstance(items_data, list):
             return Response({"items": "Purchase order needs at least one item."}, status=status.HTTP_400_BAD_REQUEST)
-        supplier_id = request.data.get('supplier')
+        try:
+            supplier_id = int(request.data.get('supplier'))
+        except (TypeError, ValueError):
+            supplier_id = None
         supplier_details = supplier_for(supplier_id)
-        if not supplier_details:
+        if not supplier_details or not active_supplier(supplier_id):
             return Response({"supplier": "Select a valid supplier."}, status=status.HTTP_400_BAD_REQUEST)
         items, item_error = normalize_purchase_order_items(items_data)
         if item_error:
@@ -410,6 +485,8 @@ class PurchaseOrderDetailUpdateView(generics.RetrieveUpdateAPIView):
         if request.user.role not in ['STAFF', 'ADMIN']:
             return Response({"detail": "Staff access required."}, status=status.HTTP_403_FORBIDDEN)
         new_status = request.data.get('status')
+        if new_status is not None:
+            new_status = str(new_status).upper().strip()
         if new_status and new_status not in {'ORDERED', 'RECEIVED', 'CANCELLED'}:
             return Response({"status": "Invalid purchase order status."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -419,9 +496,41 @@ class PurchaseOrderDetailUpdateView(generics.RetrieveUpdateAPIView):
             except InventoryEvent.DoesNotExist:
                 return Response({"detail": "Purchase order not found."}, status=status.HTTP_404_NOT_FOUND)
 
+            editable_fields = {'supplier', 'items', 'notes'} & set(request.data.keys())
+            if editable_fields and po.status != 'ORDERED':
+                return Response({"detail": "Only ordered purchase orders can be edited."}, status=status.HTTP_400_BAD_REQUEST)
+
+            changed_fields = []
+            if 'supplier' in request.data:
+                try:
+                    supplier_id = int(request.data.get('supplier'))
+                except (TypeError, ValueError):
+                    supplier_id = None
+                supplier_details = supplier_for(supplier_id)
+                if not supplier_details or not active_supplier(supplier_id):
+                    return Response({"supplier": "Select a valid supplier."}, status=status.HTTP_400_BAD_REQUEST)
+                po.supplier = supplier_id
+                po.supplier_details = supplier_details
+                changed_fields.extend(['supplier', 'supplier_details'])
+
+            if 'items' in request.data:
+                if not isinstance(request.data.get('items'), list) or not request.data.get('items'):
+                    return Response({"items": "Purchase order needs at least one item."}, status=status.HTTP_400_BAD_REQUEST)
+                items, item_error = normalize_purchase_order_items(request.data.get('items'), allow_inactive=True)
+                if item_error:
+                    return Response({"items": item_error}, status=status.HTTP_400_BAD_REQUEST)
+                po.items = items
+                changed_fields.append('items')
+
+            if 'notes' in request.data:
+                po.notes = str(request.data.get('notes', '') or '').strip()[:1000]
+                changed_fields.append('notes')
+
             if new_status and po.status != new_status:
+                if po.status != 'ORDERED':
+                    return Response({"status": "Only ordered purchase orders can be received or cancelled."}, status=status.HTTP_400_BAD_REQUEST)
                 if new_status == 'RECEIVED':
-                    items, item_error = normalize_purchase_order_items(po.items or [])
+                    items, item_error = normalize_purchase_order_items(po.items or [], allow_inactive=True)
                     if item_error:
                         return Response({"items": item_error}, status=status.HTTP_400_BAD_REQUEST)
                     product_ids = [item['product_id'] for item in items]
@@ -432,7 +541,7 @@ class PurchaseOrderDetailUpdateView(generics.RetrieveUpdateAPIView):
                     for item in items:
                         product = products_by_id[item['product_id']]
                         product.stock_level += item['quantity']
-                        product.save(update_fields=['stock_level'])
+                        product.save(update_fields=['stock_level', 'updated_at'])
                         InventoryEvent.objects.create(
                             event_type=InventoryEvent.STOCK_MOVEMENT,
                             product=product,
@@ -442,6 +551,13 @@ class PurchaseOrderDetailUpdateView(generics.RetrieveUpdateAPIView):
                             user=request.user,
                         )
                 po.status = new_status
-                po.save(update_fields=['status'])
-                AuditLog.objects.create(user=request.user, action="PO_UPDATE", description=f"Updated Purchase Order #{po.id} to {new_status}.")
+                changed_fields.append('status')
+
+            if changed_fields:
+                po.save(update_fields=sorted(set(changed_fields + ['updated_at'])))
+                AuditLog.objects.create(
+                    user=request.user,
+                    action="PO_UPDATE",
+                    description=f"Updated Purchase Order #{po.id}{f' to {new_status}' if new_status else ''}.",
+                )
         return Response(PurchaseOrderSerializer(po).data)

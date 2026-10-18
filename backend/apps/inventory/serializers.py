@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from inventory.models import InventoryEvent, Product
+from inventory.models import Category, InventoryEvent, Product, Supplier
 
 
 DEFAULT_CATEGORIES = [
@@ -23,6 +23,11 @@ def category_for(category_id):
         category_id = int(category_id)
     except (TypeError, ValueError):
         return None
+    category = Category.objects.filter(pk=category_id).values(
+        'id', 'name', 'description', 'is_active'
+    ).first()
+    if category:
+        return category
     return next((item for item in DEFAULT_CATEGORIES if item['id'] == category_id), None)
 
 
@@ -31,22 +36,53 @@ def supplier_for(supplier_id):
         supplier_id = int(supplier_id)
     except (TypeError, ValueError):
         return None
+    supplier = Supplier.objects.filter(pk=supplier_id).values(
+        'id', 'name', 'contact_person', 'email', 'phone', 'address', 'is_active'
+    ).first()
+    if supplier:
+        return supplier
     return next((item for item in DEFAULT_SUPPLIERS if item['id'] == supplier_id), None)
 
 
-class CategorySerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    description = serializers.CharField(allow_blank=True)
+def active_category(category_id):
+    if category_id in (None, ''):
+        return None
+    return Category.objects.filter(pk=category_id, is_active=True).first()
 
 
-class SupplierSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    contact_person = serializers.CharField(allow_blank=True, allow_null=True)
-    email = serializers.EmailField(allow_blank=True, allow_null=True)
-    phone = serializers.CharField(allow_blank=True, allow_null=True)
-    address = serializers.CharField(allow_blank=True, allow_null=True)
+def active_supplier(supplier_id):
+    if supplier_id in (None, ''):
+        return None
+    return Supplier.objects.filter(pk=supplier_id, is_active=True).first()
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'description', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Category name is required.')
+        return value
+
+
+class SupplierSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Supplier
+        fields = [
+            'id', 'name', 'contact_person', 'email', 'phone', 'address',
+            'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Supplier name is required.')
+        return value
 
 
 class IngredientSerializer(serializers.ModelSerializer):
@@ -99,6 +135,12 @@ class IngredientSerializer(serializers.ModelSerializer):
         expiration_date = attrs.get('expiration_date', getattr(self.instance, 'expiration_date', None))
         if purchase_date and expiration_date and expiration_date < purchase_date:
             field_errors['expiration_date'] = "Expiration date cannot be before purchase date."
+        category_id = attrs.get('category', getattr(self.instance, 'category', None))
+        supplier_id = attrs.get('supplier', getattr(self.instance, 'supplier', None))
+        if category_id is not None and not active_category(category_id):
+            field_errors['category'] = 'Select an active category.'
+        if supplier_id is not None and not active_supplier(supplier_id):
+            field_errors['supplier'] = 'Select an active supplier.'
         if field_errors:
             raise serializers.ValidationError(field_errors)
         return attrs
@@ -114,6 +156,15 @@ class IngredientSerializer(serializers.ModelSerializer):
         if supplier:
             validated_data['supplier_details'] = supplier
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        updated = super().update(instance, validated_data)
+        category = category_for(updated.category)
+        updated.category_name = category.get('name', '') if category else ''
+        updated.category_description = category.get('description', '') if category else ''
+        updated.supplier_details = supplier_for(updated.supplier) or {}
+        updated.save(update_fields=['category_name', 'category_description', 'supplier_details', 'updated_at'])
+        return updated
 
 
 class RecipeIngredientSerializer(serializers.Serializer):
@@ -198,6 +249,15 @@ class ProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Quantity and stock thresholds cannot be negative.")
         if maximum < minimum:
             raise serializers.ValidationError({"maximum_stock_level": "Maximum Stock Level must be greater than or equal to Minimum Stock Level."})
+        category_id = attrs.get('category', getattr(self.instance, 'category', None))
+        supplier_id = attrs.get('supplier', getattr(self.instance, 'supplier', None))
+        reference_errors = {}
+        if category_id is not None and not active_category(category_id):
+            reference_errors['category'] = 'Select an active category.'
+        if supplier_id is not None and not active_supplier(supplier_id):
+            reference_errors['supplier'] = 'Select an active supplier.'
+        if reference_errors:
+            raise serializers.ValidationError(reference_errors)
         return attrs
 
     def create(self, validated_data):
@@ -210,6 +270,15 @@ class ProductSerializer(serializers.ModelSerializer):
         if supplier:
             validated_data['supplier_details'] = supplier
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        updated = super().update(instance, validated_data)
+        category = category_for(updated.category)
+        updated.category_name = category.get('name', '') if category else ''
+        updated.category_description = category.get('description', '') if category else ''
+        updated.supplier_details = supplier_for(updated.supplier) or {}
+        updated.save(update_fields=['category_name', 'category_description', 'supplier_details', 'updated_at'])
+        return updated
 
 
 class PublicProductSerializer(serializers.ModelSerializer):
@@ -250,11 +319,27 @@ class IngredientStockMovementSerializer(serializers.ModelSerializer):
 
 class PurchaseOrderSerializer(serializers.ModelSerializer):
     supplier_name = serializers.SerializerMethodField()
+    supplier_details = serializers.JSONField(read_only=True)
+    total_quantity = serializers.SerializerMethodField()
+    total_value = serializers.SerializerMethodField()
+    can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = InventoryEvent
-        fields = ['id', 'supplier', 'supplier_name', 'status', 'notes', 'created_at', 'updated_at', 'items']
+        fields = [
+            'id', 'supplier', 'supplier_name', 'supplier_details', 'status', 'notes',
+            'created_at', 'updated_at', 'items', 'total_quantity', 'total_value', 'can_edit'
+        ]
 
     def get_supplier_name(self, obj):
         supplier = obj.supplier_details or supplier_for(obj.supplier) or {}
         return supplier.get('name', '')
+
+    def get_total_quantity(self, obj):
+        return sum(int(item.get('quantity') or 0) for item in (obj.items or []) if isinstance(item, dict))
+
+    def get_total_value(self, obj):
+        return sum(Decimal(str(item.get('line_total') or 0)) for item in (obj.items or []) if isinstance(item, dict))
+
+    def get_can_edit(self, obj):
+        return obj.status == 'ORDERED'

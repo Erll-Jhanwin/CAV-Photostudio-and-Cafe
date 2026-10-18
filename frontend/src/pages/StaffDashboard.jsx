@@ -4,13 +4,14 @@ import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../ap
 import {
   ShoppingBag, Package, DollarSign, Search, Plus,
   Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
-  PackageCheck, Clock, CalendarOff, Archive, Printer
+  PackageCheck, Clock, CalendarOff, Archive, Printer, ClipboardList, Settings2,
+  Trash2, Truck, Save
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
 import { StatusBadge } from '../components/ui/Badge';
-import { Input, Select } from '../components/ui/Input';
+import { Input, Select, Textarea } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { EmptyState } from '../components/ui/EmptyState';
 import { LoadingSpinner, Skeleton, SkeletonTable, SkeletonProfileCard } from '../components/ui/Skeleton';
@@ -121,6 +122,26 @@ const emptyProductForm = () => ({
   storage_location: '',
 });
 
+const emptyCatalogProductForm = () => ({
+  name: '',
+  sku: '',
+  category: '',
+  supplier: '',
+  unit: 'pcs',
+  cost: '0',
+  price: '0',
+  stock_level: '0',
+  reorder_point: '5',
+  maximum_stock_level: '100',
+  is_cafe_item: true,
+  is_active: true,
+  image_url: '',
+});
+
+const emptyCategoryForm = () => ({ name: '', description: '', is_active: true });
+const emptySupplierForm = () => ({ name: '', contact_person: '', email: '', phone: '', address: '', is_active: true });
+const emptyPurchaseOrderForm = () => ({ supplier: '', notes: '', items: [{ product_id: '', quantity: '1', unit_cost: '' }] });
+
 const getComputedInventoryInfo = (product) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -192,9 +213,13 @@ export default function StaffDashboard() {
   const [signOutOpen, setSignOutOpen] = useState(false);
 
   const [products, setProducts] = useState([]);
+  const [catalogProducts, setCatalogProducts] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [catalogCategories, setCatalogCategories] = useState([]);
+  const [catalogSuppliers, setCatalogSuppliers] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -237,10 +262,15 @@ export default function StaffDashboard() {
   const [salesPaymentFilter, setSalesPaymentFilter] = useState('ALL');
   const [salesStartDate, setSalesStartDate] = useState('');
   const [salesEndDate, setSalesEndDate] = useState('');
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogStatusFilter, setCatalogStatusFilter] = useState('ALL');
+  const [purchaseOrderStatusFilter, setPurchaseOrderStatusFilter] = useState('ALL');
   const [productPage, setProductPage] = useState(1);
   const [paymentPage, setPaymentPage] = useState(1);
   const [inventoryPage, setInventoryPage] = useState(1);
   const [salesPage, setSalesPage] = useState(1);
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [purchaseOrderPage, setPurchaseOrderPage] = useState(1);
   const [inventorySort, setInventorySort] = useState({ key: 'name', dir: 'asc' });
   const [salesSort, setSalesSort] = useState({ key: 'created_at', dir: 'desc' });
   const [productModalOpen, setProductModalOpen] = useState(false);
@@ -248,6 +278,27 @@ export default function StaffDashboard() {
   const [productSaving, setProductSaving] = useState(false);
   const [productErrors, setProductErrors] = useState({});
   const [editIngredientErrors, setEditIngredientErrors] = useState({});
+  const [catalogProductModalOpen, setCatalogProductModalOpen] = useState(false);
+  const [editingCatalogProduct, setEditingCatalogProduct] = useState(null);
+  const [catalogProductForm, setCatalogProductForm] = useState(emptyCatalogProductForm());
+  const [catalogProductSaving, setCatalogProductSaving] = useState(false);
+  const [catalogProductErrors, setCatalogProductErrors] = useState({});
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [categoryForm, setCategoryForm] = useState(emptyCategoryForm());
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [categoryErrors, setCategoryErrors] = useState({});
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState(null);
+  const [supplierForm, setSupplierForm] = useState(emptySupplierForm());
+  const [supplierSaving, setSupplierSaving] = useState(false);
+  const [supplierErrors, setSupplierErrors] = useState({});
+  const [purchaseOrderModalOpen, setPurchaseOrderModalOpen] = useState(false);
+  const [editingPurchaseOrder, setEditingPurchaseOrder] = useState(null);
+  const [purchaseOrderForm, setPurchaseOrderForm] = useState(emptyPurchaseOrderForm());
+  const [purchaseOrderSaving, setPurchaseOrderSaving] = useState(false);
+  const [purchaseOrderErrors, setPurchaseOrderErrors] = useState({});
+  const [purchaseOrderActionId, setPurchaseOrderActionId] = useState(null);
   const tabLoadInFlightRef = useRef(new Set());
 
   const loadStaticInventoryOptions = useCallback(async (force = false) => {
@@ -314,6 +365,22 @@ export default function StaffDashboard() {
         await loadStaticInventoryOptions(force);
         const ingredientsRes = await getCached('/api/inventory/ingredients/', { params: { limit: 300 } }, { force });
         setIngredients(normalizeRowsById(ingredientsRes.data, row => row?.name));
+      } else if (tab === 'catalog') {
+        const [catalogProductsRes, catalogCategoriesRes, catalogSuppliersRes, purchaseOrdersRes] = await Promise.all([
+          getCached('/api/inventory/products/', { params: { limit: 300, include_inactive: true } }, { force }),
+          getCached('/api/inventory/categories/', { params: { include_inactive: true } }, { force }),
+          getCached('/api/inventory/suppliers/', { params: { include_inactive: true } }, { force }),
+          getCached('/api/inventory/purchase-orders/', { params: { limit: 100 } }, { force }),
+        ]);
+        const nextCatalogProducts = normalizeRowsById(catalogProductsRes.data, row => row?.name);
+        const nextCatalogCategories = normalizeRowsById(catalogCategoriesRes.data, row => row?.name);
+        const nextCatalogSuppliers = normalizeRowsById(catalogSuppliersRes.data, row => row?.name);
+        setCatalogProducts(nextCatalogProducts);
+        setCatalogCategories(nextCatalogCategories);
+        setCatalogSuppliers(nextCatalogSuppliers);
+        setCategories(nextCatalogCategories.filter(row => row.is_active !== false));
+        setSuppliers(nextCatalogSuppliers.filter(row => row.is_active !== false));
+        setPurchaseOrders(normalizeRowsById(purchaseOrdersRes.data, row => row?.id));
       } else if (tab === 'sales') {
         const ordersRes = await getCached('/api/pos/orders/', { params: { limit: 100 } }, { force });
         setOrders(normalizeRowsById(ordersRes.data, row => row?.transaction_id || row?.created_at));
@@ -358,9 +425,9 @@ export default function StaffDashboard() {
     const refreshChangedData = (event) => {
       const url = String(event.detail?.url || '');
       if (url.includes('/api/pos/orders/')) {
-        void Promise.all(['pos', 'inventory', 'sales'].map(tab => loadTabData(tab, true)));
+        void Promise.all(['pos', 'inventory', 'catalog', 'sales'].map(tab => loadTabData(tab, true)));
       } else if (url.includes('/api/inventory/')) {
-        void Promise.all(['pos', 'inventory'].map(tab => loadTabData(tab, true)));
+        void Promise.all(['pos', 'inventory', 'catalog'].map(tab => loadTabData(tab, true)));
       } else if (url.includes('/api/bookings/payments/')) {
         void loadTabData('payments', true);
       }
@@ -373,6 +440,8 @@ export default function StaffDashboard() {
   useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
   useEffect(() => { setInventoryPage(1); }, [invSearch, inventoryFilter]);
   useEffect(() => { setSalesPage(1); }, [salesPaymentFilter, salesStartDate, salesEndDate]);
+  useEffect(() => { setCatalogPage(1); }, [catalogSearch, catalogStatusFilter]);
+  useEffect(() => { setPurchaseOrderPage(1); }, [purchaseOrderStatusFilter]);
 
   useEffect(() => {
     localStorage.setItem(LOCAL_PRINTING_ENABLED_KEY, String(localPrintingEnabled));
@@ -871,6 +940,324 @@ export default function StaffDashboard() {
     }
   };
 
+  const apiValidationErrors = (err) => {
+    const data = err.response?.data;
+    if (!data || typeof data !== 'object') return {};
+    return Object.entries(data).reduce((result, [key, value]) => ({
+      ...result,
+      [key]: Array.isArray(value) ? value.join(', ') : String(value),
+    }), {});
+  };
+
+  const reloadCatalogWorkspace = async () => {
+    await loadTabData('catalog', true);
+    await refreshProducts();
+  };
+
+  const catalogProductToForm = (product) => ({
+    name: product?.name || '',
+    sku: product?.sku || '',
+    category: product?.category || '',
+    supplier: product?.supplier || '',
+    unit: product?.unit || 'pcs',
+    cost: product?.cost ?? '0',
+    price: product?.price ?? '0',
+    stock_level: product?.stock_level ?? '0',
+    reorder_point: product?.reorder_point ?? product?.minimum_stock_level ?? '5',
+    maximum_stock_level: product?.maximum_stock_level ?? '100',
+    is_cafe_item: product?.is_cafe_item !== false,
+    is_active: product?.is_active !== false,
+    image_url: product?.image_url || '',
+  });
+
+  const openCatalogProductModal = (product = null) => {
+    setEditingCatalogProduct(product);
+    setCatalogProductForm(catalogProductToForm(product));
+    setCatalogProductErrors({});
+    setCatalogProductModalOpen(true);
+  };
+
+  const validateCatalogProductForm = (form) => {
+    const errors = {};
+    if (!String(form.name || '').trim()) errors.name = 'Product name is required.';
+    if (!String(form.category || '').trim()) errors.category = 'Category is required.';
+    if (!String(form.unit || '').trim()) errors.unit = 'Unit is required.';
+    ['cost', 'price', 'stock_level', 'reorder_point', 'maximum_stock_level'].forEach(field => {
+      const value = Number(form[field]);
+      if (!String(form[field] ?? '').trim() || !Number.isFinite(value) || value < 0) {
+        errors[field] = 'Enter a valid non-negative number.';
+      }
+    });
+    if (Number(form.maximum_stock_level) < Number(form.reorder_point)) {
+      errors.maximum_stock_level = 'Maximum stock level must be greater than or equal to reorder point.';
+    }
+    if (form.image_url && !/^https?:\/\//i.test(form.image_url)) {
+      errors.image_url = 'Image URL must start with http:// or https://.';
+    }
+    return errors;
+  };
+
+  const handleCatalogProductSubmit = async (event) => {
+    event.preventDefault();
+    if (catalogProductSaving) return;
+    const errors = validateCatalogProductForm(catalogProductForm);
+    setCatalogProductErrors(errors);
+    if (Object.keys(errors).length) return;
+    try {
+      setCatalogProductSaving(true);
+      const payload = {
+        name: catalogProductForm.name.trim(),
+        sku: catalogProductForm.sku.trim() || null,
+        category: Number(catalogProductForm.category),
+        supplier: catalogProductForm.supplier ? Number(catalogProductForm.supplier) : null,
+        unit: catalogProductForm.unit.trim(),
+        cost: Number(catalogProductForm.cost),
+        price: Number(catalogProductForm.price),
+        stock_level: Number(catalogProductForm.stock_level),
+        reorder_point: Number(catalogProductForm.reorder_point),
+        maximum_stock_level: Number(catalogProductForm.maximum_stock_level),
+        is_cafe_item: Boolean(catalogProductForm.is_cafe_item),
+        is_active: Boolean(catalogProductForm.is_active),
+        image_url: catalogProductForm.image_url.trim(),
+      };
+      if (editingCatalogProduct) {
+        await client.patch(`/api/inventory/products/${editingCatalogProduct.id}/`, payload);
+      } else {
+        await client.post('/api/inventory/products/', payload);
+      }
+      setCatalogProductModalOpen(false);
+      setEditingCatalogProduct(null);
+      setCatalogProductForm(emptyCatalogProductForm());
+      setCatalogProductErrors({});
+      await reloadCatalogWorkspace();
+      alert(editingCatalogProduct ? 'Catalog product updated successfully.' : 'Catalog product created successfully.');
+    } catch (err) {
+      setCatalogProductErrors(apiValidationErrors(err));
+      alert(getApiErrorMessage(err, 'Failed to save catalog product.'));
+    } finally {
+      setCatalogProductSaving(false);
+    }
+  };
+
+  const handleCatalogProductActivation = async (product) => {
+    const activating = product.is_active === false;
+    const confirmed = await confirm({
+      title: `${activating ? 'Activate' : 'Deactivate'} Catalog Product`,
+      message: `${activating ? 'Make' : 'Remove'} ${product.name} ${activating ? 'available in POS and purchasing' : 'from active POS and purchasing lists'}?`,
+      confirmLabel: activating ? 'Activate Product' : 'Deactivate Product',
+      type: activating ? 'success' : 'warning',
+    });
+    if (!confirmed) return;
+    try {
+      if (activating) await client.patch(`/api/inventory/products/${product.id}/`, { is_active: true });
+      else await client.delete(`/api/inventory/products/${product.id}/`);
+      await reloadCatalogWorkspace();
+      alert(`Product ${activating ? 'activated' : 'deactivated'} successfully.`);
+    } catch (err) {
+      alert(getApiErrorMessage(err, 'Failed to update product status.'));
+    }
+  };
+
+  const openCategoryModal = (category = null) => {
+    setEditingCategory(category);
+    setCategoryForm(category ? { name: category.name || '', description: category.description || '', is_active: category.is_active !== false } : emptyCategoryForm());
+    setCategoryErrors({});
+    setCategoryModalOpen(true);
+  };
+
+  const handleCategorySubmit = async (event) => {
+    event.preventDefault();
+    if (categorySaving) return;
+    const errors = {};
+    if (!categoryForm.name.trim()) errors.name = 'Category name is required.';
+    setCategoryErrors(errors);
+    if (Object.keys(errors).length) return;
+    try {
+      setCategorySaving(true);
+      const request = editingCategory
+        ? client.patch(`/api/inventory/categories/${editingCategory.id}/`, categoryForm)
+        : client.post('/api/inventory/categories/', categoryForm);
+      await request;
+      setCategoryModalOpen(false);
+      await reloadCatalogWorkspace();
+      alert(editingCategory ? 'Category updated successfully.' : 'Category created successfully.');
+    } catch (err) {
+      setCategoryErrors(apiValidationErrors(err));
+      alert(getApiErrorMessage(err, 'Failed to save category.'));
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const handleCategoryActivation = async (category) => {
+    const activating = category.is_active === false;
+    const confirmed = await confirm({
+      title: `${activating ? 'Activate' : 'Deactivate'} Category`,
+      message: `${activating ? 'Restore' : 'Hide'} the ${category.name} category from active catalog selectors?`,
+      confirmLabel: activating ? 'Activate Category' : 'Deactivate Category',
+      type: activating ? 'success' : 'warning',
+    });
+    if (!confirmed) return;
+    try {
+      if (activating) await client.patch(`/api/inventory/categories/${category.id}/`, { is_active: true });
+      else await client.delete(`/api/inventory/categories/${category.id}/`);
+      await reloadCatalogWorkspace();
+    } catch (err) {
+      alert(getApiErrorMessage(err, 'Failed to update category status.'));
+    }
+  };
+
+  const openSupplierModal = (supplier = null) => {
+    setEditingSupplier(supplier);
+    setSupplierForm(supplier ? {
+      name: supplier.name || '',
+      contact_person: supplier.contact_person || '',
+      email: supplier.email || '',
+      phone: supplier.phone || '',
+      address: supplier.address || '',
+      is_active: supplier.is_active !== false,
+    } : emptySupplierForm());
+    setSupplierErrors({});
+    setSupplierModalOpen(true);
+  };
+
+  const handleSupplierSubmit = async (event) => {
+    event.preventDefault();
+    if (supplierSaving) return;
+    const errors = {};
+    if (!supplierForm.name.trim()) errors.name = 'Supplier name is required.';
+    if (supplierForm.email && !/^\S+@\S+\.\S+$/.test(supplierForm.email)) errors.email = 'Enter a valid email address.';
+    setSupplierErrors(errors);
+    if (Object.keys(errors).length) return;
+    try {
+      setSupplierSaving(true);
+      const request = editingSupplier
+        ? client.patch(`/api/inventory/suppliers/${editingSupplier.id}/`, supplierForm)
+        : client.post('/api/inventory/suppliers/', supplierForm);
+      await request;
+      setSupplierModalOpen(false);
+      await reloadCatalogWorkspace();
+      alert(editingSupplier ? 'Supplier updated successfully.' : 'Supplier created successfully.');
+    } catch (err) {
+      setSupplierErrors(apiValidationErrors(err));
+      alert(getApiErrorMessage(err, 'Failed to save supplier.'));
+    } finally {
+      setSupplierSaving(false);
+    }
+  };
+
+  const handleSupplierActivation = async (supplier) => {
+    const activating = supplier.is_active === false;
+    const confirmed = await confirm({
+      title: `${activating ? 'Activate' : 'Deactivate'} Supplier`,
+      message: `${activating ? 'Restore' : 'Hide'} ${supplier.name} ${activating ? 'in active catalog selectors' : 'from active catalog selectors'}?`,
+      confirmLabel: activating ? 'Activate Supplier' : 'Deactivate Supplier',
+      type: activating ? 'success' : 'warning',
+    });
+    if (!confirmed) return;
+    try {
+      if (activating) await client.patch(`/api/inventory/suppliers/${supplier.id}/`, { is_active: true });
+      else await client.delete(`/api/inventory/suppliers/${supplier.id}/`);
+      await reloadCatalogWorkspace();
+    } catch (err) {
+      alert(getApiErrorMessage(err, 'Failed to update supplier status.'));
+    }
+  };
+
+  const openPurchaseOrderModal = (purchaseOrder = null) => {
+    setEditingPurchaseOrder(purchaseOrder);
+    setPurchaseOrderForm(purchaseOrder ? {
+      supplier: purchaseOrder.supplier || '',
+      notes: purchaseOrder.notes || '',
+      items: (purchaseOrder.items || []).map(item => ({
+        product_id: item.product_id || item.product || '',
+        quantity: String(item.quantity || 1),
+        unit_cost: item.unit_cost ?? item.cost_price ?? '',
+      })),
+    } : emptyPurchaseOrderForm());
+    setPurchaseOrderErrors({});
+    setPurchaseOrderModalOpen(true);
+  };
+
+  const updatePurchaseOrderItem = (index, field, value) => {
+    setPurchaseOrderForm(current => ({
+      ...current,
+      items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item),
+    }));
+    setPurchaseOrderErrors(current => ({ ...current, items: '' }));
+  };
+
+  const validatePurchaseOrderForm = (form) => {
+    const errors = {};
+    if (!form.supplier) errors.supplier = 'Supplier is required.';
+    if (!form.items.length) errors.items = 'Add at least one product.';
+    const seen = new Set();
+    form.items.forEach((item, index) => {
+      if (!item.product_id) errors[`item_${index}`] = 'Select a product.';
+      if (item.product_id && seen.has(String(item.product_id))) errors[`item_${index}`] = 'Products may only appear once per order.';
+      seen.add(String(item.product_id));
+      const quantity = Number(item.quantity);
+      if (!Number.isInteger(quantity) || quantity <= 0) errors[`quantity_${index}`] = 'Use a whole quantity greater than zero.';
+      if (item.unit_cost !== '' && (!Number.isFinite(Number(item.unit_cost)) || Number(item.unit_cost) < 0)) errors[`cost_${index}`] = 'Use a valid non-negative cost.';
+    });
+    if (String(form.notes || '').length > 1000) errors.notes = 'Notes cannot exceed 1000 characters.';
+    return errors;
+  };
+
+  const handlePurchaseOrderSubmit = async (event) => {
+    event.preventDefault();
+    if (purchaseOrderSaving) return;
+    const errors = validatePurchaseOrderForm(purchaseOrderForm);
+    setPurchaseOrderErrors(errors);
+    if (Object.keys(errors).length) return;
+    const payload = {
+      supplier: Number(purchaseOrderForm.supplier),
+      notes: purchaseOrderForm.notes.trim(),
+      items: purchaseOrderForm.items.map(item => ({
+        product_id: Number(item.product_id),
+        quantity: Number(item.quantity),
+        ...(item.unit_cost !== '' ? { unit_cost: Number(item.unit_cost) } : {}),
+      })),
+    };
+    try {
+      setPurchaseOrderSaving(true);
+      if (editingPurchaseOrder) await client.patch(`/api/inventory/purchase-orders/${editingPurchaseOrder.id}/`, payload);
+      else await client.post('/api/inventory/purchase-orders/', payload);
+      setPurchaseOrderModalOpen(false);
+      setEditingPurchaseOrder(null);
+      setPurchaseOrderForm(emptyPurchaseOrderForm());
+      await loadTabData('catalog', true);
+      alert(editingPurchaseOrder ? 'Purchase order updated successfully.' : 'Purchase order created successfully.');
+    } catch (err) {
+      setPurchaseOrderErrors(apiValidationErrors(err));
+      alert(getApiErrorMessage(err, 'Failed to save purchase order.'));
+    } finally {
+      setPurchaseOrderSaving(false);
+    }
+  };
+
+  const handlePurchaseOrderStatus = async (purchaseOrder, nextStatus) => {
+    const action = nextStatus === 'RECEIVED' ? 'receive' : 'cancel';
+    const confirmed = await confirm({
+      title: `${nextStatus === 'RECEIVED' ? 'Receive' : 'Cancel'} Purchase Order`,
+      message: `${action === 'receive' ? 'Add the ordered quantities to product stock' : 'Mark this order as cancelled'} for PO #${purchaseOrder.id}?`,
+      confirmLabel: nextStatus === 'RECEIVED' ? 'Receive Order' : 'Cancel Order',
+      type: nextStatus === 'RECEIVED' ? 'success' : 'warning',
+    });
+    if (!confirmed || purchaseOrderActionId === purchaseOrder.id) return;
+    try {
+      setPurchaseOrderActionId(purchaseOrder.id);
+      await client.patch(`/api/inventory/purchase-orders/${purchaseOrder.id}/`, { status: nextStatus });
+      await loadTabData('catalog', true);
+      await refreshProducts();
+      alert(`Purchase order #${purchaseOrder.id} marked ${nextStatus.toLowerCase()}.`);
+    } catch (err) {
+      alert(getApiErrorMessage(err, 'Failed to update purchase order status.'));
+    } finally {
+      setPurchaseOrderActionId(null);
+    }
+  };
+
   const handleLogout = useCallback(() => {
     alert('Signed out successfully.');
     logout();
@@ -881,10 +1268,11 @@ export default function StaffDashboard() {
     { key: 'pos', label: 'POS Terminal', icon: ShoppingBag, active: activeTab === 'pos', onClick: () => setActiveTab('pos') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
+    { key: 'catalog', label: 'Catalog & Purchasing', icon: ClipboardList, active: activeTab === 'catalog', onClick: () => setActiveTab('catalog') },
     { key: 'sales', label: 'Daily Sales Logs', icon: DollarSign, active: activeTab === 'sales', onClick: () => setActiveTab('sales') },
   ];
 
-  const pageTitles = { pos: 'POS Terminal', payments: 'Payment Booking Verification', inventory: 'Live Inventory', sales: 'Daily Sales Logs' };
+  const pageTitles = { pos: 'POS Terminal', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs' };
   const isCurrentTabLoading = !!loadingResources[activeTab];
   const toggleSort = (current, setter, key, column = {}) => {
     setter(current.key === key
@@ -924,6 +1312,26 @@ export default function StaffDashboard() {
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
   ));
   const pagedBookingPayments = paginateRows(filteredBookingPayments, paymentPage, TABLE_PAGE_SIZE);
+  const filteredCatalogProducts = catalogProducts.filter(product => {
+    const search = catalogSearch.toLowerCase();
+    const matchesSearch = [product.name, product.sku, product.category_details?.name, product.supplier_details?.name]
+      .filter(Boolean)
+      .some(value => String(value).toLowerCase().includes(search));
+    const matchesStatus = catalogStatusFilter === 'ALL'
+      || (catalogStatusFilter === 'ACTIVE' && product.is_active !== false)
+      || (catalogStatusFilter === 'INACTIVE' && product.is_active === false);
+    return matchesSearch && matchesStatus;
+  });
+  const pagedCatalogProducts = paginateRows(filteredCatalogProducts, catalogPage, TABLE_PAGE_SIZE);
+  const filteredPurchaseOrders = purchaseOrders.filter(order => purchaseOrderStatusFilter === 'ALL' || order.status === purchaseOrderStatusFilter);
+  const pagedPurchaseOrders = paginateRows(filteredPurchaseOrders, purchaseOrderPage, TABLE_PAGE_SIZE);
+  const activeCatalogProducts = catalogProducts.filter(product => product.is_active !== false);
+  const purchaseOrderProductOptions = catalogProducts
+    .filter(product => product.is_active !== false || purchaseOrderForm.items.some(item => String(item.product_id) === String(product.id)))
+    .map(product => ({
+      value: product.id,
+      label: `${product.name}${product.sku ? ` · ${product.sku}` : ''}${product.is_active === false ? ' · Inactive (existing order)' : ''}`,
+    }));
 
   if (!initialDataReady && (loading || isCurrentTabLoading)) {
     return <StaffSkeleton />;
@@ -1543,6 +1951,155 @@ export default function StaffDashboard() {
             </div>
           )}
 
+          {/* CATALOG & PURCHASING */}
+          {activeTab === 'catalog' && (
+            <div className="space-y-6 animate-in-up" key="catalog">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Catalog &amp; Purchasing</h1>
+                  <p className="text-xs text-espresso/50 mt-1">Manage sellable products, reference data, and the full purchase-order lifecycle.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" icon={Settings2} onClick={() => openCategoryModal()}>Add Category</Button>
+                  <Button variant="outline" size="sm" icon={Truck} onClick={() => openSupplierModal()}>Add Supplier</Button>
+                  <Button variant="primary" size="sm" icon={Plus} onClick={() => openCatalogProductModal()}>Add Product</Button>
+                  <Button variant="gold" size="sm" icon={ClipboardList} onClick={() => openPurchaseOrderModal()}>New Purchase Order</Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {[
+                  ['Active products', catalogProducts.filter(product => product.is_active !== false).length, 'text-emerald-700 bg-emerald-50'],
+                  ['Inactive products', catalogProducts.filter(product => product.is_active === false).length, 'text-slate-700 bg-slate-100'],
+                  ['Open purchase orders', purchaseOrders.filter(order => order.status === 'ORDERED').length, 'text-amber-700 bg-amber-50'],
+                  ['Received orders', purchaseOrders.filter(order => order.status === 'RECEIVED').length, 'text-blue-700 bg-blue-50'],
+                ].map(([label, value, className]) => (
+                  <div key={label} className="rounded-2xl border border-espresso/[0.06] bg-white p-4 shadow-sm">
+                    <div className={`mb-3 inline-flex rounded-xl px-2.5 py-1 text-[10px] font-black ${className}`}>{label}</div>
+                    <p className="font-sans text-2xl font-extrabold text-espresso">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                <Card>
+                  <CardHeader title="Categories" subtitle={`${catalogCategories.length} configured reference categor${catalogCategories.length === 1 ? 'y' : 'ies'}`} />
+                  <div className="space-y-2">
+                    {catalogCategories.length ? catalogCategories.map(category => (
+                      <div key={category.id} className="flex items-center justify-between gap-3 rounded-xl bg-cream/70 px-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-black text-espresso">{category.name}</p>
+                          <p className="truncate text-[10px] text-espresso/50">{category.description || 'No description'}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <StatusBadge status={category.is_active === false ? 'CANCELLED' : 'ACTIVE'} />
+                          <Button variant="ghost" size="xs" icon={Pencil} title={`Edit ${category.name}`} aria-label={`Edit ${category.name}`} onClick={() => openCategoryModal(category)} />
+                          <Button variant="ghost" size="xs" icon={category.is_active === false ? Check : Trash2} title={`${category.is_active === false ? 'Activate' : 'Deactivate'} ${category.name}`} aria-label={`${category.is_active === false ? 'Activate' : 'Deactivate'} ${category.name}`} onClick={() => handleCategoryActivation(category)} />
+                        </div>
+                      </div>
+                    )) : <EmptyState icon={Settings2} title="No categories" description="Create a category to organize catalog products." />}
+                  </div>
+                </Card>
+
+                <Card>
+                  <CardHeader title="Suppliers" subtitle={`${catalogSuppliers.length} configured supplier${catalogSuppliers.length === 1 ? '' : 's'}`} />
+                  <div className="space-y-2">
+                    {catalogSuppliers.length ? catalogSuppliers.map(supplier => (
+                      <div key={supplier.id} className="flex items-center justify-between gap-3 rounded-xl bg-cream/70 px-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-black text-espresso">{supplier.name}</p>
+                          <p className="truncate text-[10px] text-espresso/50">{supplier.contact_person || 'No contact person'}{supplier.email ? ` · ${supplier.email}` : ''}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <StatusBadge status={supplier.is_active === false ? 'CANCELLED' : 'ACTIVE'} />
+                          <Button variant="ghost" size="xs" icon={Pencil} title={`Edit ${supplier.name}`} aria-label={`Edit ${supplier.name}`} onClick={() => openSupplierModal(supplier)} />
+                          <Button variant="ghost" size="xs" icon={supplier.is_active === false ? Check : Trash2} title={`${supplier.is_active === false ? 'Activate' : 'Deactivate'} ${supplier.name}`} aria-label={`${supplier.is_active === false ? 'Activate' : 'Deactivate'} ${supplier.name}`} onClick={() => handleSupplierActivation(supplier)} />
+                        </div>
+                      </div>
+                    )) : <EmptyState icon={Truck} title="No suppliers" description="Create a supplier to use in purchase orders." />}
+                  </div>
+                </Card>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <h2 className="font-sans text-xl font-extrabold text-espresso">Sellable Catalog</h2>
+                    <p className="text-xs text-espresso/50 mt-1">Changes here flow to the POS after the next refresh.</p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="relative min-w-[240px]">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-espresso/30" />
+                      <input type="text" value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)} placeholder="Search products, SKU, category..." className="w-full bg-white border border-espresso/10 rounded-xl py-2.5 pl-10 pr-4 text-xs focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/20" />
+                    </div>
+                    <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
+                      {[['ALL', 'All'], ['ACTIVE', 'Active'], ['INACTIVE', 'Inactive']].map(([value, label]) => (
+                        <button key={value} type="button" onClick={() => setCatalogStatusFilter(value)} className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${catalogStatusFilter === value ? 'bg-espresso text-cream shadow-sm' : 'text-espresso/50 hover:text-espresso'}`}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+                  <DataTable
+                    columns={[
+                      { key: 'name', label: 'Product', render: product => <><p className="font-bold text-espresso">{product.name}</p><p className="text-[10px] text-espresso/45">{product.sku || 'No SKU'} · {product.is_cafe_item ? 'Cafe item' : 'Studio item'}</p></> },
+                      { key: 'category_details.name', label: 'Category', render: product => product.category_details?.name || 'Uncategorized' },
+                      { key: 'supplier_details.name', label: 'Supplier', render: product => product.supplier_details?.name || 'No supplier' },
+                      { key: 'price', label: 'Price', align: 'right', render: product => formatCurrency(product.price) },
+                      { key: 'stock_level', label: 'Stock', align: 'center', render: product => `${product.stock_level} ${product.unit || 'pcs'}` },
+                      { key: 'is_active', label: 'Status', align: 'center', render: product => <StatusBadge status={product.is_active === false ? 'CANCELLED' : 'ACTIVE'} /> },
+                    ]}
+                    rows={pagedCatalogProducts}
+                    renderActions={product => <><Button variant="ghost" size="xs" icon={Pencil} title={`Edit ${product.name}`} aria-label={`Edit ${product.name}`} onClick={() => openCatalogProductModal(product)} /><Button variant="ghost" size="xs" icon={product.is_active === false ? Check : Trash2} title={`${product.is_active === false ? 'Activate' : 'Deactivate'} ${product.name}`} aria-label={`${product.is_active === false ? 'Activate' : 'Deactivate'} ${product.name}`} onClick={() => handleCatalogProductActivation(product)} /></>}
+                    emptyIcon={Package}
+                    emptyTitle="No catalog products"
+                    emptyDescription="Create a product or adjust the current filters."
+                    minWidth={900}
+                  />
+                  <PaginationControls page={catalogPage} setPage={setCatalogPage} total={filteredCatalogProducts.length} pageSize={TABLE_PAGE_SIZE} />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h2 className="font-sans text-xl font-extrabold text-espresso">Purchase Orders</h2>
+                    <p className="text-xs text-espresso/50 mt-1">Create, edit ordered drafts, receive stock once, or cancel an order.</p>
+                  </div>
+                  <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
+                    {[['ALL', 'All'], ['ORDERED', 'Ordered'], ['RECEIVED', 'Received'], ['CANCELLED', 'Cancelled']].map(([value, label]) => (
+                      <button key={value} type="button" onClick={() => setPurchaseOrderStatusFilter(value)} className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${purchaseOrderStatusFilter === value ? 'bg-espresso text-cream shadow-sm' : 'text-espresso/50 hover:text-espresso'}`}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+                  <DataTable
+                    columns={[
+                      { key: 'id', label: 'PO', render: order => <><p className="font-bold text-espresso">PO #{order.id}</p><p className="text-[10px] text-espresso/45">{formatManilaDateTime(order.created_at)}</p></> },
+                      { key: 'supplier_name', label: 'Supplier' },
+                      { key: 'items', label: 'Items', align: 'center', render: order => `${order.items?.length || 0} line${order.items?.length === 1 ? '' : 's'}` },
+                      { key: 'total_quantity', label: 'Quantity', align: 'center', render: order => order.total_quantity ?? (order.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0) },
+                      { key: 'total_value', label: 'Value', align: 'right', render: order => formatCurrency(order.total_value) },
+                      { key: 'status', label: 'Status', align: 'center', render: order => <StatusBadge status={order.status} /> },
+                    ]}
+                    rows={pagedPurchaseOrders}
+                    renderActions={order => <>
+                      {order.status === 'ORDERED' && <Button variant="ghost" size="xs" icon={Pencil} title={`Edit PO ${order.id}`} aria-label={`Edit PO ${order.id}`} onClick={() => openPurchaseOrderModal(order)} />}
+                      {order.status === 'ORDERED' && <Button variant="success" size="xs" icon={Check} loading={purchaseOrderActionId === order.id} onClick={() => handlePurchaseOrderStatus(order, 'RECEIVED')}>Receive</Button>}
+                      {order.status === 'ORDERED' && <Button variant="danger" size="xs" icon={X} loading={purchaseOrderActionId === order.id} onClick={() => handlePurchaseOrderStatus(order, 'CANCELLED')}>Cancel</Button>}
+                    </>}
+                    emptyIcon={ClipboardList}
+                    emptyTitle="No purchase orders"
+                    emptyDescription="Create an order to start tracking replenishment through receipt."
+                    minWidth={900}
+                    actionWidth="w-[240px]"
+                  />
+                  <PaginationControls page={purchaseOrderPage} setPage={setPurchaseOrderPage} total={filteredPurchaseOrders.length} pageSize={TABLE_PAGE_SIZE} />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* SALES LOGS */}
           {activeTab === 'sales' && (
             <div className="space-y-6 animate-in-up" key="sales">
@@ -1638,6 +2195,98 @@ export default function StaffDashboard() {
           )}
         </main>
       </div>
+
+      {/* Catalog Product Modal */}
+      <Modal
+        open={catalogProductModalOpen}
+        onClose={() => { if (!catalogProductSaving) { setCatalogProductModalOpen(false); setCatalogProductErrors({}); } }}
+        title={editingCatalogProduct ? 'Edit Catalog Product' : 'Add Catalog Product'}
+        size="3xl"
+      >
+        <form onSubmit={handleCatalogProductSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Input label="Product Name" required value={catalogProductForm.name} onChange={e => setCatalogProductForm(current => ({ ...current, name: e.target.value }))} error={catalogProductErrors.name} />
+            <Input label="SKU" value={catalogProductForm.sku} onChange={e => setCatalogProductForm(current => ({ ...current, sku: e.target.value }))} error={catalogProductErrors.sku} placeholder="Optional unique SKU" />
+            <Select label="Category" required value={catalogProductForm.category} onChange={e => setCatalogProductForm(current => ({ ...current, category: e.target.value }))} options={[{ value: '', label: 'Select category' }, ...catalogCategories.filter(category => category.is_active !== false).map(category => ({ value: category.id, label: category.name }))]} error={catalogProductErrors.category} />
+            <Select label="Supplier" value={catalogProductForm.supplier} onChange={e => setCatalogProductForm(current => ({ ...current, supplier: e.target.value }))} options={[{ value: '', label: 'No supplier' }, ...catalogSuppliers.filter(supplier => supplier.is_active !== false).map(supplier => ({ value: supplier.id, label: supplier.name }))]} error={catalogProductErrors.supplier} />
+            <Input label="Unit" required value={catalogProductForm.unit} onChange={e => setCatalogProductForm(current => ({ ...current, unit: e.target.value }))} error={catalogProductErrors.unit} placeholder="pcs, bottle, print" />
+            <Input label="Cost" required type="number" min="0" step="0.01" value={catalogProductForm.cost} onChange={e => setCatalogProductForm(current => ({ ...current, cost: e.target.value }))} error={catalogProductErrors.cost} />
+            <Input label="Selling Price" required type="number" min="0" step="0.01" value={catalogProductForm.price} onChange={e => setCatalogProductForm(current => ({ ...current, price: e.target.value }))} error={catalogProductErrors.price} />
+            <Input label="Opening Stock" required type="number" min="0" step="1" value={catalogProductForm.stock_level} onChange={e => setCatalogProductForm(current => ({ ...current, stock_level: e.target.value }))} error={catalogProductErrors.stock_level} />
+            <Input label="Reorder Point" required type="number" min="0" step="1" value={catalogProductForm.reorder_point} onChange={e => setCatalogProductForm(current => ({ ...current, reorder_point: e.target.value }))} error={catalogProductErrors.reorder_point} />
+            <Input label="Maximum Stock" required type="number" min="0" step="1" value={catalogProductForm.maximum_stock_level} onChange={e => setCatalogProductForm(current => ({ ...current, maximum_stock_level: e.target.value }))} error={catalogProductErrors.maximum_stock_level} />
+            <Input label="Image URL" value={catalogProductForm.image_url} onChange={e => setCatalogProductForm(current => ({ ...current, image_url: e.target.value }))} error={catalogProductErrors.image_url} placeholder="https://..." />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-espresso/10 bg-cream/50 px-4 py-3 text-xs font-bold text-espresso">
+              <input type="checkbox" checked={catalogProductForm.is_cafe_item} onChange={e => setCatalogProductForm(current => ({ ...current, is_cafe_item: e.target.checked }))} className="h-4 w-4 accent-espresso" />
+              Available as cafe/POS item
+            </label>
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-espresso/10 bg-cream/50 px-4 py-3 text-xs font-bold text-espresso">
+              <input type="checkbox" checked={catalogProductForm.is_active} onChange={e => setCatalogProductForm(current => ({ ...current, is_active: e.target.checked }))} className="h-4 w-4 accent-espresso" />
+              Active in the catalog
+            </label>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-espresso/[0.06] pt-4 sm:flex-row">
+            <Button type="submit" variant="primary" className="flex-1" icon={Save} loading={catalogProductSaving} disabled={catalogProductSaving}>Save Product</Button>
+            <Button type="button" variant="outline" onClick={() => setCatalogProductModalOpen(false)} disabled={catalogProductSaving}>Close</Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Category Modal */}
+      <Modal open={categoryModalOpen} onClose={() => { if (!categorySaving) setCategoryModalOpen(false); }} title={editingCategory ? 'Edit Category' : 'Add Category'} size="md">
+        <form onSubmit={handleCategorySubmit} className="space-y-4">
+          <Input label="Category Name" required value={categoryForm.name} onChange={e => setCategoryForm(current => ({ ...current, name: e.target.value }))} error={categoryErrors.name} />
+          <Textarea label="Description" rows={4} value={categoryForm.description} onChange={e => setCategoryForm(current => ({ ...current, description: e.target.value }))} error={categoryErrors.description} />
+          {editingCategory && <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-espresso/10 bg-cream/50 px-4 py-3 text-xs font-bold text-espresso"><input type="checkbox" checked={categoryForm.is_active} onChange={e => setCategoryForm(current => ({ ...current, is_active: e.target.checked }))} className="h-4 w-4 accent-espresso" /> Active category</label>}
+          <div className="flex gap-2 border-t border-espresso/[0.06] pt-4"><Button type="submit" variant="primary" className="flex-1" loading={categorySaving}>Save Category</Button><Button type="button" variant="outline" onClick={() => setCategoryModalOpen(false)} disabled={categorySaving}>Close</Button></div>
+        </form>
+      </Modal>
+
+      {/* Supplier Modal */}
+      <Modal open={supplierModalOpen} onClose={() => { if (!supplierSaving) setSupplierModalOpen(false); }} title={editingSupplier ? 'Edit Supplier' : 'Add Supplier'} size="lg">
+        <form onSubmit={handleSupplierSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Input label="Supplier Name" required value={supplierForm.name} onChange={e => setSupplierForm(current => ({ ...current, name: e.target.value }))} error={supplierErrors.name} />
+            <Input label="Contact Person" value={supplierForm.contact_person} onChange={e => setSupplierForm(current => ({ ...current, contact_person: e.target.value }))} error={supplierErrors.contact_person} />
+            <Input label="Email" type="email" value={supplierForm.email} onChange={e => setSupplierForm(current => ({ ...current, email: e.target.value }))} error={supplierErrors.email} />
+            <Input label="Phone" value={supplierForm.phone} onChange={e => setSupplierForm(current => ({ ...current, phone: e.target.value }))} error={supplierErrors.phone} />
+            <div className="md:col-span-2"><Input label="Address" value={supplierForm.address} onChange={e => setSupplierForm(current => ({ ...current, address: e.target.value }))} error={supplierErrors.address} /></div>
+          </div>
+          {editingSupplier && <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-espresso/10 bg-cream/50 px-4 py-3 text-xs font-bold text-espresso"><input type="checkbox" checked={supplierForm.is_active} onChange={e => setSupplierForm(current => ({ ...current, is_active: e.target.checked }))} className="h-4 w-4 accent-espresso" /> Active supplier</label>}
+          <div className="flex gap-2 border-t border-espresso/[0.06] pt-4"><Button type="submit" variant="primary" className="flex-1" loading={supplierSaving}>Save Supplier</Button><Button type="button" variant="outline" onClick={() => setSupplierModalOpen(false)} disabled={supplierSaving}>Close</Button></div>
+        </form>
+      </Modal>
+
+      {/* Purchase Order Modal */}
+      <Modal open={purchaseOrderModalOpen} onClose={() => { if (!purchaseOrderSaving) setPurchaseOrderModalOpen(false); }} title={editingPurchaseOrder ? `Edit Purchase Order #${editingPurchaseOrder.id}` : 'New Purchase Order'} size="5xl">
+        <form onSubmit={handlePurchaseOrderSubmit} className="space-y-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Select label="Supplier" required value={purchaseOrderForm.supplier} onChange={e => setPurchaseOrderForm(current => ({ ...current, supplier: e.target.value }))} options={[{ value: '', label: 'Select supplier' }, ...catalogSuppliers.filter(supplier => supplier.is_active !== false).map(supplier => ({ value: supplier.id, label: supplier.name }))]} error={purchaseOrderErrors.supplier} />
+            <Textarea label="Notes" rows={2} value={purchaseOrderForm.notes} onChange={e => setPurchaseOrderForm(current => ({ ...current, notes: e.target.value }))} error={purchaseOrderErrors.notes} placeholder="Delivery instructions or internal notes" />
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between"><div><h4 className="text-sm font-black text-espresso">Order Lines</h4><p className="text-[10px] text-espresso/50">Only active catalog products can be ordered.</p></div><Button type="button" variant="outline" size="sm" icon={Plus} onClick={() => setPurchaseOrderForm(current => ({ ...current, items: [...current.items, { product_id: '', quantity: '1', unit_cost: '' }] }))}>Add Line</Button></div>
+            {purchaseOrderErrors.items && <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700" role="alert">{purchaseOrderErrors.items}</p>}
+            <div className="space-y-2">
+              {purchaseOrderForm.items.map((item, index) => {
+                const product = activeCatalogProducts.find(row => String(row.id) === String(item.product_id));
+                const lineTotal = Number(item.quantity || 0) * Number(item.unit_cost || product?.cost || 0);
+                return (
+                  <div key={`${index}-${item.product_id}`} className="grid grid-cols-1 gap-2 rounded-xl border border-espresso/10 bg-cream/40 p-3 md:grid-cols-[minmax(0,1fr)_120px_140px_auto] md:items-end">
+                    <Select label={index === 0 ? 'Product' : undefined} value={item.product_id} onChange={e => updatePurchaseOrderItem(index, 'product_id', e.target.value)} options={[{ value: '', label: 'Select product' }, ...purchaseOrderProductOptions]} error={purchaseOrderErrors[`item_${index}`]} />
+                    <Input label={index === 0 ? 'Quantity' : undefined} type="number" min="1" step="1" value={item.quantity} onChange={e => updatePurchaseOrderItem(index, 'quantity', e.target.value)} error={purchaseOrderErrors[`quantity_${index}`]} />
+                    <Input label={index === 0 ? 'Unit Cost' : undefined} type="number" min="0" step="0.01" value={item.unit_cost} placeholder={product ? String(product.cost || '0') : 'Product cost'} onChange={e => updatePurchaseOrderItem(index, 'unit_cost', e.target.value)} error={purchaseOrderErrors[`cost_${index}`]} />
+                    <div className="flex items-center justify-between gap-2 md:justify-end"><span className="text-xs font-black text-espresso">{formatCurrency(lineTotal)}</span><Button type="button" variant="ghost" size="xs" icon={Trash2} title="Remove line" aria-label="Remove line" onClick={() => setPurchaseOrderForm(current => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) }))} disabled={purchaseOrderForm.items.length === 1} /></div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-espresso/[0.06] pt-4 sm:flex-row"><Button type="submit" variant="primary" className="flex-1" icon={Save} loading={purchaseOrderSaving} disabled={purchaseOrderSaving}>Save Purchase Order</Button><Button type="button" variant="outline" onClick={() => setPurchaseOrderModalOpen(false)} disabled={purchaseOrderSaving}>Close</Button></div>
+        </form>
+      </Modal>
 
       {/* Add Ingredient Modal */}
       <Modal open={productModalOpen} onClose={() => { setProductModalOpen(false); setProductErrors({}); }} title="Add Ingredient Stock" size="3xl">
