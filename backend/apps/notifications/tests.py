@@ -1,8 +1,9 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -133,6 +134,183 @@ class BookingNotificationTests(TestCase):
             title=title,
             message=message,
         )
+
+    def _set_booking_start(self, start):
+        local_start = timezone.localtime(start)
+        self.booking.scheduled_date = local_start.date()
+        self.booking.scheduled_time = local_start.time().replace(second=0, microsecond=0)
+        self.booking.save(update_fields=['scheduled_date', 'scheduled_time'])
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_booking_reminder_command_sends_24_hour_sms_once(self, mocked_post):
+        mocked_post.return_value = Mock(status_code=200, json=Mock(return_value={'status': 200, 'message_id': 'sms_reminder'}))
+        self.customer.phone_number = '09171234567'
+        self.customer.save(update_fields=['phone_number'])
+        reference_time = timezone.make_aware(
+            datetime(2026, 10, 18, 8, 0),
+            timezone.get_current_timezone(),
+        )
+        self._set_booking_start(reference_time + timedelta(hours=24))
+
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command(
+                'send_booking_reminders',
+                '--at',
+                reference_time.isoformat(),
+                '--window-minutes',
+                '30',
+            )
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command(
+                'send_booking_reminders',
+                '--at',
+                reference_time.isoformat(),
+                '--window-minutes',
+                '30',
+            )
+
+        notification = Notification.objects.get()
+        self.assertEqual(notification.notification_type, 'BOOKING_REMINDER_24H')
+        self.assertIn('October 19, 2026 at 8:00 AM', notification.message)
+        self.assertIn('arrive 15 minutes early', notification.message)
+        self.assertIn('outfits or props', notification.message)
+        delivery = NotificationDelivery.objects.get(
+            notification=notification,
+            channel=NotificationDelivery.CHANNEL_SMS,
+        )
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_SENT)
+        self.assertEqual(mocked_post.call_count, 1)
+        self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_booking_reminder_command_sends_2_hour_sms(self, mocked_post):
+        mocked_post.return_value = Mock(status_code=200, json=Mock(return_value={'status': 'queued', 'message_id': 'sms_two_hour'}))
+        self.customer.phone_number = '09171234567'
+        self.customer.save(update_fields=['phone_number'])
+        reference_time = timezone.make_aware(
+            datetime(2026, 10, 18, 8, 0),
+            timezone.get_current_timezone(),
+        )
+        self._set_booking_start(reference_time + timedelta(hours=2))
+
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command(
+                'send_booking_reminders',
+                '--at',
+                reference_time.isoformat(),
+                '--window-minutes',
+                '30',
+            )
+
+        notification = Notification.objects.get()
+        self.assertEqual(notification.notification_type, 'BOOKING_REMINDER_2H')
+        self.assertIn('(2-hour)', notification.message)
+        self.assertEqual(mocked_post.call_count, 1)
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_booking_reminder_respects_cancellation_and_reschedule(self, mocked_post):
+        mocked_post.return_value = Mock(status_code=200, json=Mock(return_value={'status': 200, 'message_id': 'sms_schedule'}))
+        self.customer.phone_number = '09171234567'
+        self.customer.save(update_fields=['phone_number'])
+        reference_time = timezone.make_aware(
+            datetime(2026, 10, 18, 8, 0),
+            timezone.get_current_timezone(),
+        )
+        self._set_booking_start(reference_time + timedelta(hours=24))
+        self.booking.status = 'CANCELLED'
+        self.booking.save(update_fields=['status'])
+
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command(
+                'send_booking_reminders',
+                '--at',
+                reference_time.isoformat(),
+                '--window-minutes',
+                '30',
+            )
+        self.assertFalse(Notification.objects.exists())
+
+        self.booking.status = 'PENDING'
+        self.booking.scheduled_date = (reference_time + timedelta(hours=48)).date()
+        self.booking.scheduled_time = (reference_time + timedelta(hours=48)).time()
+        self.booking.save(update_fields=['status', 'scheduled_date', 'scheduled_time'])
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command(
+                'send_booking_reminders',
+                '--at',
+                (reference_time + timedelta(hours=24)).isoformat(),
+                '--window-minutes',
+                '30',
+            )
+
+        self.assertEqual(Notification.objects.filter(notification_type='BOOKING_REMINDER_24H').count(), 1)
+        self.assertEqual(mocked_post.call_count, 1)
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_booking_reminder_provider_failure_is_logged_without_duplicates(self, mocked_post):
+        mocked_post.return_value = Mock(status_code=503, json=Mock(return_value={'status': 'error'}))
+        self.customer.phone_number = '09171234567'
+        self.customer.save(update_fields=['phone_number'])
+        reference_time = timezone.make_aware(
+            datetime(2026, 10, 18, 8, 0),
+            timezone.get_current_timezone(),
+        )
+        self._set_booking_start(reference_time + timedelta(hours=24))
+
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command(
+                'send_booking_reminders',
+                '--at',
+                reference_time.isoformat(),
+                '--window-minutes',
+                '30',
+            )
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command(
+                'send_booking_reminders',
+                '--at',
+                reference_time.isoformat(),
+                '--window-minutes',
+                '30',
+            )
+
+        notification = Notification.objects.get(notification_type='BOOKING_REMINDER_24H')
+        delivery = NotificationDelivery.objects.get(
+            notification=notification,
+            channel=NotificationDelivery.CHANNEL_SMS,
+        )
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_FAILED)
+        self.assertEqual(delivery.error_code, 'provider_error')
+        self.assertEqual(Notification.objects.filter(notification_type='BOOKING_REMINDER_24H').count(), 1)
+        self.assertEqual(mocked_post.call_count, 1)
 
     @override_settings(
         EMAIL_DELIVERY_ENABLED=False,

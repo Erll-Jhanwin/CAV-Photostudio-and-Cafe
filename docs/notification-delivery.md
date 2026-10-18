@@ -20,6 +20,7 @@ SMS_DELIVERY_ENABLED=true
 IPROG_SMS_API_TOKEN=your_iprogsms_token
 IPROG_SMS_API_BASE_URL=https://www.iprogsms.com
 IPROG_SMS_API_TIMEOUT=15
+BOOKING_REMINDER_WINDOW_MINUTES=30
 
 PUSH_DELIVERY_ENABLED=true
 PUSH_VAPID_PUBLIC_KEY=your_public_key
@@ -59,6 +60,44 @@ message (payment awaiting verification) and the approved-payment message
 (payment verified and booking status updated). Already-sent SMS deliveries are
 not sent again if the same notification is dispatched again; failed deliveries
 remain logged and can be retried safely.
+
+## Booking reminders
+
+The backend includes the `send_booking_reminders` management command. It checks
+the booking's current local date/time and sends two customer reminders through
+the existing notification pipeline: approximately 24 hours before the session
+and approximately 2 hours before the session. The default delivery window is
+30 minutes, configured with `BOOKING_REMINDER_WINDOW_MINUTES`, so a scheduler
+can run every 15 minutes without needing exact timing. Each message includes
+the booking number, local date/time, a 15-minute early-arrival reminder, and
+basic outfit/prop preparation guidance.
+
+Run it from the backend directory:
+
+```text
+python manage.py send_booking_reminders
+```
+
+Configure the backend service to run this command every 15 minutes. For a
+Windows deployment, use Task Scheduler with the program set to the backend
+virtual-environment Python executable and the argument `manage.py send_booking_reminders`,
+with the working directory set to `backend`. For a
+Render deployment, add a Cron Job that uses the same backend environment and
+runs `python manage.py send_booking_reminders` every 15 minutes. The cron job
+must have the same database and `SMS_DELIVERY_*`/`IPROG_SMS_*` environment
+variables as the web service.
+
+The command only considers the existing active booking statuses
+(`PENDING`, `CONFIRMED`, and `CONFIRMED_DP`), so cancelled or completed
+bookings are ignored. It locks and re-checks each booking immediately before
+creating a reminder. A rescheduled booking uses its new date/time and creates
+a new reminder signature; a previously delivered SMS cannot be recalled. The
+notification message itself is the idempotency signature, and a sent SMS is
+never sent again on repeated scheduler runs. Provider failures are captured in
+`NotificationDelivery` with `failed` status and `provider_error`; they do not
+roll back the booking. Use `--at 2026-10-18T08:00:00+08:00` for a deterministic
+dry-run/test and add `--dry-run` to inspect due reminders without creating
+notifications or contacting iProgSMS.
 
 ## Deployment checklist
 
