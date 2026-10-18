@@ -1,6 +1,8 @@
 import requests
 from django.conf import settings
 
+from users.phone_numbers import normalize_philippine_mobile_number
+
 
 class IProgSMSDeliveryError(Exception):
     pass
@@ -29,7 +31,33 @@ def _post_i_progsms(path, payload):
 
     if response.status_code >= 500:
         raise IProgSMSDeliveryError('iProgSMS is temporarily unavailable.')
+    if response.status_code >= 400:
+        raise IProgSMSDeliveryError('iProgSMS rejected the request.')
     return data
+
+
+def send_transactional_sms(phone_number, message):
+    """Send a non-OTP SMS through the iProgSMS transactional endpoint."""
+    normalized = normalize_philippine_mobile_number(phone_number)
+    if not normalized:
+        raise IProgSMSDeliveryError('Enter a valid Philippine mobile number.')
+    if not str(message or '').strip():
+        raise IProgSMSDeliveryError('SMS message cannot be empty.')
+
+    data = _post_i_progsms(
+        '/api/v1/sms_messages',
+        {
+            'phone_number': normalized,
+            'message': str(message).strip(),
+        },
+    )
+    provider_status = str(data.get('status', '')).lower()
+    if data.get('message_id') or provider_status in {'success', 'queued', '200'}:
+        return {
+            'provider': 'iprogsms',
+            'provider_message_id': str(data.get('message_id') or ''),
+        }
+    raise IProgSMSDeliveryError('iProgSMS rejected the SMS request.')
 
 
 def send_password_reset_otp(phone_number, purpose='password reset'):

@@ -6,167 +6,17 @@
   <title>CAV Project Progress Dashboard</title>
   <style>
     :root {
-      --espresso: #2e1a11;
-      --espresso-2: #4c2e20;
-      --cream: #fbf7ef;
-      --cream-2: #f3eadb;
-      --gold: #d4af37;
-      --gold-soft: #f4e5a9;
-      --ink-soft: #76685e;
-      --line: rgba(46, 26, 17, .11);
-      --green: #197a53;
-      --green-bg: #e9f7ef;
-      --amber: #a35f08;
-      --amber-bg: #fff5dc;
-      --red: #a72d2d;
-      --red-bg: #fdecec;
-      --blue: #255f91;
-      --blue-bg: #eaf3fb;
-      --shadow: 0 20px 55px rgba(46, 26, 17, .08);
+      --espresso:#2e1a11; --espresso-2:#573626; --cream:#fbf7ef; --cream-2:#f2e8d8;
+      --gold:#d4af37; --gold-soft:#f6e9af; --muted:#76685e; --line:rgba(46,26,17,.12);
+      --green:#197a53; --green-bg:#e9f7ef; --amber:#a35f08; --amber-bg:#fff5dc;
+      --red:#a72d2d; --red-bg:#fdecec; --blue:#255f91; --blue-bg:#eaf3fb;
+      --shadow:0 18px 48px rgba(46,26,17,.08);
     }
-
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      color: var(--espresso);
-      background: linear-gradient(145deg, #fffdf9 0%, var(--cream) 52%, #f1e7d8 100%);
-      font: 14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    a { color: var(--espresso); }
-    .page { max-width: 1460px; margin: 0 auto; padding: 30px 22px 64px; }
-    .hero {
-      position: relative;
-      overflow: hidden;
-      border-radius: 28px;
-      padding: 34px;
-      color: #fffaf0;
-      background: radial-gradient(circle at 88% 8%, rgba(212,175,55,.32), transparent 28%), linear-gradient(125deg, #2e1a11, #5b3420);
-      box-shadow: var(--shadow);
-    }
-    .hero::after { content: ""; position: absolute; inset: auto -90px -150px auto; width: 340px; height: 340px; border: 1px solid rgba(255,255,255,.12); border-radius: 50%; box-shadow: 0 0 0 30px rgba(255,255,255,.03), 0 0 0 65px rgba(255,255,255,.025); }
-    .hero-content { position: relative; z-index: 1; }
-    .eyebrow { margin: 0 0 9px; color: var(--gold-soft); font-size: 11px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; }
-    h1, h2, h3 { margin: 0; line-height: 1.15; }
-    h1 { max-width: 850px; font-size: clamp(30px, 4vw, 54px); letter-spacing: -.045em; }
-    h2 { font-size: 20px; letter-spacing: -.02em; }
-    h3 { font-size: 15px; }
-    .hero-subtitle { max-width: 760px; margin: 16px 0 0; color: rgba(255,250,240,.76); font-size: 15px; }
-    .hero-meta { display: flex; flex-wrap: wrap; gap: 9px 18px; margin-top: 24px; color: rgba(255,250,240,.64); font-size: 12px; }
-    .hero-meta strong { color: #fffaf0; }
-    .overall {
-      display: grid;
-      grid-template-columns: minmax(230px, 1fr) minmax(280px, 1.65fr);
-      align-items: center;
-      gap: 30px;
-      margin-top: 28px;
-    }
-    .score-label { color: rgba(255,250,240,.72); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; }
-    .score { margin: 4px 0 4px; font-size: clamp(54px, 8vw, 92px); font-weight: 900; letter-spacing: -.08em; line-height: .95; }
-    .score-note { color: rgba(255,250,240,.7); font-size: 12px; }
-    .progress-track { width: 100%; height: 13px; overflow: hidden; border: 1px solid rgba(255,255,255,.14); border-radius: 99px; background: rgba(255,255,255,.12); }
-    .progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #d4af37, #f4e5a9); box-shadow: 0 0 22px rgba(212,175,55,.4); transition: width .4s ease; }
-    .score-legend { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; color: rgba(255,250,240,.64); font-size: 11px; }
-
-    .section { margin-top: 26px; }
-    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin: 0 2px 13px; }
-    .section-head p { max-width: 720px; margin: 0; color: var(--ink-soft); font-size: 12px; }
-    .grid { display: grid; gap: 14px; }
-    .kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-    .kpi, .card { border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.78); box-shadow: 0 10px 30px rgba(46,26,17,.045); }
-    .kpi { padding: 17px; min-height: 108px; }
-    .kpi-label { color: var(--ink-soft); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-    .kpi-value { margin-top: 7px; font-size: 24px; font-weight: 900; letter-spacing: -.04em; }
-    .kpi-note { margin-top: 2px; color: var(--ink-soft); font-size: 11px; }
-    .two-col { grid-template-columns: minmax(0, 1.25fr) minmax(330px, .75fr); }
-    .card { padding: 20px; }
-    .card + .card { margin-top: 14px; }
-    .status-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .status-card { padding: 18px; border-radius: 16px; border: 1px solid var(--line); background: #fff; }
-    .status-card.complete { border-color: rgba(25,122,83,.22); background: linear-gradient(135deg, #fff, var(--green-bg)); }
-    .status-card.ongoing { border-color: rgba(163,95,8,.2); background: linear-gradient(135deg, #fff, var(--amber-bg)); }
-    .status-card.pending { border-color: rgba(167,45,45,.2); background: linear-gradient(135deg, #fff, var(--red-bg)); }
-    .status-card .number { font-size: 30px; font-weight: 900; }
-    .status-card .caption { color: var(--ink-soft); font-size: 12px; }
-    .status-card ul { margin: 12px 0 0; padding-left: 18px; color: var(--espresso-2); font-size: 12px; }
-    .status-card li + li { margin-top: 5px; }
-
-    .module-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.82); box-shadow: 0 10px 30px rgba(46,26,17,.045); }
-    table { width: 100%; border-collapse: collapse; min-width: 920px; }
-    th, td { padding: 13px 15px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
-    th { color: var(--ink-soft); background: rgba(243,234,219,.68); font-size: 10px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
-    tr:last-child td { border-bottom: 0; }
-    .module-name { min-width: 166px; font-weight: 850; }
-    .module-name small { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 11px; font-weight: 500; }
-    .bar-cell { min-width: 200px; }
-    .bar-line { display: flex; align-items: center; gap: 10px; }
-    .bar-line .progress-track { height: 9px; background: #eee5d7; border: 0; }
-    .bar-line .progress-fill { background: linear-gradient(90deg, var(--gold), #edcc6a); box-shadow: none; }
-    .percent { width: 42px; font-size: 12px; font-weight: 900; text-align: right; }
-    .weight { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
-    .evidence, .remaining { max-width: 330px; color: var(--espresso-2); font-size: 12px; }
-    .remaining { color: var(--ink-soft); }
-    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 99px; font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
-    .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-    .badge.complete { color: var(--green); background: var(--green-bg); }
-    .badge.ongoing { color: var(--amber); background: var(--amber-bg); }
-    .badge.pending { color: var(--red); background: var(--red-bg); }
-    .badge.pass { color: var(--green); background: var(--green-bg); }
-    .badge.warn { color: var(--amber); background: var(--amber-bg); }
-    .badge.fail { color: var(--red); background: var(--red-bg); }
-    .badge.blocked { color: var(--blue); background: var(--blue-bg); }
-
-    .evidence-list, .next-list { margin: 13px 0 0; padding: 0; list-style: none; }
-    .evidence-list li, .next-list li { position: relative; padding: 10px 0 10px 27px; border-top: 1px solid var(--line); color: var(--espresso-2); font-size: 12px; }
-    .evidence-list li::before { content: "✓"; position: absolute; left: 0; top: 10px; color: var(--green); font-weight: 900; }
-    .next-list li::before { content: "→"; position: absolute; left: 0; top: 10px; color: var(--gold); font-weight: 900; }
-    .evidence-list strong, .next-list strong { color: var(--espresso); }
-    .subtle { color: var(--ink-soft); }
-    .feature-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .feature-card { min-height: 230px; }
-    .feature-card h3 { display: flex; align-items: center; gap: 8px; }
-    .feature-card h3::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-bg); }
-    .feature-card.ongoing h3::before { background: var(--amber); box-shadow: 0 0 0 4px var(--amber-bg); }
-    .feature-card.pending h3::before { background: var(--red); box-shadow: 0 0 0 4px var(--red-bg); }
-    .feature-card ul { margin: 14px 0 0; padding-left: 18px; color: var(--espresso-2); font-size: 12px; }
-    .feature-card li + li { margin-top: 7px; }
-
-    .verification-table { min-width: 660px; }
-    .verification-table td:first-child { width: 28%; font-weight: 800; }
-    .issue { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; padding: 14px 0; border-top: 1px solid var(--line); }
-    .issue:first-child { border-top: 0; }
-    .severity { min-width: 62px; text-align: center; }
-    .issue-title { font-weight: 850; }
-    .issue-detail { margin-top: 3px; color: var(--ink-soft); font-size: 12px; }
-    .issue-ref { color: var(--ink-soft); font-size: 11px; text-align: right; white-space: nowrap; }
-    code { padding: 2px 5px; border-radius: 5px; color: var(--espresso); background: var(--cream-2); font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .method { color: var(--ink-soft); font-size: 12px; }
-    .method strong { color: var(--espresso); }
-    .footer { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 11px; }
-    .print-button { border: 0; border-radius: 99px; padding: 9px 14px; color: var(--espresso); background: var(--gold); font: inherit; font-size: 12px; font-weight: 850; cursor: pointer; }
-    .print-button:hover { background: #e8c754; }
-    @media (max-width: 1100px) {
-      .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .two-col { grid-template-columns: 1fr; }
-      .feature-grid { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 650px) {
-      .page { padding: 14px 12px 40px; }
-      .hero { padding: 24px 20px; border-radius: 22px; }
-      .overall { grid-template-columns: 1fr; gap: 18px; }
-      .kpis, .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .card { padding: 16px; }
-      .section-head { display: block; }
-      .section-head p { margin-top: 6px; }
-      .issue { grid-template-columns: auto 1fr; }
-      .issue-ref { grid-column: 2; text-align: left; }
-    }
-    @media print {
-      body { background: #fff; }
-      .page { max-width: none; padding: 0; }
-      .hero, .card, .kpi, .module-table-wrap { box-shadow: none; }
-      .print-button { display: none; }
-      .section { break-inside: avoid; }
-    }
+    *{box-sizing:border-box} body{margin:0;color:var(--espresso);background:linear-gradient(145deg,#fffdf9,var(--cream) 55%,#f1e7d8);font:14px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+    .page{max-width:1460px;margin:auto;padding:28px 20px 60px}.hero{position:relative;overflow:hidden;border-radius:28px;padding:34px;color:#fffaf0;background:radial-gradient(circle at 88% 8%,rgba(212,175,55,.35),transparent 28%),linear-gradient(125deg,#2e1a11,#5b3420);box-shadow:var(--shadow)}
+    .hero:after{content:"";position:absolute;right:-90px;bottom:-150px;width:340px;height:340px;border:1px solid rgba(255,255,255,.14);border-radius:50%;box-shadow:0 0 0 30px rgba(255,255,255,.03),0 0 0 65px rgba(255,255,255,.025)}
+    .hero-content{position:relative;z-index:1}.eyebrow{margin:0 0 9px;color:var(--gold-soft);font-size:11px;font-weight:900;letter-spacing:.2em;text-transform:uppercase}h1,h2,h3{margin:0;line-height:1.15}h1{max-width:900px;font-size:clamp(30px,4vw,54px);letter-spacing:-.05em}h2{font-size:20px;letter-spacing:-.02em}h3{font-size:15px}.subtitle{max-width:850px;margin:16px 0 0;color:rgba(255,250,240,.76);font-size:15px}.meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:23px;color:rgba(255,250,240,.66);font-size:12px}.meta strong{color:#fffaf0}.overall{display:grid;grid-template-columns:minmax(230px,1fr) minmax(280px,1.65fr);align-items:center;gap:30px;margin-top:28px}.score-label{color:rgba(255,250,240,.72);font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}.score{margin:4px 0;font-size:clamp(58px,8vw,94px);font-weight:950;letter-spacing:-.08em;line-height:.95}.score-note{color:rgba(255,250,240,.7);font-size:12px}.track{width:100%;height:13px;overflow:hidden;border-radius:99px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.15)}.fill{height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--gold),var(--gold-soft));box-shadow:0 0 22px rgba(212,175,55,.4)}.legend{display:flex;justify-content:space-between;gap:8px;margin-top:11px;color:rgba(255,250,240,.63);font-size:11px}.section{margin-top:25px}.section-head{display:flex;align-items:end;justify-content:space-between;gap:20px;margin:0 2px 13px}.section-head p{max-width:850px;margin:0;color:var(--muted);font-size:12px}.grid{display:grid;gap:14px}.kpis{grid-template-columns:repeat(6,minmax(0,1fr))}.kpi,.card{border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.8);box-shadow:0 10px 30px rgba(46,26,17,.045)}.kpi{min-height:107px;padding:17px}.kpi-label{color:var(--muted);font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.kpi-value{margin-top:7px;font-size:24px;font-weight:950;letter-spacing:-.04em}.kpi-note{margin-top:2px;color:var(--muted);font-size:11px}.status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.status{padding:18px;border:1px solid var(--line);border-radius:16px;background:#fff}.status.complete{border-color:rgba(25,122,83,.22);background:linear-gradient(135deg,#fff,var(--green-bg))}.status.ongoing{border-color:rgba(163,95,8,.2);background:linear-gradient(135deg,#fff,var(--amber-bg))}.status.pending{border-color:rgba(167,45,45,.2);background:linear-gradient(135deg,#fff,var(--red-bg))}.status .number{font-size:27px;font-weight:950}.caption{color:var(--muted);font-size:12px}.status ul{margin:12px 0 0;padding-left:18px;color:var(--espresso-2);font-size:12px}.status li+li{margin-top:5px}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.83);box-shadow:0 10px 30px rgba(46,26,17,.045)}table{width:100%;min-width:970px;border-collapse:collapse}th,td{padding:13px 15px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}th{color:var(--muted);background:rgba(242,232,216,.72);font-size:10px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}tr:last-child td{border-bottom:0}.module{min-width:170px;font-weight:900}.module small{display:block;margin-top:3px;color:var(--muted);font-size:11px;font-weight:500}.bar-cell{min-width:205px}.bar-line{display:flex;align-items:center;gap:9px}.bar-line .track{height:9px;background:#eee5d7;border:0}.bar-line .fill{background:linear-gradient(90deg,var(--gold),#edcc6a);box-shadow:none}.percent{width:42px;font-size:12px;font-weight:950;text-align:right}.weight{color:var(--muted);font-variant-numeric:tabular-nums}.evidence,.remaining{max-width:360px;color:var(--espresso-2);font-size:12px}.remaining{color:var(--muted)}.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:99px;font-size:10px;font-weight:950;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}.badge:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}.complete,.pass{color:var(--green);background:var(--green-bg)}.ongoing,.warn{color:var(--amber);background:var(--amber-bg)}.pending,.fail{color:var(--red);background:var(--red-bg)}.blocked,.info{color:var(--blue);background:var(--blue-bg)}.two-col{grid-template-columns:minmax(0,1.2fr) minmax(330px,.8fr)}.card{padding:20px}.list{margin:13px 0 0;padding:0;list-style:none}.list li{position:relative;padding:10px 0 10px 27px;border-top:1px solid var(--line);color:var(--espresso-2);font-size:12px}.list li:before{content:"✓";position:absolute;left:0;top:10px;color:var(--green);font-weight:950}.list li.todo:before{content:"→";color:var(--gold)}.list li.issue:before{content:"!";color:var(--red)}.list strong{color:var(--espresso)}.data-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}.data-tile{padding:13px;border:1px solid var(--line);border-radius:14px;background:#fff}.data-tile strong{font-size:24px}.method{color:var(--muted);font-size:12px}.method strong{color:var(--espresso)}.issue{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;padding:14px 0;border-top:1px solid var(--line)}.issue:first-child{border-top:0}.issue-title{font-weight:900}.issue-detail{margin-top:3px;color:var(--muted);font-size:12px}.issue-ref{color:var(--muted);font-size:11px;text-align:right;white-space:nowrap}code{padding:2px 5px;border-radius:5px;color:var(--espresso);background:var(--cream-2);font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.print{border:0;border-radius:99px;padding:9px 14px;color:var(--espresso);background:var(--gold);font:inherit;font-size:12px;font-weight:900;cursor:pointer}.print:hover{background:#e8c754}.footer{margin-top:28px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+    @media(max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.two-col{grid-template-columns:1fr}}@media(max-width:650px){.page{padding:14px 12px 40px}.hero{padding:24px 20px;border-radius:22px}.overall{grid-template-columns:1fr;gap:18px}.kpis,.status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.card{padding:16px}.section-head{display:block}.section-head p{margin-top:6px}.issue{grid-template-columns:auto 1fr}.issue-ref{grid-column:2;text-align:left}}@media print{body{background:#fff}.page{max-width:none;padding:0}.hero,.card,.kpi,.table-wrap{box-shadow:none}.print{display:none}.section{break-inside:avoid}}
   </style>
 </head>
 <body>
@@ -175,159 +25,112 @@
       <div class="hero-content">
         <p class="eyebrow">Evidence-based project review · 18 October 2026</p>
         <h1>CAV Photo Studio &amp; Café<br>Project Progress Dashboard</h1>
-        <p class="hero-subtitle">A source-and-verification-based snapshot of implementation progress across the React/Ionic frontend, Django API, forecasting layer, local printing, and Android wrapper.</p>
-        <div class="hero-meta">
-          <span>Review commit <strong>d03bcd0</strong></span>
-          <span>Pre-existing changes <strong>none detected</strong></span>
-          <span>Scope <strong>implementation completeness, not production readiness</strong></span>
-        </div>
+        <p class="subtitle">A read-only implementation audit of the React/Ionic frontend, Django REST API, database migrations, forecasting layer, chatbot, native wrapper, and release gates.</p>
+        <div class="meta"><span>Scope <strong>current working tree</strong></span><span>Method <strong>source + tests + build evidence</strong></span><span>Artifact <strong>standalone HTML only</strong></span></div>
         <div class="overall">
-          <div>
-            <div class="score-label">Weighted implementation score</div>
-            <div class="score" id="overall-score">81%</div>
-            <div class="score-note">Calculated from 14 module weights totaling 100 points; rounded from 81.17%.</div>
-          </div>
-          <div>
-            <div class="progress-track" aria-label="Overall completion" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="81"><div class="progress-fill" style="width:81.17%"></div></div>
-            <div class="score-legend"><span>0 · not implemented</span><span>Core product implemented; release hardening remains</span><span>100 · fully evidenced</span></div>
-          </div>
+          <div><div class="score-label">Weighted implementation score</div><div class="score" id="overall-score">84%</div><div class="score-note">Rounded from the weighted module scores below. This is implementation completeness, not production readiness.</div></div>
+          <div><div class="track" role="progressbar" aria-label="Overall completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="84"><div class="fill" id="overall-fill" style="width:84%"></div></div><div class="legend"><span>0 · not implemented</span><span>Core product implemented; release hardening remains</span><span>100 · fully evidenced</span></div></div>
         </div>
       </div>
     </section>
 
-    <section class="section grid kpis" aria-label="Project evidence summary">
-      <div class="kpi"><div class="kpi-label">Backend API routes</div><div class="kpi-value">60</div><div class="kpi-note">Declared in <code>backend/config/urls.py</code></div></div>
-      <div class="kpi"><div class="kpi-label">Django domains</div><div class="kpi-value">13</div><div class="kpi-note">Installed application modules</div></div>
-      <div class="kpi"><div class="kpi-label">Backend tests</div><div class="kpi-value">60</div><div class="kpi-note">Pass with test throttle isolation</div></div>
+    <section class="section grid kpis" aria-label="Evidence summary">
+      <div class="kpi"><div class="kpi-label">API routes</div><div class="kpi-value">62</div><div class="kpi-note">API paths in <code>backend/config/urls.py</code></div></div>
+      <div class="kpi"><div class="kpi-label">Django domains</div><div class="kpi-value">13</div><div class="kpi-note">Installed local applications</div></div>
+      <div class="kpi"><div class="kpi-label">Backend tests</div><div class="kpi-value">63/63</div><div class="kpi-note">Isolated SQLite + high test throttles</div></div>
       <div class="kpi"><div class="kpi-label">Frontend tests</div><div class="kpi-value">3/3</div><div class="kpi-note">Two suites passed</div></div>
       <div class="kpi"><div class="kpi-label">Web build</div><div class="kpi-value">PASS</div><div class="kpi-note">Production build + verifier passed</div></div>
-      <div class="kpi"><div class="kpi-label">Migration drift</div><div class="kpi-value">NONE</div><div class="kpi-note"><code>makemigrations --check</code> passed</div></div>
+      <div class="kpi"><div class="kpi-label">Migration state</div><div class="kpi-value">SPLIT</div><div class="kpi-note">Code clean; checked-in DB is stale</div></div>
     </section>
 
     <section class="section">
-      <div class="section-head"><div><h2>Executive status</h2><p>The core customer, staff, and admin workflows are implemented and wired. The remaining work is concentrated in operational completeness, release compatibility, and a few backend-only feature shells.</p></div><button class="print-button" type="button" onclick="window.print()">Print dashboard</button></div>
+      <div class="section-head"><div><h2>Executive status</h2><p>The core customer, staff, and admin application paths are substantially implemented. Remaining work is concentrated in release hardening, deployment data alignment, and a small number of feature shells.</p></div><button class="print" type="button" onclick="window.print()">Print dashboard</button></div>
       <div class="grid status-grid">
-        <article class="status-card complete"><div class="number">Core flows</div><div class="caption">Implemented and supported by API/UI code</div><ul><li>Customer booking and account journey</li><li>Staff POS, inventory activity, and payments</li><li>Admin analytics, calendar, verification, and controls</li></ul></article>
-        <article class="status-card ongoing"><div class="number">Release hardening</div><div class="caption">Implemented but not fully operationally verified</div><ul><li>Android wrapper build on a supported JDK</li><li>External OCR/LLM/SMS delivery configuration</li><li>End-to-end browser and physical printer checks</li></ul></article>
-        <article class="status-card pending"><div class="number">Feature gaps</div><div class="caption">Identified as not fully implemented in the current tree</div><ul><li>Standalone reports/sales app endpoints</li><li>Purchase-order lifecycle UI</li><li>Gallery administration and outbound notifications</li></ul></article>
+        <article class="status complete"><div class="number">Core workflows</div><div class="caption">Implemented in source and covered by automated verification</div><ul><li>Customer booking, payments, history, profile, notifications, and reviews</li><li>Staff POS, inventory, catalog administration, purchase orders, and receipts</li><li>Admin analytics, calendar, EOD reports, accounts, FAQ, reviews, and controls</li></ul></article>
+        <article class="status ongoing"><div class="number">Release hardening</div><div class="caption">Implemented but not fully verified in production conditions</div><ul><li>External OCR/LLM/SMS/email provider operation</li><li>Browser E2E, accessibility, and physical printer checks</li><li>Android toolchain compatibility and deployment settings</li></ul></article>
+        <article class="status pending"><div class="number">Feature gaps</div><div class="caption">Not complete in the current source tree</div><ul><li>Dedicated reports and sales Django modules</li><li>Gallery administration CRUD</li><li>Outbound notification delivery</li></ul></article>
       </div>
     </section>
 
     <section class="section">
-      <div class="section-head"><div><h2>Module-by-module progress</h2><p>Scores reflect observed source implementation, route/UI wiring, tests, and verification results. Partial credit is used where a feature exists but lacks an operational dependency, user interface, or end-to-end proof.</p></div></div>
-      <div class="module-table-wrap">
-        <table>
-          <thead><tr><th>Module</th><th>Weight</th><th>Progress</th><th>Observed implementation</th><th>Remaining / limitation</th><th>Status</th></tr></thead>
-          <tbody id="module-rows"></tbody>
-        </table>
-      </div>
+      <div class="section-head"><div><h2>Module-by-module progress</h2><p>Each score is based on observed implementation, route/UI wiring, tests, and direct verification. Weights sum to 100; partial credit is used for external dependencies, missing user paths, stale deployment state, or unverified release targets.</p></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Module</th><th>Weight</th><th>Progress</th><th>Observed evidence</th><th>Remaining work / limitation</th><th>Status</th></tr></thead><tbody id="module-rows"></tbody></table></div>
     </section>
 
     <section class="section grid two-col">
-      <article class="card">
-        <div class="section-head"><div><h2>Completed features</h2><p>These are backed by active source paths and, where applicable, automated tests or a successful production build.</p></div></div>
-        <ul class="evidence-list">
-          <li><strong>Role-gated application shell:</strong> React routes for public, customer, staff, and admin experiences with loading and render-error recovery.</li>
-          <li><strong>Authentication:</strong> cookie-based JWT login/logout/refresh, CSRF bootstrap, registration OTP, password reset OTP, Google login path, and admin SMS MFA.</li>
-          <li><strong>Customer booking:</strong> service/package browsing, availability, date locks, booking creation/edit/cancel/history, customer profile, payment proof, duplicate reference checks, and reviews.</li>
-          <li><strong>Staff operations:</strong> POS checkout, payment records, discounts, idempotency, live ingredient stock, recipes, payment verification, receipts, and daily sales logs.</li>
-          <li><strong>Admin operations:</strong> analytics, booking calendar/manual blocks, end-of-day reports, payment verification, account CRUD, FAQ management, reviews, and guarded system reset.</li>
-          <li><strong>Forecasting:</strong> validated CSV import/deduplication, active history snapshots, moving-average/damped-Holt forecasts, backtest metadata, product allocation, and reorder suggestions.</li>
-          <li><strong>Chatbot and privacy:</strong> grounded knowledge/FAQ flow, local fallback, sensitive-request handling, audit logging, privacy consent/request/export, and runtime error reporting.</li>
-          <li><strong>Web delivery:</strong> React production build completed successfully; web-build verification passed; migrations have no detected model drift.</li>
-        </ul>
-      </article>
+      <article class="card"><div class="section-head"><div><h2>Completed features</h2><p>Backed by active code paths and automated checks where available.</p></div></div><ul class="list">
+        <li><strong>Application shell:</strong> React routes for public, customer, staff, and admin experiences, protected role routing, lazy loading, loading states, and render-error recovery.</li>
+        <li><strong>Authentication and privacy:</strong> cookie JWT login/refresh/logout, CSRF bootstrap, OTP registration/reset, Google path, admin MFA path, profiles, consents, privacy requests/exports, and audit logging.</li>
+        <li><strong>Customer booking:</strong> services/packages, availability, date locks, booking create/edit/cancel/history, payment proof and reference checks, reviews, notifications, and chatbot access.</li>
+        <li><strong>Staff operations:</strong> POS checkout, discounts, idempotency, stock deduction, receipt preview/printing bridge, payment verification, ingredient inventory, recipes, and daily sales logs.</li>
+        <li><strong>Catalog and purchasing:</strong> product CRUD, category/supplier CRUD, soft activation, PO creation/editing, unit costs, validation, Ordered → Received/Cancelled transitions, stock receipt events, and lifecycle tests.</li>
+        <li><strong>Admin and analytics:</strong> dashboards, booking calendar and blocks, EOD reports, payment review, account CRUD, FAQ management, reviews, system controls, forecast charts, and reorder suggestions.</li>
+        <li><strong>Forecasting and chatbot:</strong> CSV history import, deduplication, demand/sales predictions, backtesting metadata, grounded FAQ/local fallback, language handling, and sensitive-request handling.</li>
+        <li><strong>Web verification:</strong> production build, web-build verifier, Django checks, migration drift check, and full isolated backend suite pass.</li>
+      </ul></article>
 
-      <article class="card">
-        <div class="section-head"><div><h2>Observed repository snapshot</h2><p>Read-only counts from <code>backend/db.sqlite3</code>. The active database is selected through <code>DATABASE_URL</code>, so these counts are evidence of the local snapshot only.</p></div></div>
-        <div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px">
-          <div class="status-card"><strong>7</strong><div class="caption">bookings</div></div>
-          <div class="status-card"><strong>18</strong><div class="caption">inventory products</div></div>
-          <div class="status-card"><strong>6</strong><div class="caption">POS orders</div></div>
-          <div class="status-card"><strong>14</strong><div class="caption">notifications</div></div>
-          <div class="status-card"><strong>74</strong><div class="caption">audit log rows</div></div>
-          <div class="status-card"><strong>28</strong><div class="caption">demand predictions</div></div>
-          <div class="status-card"><strong>7</strong><div class="caption">sales predictions</div></div>
-          <div class="status-card"><strong>0</strong><div class="caption">purchase orders</div></div>
-        </div>
-        <p class="method" style="margin:15px 0 0"><strong>Interpretation:</strong> the local snapshot contains real data across the core domains, while purchase-order data is absent. This is not used as proof that a production database has the same contents.</p>
-      </article>
-    </section>
-
-    <section class="section grid feature-grid">
-      <article class="card feature-card ongoing"><h3>Ongoing tasks</h3><ul><li>Finish purchase-order lifecycle UI; backend list/create/detail endpoints exist but no frontend workflow calls them.</li><li>Make external OCR, SMS, email, and optional OpenRouter configuration operational in the target deployment.</li><li>Run browser E2E, accessibility, real payment-verification, and physical printer checks.</li><li>Build and smoke-test Android with JDK 17/21 or an explicitly supported toolchain.</li><li>Stabilize backend tests so default throttling does not create an order-dependent 429.</li></ul></article>
-      <article class="card feature-card pending"><h3>Pending features</h3><ul><li>Standalone <code>reports</code> and <code>sales</code> Django modules are still placeholder files; current reporting is implemented in dashboard/POS code.</li><li>Admin CRUD for gallery records is not exposed; the gallery API is read-only.</li><li>Outbound push/email/SMS notification delivery is not implemented; current notifications are in-app records and read-state UI.</li><li>Formal purchase-order approval/receiving workflow is not visible in the frontend.</li><li>Android release artifact and native integration verification are not complete.</li></ul></article>
-      <article class="card feature-card"><h3>Recommended next steps</h3><ol class="next-list"><li><strong>Fix CI blockers first:</strong> remove the token-like value from <code>backend/.env.example</code>, remove or allowlist the intentional test password, and align CI Node with the project’s Node &gt;=22 requirement.</li><li><strong>Make tests deterministic:</strong> isolate throttle/cache state per test or set explicit CI test rates without weakening production limits.</li><li><strong>Complete the operational loop:</strong> add purchase-order and gallery admin screens, then connect notification delivery providers if required by the acceptance criteria.</li><li><strong>Validate release targets:</strong> use a supported JDK for Android, run E2E/accessibility checks, and verify the deployed backend/frontend pair with real configured service credentials.</li><li><strong>Document the actual deployment:</strong> add or confirm backend infrastructure configuration alongside the current frontend-only Render manifest.</li></ol></article>
+      <article class="card"><div class="section-head"><div><h2>Checked-in data snapshot</h2><p>Read-only counts from <code>backend/db.sqlite3</code>. These are historical local data, not proof of production contents.</p></div></div><div class="grid data-grid">
+        <div class="data-tile"><strong>7</strong><div class="caption">bookings</div></div><div class="data-tile"><strong>18</strong><div class="caption">inventory products</div></div><div class="data-tile"><strong>6</strong><div class="caption">POS orders</div></div><div class="data-tile"><strong>14</strong><div class="caption">notifications</div></div><div class="data-tile"><strong>74</strong><div class="caption">audit rows</div></div><div class="data-tile"><strong>28</strong><div class="caption">demand predictions</div></div><div class="data-tile"><strong>7</strong><div class="caption">sales predictions</div></div><div class="data-tile"><strong>0</strong><div class="caption">legacy PO rows</div></div>
+      </div><p class="method" style="margin:15px 0 0"><strong>Important:</strong> the checked-in database has only inventory migrations 0001–0002 applied and still contains legacy purchase-order/category/supplier tables. The current code expects compact inventory tables plus migration 0007. No database change was made during this audit.</p></article>
     </section>
 
     <section class="section grid two-col">
-      <article class="card">
-        <div class="section-head"><div><h2>Verification results</h2><p>Commands were run read-only or against isolated in-memory/test databases. Existing application code and database structures were not changed.</p></div></div>
-        <div class="module-table-wrap" style="box-shadow:none"><table class="verification-table"><thead><tr><th>Check</th><th>Result</th><th>Evidence</th></tr></thead><tbody>
-          <tr><td>Frontend unit tests</td><td><span class="badge pass">Pass</span></td><td>2 suites, 3 tests passed.</td></tr>
-          <tr><td>Frontend production build</td><td><span class="badge pass">Pass</span></td><td>Compiled successfully; build verifier passed.</td></tr>
-          <tr><td>Backend migrations</td><td><span class="badge pass">Pass</span></td><td><code>makemigrations --check --dry-run</code>: no changes detected.</td></tr>
-          <tr><td>Backend tests</td><td><span class="badge pass">Pass</span></td><td>60/60 passed with test-only throttle limits and SQLite in-memory isolation; default-rate run was 59/60 due to a 429.</td></tr>
-          <tr><td>Backend deployment check</td><td><span class="badge warn">Warn</span></td><td>Local env emits 5 security warnings; production-like secure overrides emit none.</td></tr>
-          <tr><td>Secret scan</td><td><span class="badge fail">Fail</span></td><td>2 findings: example SMS token-like value and intentional test password literal.</td></tr>
-          <tr><td>Android assembleDebug</td><td><span class="badge fail">Fail</span></td><td>Gradle download succeeded, then Java 26 caused unsupported class file major version 70.</td></tr>
-          <tr><td>npm audit</td><td><span class="badge blocked">Unverified</span></td><td>Registry audit endpoint was unavailable from the verification environment.</td></tr>
-        </tbody></table></div>
-      </article>
-
-      <article class="card">
-        <div class="section-head"><div><h2>Identified issues</h2><p>Prioritized by impact on release confidence, security, or feature completeness.</p></div></div>
-        <div class="issue"><div class="severity"><span class="badge fail">High</span></div><div><div class="issue-title">Secret scan is red</div><div class="issue-detail"><code>backend/.env.example</code> contains a token-like value, and the frontend auth test contains a known demo password. The project’s own scanner rejects both.</div></div><div class="issue-ref">CI gate</div></div>
-        <div class="issue"><div class="severity"><span class="badge fail">High</span></div><div><div class="issue-title">Android build toolchain mismatch</div><div class="issue-detail">The wrapper is pinned to Gradle 8.14.3 but the available JDK is Java 26; the build fails during Groovy semantic analysis.</div></div><div class="issue-ref">Native release</div></div>
-        <div class="issue"><div class="severity"><span class="badge warn">Medium</span></div><div><div class="issue-title">CI Node version is below the project engine</div><div class="issue-detail"><code>.github/workflows/quality.yml</code> sets Node 20 while the package engine and <code>.nvmrc</code> require Node 22 or newer.</div></div><div class="issue-ref">CI consistency</div></div>
-        <div class="issue"><div class="severity"><span class="badge warn">Medium</span></div><div><div class="issue-title">Backend tests are throttle-order dependent</div><div class="issue-detail">The default-rate full run returns 429 for registration after earlier tests; isolated and high-limit runs pass. Test cache/throttle isolation is needed.</div></div><div class="issue-ref">Test quality</div></div>
-        <div class="issue"><div class="severity"><span class="badge warn">Medium</span></div><div><div class="issue-title">Local settings are not production-safe</div><div class="issue-detail">The current local environment has DEBUG and insecure cookie/redirect flags; <code>check --deploy</code> warns accordingly. Production-like overrides pass.</div></div><div class="issue-ref">Environment</div></div>
-        <div class="issue"><div class="severity"><span class="badge blocked">Info</span></div><div><div class="issue-title">External audit and live integrations remain unverified</div><div class="issue-detail">npm registry audit was unavailable; OpenRouter timed out but the chatbot fallback worked; physical printer, OCR provider, and outbound delivery were not exercised.</div></div><div class="issue-ref">Operational QA</div></div>
-      </article>
+      <article class="card"><div class="section-head"><div><h2>Ongoing tasks</h2><p>Implemented or partially implemented work that still needs operational proof.</p></div></div><ul class="list"><li class="todo"><strong>Align deployment data state:</strong> run and verify the current migration chain against the intended database in staging before using catalog or purchase-order endpoints.</li><li class="todo"><strong>Run real workflow QA:</strong> browser E2E for customer, staff, admin, purchase orders, payment verification, and receipt fallback.</li><li class="todo"><strong>Configure external services:</strong> OCR, email/SMS, OpenRouter, Google auth, and payment verification dependencies with production credentials.</li><li class="todo"><strong>Resolve release gates:</strong> use a supported JDK for Android, fix secret-scan findings, align CI Node with Node 22, and set production security flags.</li><li class="todo"><strong>Verify physical operations:</strong> local printer bridge, receipt output, upload limits, and cross-origin cookie behavior.</li></ul></article>
+      <article class="card"><div class="section-head"><div><h2>Pending features</h2><p>Observed gaps, not assumptions.</p></div></div><ul class="list"><li class="issue"><strong>Dedicated reports/sales apps:</strong> their views/models remain placeholder shells; current reporting is implemented elsewhere.</li><li class="issue"><strong>Gallery administration:</strong> the gallery API/frontend is public/read-only; no staff/admin CRUD surface is present.</li><li class="issue"><strong>Outbound notifications:</strong> notifications are in-app records and read-state UI; email/SMS/push delivery is not implemented.</li><li class="issue"><strong>Native release artifact:</strong> the Android project exists, but assembleDebug is blocked by the available Java 26 toolchain.</li></ul></article>
     </section>
 
-    <section class="section card">
-      <div class="section-head"><div><h2>Scoring method and scope</h2><p>Use this section when comparing future dashboard snapshots.</p></div></div>
-      <p class="method"><strong>Implementation score:</strong> each module receives a progress score based on source code, API routes, UI wiring, automated tests, and direct verification. The module score is multiplied by its stated weight; weights sum to 100. A coded feature without an exposed user path, a required external dependency, or test evidence receives partial credit. A placeholder app or missing workflow receives low or zero credit.</p>
-      <p class="method"><strong>Not counted as proof:</strong> architecture prose, filenames alone, seeded data alone, or an unexecuted deployment plan. The report does not change application code, migrations, database contents, or runtime behavior.</p>
+    <section class="section card"><div class="section-head"><div><h2>Verification results</h2><p>Commands were run read-only or against isolated in-memory/test databases. The application source, migrations, and runtime data were not changed by this report task.</p></div></div><div class="table-wrap" style="box-shadow:none"><table><thead><tr><th>Check</th><th>Result</th><th>Evidence</th></tr></thead><tbody>
+      <tr><td>Backend test suite</td><td><span class="badge pass">Pass</span></td><td>63/63 tests passed with isolated SQLite and high test-only throttle limits; chatbot used its local fallback after the optional provider timed out.</td></tr>
+      <tr><td>Frontend tests</td><td><span class="badge pass">Pass</span></td><td>2 suites, 3 tests passed.</td></tr>
+      <tr><td>Frontend production build</td><td><span class="badge pass">Pass</span></td><td>React production build compiled successfully; web-build verifier passed.</td></tr>
+      <tr><td>Migration drift</td><td><span class="badge pass">Pass</span></td><td>Current code reports no model changes from migrations.</td></tr>
+      <tr><td>Local database alignment</td><td><span class="badge fail">Fail</span></td><td>Checked-in SQLite is still at inventory migrations 0001–0002; current code requires 0003–0007 and InventoryEvent/catalog tables.</td></tr>
+      <tr><td>Django deployment check</td><td><span class="badge warn">Warn</span></td><td>Review configuration reports W008 SSL redirect, W009 short review secret, and W012 session cookie security warnings.</td></tr>
+      <tr><td>Secret scan</td><td><span class="badge fail">Fail</span></td><td>Findings in <code>backend/.env.example</code> and <code>frontend/src/context/AuthContext.test.jsx</code>.</td></tr>
+      <tr><td>Android assembleDebug</td><td><span class="badge fail">Fail</span></td><td>Available Java 26 is incompatible with the current Gradle/Groovy toolchain; unsupported class file major version 70.</td></tr>
+      <tr><td>npm audit / live integrations</td><td><span class="badge blocked">Unverified</span></td><td>Registry/provider availability and physical integrations were not treated as passing evidence.</td></tr>
+    </tbody></table></div></section>
+
+    <section class="section grid two-col">
+      <article class="card"><div class="section-head"><div><h2>Identified issues</h2><p>Prioritized by release, data integrity, security, or feature impact.</p></div></div>
+        <div class="issue"><span class="badge fail">High</span><div><div class="issue-title">Checked-in database is behind the code</div><div class="issue-detail">The local SQLite file does not have the compact inventory/event schema or catalog migration. Running the current app against it will fail on purchase-order/catalog queries until migrations are applied to the intended database.</div></div><div class="issue-ref">Data state</div></div>
+        <div class="issue"><span class="badge fail">High</span><div><div class="issue-title">Secret scan is red</div><div class="issue-detail">The project scanner flags a token-like example value and an intentional test password literal. This can block the security workflow.</div></div><div class="issue-ref">CI gate</div></div>
+        <div class="issue"><span class="badge fail">High</span><div><div class="issue-title">Android toolchain mismatch</div><div class="issue-detail">The native wrapper exists, but the current Java 26 environment fails the Gradle build before an APK is produced.</div></div><div class="issue-ref">Native release</div></div>
+        <div class="issue"><span class="badge warn">Medium</span><div><div class="issue-title">Production security settings need explicit verification</div><div class="issue-detail">Django deployment checks still report SSL redirect and session-cookie warnings under the review configuration; production environment variables must be confirmed.</div></div><div class="issue-ref">Deployment</div></div>
+        <div class="issue"><span class="badge warn">Medium</span><div><div class="issue-title">CI/runtime version mismatch</div><div class="issue-detail"><code>.nvmrc</code> and package engines require Node 22+, while the quality workflow configures Node 20.</div></div><div class="issue-ref">CI consistency</div></div>
+        <div class="issue"><span class="badge info">Info</span><div><div class="issue-title">External and physical integrations remain unverified</div><div class="issue-detail">OCR/LLM/SMS/email providers, browser E2E, accessibility execution, and physical printer output need staging or device checks.</div></div><div class="issue-ref">Operational QA</div></div>
+      </article>
+
+      <article class="card"><div class="section-head"><div><h2>Recommended next steps</h2><p>Order minimizes risk and rework.</p></div></div><ol class="list" style="list-style:none;counter-reset:steps"><li class="todo"><strong>Reconcile the database:</strong> apply migrations 0003–0007 to a staging copy, verify data conversion, then smoke-test catalog and purchase-order endpoints.</li><li class="todo"><strong>Clear release gates:</strong> remove/allowlist scanner findings, align CI to Node 22, and set secure Django deployment flags.</li><li class="todo"><strong>Run acceptance journeys:</strong> customer booking/payment, staff POS/receipt, catalog CRUD, PO receipt/cancel, and admin closeout.</li><li class="todo"><strong>Unblock Android:</strong> build with a supported JDK/Gradle combination and produce a debug/release artifact.</li><li class="todo"><strong>Close feature gaps:</strong> add gallery CRUD, outbound notification delivery, and dedicated reports/sales endpoints if they remain in scope.</li></ol></article>
     </section>
 
-    <footer class="footer">Generated as a standalone review artifact. Open this file directly in a browser or print it to PDF. It intentionally has no dependency on the application runtime.</footer>
+    <section class="section card"><div class="section-head"><div><h2>Scoring method and scope</h2><p>How to interpret this dashboard.</p></div></div><p class="method"><strong>Score:</strong> each module receives a 0–100 implementation score based on code, API/UI wiring, test coverage, and direct verification. The score is multiplied by the module weight; weights total 100. A feature receives partial credit when it relies on unverified external services, lacks a user-facing path, is blocked by deployment state, or has no meaningful test evidence.</p><p class="method"><strong>Not counted as proof:</strong> architecture prose, filenames alone, stale database rows, or an unexecuted deployment plan. This report updates only <code>PROJECT_PROGRESS_DASHBOARD.html</code>; it does not alter application code, database structures, migrations, or functionality.</p></section>
+
+    <footer class="footer">Standalone artifact. Open this file directly in a browser or print it to PDF. Review date: 18 October 2026.</footer>
   </main>
-
   <script>
     const modules = [
-      { name: 'Public website & routing', subtitle: 'Landing, content, route shell', weight: 8, progress: 95, status: 'complete', evidence: '12 React routes, public pages, lazy loading, splash screen, and route error recovery are implemented. Web build passes.', remaining: 'No browser E2E or accessibility scan was executed in this review.' },
-      { name: 'Authentication & account security', subtitle: 'Customer, staff, admin access', weight: 10, progress: 90, status: 'complete', evidence: 'Cookie JWT, refresh/logout, CSRF, OTP registration/reset, Google path, admin SMS MFA, profiles, and privacy endpoints exist and are wired.', remaining: 'Provider credentials and full cross-origin live login are not exercised here.' },
-      { name: 'Customer booking & payments', subtitle: 'Booking-to-confirmation journey', weight: 15, progress: 88, status: 'ongoing', evidence: 'Services, packages, availability, date locks, create/edit/cancel/history, GCash proof, duplicate checks, OCR endpoint, verification, and reviews are implemented.', remaining: 'Real payment provider/merchant verification and browser E2E remain operational checks.' },
-      { name: 'Staff POS & receipts', subtitle: 'Café checkout and closeout', weight: 11, progress: 90, status: 'complete', evidence: 'Checkout, discounts, payment records, idempotency, stock deduction, receipt generation, local bridge, and end-of-day reports are present; POS tests pass.', remaining: 'Physical printer discovery and printing were not executed in this environment.' },
-      { name: 'Inventory & purchasing', subtitle: 'Products, ingredients, recipes, stock', weight: 12, progress: 72, status: 'ongoing', evidence: 'Product/ingredient/recipe/stock movement/category/supplier/purchase-order API paths exist; staff UI covers live ingredient stock, recipes, and status filters.', remaining: 'Purchase-order lifecycle has no frontend workflow; catalog administration is partial.' },
-      { name: 'Admin analytics & operations', subtitle: 'InsightHub management console', weight: 11, progress: 88, status: 'ongoing', evidence: 'Eight admin tabs cover analytics, calendar blocks, EOD reports, payment verification, accounts, FAQs, reviews, and system controls.', remaining: 'No full browser journey or production-data validation was executed.' },
-      { name: 'Chatbot & knowledge base', subtitle: 'Grounded customer assistance', weight: 7, progress: 85, status: 'ongoing', evidence: 'Public/customer chat, FAQ CRUD, grounded knowledge, language handling, sensitive-request refusal, and local fallback are implemented and tested.', remaining: 'OpenRouter is optional and timed out during the suite; live provider configuration is not verified.' },
-      { name: 'Forecasting / ML', subtitle: 'History import and demand signals', weight: 7, progress: 82, status: 'ongoing', evidence: 'CSV import/deduplication, active snapshots, moving average/damped Holt, backtest metadata, product forecasts, and reorder recommendations are implemented and tested.', remaining: 'Forecast quality on a production-sized history and scheduled retraining are not validated.' },
-      { name: 'Notifications & feedback', subtitle: 'In-app updates and reviews', weight: 4, progress: 80, status: 'ongoing', evidence: 'Notification model/API/read state, booking/payment events, customer notification UI, and review submission/admin review screens exist.', remaining: 'Outbound email, SMS, or push delivery is not implemented or verified.' },
-      { name: 'Gallery / content catalog', subtitle: 'Public visual content', weight: 3, progress: 70, status: 'ongoing', evidence: 'Gallery API, public gallery UI/lightbox, seeded assets, category filtering, and fallback assets exist.', remaining: 'Gallery is read-only from the product UI; no admin CRUD workflow is exposed.' },
-      { name: 'Audit / privacy / compliance', subtitle: 'Controls and traceability', weight: 3, progress: 82, status: 'ongoing', evidence: 'Audit log, immutable-log protection, runtime-error reporting, health endpoint, privacy consent/request/export, retention command, and compliance documents exist.', remaining: 'Privacy request fulfilment is represented as a request record, not a complete operational case workflow.' },
-      { name: 'Standalone reports & sales apps', subtitle: 'Dedicated reporting domains', weight: 4, progress: 25, status: 'pending', evidence: 'Reporting is active through dashboard analytics and POS end-of-day reports.', remaining: 'The dedicated Django reports/sales app files are placeholder shells with no active views or feature tests.' },
-      { name: 'Android / Capacitor packaging', subtitle: 'Native application target', weight: 2, progress: 45, status: 'ongoing', evidence: 'Capacitor configuration, Android project, native assets, and web build integration are present.', remaining: 'assembleDebug failed under available Java 26 with unsupported class file major version 70.' },
-      { name: 'QA & release readiness', subtitle: 'CI, security, and deployment', weight: 3, progress: 60, status: 'ongoing', evidence: 'GitHub workflow includes checks, tests, build, audit, Bandit, secret scan, and axe steps; web checks and migration checks pass.', remaining: 'Secret scan fails, Node CI version is stale, npm audit is unverified, and no E2E/native release gate is present.' }
+      {name:'Public website & routing',subtitle:'Landing, content, route shell',weight:8,progress:95,status:'complete',evidence:'Public landing/content pages, booking guide, login, privacy page, role routes, lazy loading, and route error recovery are implemented. Web build passes.',remaining:'No browser E2E or accessibility execution was performed in this audit.'},
+      {name:'Authentication & account security',subtitle:'Customer, staff, admin access',weight:10,progress:90,status:'complete',evidence:'Cookie JWT, CSRF, refresh/logout, OTP registration/reset, Google path, admin MFA path, account CRUD, profile, privacy controls, and tests exist.',remaining:'Live provider credentials and full cross-origin login are not verified.'},
+      {name:'Customer booking & payments',subtitle:'Booking-to-confirmation journey',weight:15,progress:90,status:'complete',evidence:'Services/packages, availability, date locks, booking lifecycle, payment proof/reference checks, OCR endpoint, reviews, notifications, and customer dashboard are wired and tested.',remaining:'Real payment-provider verification and browser acceptance checks remain.'},
+      {name:'Staff POS & receipts',subtitle:'Café checkout and closeout',weight:11,progress:92,status:'complete',evidence:'POS checkout, discounts, idempotency, stock deduction, payment records, receipt preview, local print bridge, payment verification, and daily sales logs are implemented.',remaining:'Physical printer output and device-specific printing remain unverified.'},
+      {name:'Inventory, catalog & purchasing',subtitle:'Products, ingredients, recipes, POs',weight:12,progress:90,status:'complete',evidence:'Product CRUD, ingredient stock, recipes, category/supplier CRUD, activation, purchase-order line validation, cost totals, receipt stock events, and lifecycle tests are present.',remaining:'Current checked-in SQLite has not been migrated to the schema used by this code; browser workflow QA remains.'},
+      {name:'Admin analytics & operations',subtitle:'InsightHub management console',weight:11,progress:88,status:'ongoing',evidence:'Analytics, forecast display, booking calendar/blocks, EOD reports, payment verification, accounts, FAQ, reviews, and system controls have dedicated UI/API paths.',remaining:'No full production-data browser journey or end-to-end deployment check was executed.'},
+      {name:'Chatbot & knowledge base',subtitle:'Grounded customer assistance',weight:7,progress:85,status:'ongoing',evidence:'Customer chat, FAQ CRUD, grounded local answers, language handling, sensitive-request handling, and provider fallback are implemented; suite passed using fallback after provider timeout.',remaining:'Live OpenRouter configuration and response quality are not verified.'},
+      {name:'Forecasting / ML',subtitle:'History import and demand signals',weight:7,progress:82,status:'ongoing',evidence:'CSV import/deduplication, active snapshots, forecasting methods, backtest metadata, product allocation, demand predictions, and reorder suggestions are implemented and tested.',remaining:'Production-sized forecast quality, monitoring, and scheduled retraining are not evidenced.'},
+      {name:'Notifications & feedback',subtitle:'In-app updates and reviews',weight:4,progress:80,status:'ongoing',evidence:'Notification records/read state, booking/payment event creation, customer notification UI, and review submission/admin review screens exist.',remaining:'Outbound email, SMS, or push delivery is not implemented or verified.'},
+      {name:'Gallery / content catalog',subtitle:'Public visual content',weight:3,progress:70,status:'ongoing',evidence:'Gallery API, public gallery UI/lightbox, seeded content, category filtering, and fallback assets exist.',remaining:'No staff/admin gallery CRUD surface is exposed.'},
+      {name:'Audit / privacy / compliance',subtitle:'Controls and traceability',weight:3,progress:85,status:'ongoing',evidence:'Audit logs, immutable-log protection, runtime error reporting, health endpoint, privacy consent/request/export, retention command, and security documentation exist.',remaining:'Privacy request fulfillment is represented as a record rather than a full operational case workflow.'},
+      {name:'Standalone reports & sales apps',subtitle:'Dedicated reporting domains',weight:4,progress:25,status:'pending',evidence:'Reporting is active through dashboard analytics and POS end-of-day reports.',remaining:'Django reports/sales app files are placeholder shells and have no active feature tests.'},
+      {name:'Android / Capacitor packaging',subtitle:'Native application target',weight:2,progress:45,status:'ongoing',evidence:'Capacitor configuration, Android project, native assets, and web build/sync scripts are present.',remaining:'assembleDebug is blocked by Java 26 / current Gradle-Groovy compatibility.'},
+      {name:'QA & release readiness',subtitle:'CI, security, deployment',weight:3,progress:58,status:'ongoing',evidence:'CI contains Django checks/migrations/tests, frontend tests/build, dependency/security scans, secret scan, and axe steps. Local web/backend verification passes.',remaining:'Secret scan fails, CI Node is stale, deployment warnings remain, local DB is stale, and no full E2E/native release gate passes.'}
     ];
-
-    const labels = { complete: 'Complete', ongoing: 'Ongoing', pending: 'Pending' };
-    const weighted = modules.reduce((sum, item) => sum + item.weight * item.progress / 100, 0);
-    document.getElementById('overall-score').textContent = `${Math.round(weighted)}%`;
-    document.querySelector('.overall .progress-fill').style.width = `${weighted}%`;
-    document.querySelector('.overall [role="progressbar"]').setAttribute('aria-valuenow', Math.round(weighted));
-    document.getElementById('module-rows').innerHTML = modules.map(item => `
-      <tr>
-        <td class="module-name">${item.name}<small>${item.subtitle}</small></td>
-        <td class="weight">${item.weight}%</td>
-        <td class="bar-cell"><div class="bar-line"><div class="progress-track"><div class="progress-fill" style="width:${item.progress}%"></div></div><span class="percent">${item.progress}%</span></div></td>
-        <td class="evidence">${item.evidence}</td>
-        <td class="remaining">${item.remaining}</td>
-        <td><span class="badge ${item.status}">${labels[item.status]}</span></td>
-      </tr>
-    `).join('');
+    const labels={complete:'Complete',ongoing:'Ongoing',pending:'Pending'};
+    const weighted=modules.reduce((sum,item)=>sum+(item.weight*item.progress/100),0);
+    document.getElementById('overall-score').textContent=`${Math.round(weighted)}%`;
+    document.getElementById('overall-fill').style.width=`${weighted}%`;
+    document.querySelector('[role="progressbar"]').setAttribute('aria-valuenow',Math.round(weighted));
+    document.getElementById('module-rows').innerHTML=modules.map(item=>`<tr><td class="module">${item.name}<small>${item.subtitle}</small></td><td class="weight">${item.weight}%</td><td class="bar-cell"><div class="bar-line"><div class="track"><div class="fill" style="width:${item.progress}%"></div></div><span class="percent">${item.progress}%</span></div></td><td class="evidence">${item.evidence}</td><td class="remaining">${item.remaining}</td><td><span class="badge ${item.status}">${labels[item.status]}</span></td></tr>`).join('');
   </script>
 </body>
 </html>

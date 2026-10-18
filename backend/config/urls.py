@@ -46,7 +46,14 @@ from forecasting.views import ForecastingDataView, SalesHistoryImportView
 from gallery.views import GalleryImageListView
 from audit.views import ClientRuntimeErrorView
 from config.health import health_check
-from notifications.views import NotificationListView, NotificationReadView, NotificationMarkAllReadView
+from notifications.views import (
+    NotificationDeliveryListView,
+    NotificationListView,
+    NotificationReadView,
+    NotificationMarkAllReadView,
+    PushConfigView,
+    PushSubscriptionView,
+)
 
 urlpatterns = [
     path('health/', health_check, name='health_check'),
@@ -126,6 +133,9 @@ urlpatterns = [
     path('api/notifications/', NotificationListView.as_view(), name='notification_list'),
     path('api/notifications/read-all/', NotificationMarkAllReadView.as_view(), name='notification_mark_all_read'),
     path('api/notifications/<int:pk>/read/', NotificationReadView.as_view(), name='notification_read'),
+    path('api/notifications/push/config/', PushConfigView.as_view(), name='notification_push_config'),
+    path('api/notifications/push/subscription/', PushSubscriptionView.as_view(), name='notification_push_subscription'),
+    path('api/notifications/deliveries/', NotificationDeliveryListView.as_view(), name='notification_delivery_list'),
 
     # Landing gallery
     path('api/gallery/images/', GalleryImageListView.as_view(), name='gallery_image_list'),

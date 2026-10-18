@@ -29,6 +29,7 @@ import {
   localGalleryImages,
 } from '../utils/cavAssets';
 import { formatManilaDateTime, getManilaDateInputValue, getManilaMonthValue, getManilaTimeInputValue } from '../utils/dateTime';
+import { disablePushNotifications, enablePushNotifications, isPushSupported } from '../utils/pushNotifications';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -306,13 +307,16 @@ export default function CustomerDashboard() {
   const navigate = useNavigate();
   const confirm = useStyledConfirm();
   const userId = user?.id;
-  const [activeTab, setActiveTab] = useState('book');
+  const [activeTab, setActiveTab] = useState(() => (
+    new URLSearchParams(window.location.search).get('tab') || 'book'
+  ));
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
 
   const [services, setServices] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [pushState, setPushState] = useState({ supported: false, enabled: false, loading: false, error: '' });
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
   const [dashboardError, setDashboardError] = useState('');
@@ -393,6 +397,29 @@ export default function CustomerDashboard() {
       console.error(err);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isPushSupported()) return;
+    navigator.serviceWorker.getRegistration('/push-sw.js')
+      .then(registration => registration?.pushManager?.getSubscription())
+      .then(subscription => setPushState({ supported: true, enabled: Boolean(subscription), loading: false, error: '' }))
+      .catch(() => setPushState({ supported: true, enabled: false, loading: false, error: '' }));
+  }, []);
+
+  const handlePushToggle = async () => {
+    setPushState(current => ({ ...current, loading: true, error: '' }));
+    try {
+      if (pushState.enabled) {
+        await disablePushNotifications();
+        setPushState({ supported: true, enabled: false, loading: false, error: '' });
+      } else {
+        await enablePushNotifications();
+        setPushState({ supported: true, enabled: true, loading: false, error: '' });
+      }
+    } catch (error) {
+      setPushState(current => ({ ...current, loading: false, error: error.message || 'Push notifications could not be enabled.' }));
+    }
+  };
 
   const resetPendingBooking = () => {
     setPendingPaymentBookingId(null);
@@ -2708,6 +2735,32 @@ export default function CustomerDashboard() {
                 <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Your Notifications</h1>
                 <p className="text-xs text-espresso/50 mt-1">Stay updated on your booking approvals and changes.</p>
               </div>
+
+              {pushState.supported && (
+                <div className="bg-white rounded-2xl border border-espresso/5 shadow-sm p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="bg-gold/15 text-gold-dark p-2.5 rounded-xl shrink-0">
+                      <Bell className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-espresso">Browser push notifications</p>
+                      <p className="text-xs text-espresso/55 mt-1">
+                        {pushState.enabled ? 'Push alerts are enabled on this device.' : 'Get booking updates even when CAV is not open.'}
+                      </p>
+                      {pushState.error && <p className="text-xs text-red-600 mt-2">{pushState.error}</p>}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={pushState.enabled ? 'outline' : 'primary'}
+                    size="sm"
+                    onClick={handlePushToggle}
+                    disabled={pushState.loading}
+                  >
+                    {pushState.loading ? 'Updating…' : pushState.enabled ? 'Disable push' : 'Enable push'}
+                  </Button>
+                </div>
+              )}
 
               {notifications.length > 0 ? (
                 <div className="space-y-3">

@@ -38,6 +38,7 @@ from booking.models import Booking
 from inventory.models import InventoryEvent
 from payment.models import Payment
 from pos.models import Order
+from notifications.models import Notification, NotificationDelivery, PushSubscription
 import requests
 import secrets
 
@@ -828,6 +829,9 @@ class SystemDataResetView(views.APIView):
                     delete_queryset('pos_orders', Order.objects.all()),
                     delete_queryset('inventory_events', InventoryEvent.objects.all()),
                     delete_queryset('password_reset_otps', PasswordResetOTP.objects.all()),
+                    delete_queryset('notification_deliveries', NotificationDelivery.objects.all()),
+                    delete_queryset('push_subscriptions', PushSubscription.objects.all()),
+                    delete_queryset('notifications', Notification.objects.all()),
                     delete_queryset('bookings', Booking.objects.all()),
                     delete_queryset('non_admin_users', User.objects.exclude(role='ADMIN')),
                 ])

@@ -31,3 +31,93 @@ class Notification(models.Model):
 
     def __str__(self):
         return f'{self.user.username}: {self.title}'
+
+
+class PushSubscription(models.Model):
+    """A browser's Web Push subscription for one authenticated user."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='push_subscriptions',
+    )
+    endpoint = models.URLField(max_length=2048)
+    p256dh = models.CharField(max_length=255)
+    auth = models.CharField(max_length=255)
+    user_agent = models.TextField(blank=True, default='')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at', '-id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'endpoint'],
+                name='notifications_push_user_endpoint_unique',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'is_active'], name='notif_push_user_active_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username}: {self.endpoint[:70]}'
+
+
+class NotificationDelivery(models.Model):
+    CHANNEL_EMAIL = 'email'
+    CHANNEL_SMS = 'sms'
+    CHANNEL_PUSH = 'push'
+    CHANNEL_CHOICES = (
+        (CHANNEL_EMAIL, 'Email'),
+        (CHANNEL_SMS, 'SMS'),
+        (CHANNEL_PUSH, 'Push notification'),
+    )
+
+    STATUS_QUEUED = 'queued'
+    STATUS_SENT = 'sent'
+    STATUS_FAILED = 'failed'
+    STATUS_SKIPPED = 'skipped'
+    STATUS_CHOICES = (
+        (STATUS_QUEUED, 'Queued'),
+        (STATUS_SENT, 'Sent'),
+        (STATUS_FAILED, 'Failed'),
+        (STATUS_SKIPPED, 'Skipped'),
+    )
+
+    notification = models.ForeignKey(
+        Notification,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='deliveries',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='notification_deliveries',
+    )
+    channel = models.CharField(max_length=20, choices=CHANNEL_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_QUEUED)
+    provider = models.CharField(max_length=40, blank=True, default='')
+    provider_message_id = models.CharField(max_length=255, blank=True, default='')
+    error_code = models.CharField(max_length=80, blank=True, default='')
+    error_message = models.TextField(blank=True, default='')
+    metadata = models.JSONField(default=dict, blank=True)
+    attempt_count = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['channel', 'status', '-created_at'], name='notificatio_deliv_status_idx'),
+            models.Index(fields=['user', '-created_at'], name='notificatio_deliv_user_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.channel} {self.status} for user {self.user_id}'

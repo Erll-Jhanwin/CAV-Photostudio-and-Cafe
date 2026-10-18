@@ -17,7 +17,9 @@ BEGIN
         'booking_service', 'booking_package', 'booking_booking',
         'booking_bookingdatelock', 'booking_studiounavailabledate',
         'payment_payment', 'pos_order', 'inventory_product',
-        'inventory_inventoryevent', 'audit_auditlog'
+        'inventory_inventoryevent', 'audit_auditlog',
+        'notifications_notification', 'notifications_pushsubscription',
+        'notifications_notificationdelivery'
     ]
     LOOP
         IF to_regclass('public.' || table_name) IS NOT NULL THEN
