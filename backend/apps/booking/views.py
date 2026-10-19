@@ -1,6 +1,8 @@
 import calendar
 import logging
 import mimetypes
+from urllib.parse import urlsplit
+
 from django.conf import settings
 from django.http import FileResponse
 from datetime import date
@@ -651,11 +653,23 @@ class BookingPaymentMethodsView(views.APIView):
             {
                 'code': code,
                 'label': label,
-                'qr_url': getattr(settings, setting_name, ''),
+                'qr_url': self._public_qr_url(code, getattr(settings, setting_name, '')),
                 'configured': bool(getattr(settings, setting_name, '')),
             }
             for code, label, setting_name in methods
         ]})
+
+    @staticmethod
+    def _public_qr_url(code, configured_url):
+        # Older deployments copied the localhost defaults from .env.example.
+        # In production, localhost points at each customer's device. The QR
+        # assets are shipped with the frontend, so use its same-origin path.
+        if configured_url and not settings.DEBUG:
+            parsed = urlsplit(configured_url)
+            expected_path = f'/payment-qr/{code.lower()}.png'
+            if parsed.hostname in {'localhost', '127.0.0.1', '::1'} and parsed.path == expected_path:
+                return expected_path
+        return configured_url
 
 
 class BookingPaymentReceiptView(views.APIView):

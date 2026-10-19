@@ -291,6 +291,20 @@ class BookingEndToEndApiTests(TestCase):
         self.assertEqual([item['code'] for item in response.data['methods']], ['GCASH', 'MAYA', 'MARIBANK'])
         self.assertEqual([item['configured'] for item in response.data['methods']], [True, False, True])
 
+    @override_settings(
+        DEBUG=False,
+        PAYMENT_QR_GCASH_URL='http://localhost:3000/payment-qr/gcash.png',
+        PAYMENT_QR_MAYA_URL='http://127.0.0.1:3000/payment-qr/maya.png',
+        PAYMENT_QR_MARIBANK_URL='https://cdn.example.test/maribank.png',
+    )
+    def test_production_payment_methods_rewrite_loopback_qr_urls_to_frontend_assets(self):
+        response = self.client.get('/api/bookings/payment-methods/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item['qr_url'] for item in response.data['methods']],
+            ['/payment-qr/gcash.png', '/payment-qr/maya.png', 'https://cdn.example.test/maribank.png'],
+        )
+
     def test_conflicting_active_slot_is_rejected_without_a_second_booking(self):
         scheduled_date = timezone.localdate() + timedelta(days=22)
         first_response = self.client.post(
