@@ -99,7 +99,7 @@ class BookingNotificationTests(TestCase):
         self.assertEqual(notification.user_id, self.customer.id)
         self.assertEqual(notification.booking_id, response.data['id'])
         self.assertEqual(notification.notification_type, 'BOOKING_CREATED')
-        self.assertIn('Payment status: Awaiting verification', notification.message)
+        self.assertIn('Payment status: Not submitted', notification.message)
         self.assertIn('Date:', notification.message)
         self.assertIn('Time:', notification.message)
         self.assertIn('Package: Notification Package', notification.message)
@@ -138,12 +138,12 @@ class BookingNotificationTests(TestCase):
         self.assertIn(f'Date: {scheduled_date.isoformat()}', notification.message)
         self.assertIn('Time: 10:00', notification.message)
         self.assertIn('Package: Notification Package', notification.message)
-        self.assertIn('Payment status: Awaiting verification', notification.message)
+        self.assertIn('Payment status: Not submitted', notification.message)
         delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
-        self.assertEqual(delivery.status, NotificationDelivery.STATUS_SENT)
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_ACCEPTED)
         self.assertEqual(mocked_post.call_count, 1)
         self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
-        self.assertIn('Payment status: Awaiting verification', mocked_post.call_args.kwargs['json']['message'])
+        self.assertIn('Payment status: Not submitted', mocked_post.call_args.kwargs['json']['message'])
 
     @override_settings(
         EMAIL_DELIVERY_ENABLED=False,
@@ -178,7 +178,7 @@ class BookingNotificationTests(TestCase):
         self.assertTrue(Booking.objects.filter(pk=response.data['id']).exists())
         notification = Notification.objects.get(notification_type='BOOKING_CREATED')
         delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
-        self.assertEqual(delivery.status, NotificationDelivery.STATUS_FAILED)
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_UNKNOWN)
         self.assertEqual(delivery.error_code, 'provider_unavailable')
         self.assertIn('HTTP 503', delivery.error_message)
 
@@ -199,7 +199,7 @@ class BookingNotificationTests(TestCase):
         self.customer.save(update_fields=['phone_number'])
         notification = self._notification(
             title='Booking request received',
-            message='CAV booking #1 saved. Payment status: Awaiting verification.',
+            message='CAV booking #1 saved. Payment status: Not submitted.',
         )
 
         dispatch_notification(notification)
@@ -208,7 +208,7 @@ class BookingNotificationTests(TestCase):
         delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
         self.assertEqual(mocked_post.call_count, 1)
         self.assertEqual(NotificationDelivery.objects.filter(notification=notification, channel='sms').count(), 1)
-        self.assertEqual(delivery.status, NotificationDelivery.STATUS_FAILED)
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_UNKNOWN)
 
     def test_approved_payment_notifies_customer_and_confirms_down_payment(self):
         payment = Payment.objects.create(
@@ -265,6 +265,7 @@ class BookingNotificationTests(TestCase):
             datetime(2026, 10, 18, 8, 0),
             timezone.get_current_timezone(),
         )
+        self.enterContext(patch('django.utils.timezone.now', return_value=reference_time))
         self._set_booking_start(reference_time + timedelta(hours=24))
 
         with self.captureOnCommitCallbacks(execute=True):
@@ -293,7 +294,7 @@ class BookingNotificationTests(TestCase):
             notification=notification,
             channel=NotificationDelivery.CHANNEL_SMS,
         )
-        self.assertEqual(delivery.status, NotificationDelivery.STATUS_SENT)
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_ACCEPTED)
         self.assertEqual(mocked_post.call_count, 1)
         self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
 
@@ -313,6 +314,7 @@ class BookingNotificationTests(TestCase):
             datetime(2026, 10, 18, 8, 0),
             timezone.get_current_timezone(),
         )
+        self.enterContext(patch('django.utils.timezone.now', return_value=reference_time))
         self._set_booking_start(reference_time + timedelta(hours=2))
 
         with self.captureOnCommitCallbacks(execute=True):
@@ -345,6 +347,7 @@ class BookingNotificationTests(TestCase):
             datetime(2026, 10, 18, 8, 0),
             timezone.get_current_timezone(),
         )
+        self.enterContext(patch('django.utils.timezone.now', return_value=reference_time))
         self._set_booking_start(reference_time + timedelta(hours=24))
         self.booking.status = 'CANCELLED'
         self.booking.save(update_fields=['status'])
@@ -391,6 +394,7 @@ class BookingNotificationTests(TestCase):
             datetime(2026, 10, 18, 8, 0),
             timezone.get_current_timezone(),
         )
+        self.enterContext(patch('django.utils.timezone.now', return_value=reference_time))
         self._set_booking_start(reference_time + timedelta(hours=24))
 
         with self.captureOnCommitCallbacks(execute=True):
@@ -415,7 +419,7 @@ class BookingNotificationTests(TestCase):
             notification=notification,
             channel=NotificationDelivery.CHANNEL_SMS,
         )
-        self.assertEqual(delivery.status, NotificationDelivery.STATUS_FAILED)
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_UNKNOWN)
         self.assertEqual(delivery.error_code, 'provider_unavailable')
         self.assertEqual(Notification.objects.filter(notification_type='BOOKING_REMINDER_24H').count(), 1)
         self.assertEqual(mocked_post.call_count, 1)
@@ -472,7 +476,7 @@ class BookingNotificationTests(TestCase):
         dispatch_notification(notification)
 
         delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
-        self.assertEqual(delivery.status, NotificationDelivery.STATUS_SENT)
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_ACCEPTED)
         self.assertEqual(delivery.provider_message_id, 'sms_123')
         self.assertEqual(mocked_post.call_args.args[0], 'https://sms.example.test/api/v1/sms_messages')
         self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
@@ -502,7 +506,7 @@ class BookingNotificationTests(TestCase):
         dispatch_notification(notification)
 
         delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
-        self.assertEqual(delivery.status, NotificationDelivery.STATUS_SENT)
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_ACCEPTED)
         self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
         self.assertEqual(
             mocked_post.call_args.kwargs['json']['message'],
@@ -535,7 +539,7 @@ class BookingNotificationTests(TestCase):
         )
         self.assertEqual(mocked_post.call_count, 1)
         self.assertEqual(deliveries.count(), 1)
-        self.assertEqual(deliveries.get().status, NotificationDelivery.STATUS_SENT)
+        self.assertEqual(deliveries.get().status, NotificationDelivery.STATUS_ACCEPTED)
 
     @override_settings(
         EMAIL_DELIVERY_ENABLED=False,
@@ -672,7 +676,7 @@ class BookingNotificationTests(TestCase):
         dispatch_notification(notification)
 
         delivery = NotificationDelivery.objects.get(notification=notification, channel='sms')
-        self.assertEqual(delivery.status, NotificationDelivery.STATUS_FAILED)
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_UNKNOWN)
         self.assertEqual(delivery.error_code, 'provider_unavailable')
         self.assertTrue(Notification.objects.filter(pk=notification.pk).exists())
 

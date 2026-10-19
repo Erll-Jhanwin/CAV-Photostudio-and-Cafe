@@ -239,18 +239,19 @@ class BookingEndToEndApiTests(TestCase):
         booking_id = booking_response.data['id']
         self.assertEqual(Booking.objects.filter(pk=booking_id).count(), 1)
         sms_delivery = NotificationDelivery.objects.get(channel='sms')
-        self.assertEqual(sms_delivery.status, NotificationDelivery.STATUS_SENT)
+        self.assertEqual(sms_delivery.status, NotificationDelivery.STATUS_ACCEPTED)
         self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
         self.assertIn(scheduled_date.isoformat(), mocked_post.call_args.kwargs['json']['message'])
         self.assertIn('Time: 09:00', mocked_post.call_args.kwargs['json']['message'])
         self.assertIn('Package: Booking E2E Package', mocked_post.call_args.kwargs['json']['message'])
-        self.assertIn('Payment status: Awaiting verification', mocked_post.call_args.kwargs['json']['message'])
+        self.assertIn('Payment status: Not submitted', mocked_post.call_args.kwargs['json']['message'])
 
         payment_response = self.client.post(
             '/api/bookings/payments/',
             {
                 'booking': booking_id,
                 'reference_number': 'E2E-REF-001',
+                'method': 'MAYA',
                 'amount': '500.00',
                 'paid_at': '2026-10-18T08:00:00+08:00',
                 'receipt': self.receipt_upload(),
@@ -260,7 +261,20 @@ class BookingEndToEndApiTests(TestCase):
         )
 
         self.assertEqual(payment_response.status_code, 201)
+        self.assertEqual(payment_response.data['method'], 'MAYA')
         self.assertEqual(Payment.objects.filter(booking_id=booking_id).count(), 1)
+        payment = Payment.objects.get(booking_id=booking_id)
+        self.assertTrue(payment.receipt)
+        self.assertIn(f'/api/bookings/payments/{payment.id}/receipt/', payment_response.data['receipt_url'])
+        receipt_response = self.client.get(payment_response.data['receipt_url'].replace('http://testserver', ''))
+        self.assertEqual(receipt_response.status_code, 200)
+        self.assertEqual(b''.join(receipt_response.streaming_content)[:2], b'\xff\xd8')
+        other_customer = get_user_model().objects.create_user(
+            username='booking-e2e-other', email='booking-e2e-other@example.com', password='Customer123!',
+        )
+        self.client.force_authenticate(other_customer)
+        self.assertEqual(self.client.get(f'/api/bookings/payments/{payment.id}/receipt/').status_code, 404)
+        self.client.force_authenticate(self.customer)
         replay_response = self.client.post(
             '/api/bookings/payments/',
             {'booking': booking_id, 'idempotency_key': 'payment-e2e-1'},
@@ -269,6 +283,13 @@ class BookingEndToEndApiTests(TestCase):
         self.assertEqual(replay_response.status_code, 200)
         self.assertEqual(Payment.objects.filter(booking_id=booking_id).count(), 1)
         self.assertEqual(mocked_post.call_count, 1)
+
+    @override_settings(PAYMENT_QR_GCASH_URL='/media/payments/gcash.png', PAYMENT_QR_MAYA_URL='', PAYMENT_QR_MARIBANK_URL='https://example.test/maribank.png')
+    def test_payment_method_list_reports_configuration_for_each_supported_method(self):
+        response = self.client.get('/api/bookings/payment-methods/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item['code'] for item in response.data['methods']], ['GCASH', 'MAYA', 'MARIBANK'])
+        self.assertEqual([item['configured'] for item in response.data['methods']], [True, False, True])
 
     def test_conflicting_active_slot_is_rejected_without_a_second_booking(self):
         scheduled_date = timezone.localdate() + timedelta(days=22)

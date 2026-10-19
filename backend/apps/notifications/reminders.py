@@ -22,10 +22,14 @@ def build_booking_reminder_message(booking, reminder_label):
     time_text = starts_at.strftime('%I:%M %p').lstrip('0')
     return (
         f'CAV reminder ({reminder_label}): Your photo session for booking '
-        f'#{booking.id} is on {date_text} at {time_text}. '
+        f'#{booking.id} is on {date_text} at {time_text} (Asia/Manila). Package: {booking.package.name}. '
         'Please arrive 15 minutes early. Bring any outfits or props you plan '
         'to use and arrive camera-ready.'
     )
+
+
+def reminder_event_key(booking, notification_type):
+    return f'booking:{booking.id}:{notification_type}:{booking.scheduled_date.isoformat()}:{booking.scheduled_time.isoformat()}'
 
 
 def is_reminder_due(session_start, reference_time, offset, window_minutes):

@@ -14,6 +14,7 @@ from notifications.reminders import (
     REMINDER_OFFSETS,
     build_booking_reminder_message,
     is_reminder_due,
+    reminder_event_key,
 )
 from notifications.services import create_booking_notification
 
@@ -126,13 +127,13 @@ class Command(BaseCommand):
                 has_sent_sms = NotificationDelivery.objects.filter(
                     notification=existing,
                     channel=NotificationDelivery.CHANNEL_SMS,
-                    status=NotificationDelivery.STATUS_SENT,
+                    status__in=[NotificationDelivery.STATUS_ACCEPTED, NotificationDelivery.STATUS_SENT, NotificationDelivery.STATUS_DELIVERED],
                 ).exists()
                 return 'already_sent' if has_sent_sms else 'already_recorded'
 
             if dry_run:
                 self.stdout.write(
-                    f'[dry-run] booking #{booking.id}: {notification_type} -> {booking.customer.phone_number or "no phone"}'
+                    f'[dry-run] booking #{booking.id}: {notification_type}'
                 )
                 return 'dry_run'
 
@@ -141,6 +142,7 @@ class Command(BaseCommand):
                 notification_type=notification_type,
                 title=f'Photo session reminder ({reminder_label})',
                 message=message,
+                event_key=reminder_event_key(booking, notification_type),
             )
             return 'created'
 

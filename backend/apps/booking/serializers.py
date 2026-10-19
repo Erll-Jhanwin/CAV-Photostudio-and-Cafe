@@ -4,7 +4,8 @@ from rest_framework import serializers
 from booking.models import Service, Package, Booking, BookingReview, StudioUnavailableDate
 from booking.availability import is_slot_available
 from payment.models import Payment
-from users.serializers import UserSerializer
+from users.serializers import UserSerializer, validate_unique_email, validate_unique_phone_number
+from users.phone_numbers import normalize_philippine_mobile_number
 from users.uploads import validate_receipt_upload
 
 class PackageSerializer(serializers.ModelSerializer):
@@ -35,8 +36,12 @@ class BookingChangeLogSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField()
 
 class BookingPaymentSerializer(serializers.ModelSerializer):
+    booking = serializers.PrimaryKeyRelatedField(queryset=Booking.objects.all(), required=True, allow_null=False)
+    reference_number = serializers.CharField(max_length=100, required=True, allow_blank=False)
+    receipt = serializers.FileField(write_only=True, required=False, allow_null=True)
     booking_details = serializers.SerializerMethodField()
     receipt_url = serializers.SerializerMethodField()
+    method = serializers.ChoiceField(choices=[('GCASH', 'GCash'), ('MAYA', 'Maya'), ('MARIBANK', 'MariBank')], required=False)
     verified_by_details = UserSerializer(source='verified_by', read_only=True)
     required_down_payment = serializers.SerializerMethodField()
     idempotency_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -44,7 +49,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = [
-            'id', 'booking', 'booking_details', 'reference_number', 'amount',
+            'id', 'booking', 'booking_details', 'reference_number', 'amount', 'method',
             'paid_at', 'receipt', 'receipt_url', 'status', 'verified_by',
             'verified_by_details', 'verified_at', 'admin_note',
             'required_down_payment', 'idempotency_key', 'created_at', 'updated_at'
@@ -71,8 +76,9 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     def get_receipt_url(self, obj):
         if not obj.receipt:
             return None
+        from django.urls import reverse
         request = self.context.get('request')
-        url = obj.receipt.url
+        url = reverse('booking_payment_receipt', kwargs={'pk': obj.pk})
         return request.build_absolute_uri(url) if request else url
 
     def get_required_down_payment(self, obj):
@@ -80,12 +86,15 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         booking = attrs.get('booking') or getattr(self.instance, 'booking', None)
-        amount = attrs.get('amount') or getattr(self.instance, 'amount', None)
+        amount = attrs.get('amount', getattr(self.instance, 'amount', None))
         reference_number = attrs.get('reference_number') or getattr(self.instance, 'reference_number', '')
         request = self.context.get('request')
 
         if request and booking and request.user.role not in ['STAFF', 'ADMIN'] and booking.customer_id != request.user.id:
             raise serializers.ValidationError({'booking': 'You can only submit payments for your own bookings.'})
+
+        if self.instance is None and booking and booking.status in {'CANCELLED', 'COMPLETED'}:
+            raise serializers.ValidationError({'booking': 'Payment proof cannot be submitted for a cancelled or completed booking.'})
 
         if reference_number:
             normalized_reference = str(reference_number).strip()
@@ -202,10 +211,10 @@ class BookingSerializer(serializers.ModelSerializer):
     can_edit = serializers.BooleanField(source='is_customer_editable', read_only=True)
     edit_locked_reason = serializers.CharField(source='customer_edit_lock_reason', read_only=True)
     edit_deadline = serializers.DateTimeField(read_only=True)
-    first_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    last_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    email = serializers.EmailField(write_only=True, required=False, allow_blank=True)
-    phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    first_name = serializers.CharField(max_length=150, write_only=True, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, write_only=True, required=False, allow_blank=True)
+    email = serializers.EmailField(max_length=254, write_only=True, required=False, allow_blank=True)
+    phone_number = serializers.CharField(max_length=20, write_only=True, required=False, allow_blank=True)
     address = serializers.CharField(write_only=True, required=False, allow_blank=True)
     idempotency_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
@@ -233,6 +242,16 @@ class BookingSerializer(serializers.ModelSerializer):
     def get_review(self, obj):
         review = getattr(obj, 'review', None)
         return BookingReviewSerializer(review, context=self.context).data if review else None
+
+    def validate_email(self, value):
+        customer = self.instance.customer if self.instance else self.context['request'].user
+        return validate_unique_email(value, customer, required=True)
+
+    def validate_phone_number(self, value):
+        customer = self.instance.customer if self.instance else self.context['request'].user
+        if not normalize_philippine_mobile_number(value):
+            raise serializers.ValidationError('Enter a valid Philippine mobile number (09xxxxxxxxx or +639xxxxxxxxx).')
+        return validate_unique_phone_number(value, customer)
 
     def validate(self, attrs):
         if self.instance is None:

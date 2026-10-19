@@ -28,7 +28,7 @@ import {
   getPackageGalleryImages,
   localGalleryImages,
 } from '../utils/cavAssets';
-import { formatManilaDateTime, getManilaDateInputValue, getManilaMonthValue, getManilaTimeInputValue } from '../utils/dateTime';
+import { formatManilaDateTime, getManilaDateInputValue, getManilaMonthValue, getManilaTimeInputValue, manilaInputToISOString } from '../utils/dateTime';
 import {
   disablePushNotifications,
   enablePushNotifications,
@@ -175,6 +175,8 @@ const getBookingActions = (booking) => {
     default:
       return [
         { key: 'details', label: 'Review Details', icon: Eye, primary: true },
+        ...(!booking?.payments?.some(payment => ['PENDING_VERIFICATION', 'APPROVED'].includes(payment.status))
+          ? [{ key: 'pay', label: 'Submit Payment Proof', icon: ReceiptText }] : []),
         ...editAction,
         { key: 'cancel', label: 'Cancel Session', icon: XCircle, danger: true },
       ];
@@ -250,11 +252,10 @@ const getCalendarDays = (monthValue) => {
   const blanks = Array.from({ length: firstDay.getDay() }, (_, index) => ({ key: `blank-${index}`, blank: true }));
   const days = Array.from({ length: daysInMonth }, (_, index) => {
     const day = index + 1;
-    const date = new Date(year, month - 1, day);
     return {
-      key: getDateInputValue(date),
+      key: `${monthValue}-${String(day).padStart(2, '0')}`,
       day,
-      date: getDateInputValue(date),
+      date: `${monthValue}-${String(day).padStart(2, '0')}`,
     };
   });
   return [...blanks, ...days];
@@ -321,6 +322,10 @@ export default function CustomerDashboard() {
 
   const [services, setServices] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [bookingStatusFilter, setBookingStatusFilter] = useState('ALL');
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [paymentQrFailed, setPaymentQrFailed] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [pushState, setPushState] = useState({ supported: false, enabled: false, permission: 'default', loading: false, error: '' });
   const [loading, setLoading] = useState(true);
@@ -389,6 +394,8 @@ export default function CustomerDashboard() {
   const bookingSubmitClickRef = useRef(0);
   const bookingIdempotencyKeyRef = useRef('');
   const paymentIdempotencyKeyRef = useRef('');
+  const bookingRequestStartedRef = useRef(false);
+  const paymentRequestStartedRef = useRef(false);
   const dashboardFetchSeqRef = useRef(0);
 
   const fetchNotifications = useCallback(async ({ force = false } = {}) => {
@@ -429,6 +436,8 @@ export default function CustomerDashboard() {
       }));
   }, []);
 
+  useEffect(() => { setPaymentQrFailed(false); }, [paymentMethod]);
+
   const handlePushToggle = async () => {
     setPushState(current => ({ ...current, loading: true, error: '' }));
     try {
@@ -453,6 +462,8 @@ export default function CustomerDashboard() {
     setPendingPaymentBookingId(null);
     bookingIdempotencyKeyRef.current = '';
     paymentIdempotencyKeyRef.current = '';
+    bookingRequestStartedRef.current = false;
+    paymentRequestStartedRef.current = false;
   };
 
   useEffect(() => {
@@ -593,18 +604,21 @@ export default function CustomerDashboard() {
     try {
       if (!background) setLoading(true);
       setDashboardError('');
-      const [servicesRes, bookingsRes, profileRes] = await Promise.all([
-        getCached('/api/bookings/services/', {}, { force: background }),
-        getCached('/api/bookings/', {}, { force: background }),
-        getCached('/api/auth/profile/', {}, { force: background }),
+      const results = await Promise.allSettled([
+        client.get('/api/bookings/services/', { timeout: 12000 }),
+        client.get('/api/bookings/', { timeout: 12000 }),
+        client.get('/api/auth/profile/', { timeout: 12000 }),
       ]);
-      const uniqueServices = decorateServicesWithAssets(normalizeServices(servicesRes.data));
-      const uniqueBookings = normalizeBookings(bookingsRes.data);
       if (requestSeq !== dashboardFetchSeqRef.current) return;
-      setServices(uniqueServices);
-      setBookings(uniqueBookings);
+      const failures = [];
+      if (results[0].status === 'fulfilled') setServices(decorateServicesWithAssets(normalizeServices(results[0].value.data)));
+      else failures.push('services');
+      if (results[1].status === 'fulfilled') setBookings(normalizeBookings(results[1].value.data));
+      else failures.push('bookings');
       setGalleryImages(normalizeGalleryImages(localGalleryImages));
-      const p = profileRes.data;
+      if (results[2].status === 'rejected') failures.push('profile');
+      const p = results[2].status === 'fulfilled' ? results[2].value.data : null;
+      if (p) {
       setProfileUsername(p.username || '');
       setFirstName(p.first_name || '');
       setLastName(p.last_name || '');
@@ -629,6 +643,8 @@ export default function CustomerDashboard() {
         setPoints(p.customer_profile.points || 0);
         setLoyaltyTier(p.customer_profile.loyalty_tier || 'Bronze');
       }
+      }
+      if (failures.length) setDashboardError(`Some dashboard data could not load (${failures.join(', ')}). Retry to refresh it.`);
       // Notifications are supplemental to the account view. Keep older backend
       // deployments from blocking the dashboard while they receive the API migration.
       void fetchNotifications({ force: background });
@@ -644,6 +660,32 @@ export default function CustomerDashboard() {
       }
     }
   }, [user?.email, updateStoredUser, fetchNotifications]);
+
+  useEffect(() => {
+    let active = true;
+    client.get('/api/bookings/payment-methods/', { timeout: 12000 })
+      .then(({ data }) => {
+        if (!active) return;
+        const methods = Array.isArray(data?.methods) ? data.methods.filter(method => method.code) : [];
+        setPaymentMethods(methods);
+        setPaymentMethod(current => methods.some(method => method.code === current && method.configured && method.qr_url)
+          ? current : (methods.find(method => method.configured && method.qr_url)?.code || methods[0]?.code || ''));
+      })
+      .catch(() => { if (active) setPaymentMethods([]); });
+    return () => { active = false; };
+  }, []);
+
+  const bookingStatusCounts = {
+    PENDING: bookings.filter(item => item.status === 'PENDING').length,
+    VERIFIED: bookings.filter(item => ['CONFIRMED', 'CONFIRMED_DP'].includes(item.status)).length,
+    COMPLETED: bookings.filter(item => item.status === 'COMPLETED').length,
+    CANCELED: bookings.filter(item => item.status === 'CANCELLED').length,
+  };
+  const selectedPaymentMethod = paymentMethods.find(method => method.code === paymentMethod);
+  const filteredBookings = bookingStatusFilter === 'ALL' ? bookings : bookings.filter(item => {
+    if (bookingStatusFilter === 'VERIFIED') return ['CONFIRMED', 'CONFIRMED_DP'].includes(item.status);
+    return item.status === (bookingStatusFilter === 'CANCELED' ? 'CANCELLED' : bookingStatusFilter);
+  });
 
   useEffect(() => {
     if (!userId) return undefined;
@@ -829,11 +871,12 @@ export default function CustomerDashboard() {
       setSlotLoading(true);
       setAvailabilityError('');
       const res = await client.get('/api/bookings/availability/', {
-        params: { package: selectedPackage.id, date: dateValue }
+        params: { package: selectedPackage.id, date: dateValue, ...(pendingPaymentBookingId ? { exclude_booking: pendingPaymentBookingId } : {}) }
       });
       setDayAvailability(res.data);
       setSelectedTime(current => (
-        current && !res.data.slots?.some(slot => slot.time === current && slot.available) ? '' : current
+        current && !bookingSubmitInFlightRef.current && !pendingPaymentBookingId
+          && !res.data.slots?.some(slot => slot.time === current && slot.available) ? '' : current
       ));
       return res.data;
     } catch {
@@ -842,7 +885,7 @@ export default function CustomerDashboard() {
     } finally {
       setSlotLoading(false);
     }
-  }, [selectedPackage, selectedDate]);
+  }, [selectedPackage, selectedDate, pendingPaymentBookingId]);
 
   useEffect(() => {
     if (!userId) return undefined;
@@ -874,6 +917,9 @@ export default function CustomerDashboard() {
   };
 
   const checkPaymentReferenceDuplicate = useCallback(async (referenceValue) => {
+    // A lost payment response must be replayed with its original key. A
+    // preflight "reference exists" check would otherwise block recovery.
+    if (paymentRequestStartedRef.current) return false;
     const cleanReference = referenceValue.trim();
     if (!cleanReference) {
       setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
@@ -1094,6 +1140,10 @@ export default function CustomerDashboard() {
       alert('Please fill in all booking details.');
       return;
     }
+    if (!paymentMethod || paymentQrFailed || !selectedPaymentMethod?.configured || !selectedPaymentMethod?.qr_url) {
+      alert(paymentQrFailed ? 'The selected payment QR code could not be loaded. Please choose another method or contact the studio.' : 'Online payment methods are not configured yet. Please contact the studio before submitting payment.');
+      return;
+    }
     const requiredDownPayment = calculateDownPayment(selectedPackage.price);
     const paidAmount = Number(paymentAmount);
     if (!paymentReference.trim() || !paymentDate || !paymentTime || !paymentReceipt) {
@@ -1101,19 +1151,19 @@ export default function CustomerDashboard() {
       return;
     }
     if (!isValidPaymentReference(paymentReference)) {
-      alert('GCash reference number must be 6-100 letters, numbers, spaces, or hyphens.');
+      alert(`${paymentMethods.find(method => method.code === paymentMethod)?.label || 'Payment'} reference number must be 6-100 letters, numbers, spaces, or hyphens.`);
       return;
     }
     if (!Number.isFinite(paidAmount) || paidAmount < requiredDownPayment) {
       alert(`Amount paid must be at least ${formatPeso(requiredDownPayment)}.`);
       return;
     }
-    if (paymentReferenceStatus.checking) {
+    if (paymentReferenceStatus.checking && !paymentRequestStartedRef.current) {
       alert('Please wait until the reference number check is complete.');
       return;
     }
-    if (paymentReferenceStatus.exists) {
-      alert('This GCash reference number has already been submitted. Please upload the correct receipt or enter a different reference number.');
+    if (paymentReferenceStatus.exists && !paymentRequestStartedRef.current) {
+      alert('This payment reference number has already been submitted. Please upload the correct receipt or enter a different reference number.');
       return;
     }
     bookingSubmitInFlightRef.current = true;
@@ -1131,6 +1181,7 @@ export default function CustomerDashboard() {
     let bookingSavedForPayment = Boolean(bookingId);
     try {
       setPaymentSubmitting(true);
+      const paidAt = manilaInputToISOString(paymentDate, paymentTime);
       if (!bookingIdempotencyKeyRef.current) {
         bookingIdempotencyKeyRef.current = createIdempotencyKey('booking');
       }
@@ -1139,7 +1190,7 @@ export default function CustomerDashboard() {
       }
       const duplicateReference = await checkPaymentReferenceDuplicate(paymentReference);
       if (duplicateReference) {
-        alert('This GCash reference number has already been submitted. Please upload the correct receipt or enter a different reference number.');
+        alert('This payment reference number has already been submitted. Please upload the correct receipt or enter a different reference number.');
         setPaymentSubmitting(false);
         return;
       }
@@ -1151,13 +1202,16 @@ export default function CustomerDashboard() {
       }
       let createdBooking = null;
       if (!bookingId) {
-        const latestAvailability = await fetchDayAvailability(selectedDate);
-        const latestSlot = latestAvailability?.slots?.find(slot => slot.time === selectedTime);
-        if (!latestSlot?.available) {
-          alert('This schedule is no longer available. Please choose another date or time slot.');
-          setPaymentSubmitting(false);
-          return;
+        if (!bookingRequestStartedRef.current) {
+          const latestAvailability = await fetchDayAvailability(selectedDate);
+          if (!latestAvailability) throw new Error('Could not check availability. Please retry when the server is reachable.');
+          const latestSlot = latestAvailability.slots?.find(slot => slot.time === selectedTime);
+          if (!latestSlot?.available) {
+            alert('This schedule is no longer available. Please choose another date or time slot.');
+            return;
+          }
         }
+        bookingRequestStartedRef.current = true;
         const bookingRes = await client.post('/api/bookings/', {
           package: selectedPackage.id, scheduled_date: selectedDate,
           scheduled_time: selectedTime, notes,
@@ -1172,15 +1226,17 @@ export default function CustomerDashboard() {
         bookingSavedForPayment = true;
         createdBooking = normalizeBooking(bookingRes.data);
         setPendingPaymentBookingId(bookingId);
+        setBookings(current => normalizeBookings([createdBooking, ...current.filter(booking => booking.id !== bookingId)]));
       }
-      const paidAt = new Date(`${paymentDate}T${paymentTime}:00`);
       const paymentData = new FormData();
       paymentData.append('booking', bookingId);
       paymentData.append('reference_number', paymentReference.trim());
       paymentData.append('amount', paidAmount.toFixed(2));
-      paymentData.append('paid_at', paidAt.toISOString());
+      paymentData.append('method', paymentMethod);
+      paymentData.append('paid_at', paidAt);
       if (paymentReceipt) paymentData.append('receipt', paymentReceipt);
       paymentData.append('idempotency_key', paymentIdempotencyKeyRef.current);
+      paymentRequestStartedRef.current = true;
       const paymentRes = await client.post('/api/bookings/payments/', paymentData);
       if (createdBooking) {
         setBookings(current => normalizeBookings([
@@ -1215,11 +1271,15 @@ export default function CustomerDashboard() {
       const errorMessage = formatApiError(err, 'The request could not be completed. Please try again.');
       if (bookingSavedForPayment && bookingId) {
         alert(
-          `Booking #${bookingId} was saved, but the payment proof was not submitted. `
+          `Booking #${bookingId} was saved, but we could not confirm the payment submission. `
           + `${errorMessage} You can retry the payment without creating another booking.`
         );
       } else {
         alert(errorMessage);
+      }
+      if (err.response?.status >= 400 && err.response?.status < 500) {
+        if (bookingId) paymentRequestStartedRef.current = false;
+        else bookingRequestStartedRef.current = false;
       }
       if (err.response?.status === 409) {
         fetchDayAvailability(selectedDate);
@@ -1292,6 +1352,25 @@ export default function CustomerDashboard() {
   };
 
   const handleBookingAction = async (booking, action) => {
+    if (action.key === 'pay') {
+      const service = services.find(item => item.packages?.some(pkg => pkg.id === booking.package));
+      const pkg = service?.packages?.find(item => item.id === booking.package);
+      if (!pkg) return alert('Could not load this booking package. Refresh the page and try again.');
+      resetPendingBooking();
+      setPendingPaymentBookingId(booking.id);
+      setSelectedService(service);
+      setSelectedPackage(pkg);
+      setSelectedDate(booking.scheduled_date);
+      setSelectedTime(booking.scheduled_time);
+      setNotes(booking.notes || '');
+      setPaymentReference('');
+      setPaymentReceipt(null);
+      setPaymentReceiptPreview('');
+      setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
+      setCurrentStep(4);
+      setActiveTab('book');
+      return;
+    }
     if (action.key === 'review') {
       openBookingReview(booking);
       return;
@@ -2225,8 +2304,14 @@ export default function CustomerDashboard() {
                               </div>
 
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <label className="block text-xs font-bold text-espresso/70">
+                                  Payment Method
+                                  <select aria-label="Payment Method" value={paymentMethod} onChange={event => setPaymentMethod(event.target.value)} disabled={paymentSubmitting || paymentMethods.length === 0} required className="mt-1 block w-full rounded-xl border border-espresso/15 bg-white px-3 py-2.5 text-sm text-espresso">
+                                    {paymentMethods.length ? paymentMethods.map(method => <option key={method.code} value={method.code}>{method.label}{method.configured && method.qr_url ? '' : ' (QR not configured)'}</option>) : <option value="">Payment methods unavailable</option>}
+                                  </select>
+                                </label>
                                 <Input
-                                  label="GCash Reference No."
+                                  label={`${paymentMethods.find(method => method.code === paymentMethod)?.label || 'Payment'} Reference No.`}
                                   value={paymentReference}
                                   onChange={e => setPaymentReference(e.target.value)}
                                   placeholder="e.g. 1234567890123"
@@ -2261,6 +2346,13 @@ export default function CustomerDashboard() {
                                   required
                                 />
                               </div>
+                              {selectedPaymentMethod?.configured && selectedPaymentMethod?.qr_url ? (
+                                <div className="rounded-xl border border-espresso/10 bg-white p-3 text-center">
+                                  <p className="mb-2 text-xs font-bold text-espresso">Scan to pay with {selectedPaymentMethod.label}</p>
+                                  <img src={selectedPaymentMethod.qr_url} alt={`${selectedPaymentMethod.label} payment QR code`} onError={() => setPaymentQrFailed(true)} className="mx-auto max-h-56 max-w-full object-contain" />
+                                  {paymentQrFailed && <p role="alert" className="mt-2 text-xs text-red-700">This payment QR code could not be loaded. Choose another method or contact the studio.</p>}
+                                </div>
+                              ) : <p role="status" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">The {selectedPaymentMethod?.label || 'selected payment'} QR code is not configured. Contact the studio before paying.</p>}
                               {paymentReferenceStatus.message && (
                                 <div className={`rounded-2xl border p-3 text-[11px] font-semibold leading-relaxed ${
                                   paymentReferenceStatus.exists
@@ -2285,6 +2377,7 @@ export default function CustomerDashboard() {
                                     <input
                                       type="file"
                                       accept="image/jpeg,image/png,image/webp"
+                                      aria-label="Payment proof image"
                                       onChange={e => handlePaymentReceiptUpload(e.target.files?.[0] || null)}
                                       disabled={paymentSubmitting}
                                       className="block w-full text-xs text-espresso file:mr-3 file:rounded-xl file:border-0 file:bg-espresso file:px-3 file:py-2 file:text-xs file:font-bold file:text-gold disabled:opacity-60"
@@ -2335,7 +2428,7 @@ export default function CustomerDashboard() {
                           size="sm" 
                           onClick={handleBookingSubmit}
                           loading={paymentSubmitting}
-                          disabled={paymentSubmitting || paymentReferenceStatus.checking || paymentReferenceStatus.exists}
+                          disabled={paymentSubmitting || !paymentMethod || !selectedPaymentMethod?.configured || !selectedPaymentMethod?.qr_url || paymentQrFailed || (!paymentRequestStartedRef.current && (paymentReferenceStatus.checking || paymentReferenceStatus.exists))}
                           className="px-6 text-xs bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white"
                         >
                           {paymentSubmitting ? 'Securing Your Slot...' : 'Reserve Your Session'}
@@ -2430,9 +2523,17 @@ export default function CustomerDashboard() {
                 <p className="text-xs text-espresso/55 mt-1">Track reservations, schedules, add-ons, and booking progress.</p>
               </div>
 
-              {bookings.length > 0 ? (
+              <div className="flex flex-wrap gap-2" aria-label="Filter bookings by status">
+                {[['ALL', 'All', bookings.length], ['PENDING', 'Pending', bookingStatusCounts.PENDING], ['VERIFIED', 'Verified', bookingStatusCounts.VERIFIED], ['COMPLETED', 'Completed', bookingStatusCounts.COMPLETED], ['CANCELED', 'Canceled', bookingStatusCounts.CANCELED]].map(([key, label, count]) => (
+                  <button key={key} type="button" aria-pressed={bookingStatusFilter === key} onClick={() => setBookingStatusFilter(key)} className={`rounded-full border px-4 py-2 text-xs font-bold ${bookingStatusFilter === key ? 'border-espresso bg-espresso text-white' : 'border-espresso/15 bg-white text-espresso'}`}>
+                    {label} <span className="ml-1 opacity-70">{count}</span>
+                  </button>
+                ))}
+              </div>
+
+              {filteredBookings.length > 0 ? (
                 <div className="space-y-6 md:space-y-8">
-                  {bookings.map((b, i) => (
+                  {filteredBookings.map((b, i) => (
                       <div key={recordKey(b, `${b.scheduled_date}-${b.scheduled_time}`)} className="group rounded-[20px] bg-white/85 backdrop-blur-xl border border-espresso/[0.07] shadow-[0_18px_44px_rgba(46,26,17,0.075),0_3px_12px_rgba(46,26,17,0.04)] hover:shadow-[0_28px_70px_rgba(46,26,17,0.12),0_8px_18px_rgba(46,26,17,0.05)] hover:-translate-y-0.5 transition-all duration-300 p-4 md:p-5 animate-in-up" style={{ animationDelay: `${i * 45}ms` }}>
                         {(() => {
                           const statusMeta = getStatusMeta(b.status);
@@ -2583,11 +2684,9 @@ export default function CustomerDashboard() {
                       <Camera className="w-10 h-10" />
                     </div>
                   </div>
-                  <h2 className="text-2xl font-black text-espresso">No bookings yet</h2>
-                  <p className="text-sm text-espresso/55 mt-2 max-w-md mx-auto">Reserve your first studio session and your booking timeline will appear here.</p>
-                  <Button variant="gold" size="lg" className="mt-6 rounded-2xl" onClick={() => setActiveTab('book')}>
-                    Book Your First Session
-                  </Button>
+                  <h2 className="text-2xl font-black text-espresso">{bookings.length ? 'No bookings in this status' : 'No bookings yet'}</h2>
+                  <p className="text-sm text-espresso/55 mt-2 max-w-md mx-auto">{bookings.length ? 'Choose another status filter to see your bookings.' : 'Reserve your first studio session and your booking timeline will appear here.'}</p>
+                  {!bookings.length && <Button variant="gold" size="lg" className="mt-6 rounded-2xl" onClick={() => setActiveTab('book')}>Book Your First Session</Button>}
                 </div>
               )}
             </div>

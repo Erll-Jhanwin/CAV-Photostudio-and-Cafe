@@ -46,11 +46,17 @@ export default function LoginPage() {
   const [registrationToken, setRegistrationToken] = useState('');
   const [registrationContactHint, setRegistrationContactHint] = useState('');
   const [registrationOtp, setRegistrationOtp] = useState('');
+  const [registrationResendCooldown, setRegistrationResendCooldown] = useState(0);
+  const [registrationOtpExpiresMinutes, setRegistrationOtpExpiresMinutes] = useState(10);
   const [registrationConsent, setRegistrationConsent] = useState(false);
   const [adminMfaStep, setAdminMfaStep] = useState(false);
   const [adminMfaToken, setAdminMfaToken] = useState('');
   const [adminMfaContactHint, setAdminMfaContactHint] = useState('');
   const [adminMfaOtp, setAdminMfaOtp] = useState('');
+  const [adminMfaProvider, setAdminMfaProvider] = useState('password');
+  const [adminMfaGoogleCredential, setAdminMfaGoogleCredential] = useState('');
+  const [adminMfaResendCooldown, setAdminMfaResendCooldown] = useState(0);
+  const [adminMfaOtpExpiresMinutes, setAdminMfaOtpExpiresMinutes] = useState(10);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotStep, setForgotStep] = useState('phone');
   const [forgotPhone, setForgotPhone] = useState('');
@@ -62,6 +68,7 @@ export default function LoginPage() {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotResult, setForgotResult] = useState(null);
   const [forgotResendCooldown, setForgotResendCooldown] = useState(0);
+  const [forgotOtpExpiresMinutes, setForgotOtpExpiresMinutes] = useState(10);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -157,8 +164,22 @@ export default function LoginPage() {
       setRegistrationToken(res.registration_token || '');
       setRegistrationContactHint(res.contact_hint || 'your mobile number');
       setRegistrationOtp('');
+      setRegistrationResendCooldown(res.resend_cooldown_seconds || 60);
+      setRegistrationOtpExpiresMinutes(res.expires_in_minutes || 10);
       setRegistrationConsent(false);
       setSuccess(`We sent an SMS verification code to ${res.contact_hint || 'your mobile number'}. Enter it to finish creating your account.`);
+      setFormErrors({});
+    } else if (res.mfaRequired) {
+      const contactHint = String(res.contact_hint || 'your registered mobile number');
+      setAdminMfaStep(true);
+      setAdminMfaToken(res.mfa_token || '');
+      setAdminMfaContactHint(contactHint);
+      setAdminMfaOtp('');
+      setAdminMfaProvider('google');
+      setAdminMfaGoogleCredential(credential);
+      setAdminMfaResendCooldown(res.resend_cooldown_seconds || 60);
+      setAdminMfaOtpExpiresMinutes(res.expires_in_minutes || 10);
+      setSuccess(`Admin SMS verification code sent to ${contactHint}.`);
       setFormErrors({});
     } else if (res.success) {
       showLoginSuccess(res.user);
@@ -264,11 +285,25 @@ export default function LoginPage() {
         setRegistrationContactHint(res.contact_hint || 'your mobile number');
         setRegistrationOtp('');
         setRegistrationConsent(false);
+        setRegistrationResendCooldown(res.resend_cooldown_seconds || 60);
+        setRegistrationOtpExpiresMinutes(res.expires_in_minutes || 10);
         setSuccess(`We sent an SMS verification code to ${res.contact_hint || 'your mobile number'}. Enter it to finish creating your account.`);
         setFormErrors({});
       } else if (res.success) {
         showLoginSuccess(res.user);
         navigateAfterAuth(res.user);
+      } else if (res.mfaRequired) {
+        const contactHint = String(res.contact_hint || 'your registered mobile number');
+        setAdminMfaStep(true);
+        setAdminMfaToken(res.mfa_token || '');
+        setAdminMfaContactHint(contactHint);
+        setAdminMfaOtp('');
+        setAdminMfaProvider('google');
+        setAdminMfaGoogleCredential(credential);
+        setAdminMfaResendCooldown(res.resend_cooldown_seconds || 60);
+        setAdminMfaOtpExpiresMinutes(res.expires_in_minutes || 10);
+        setSuccess(`Admin SMS verification code sent to ${contactHint}.`);
+        setFormErrors({});
       } else {
         if (res.errors?.phone_number) {
           setFormErrors({ phone: Array.isArray(res.errors.phone_number) ? res.errors.phone_number.join(' ') : res.errors.phone_number });
@@ -286,20 +321,18 @@ export default function LoginPage() {
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    const errors = validateLoginForm();
+    const errors = adminMfaStep
+      ? (adminMfaToken && adminMfaOtp.length === 6 ? {} : { otp: 'Enter the 6-digit verification code.' })
+      : validateLoginForm();
     setFormErrors(errors);
     if (Object.keys(errors).length) return;
     setLoading(true);
-    const res = await login(
-      form.username,
-      form.password,
-      adminMfaStep
-        ? {
-          mfa_token: adminMfaToken,
-          mfa_code: adminMfaOtp,
-        }
-        : {},
-    );
+    const verification = adminMfaStep
+      ? { mfa_token: adminMfaToken, mfa_code: adminMfaOtp }
+      : {};
+    const res = adminMfaStep && adminMfaProvider === 'google'
+      ? await loginWithGoogle(adminMfaGoogleCredential, '', verification)
+      : await login(form.username, form.password, verification);
     setLoading(false);
     if (res.mfaRequired) {
       const contactHint = String(res.contact_hint || '');
@@ -316,6 +349,8 @@ export default function LoginPage() {
       setAdminMfaToken(res.mfa_token || '');
       setAdminMfaContactHint(contactHint || 'your registered mobile number');
       setAdminMfaOtp('');
+      setAdminMfaResendCooldown(res.resend_cooldown_seconds || 60);
+      setAdminMfaOtpExpiresMinutes(res.expires_in_minutes || 10);
       setSuccess(`Admin SMS verification code sent to ${contactHint || 'your registered mobile number'}.`);
       setFormErrors({});
     } else if (res.success) {
@@ -349,6 +384,7 @@ export default function LoginPage() {
         setRegistrationOtp('');
         setRegistrationConsent(false);
         setRegistrationContactHint('');
+        setRegistrationResendCooldown(0);
         setForm((f) => ({ ...f, password: '', passwordConfirm: '' }));
         setFormErrors({});
       } catch (err) {
@@ -375,6 +411,8 @@ export default function LoginPage() {
       setRegistrationToken(res.registration_token || '');
       setRegistrationContactHint(res.contact_hint || 'your mobile number');
       setRegistrationOtp('');
+      setRegistrationResendCooldown(res.resend_cooldown_seconds || 60);
+      setRegistrationOtpExpiresMinutes(res.expires_in_minutes || 10);
       setRegistrationConsent(true);
       setRegisterStep('otp');
       setSuccess(`We sent an SMS verification code to ${res.contact_hint || 'your mobile number'}. Enter it to finish creating your account.`);
@@ -410,6 +448,7 @@ export default function LoginPage() {
     setForgotResult(null);
     setForgotErrors({});
     setForgotResendCooldown(0);
+    setForgotOtpExpiresMinutes(10);
   };
 
   const useDifferentResetPhone = () => {
@@ -421,6 +460,7 @@ export default function LoginPage() {
     setForgotResult(null);
     setForgotErrors({});
     setForgotResendCooldown(0);
+    setForgotOtpExpiresMinutes(10);
   };
 
   const handleForgotSubmit = async (e) => {
@@ -435,8 +475,9 @@ export default function LoginPage() {
     try {
       if (forgotStep === 'phone') {
         const res = await client.post('/api/auth/forgot-password/', { phone_number: forgotPhone });
-        setForgotResult({ detail: res.data?.detail || 'If that mobile number is registered, a one-time password has been sent.' });
-        setForgotResendCooldown(60);
+        setForgotResult({ detail: res.data?.detail || 'If this mobile number matches an account and a new code can be issued, check your SMS. For privacy, account status is not confirmed here.' });
+        setForgotResendCooldown(res.data?.resend_cooldown_seconds || 60);
+        setForgotOtpExpiresMinutes(res.data?.expires_in_minutes || 10);
         setForgotStep('otp');
         return;
       }
@@ -476,18 +517,78 @@ export default function LoginPage() {
     return () => window.clearInterval(interval);
   }, [forgotResendCooldown]);
 
+  useEffect(() => {
+    if (registrationResendCooldown <= 0) return undefined;
+    const interval = window.setInterval(() => {
+      setRegistrationResendCooldown(current => Math.max(current - 1, 0));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [registrationResendCooldown]);
+
+  useEffect(() => {
+    if (adminMfaResendCooldown <= 0) return undefined;
+    const interval = window.setInterval(() => {
+      setAdminMfaResendCooldown(current => Math.max(current - 1, 0));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [adminMfaResendCooldown]);
+
+  const handleRegistrationResend = async () => {
+    if (loading || !registrationToken || registrationResendCooldown > 0) return;
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await client.post('/api/auth/register/resend/', { registration_token: registrationToken });
+      setRegistrationOtp('');
+      setRegistrationContactHint(response.data?.contact_hint || registrationContactHint);
+      setRegistrationOtpExpiresMinutes(response.data?.expires_in_minutes || 10);
+      setRegistrationResendCooldown(response.data?.resend_cooldown_seconds || 60);
+      setSuccess(`A new verification code was sent to ${response.data?.contact_hint || registrationContactHint}. It expires in ${response.data?.expires_in_minutes || registrationOtpExpiresMinutes} minutes.`);
+    } catch (err) {
+      const retryAfter = Number(err.response?.data?.retry_after_seconds);
+      if (retryAfter > 0) setRegistrationResendCooldown(retryAfter);
+      setError(getApiErrorMessage(err, 'Unable to resend the verification code. Please try again later.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleForgotResend = async () => {
     if (forgotLoading || forgotResendCooldown > 0) return;
     setForgotLoading(true);
     setForgotResult(null);
     try {
       const res = await client.post('/api/auth/forgot-password/', { phone_number: forgotPhone });
-      setForgotResult({ detail: res.data?.detail || 'If that mobile number is registered, a one-time password has been sent.' });
-      setForgotResendCooldown(60);
+      setForgotOtp('');
+      setForgotResetToken('');
+      setForgotResult({ detail: res.data?.detail || 'If this mobile number matches an account and a new code can be issued, check your SMS. For privacy, account status is not confirmed here.' });
+      setForgotResendCooldown(res.data?.resend_cooldown_seconds || 60);
+      setForgotOtpExpiresMinutes(res.data?.expires_in_minutes || 10);
     } catch (err) {
       setForgotResult({ detail: getApiErrorMessage(err, 'Unable to resend the OTP right now. Please try again later.'), error: true });
     } finally {
       setForgotLoading(false);
+    }
+  };
+
+  const handleAdminMfaResend = async () => {
+    if (loading || !adminMfaToken || adminMfaResendCooldown > 0) return;
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await client.post('/api/auth/login/mfa/resend/', { mfa_token: adminMfaToken });
+      setAdminMfaOtp('');
+      setAdminMfaOtpExpiresMinutes(response.data?.expires_in_minutes || 10);
+      setAdminMfaResendCooldown(response.data?.resend_cooldown_seconds || 60);
+      setSuccess(`A new admin verification code was sent to ${adminMfaContactHint}. It expires in ${response.data?.expires_in_minutes || 10} minutes.`);
+    } catch (err) {
+      const retryAfter = Number(err.response?.data?.retry_after_seconds);
+      if (retryAfter > 0) setAdminMfaResendCooldown(retryAfter);
+      setError(getApiErrorMessage(err, 'Unable to resend the admin verification code. Please try again later.'));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -504,6 +605,8 @@ export default function LoginPage() {
     setRegistrationContactHint('');
     setRegistrationOtp('');
     setRegistrationConsent(false);
+    setRegistrationResendCooldown(0);
+    setRegistrationOtpExpiresMinutes(10);
   };
 
   const resetAdminMfaFlow = () => {
@@ -511,6 +614,10 @@ export default function LoginPage() {
     setAdminMfaToken('');
     setAdminMfaContactHint('');
     setAdminMfaOtp('');
+    setAdminMfaProvider('password');
+    setAdminMfaGoogleCredential('');
+    setAdminMfaResendCooldown(0);
+    setAdminMfaOtpExpiresMinutes(10);
   };
 
   const formTitle = isRegister ? 'Join CAV today' : showForgotPassword ? 'Reset password' : adminMfaStep ? 'Verify admin access' : 'Sign in to CAV';
@@ -744,6 +851,7 @@ export default function LoginPage() {
                         className="text-center font-mono text-lg tracking-[0.24em]"
                         error={forgotErrors.otp}
                       />
+                      <p className="text-xs text-espresso/50">A valid code expires in {forgotOtpExpiresMinutes} minutes.</p>
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <button
                           type="button"
@@ -856,6 +964,17 @@ export default function LoginPage() {
                         className="text-center font-mono text-lg tracking-[0.24em]"
                         error={formErrors.otp}
                       />
+                      <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                        <span className="text-espresso/50">This code expires in {registrationOtpExpiresMinutes} minutes.</span>
+                        <button
+                          type="button"
+                          onClick={handleRegistrationResend}
+                          disabled={loading || registrationResendCooldown > 0 || !registrationToken}
+                          className="font-semibold text-gold-dark transition-colors hover:text-gold disabled:cursor-not-allowed disabled:text-espresso/35"
+                        >
+                          {registrationResendCooldown > 0 ? `Resend code in ${registrationResendCooldown}s` : 'Resend code'}
+                        </button>
+                      </div>
                       <label className="flex items-start gap-3 text-xs leading-5 text-espresso/72">
                         <input
                           type="checkbox"
@@ -892,6 +1011,17 @@ export default function LoginPage() {
                         className="text-center font-mono text-lg tracking-[0.24em]"
                         error={formErrors.otp}
                       />
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="text-espresso/50">This code expires in {adminMfaOtpExpiresMinutes} minutes.</span>
+                        <button
+                          type="button"
+                          onClick={handleAdminMfaResend}
+                          disabled={loading || adminMfaResendCooldown > 0 || !adminMfaToken}
+                          className="font-semibold text-gold-dark transition-colors hover:text-gold disabled:cursor-not-allowed disabled:text-espresso/35"
+                        >
+                          {adminMfaResendCooldown > 0 ? `Resend code in ${adminMfaResendCooldown}s` : 'Resend code'}
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <>

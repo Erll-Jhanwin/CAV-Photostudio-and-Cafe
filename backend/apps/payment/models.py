@@ -14,6 +14,8 @@ class Payment(models.Model):
     METHOD_CHOICES = (
         ('CASH', 'Cash'),
         ('GCASH', 'GCash'),
+        ('MAYA', 'Maya'),
+        ('MARIBANK', 'MariBank'),
     )
     STATUS_CHOICES = (
         ('PENDING', 'Pending'),

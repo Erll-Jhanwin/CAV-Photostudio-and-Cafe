@@ -299,6 +299,7 @@ def _empty_report(data):
             'message': data.get('error') or 'Import the sales history CSV before running a forecast.',
             'minimum_reliable_history_days': MIN_RELIABLE_HISTORY_DAYS,
             'minimum_reliable_observed_days': MIN_RELIABLE_OBSERVED_DAYS,
+            'requested_30_day_observed_coverage': {'available': False, 'observed_days': 0, 'required_observed_days': 30},
         },
         'reorder_recommendations': get_reorder_recommendations(),
     }
@@ -442,6 +443,11 @@ def generate_forecast_report(source_name=DEFAULT_SOURCE_NAME, horizon=FORECAST_H
             'message': sufficiency_message,
             'minimum_reliable_history_days': MIN_RELIABLE_HISTORY_DAYS,
             'minimum_reliable_observed_days': MIN_RELIABLE_OBSERVED_DAYS,
+            'requested_30_day_observed_coverage': {
+                'available': int(data['summary']['observed_days']) >= 30,
+                'observed_days': int(data['summary']['observed_days']),
+                'required_observed_days': 30,
+            },
         },
         'data_quality': {
             **data['summary'],

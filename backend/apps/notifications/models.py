@@ -18,6 +18,7 @@ class Notification(models.Model):
     notification_type = models.CharField(max_length=80)
     title = models.CharField(max_length=150)
     message = models.TextField()
+    event_key = models.CharField(max_length=180, unique=True, null=True, blank=True)
     is_read = models.BooleanField(default=False)
     read_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -79,11 +80,19 @@ class NotificationDelivery(models.Model):
     STATUS_SENT = 'sent'
     STATUS_FAILED = 'failed'
     STATUS_SKIPPED = 'skipped'
+    STATUS_SENDING = 'sending'
+    STATUS_ACCEPTED = 'accepted'
+    STATUS_DELIVERED = 'delivered'
+    STATUS_UNKNOWN = 'unknown'
     STATUS_CHOICES = (
         (STATUS_QUEUED, 'Queued'),
         (STATUS_SENT, 'Sent'),
         (STATUS_FAILED, 'Failed'),
         (STATUS_SKIPPED, 'Skipped'),
+        (STATUS_SENDING, 'Submission in progress'),
+        (STATUS_ACCEPTED, 'Accepted by provider; delivery unconfirmed'),
+        (STATUS_DELIVERED, 'Provider reports delivered'),
+        (STATUS_UNKNOWN, 'Submission outcome unknown; do not resend'),
     )
 
     notification = models.ForeignKey(
@@ -111,6 +120,9 @@ class NotificationDelivery(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     sent_at = models.DateTimeField(null=True, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    next_retry_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at', '-id']

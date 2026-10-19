@@ -1,5 +1,8 @@
 import calendar
 import logging
+import mimetypes
+from django.conf import settings
+from django.http import FileResponse
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -24,7 +27,9 @@ from booking.availability import ACTIVE_BOOKING_STATUSES, get_available_slots, i
 from booking.payment_ocr import analyze_gcash_receipt
 from payment.models import Payment
 from audit.models import AuditLog
-from notifications.services import create_booking_notification
+from notifications.booking_events import (
+    notify_booking_created, notify_booking_status, notify_booking_updated, notify_booking_payment,
+)
 from users.permissions import IsAdmin, IsStaffOrAdmin
 from users.uploads import validate_receipt_image
 
@@ -36,23 +41,14 @@ OBSOLETE_SERVICE_NAMES = ['Self-Shoot Studio', 'Boutique Portrait']
 logger = logging.getLogger(__name__)
 
 
-def format_booking_confirmation_message(booking, payment_status='Awaiting verification'):
-    """Build one concise SMS-safe booking confirmation with current details."""
-    scheduled_date = booking.scheduled_date.strftime('%Y-%m-%d')
-    scheduled_time = booking.scheduled_time.strftime('%H:%M')
-    return (
-        f'CAV booking #{booking.id} saved. '
-        f'Date: {scheduled_date}; Time: {scheduled_time}; '
-        f'Package: {booking.package.name}; '
-        f'Payment status: {payment_status}.'
-    )
-
 def get_idempotency_key(request):
     value = request.headers.get('Idempotency-Key') or request.headers.get('X-Idempotency-Key') or request.data.get('idempotency_key')
     value = str(value or '').strip()
     if not value:
         return ''
-    return value[:IDEMPOTENCY_KEY_MAX_LENGTH]
+    if len(value) > IDEMPOTENCY_KEY_MAX_LENGTH:
+        raise ValidationError({'idempotency_key': 'Use at most 100 characters.'})
+    return value
 
 
 def lock_booking_date(day):
@@ -239,7 +235,10 @@ class BookingListCreateView(generics.ListCreateAPIView):
             date_param = self.request.query_params.get('date')
             status_param = self.request.query_params.get('status')
             if date_param:
-                queryset = queryset.filter(scheduled_date=date_param)
+                try:
+                    queryset = queryset.filter(scheduled_date=parse_date_value(date_param))
+                except (TypeError, ValueError):
+                    raise ValidationError({'date': 'Use YYYY-MM-DD.'})
             month_param = self.request.query_params.get('month')
             if month_param:
                 try:
@@ -300,10 +299,6 @@ class BookingListCreateView(generics.ListCreateAPIView):
         try:
             with transaction.atomic():
                 lock_booking_date(serializer.validated_data['scheduled_date'])
-                list(Booking.objects.select_for_update().filter(
-                    scheduled_date=serializer.validated_data['scheduled_date'],
-                    status__in=ACTIVE_BOOKING_STATUSES
-                ))
                 if idempotency_key:
                     existing_booking = Booking.objects.filter(customer=request.user, idempotency_key=idempotency_key).select_related(
                         'customer', 'package', 'package__service'
@@ -331,46 +326,22 @@ class BookingListCreateView(generics.ListCreateAPIView):
                         for index, item in enumerate(normalized_items)
                     ]
                 )
-        except IntegrityError:
+                AuditLog.objects.create(user=request.user, action='BOOKING_CREATE',
+                                        description=f'Created booking #{booking.id} for {booking.package.name}.')
+                notify_booking_created(booking)
+        except IntegrityError as exc:
             if idempotency_key:
                 existing_booking = Booking.objects.filter(customer=request.user, idempotency_key=idempotency_key).select_related(
                     'customer', 'package', 'package__service'
                 ).prefetch_related('payments').first()
                 if existing_booking:
                     return Response(BookingSerializer(existing_booking, context={'request': request}).data, status=status.HTTP_200_OK)
+            constraint = getattr(getattr(exc.__cause__, 'diag', None), 'constraint_name', '')
+            if constraint and constraint != 'booking_active_slot_unique':
+                raise
             return Response(
                 {"scheduled_time": "This schedule was just booked. Please select another available time slot."},
                 status=status.HTTP_409_CONFLICT
-            )
-
-        # These are post-save side effects. A failure here must not turn a
-        # successful reservation into a generic 500 or invite the customer to
-        # submit the same slot again with a new request.
-        try:
-            AuditLog.objects.create(
-                user=request.user,
-                action="BOOKING_CREATE",
-                description=f"Created booking #{booking.id} for {booking.package.name}."
-            )
-        except Exception:
-            logger.exception(
-                'Booking saved but audit logging failed: booking_id=%s user_id=%s',
-                booking.id,
-                request.user.id,
-            )
-
-        try:
-            create_booking_notification(
-                booking=booking,
-                notification_type='BOOKING_CREATED',
-                title='Booking request received',
-                message=format_booking_confirmation_message(booking),
-            )
-        except Exception:
-            logger.exception(
-                'Booking saved but notification enqueue failed: booking_id=%s user_id=%s',
-                booking.id,
-                request.user.id,
             )
 
         return Response(BookingSerializer(booking, context={'request': request}).data, status=status.HTTP_201_CREATED)
@@ -386,8 +357,11 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
             return queryset
         return queryset.filter(customer=user)
 
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         booking = self.get_object()
+        booking = Booking.objects.select_for_update().get(pk=booking.pk)
+        previous_status = booking.status
         updated_booking = booking
         user = request.user
         is_staff_user = user.role in ['STAFF', 'ADMIN']
@@ -441,19 +415,23 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
             old_values['total_price'] = str(booking.package.price)
 
         with transaction.atomic():
-            if requested_edit_fields:
+            if requested_edit_fields or (status_changed and new_status in ACTIVE_BOOKING_STATUSES):
                 try:
                     target_date = parse_date_value(request.data.get('scheduled_date', booking.scheduled_date))
                 except (TypeError, ValueError):
-                    target_date = booking.scheduled_date
-                lock_booking_date(target_date)
-                list(Booking.objects.select_for_update().filter(
-                    scheduled_date=request.data.get('scheduled_date', booking.scheduled_date),
-                    status__in=ACTIVE_BOOKING_STATUSES
-                ))
+                    raise ValidationError({'scheduled_date': 'Use YYYY-MM-DD.'})
+                for day in sorted({target_date, booking.scheduled_date}):
+                    lock_booking_date(day)
 
             serializer = self.get_serializer(booking, data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
+            if status_changed and previous_status not in ACTIVE_BOOKING_STATUSES and new_status in ACTIVE_BOOKING_STATUSES:
+                if not is_slot_available(
+                    serializer.validated_data.get('package', booking.package).id,
+                    serializer.validated_data.get('scheduled_date', booking.scheduled_date),
+                    serializer.validated_data.get('scheduled_time', booking.scheduled_time), booking.id,
+                ):
+                    raise ValidationError({'scheduled_time': 'This schedule is no longer available. Select another slot before reopening the booking.'})
             updated_booking = serializer.save()
 
             if status_changed:
@@ -466,12 +444,6 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                         else f"Updated booking #{booking.id} status to {new_status}."
                     )
                 )
-
-            if requested_customer_fields:
-                customer = updated_booking.customer
-                for field in requested_customer_fields:
-                    setattr(customer, field, request.data.get(field, getattr(customer, field)))
-                customer.save(update_fields=list(requested_customer_fields))
 
             updated_booking = Booking.objects.select_related('customer', 'package', 'package__service').prefetch_related(
                 'payments'
@@ -501,7 +473,7 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                     "changed_by_name": user.get_full_name() or user.username,
                     "old_values": {key: value['from'] for key, value in changed_values.items()},
                     "new_values": {key: value['to'] for key, value in changed_values.items()},
-                    "reason": request.data.get('change_reason', 'Customer updated booking details')[:220],
+                    "reason": str(request.data.get('change_reason') or 'Customer updated booking details')[:220],
                     "created_at": timezone.now().isoformat(),
                 })
                 updated_booking.change_history = history
@@ -513,36 +485,10 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                     description=f"Updated booking #{updated_booking.id}: {', '.join(sorted(changed_values.keys()))}."
                 )
 
-            if status_changed and is_staff_user:
-                status_messages = {
-                    'CONFIRMED': (
-                        'Booking confirmed',
-                        f'Your booking #{updated_booking.id} for {updated_booking.package.name} is confirmed.'
-                    ),
-                    'CANCELLED': (
-                        'Booking cancelled',
-                        f'Your booking #{updated_booking.id} for {updated_booking.package.name} has been cancelled.'
-                    ),
-                }
-                title, message = status_messages.get(
-                    new_status,
-                    ('Booking status updated', f'Your booking #{updated_booking.id} status is now {new_status.replace("_", " ").title()}.')
-                )
-                create_booking_notification(
-                    booking=updated_booking,
-                    notification_type=f'BOOKING_{new_status}',
-                    title=title,
-                    message=message,
-                )
-
-            if changed_values and is_staff_user:
-                changed_labels = ', '.join(sorted(changed_values))
-                create_booking_notification(
-                    booking=updated_booking,
-                    notification_type='BOOKING_UPDATED',
-                    title='Booking details updated',
-                    message=f'Staff updated your booking #{updated_booking.id}: {changed_labels}.',
-                )
+            if status_changed:
+                notify_booking_status(updated_booking)
+            elif changed_values:
+                notify_booking_updated(updated_booking)
 
         updated_booking = Booking.objects.select_related('customer', 'package', 'package__service').prefetch_related(
             'payments'
@@ -647,30 +593,41 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
         serializer.is_valid(raise_exception=True)
         try:
             with transaction.atomic():
+                booking = Booking.objects.select_for_update().get(pk=serializer.validated_data['booking'].id)
+                if booking.status in {'CANCELLED', 'COMPLETED'}:
+                    raise ValidationError({'booking': 'Payment proof cannot be submitted for a cancelled or completed booking.'})
                 payment = serializer.save(
+                    booking=booking,
                     payment_type=Payment.BOOKING,
-                    method='GCASH',
+                    method=serializer.validated_data.get('method', 'GCASH'),
                     status='PENDING_VERIFICATION',
                     paid_at=serializer.validated_data.get('paid_at') or timezone.now(),
                     idempotency_key=idempotency_key or None,
                 )
-        except IntegrityError:
+                AuditLog.objects.create(user=request.user, action='BOOKING_PAYMENT_SUBMIT',
+                                        description=f'Submitted payment #{payment.id} for booking #{booking.id}.')
+                notify_booking_payment(payment)
+        except IntegrityError as exc:
             if idempotency_key:
                 existing_payment = payment_queryset.filter(idempotency_key=idempotency_key).select_related(
                     'booking', 'booking__customer', 'booking__package', 'verified_by'
                 ).first()
                 if existing_payment:
                     return Response(self.get_serializer(existing_payment).data, status=status.HTTP_200_OK)
+            constraint = getattr(getattr(exc.__cause__, 'diag', None), 'constraint_name', '')
+            if constraint and constraint not in {'payment_type_reference_ci_unique', 'payment_type_idempotency_unique'}:
+                raise
             return Response(
-                {"reference_number": "This GCash reference number has already been submitted."},
+                {"reference_number": "This payment reference number has already been submitted."},
                 status=status.HTTP_409_CONFLICT
             )
-        except Exception:
+        except OSError as exc:
             booking_id = serializer.validated_data.get('booking').id if serializer.validated_data.get('booking') else None
-            logger.exception(
-                'Booking payment could not be saved: booking_id=%s metadata=%s',
+            logger.error(
+                'Payment receipt storage failed: booking_id=%s metadata=%s exception_type=%s',
                 booking_id,
                 request_metadata,
+                type(exc).__name__,
             )
             return Response(
                 {
@@ -682,21 +639,46 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        try:
-            AuditLog.objects.create(
-                user=request.user,
-                action="BOOKING_PAYMENT_SUBMIT",
-                description=f"Submitted GCash payment reference {payment.reference_number} for booking #{payment.booking.id}."
-            )
-        except Exception:
-            logger.exception(
-                'Payment saved but audit logging failed: payment_id=%s booking_id=%s user_id=%s',
-                payment.id,
-                payment.booking_id,
-                request.user.id,
-            )
-
         return Response(self.get_serializer(payment).data, status=status.HTTP_201_CREATED)
+
+
+class BookingPaymentMethodsView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        methods = [('GCASH', 'GCash', 'PAYMENT_QR_GCASH_URL'), ('MAYA', 'Maya', 'PAYMENT_QR_MAYA_URL'), ('MARIBANK', 'MariBank', 'PAYMENT_QR_MARIBANK_URL')]
+        return Response({'methods': [
+            {
+                'code': code,
+                'label': label,
+                'qr_url': getattr(settings, setting_name, ''),
+                'configured': bool(getattr(settings, setting_name, '')),
+            }
+            for code, label, setting_name in methods
+        ]})
+
+
+class BookingPaymentReceiptView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        queryset = Payment.objects.filter(pk=pk, payment_type=Payment.BOOKING).select_related('booking__customer')
+        if request.user.role not in ['STAFF', 'ADMIN']:
+            queryset = queryset.filter(booking__customer=request.user)
+        payment = queryset.first()
+        if not payment or not payment.receipt:
+            return Response({'detail': 'Payment proof not found.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            payment.receipt.open('rb')
+        except (OSError, ValueError):
+            return Response({'detail': 'Payment proof is unavailable.'}, status=status.HTTP_404_NOT_FOUND)
+        filename = payment.receipt.name.rsplit('/', 1)[-1].replace('"', '')
+        content_type = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+        response = FileResponse(payment.receipt, content_type=content_type)
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['Cache-Control'] = 'private, no-store'
+        return response
 
 class BookingPaymentReferenceCheckView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -714,7 +696,7 @@ class BookingPaymentReferenceCheckView(views.APIView):
         return Response({
             "exists": exists,
             "reference_number": reference_number,
-            "message": "This GCash reference number has already been submitted." if exists else ""
+            "message": "This payment reference number has already been submitted." if exists else ""
         })
 
 class BookingPaymentOcrView(views.APIView):
@@ -750,14 +732,23 @@ class BookingPaymentVerifyView(generics.UpdateAPIView):
     permission_classes = [IsStaffOrAdmin]
     queryset = Payment.objects.filter(payment_type=Payment.BOOKING).select_related('booking', 'booking__customer', 'booking__package', 'verified_by').distinct()
 
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:
             return Response({"detail": "Only staff or admins can verify booking payments."}, status=status.HTTP_403_FORBIDDEN)
 
         payment = self.get_object()
+        booking = Booking.objects.select_for_update().get(pk=payment.booking_id)
+        payment = Payment.objects.select_for_update().get(pk=payment.pk)
+        payment.booking = booking
         new_status = request.data.get('status')
         if new_status not in ['APPROVED', 'REJECTED']:
             return Response({"status": "Use APPROVED or REJECTED."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if payment.status == new_status:
+            return Response(self.get_serializer(payment).data)
+        if booking.status in {'CANCELLED', 'COMPLETED'}:
+            return Response({'detail': 'This booking is cancelled or completed. Payment verification cannot change it.'}, status=status.HTTP_409_CONFLICT)
 
         previous_status = payment.status
         payment.status = new_status
@@ -770,21 +761,15 @@ class BookingPaymentVerifyView(generics.UpdateAPIView):
             if new_status == 'APPROVED':
                 payment.booking.status = 'CONFIRMED_DP'
                 payment.booking.save(update_fields=['status'])
-                title = "Payment approved"
-                message = f"Your payment for booking #{payment.booking.id} has been verified. Your booking status is now confirmed with the down payment received."
                 action = "BOOKING_PAYMENT_APPROVED"
             else:
-                title = "Payment verification update"
-                message = f"Your GCash payment for booking #{payment.booking.id} was rejected after verification."
+                if booking.status == 'CONFIRMED_DP' and not booking.payments.filter(status='APPROVED').exists():
+                    booking.status = 'PENDING'
+                    booking.save(update_fields=['status'])
                 action = "BOOKING_PAYMENT_REJECTED"
 
             if previous_status != new_status:
-                create_booking_notification(
-                    booking=payment.booking,
-                    notification_type=action,
-                    title=title,
-                    message=message,
-                )
+                notify_booking_payment(payment)
 
         AuditLog.objects.create(
             user=request.user,

@@ -3,6 +3,7 @@ import json
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.cache import cache
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
@@ -25,7 +26,7 @@ class IProgSMSServicesTests(TestCase):
         send_payload = mocked_post.call_args.kwargs['json']
         self.assertEqual(send_payload['api_token'], 'test-token')
         self.assertEqual(send_payload['phone_number'], '639171234567')
-        self.assertEqual(send_payload['code_length'], 6)
+        self.assertEqual(send_payload['expires_in_minutes'], 10)
 
         self.assertTrue(verify_password_reset_otp('639171234567', '123456'))
         self.assertEqual(mocked_post.call_args.args[0], 'https://sms.example.test/api/v1/otp/verify_otp')
@@ -52,11 +53,49 @@ class PasswordResetSMSTests(TestCase):
         }, format='json')
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('If that mobile number is registered', response.data['detail'])
+        self.assertIn('If this mobile number matches an account', response.data['detail'])
         mocked_send.assert_called_once_with('639171234567')
         reset = PasswordResetOTP.objects.get(user=self.user)
         self.assertEqual(reset.phone_number, '639171234567')
         self.assertEqual(reset.otp_hash, '')
+        self.assertEqual(response.data['resend_cooldown_seconds'], 60)
+
+    @patch('users.views.send_password_reset_otp')
+    def test_password_reset_resend_invalidates_the_previous_code_and_renews_expiry(self, mocked_send):
+        first_response = self.client.post('/api/auth/forgot-password/', {'phone_number': '09171234567'}, format='json')
+        self.assertEqual(first_response.status_code, 200)
+        first_otp = PasswordResetOTP.objects.get(user=self.user)
+        PasswordResetOTP.objects.filter(pk=first_otp.pk).update(
+            created_at=timezone.now() - timezone.timedelta(seconds=61),
+        )
+
+        resend_response = self.client.post('/api/auth/forgot-password/', {'phone_number': '09171234567'}, format='json')
+
+        self.assertEqual(resend_response.status_code, 200)
+        self.assertEqual(resend_response.data['resend_cooldown_seconds'], 60)
+        self.assertEqual(mocked_send.call_count, 2)
+        first_otp.refresh_from_db()
+        self.assertIsNotNone(first_otp.used_at)
+        current = PasswordResetOTP.objects.filter(user=self.user, used_at__isnull=True).get()
+        self.assertGreater(current.expires_at, first_otp.expires_at)
+        self.assertEqual(current.attempts, 0)
+
+    @patch('users.views.verify_password_reset_otp')
+    @patch('users.views.send_password_reset_otp')
+    def test_expired_password_reset_otp_is_rejected_before_provider_verification(self, mocked_send, mocked_verify):
+        self.client.post('/api/auth/forgot-password/', {'phone_number': '09171234567'}, format='json')
+        PasswordResetOTP.objects.filter(user=self.user).update(
+            expires_at=timezone.now() - timezone.timedelta(seconds=1),
+        )
+
+        response = self.client.post('/api/auth/forgot-password/verify/', {
+            'phone_number': '09171234567',
+            'otp': '123456',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['detail'], 'Invalid or expired OTP.')
+        mocked_verify.assert_not_called()
 
     @patch('users.views.send_password_reset_otp')
     def test_unregistered_mobile_gets_the_same_response(self, mocked_send):
@@ -64,7 +103,7 @@ class PasswordResetSMSTests(TestCase):
             'phone_number': '09179999999',
         }, format='json')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('If that mobile number is registered', response.data['detail'])
+        self.assertIn('If this mobile number matches an account', response.data['detail'])
         mocked_send.assert_not_called()
 
     @patch('users.views.verify_password_reset_otp', return_value=True)
@@ -113,6 +152,8 @@ class PasswordResetSMSTests(TestCase):
 
 class AccountCrudTests(TestCase):
     def setUp(self):
+        # Throttle/cache state isn't rolled back by Django's database TestCase.
+        cache.clear()
         self.admin = get_user_model().objects.create_user(
             username='accounts-admin',
             email='admin@example.com',
@@ -209,6 +250,70 @@ class AccountCrudTests(TestCase):
         ).exists())
 
     @patch('users.views.send_password_reset_otp')
+    def test_registration_otp_resend_is_cooldown_limited_and_renews_expiry(self, mocked_send):
+        client = APIClient()
+        started = client.post('/api/auth/register/', {
+            'username': 'resend-customer',
+            'password': 'FormCustomer123!',
+            'email': 'resend-customer@example.com',
+            'phone_number': '09179998888',
+            'privacy_consent': True,
+        }, format='json')
+        self.assertEqual(started.status_code, 200)
+        token = started.data['registration_token']
+        pending_key = f'registration_otp:{token}'
+
+        early = client.post('/api/auth/register/resend/', {'registration_token': token}, format='json')
+        self.assertEqual(early.status_code, 429)
+        self.assertGreater(early.data['retry_after_seconds'], 0)
+        self.assertEqual(mocked_send.call_count, 1)
+
+        pending = cache.get(pending_key)
+        old_expiry = pending['expires_at']
+        pending['last_otp_sent_at'] -= 61
+        pending['attempts'] = 5
+        cache.set(pending_key, pending, timeout=600)
+        with patch('users.views.reserve_otp_send', return_value=(True, 0)):
+            resent = client.post('/api/auth/register/resend/', {'registration_token': token}, format='json')
+
+        self.assertEqual(resent.status_code, 200)
+        self.assertEqual(resent.data['expires_in_minutes'], 10)
+        self.assertEqual(mocked_send.call_count, 2)
+        mocked_send.assert_called_with('639179998888', purpose='registration')
+        renewed = cache.get(pending_key)
+        self.assertGreater(renewed['expires_at'], old_expiry)
+        self.assertEqual(renewed['attempts'], 0)
+
+    @patch('users.views.verify_password_reset_otp')
+    @patch('users.views.send_password_reset_otp')
+    def test_expired_registration_challenge_cannot_resend_or_create_an_account(self, mocked_send, mocked_verify):
+        response = APIClient().post('/api/auth/register/', {
+            'username': 'expired-registration',
+            'password': 'FormCustomer123!',
+            'email': 'expired-registration@example.com',
+            'phone_number': '09179997777',
+            'privacy_consent': True,
+        }, format='json')
+        token = response.data['registration_token']
+        key = f'registration_otp:{token}'
+        pending = cache.get(key)
+        pending['expires_at'] = timezone.now().timestamp() - 1
+        cache.set(key, pending, timeout=30)
+
+        resend = APIClient().post('/api/auth/register/resend/', {'registration_token': token}, format='json')
+        verify = APIClient().post('/api/auth/register/verify/', {
+            'registration_token': token,
+            'otp': '123456',
+            'privacy_consent': True,
+        }, format='json')
+
+        self.assertEqual(resend.status_code, 400)
+        self.assertEqual(verify.status_code, 400)
+        self.assertFalse(get_user_model().objects.filter(username='expired-registration').exists())
+        self.assertEqual(mocked_send.call_count, 1)
+        mocked_verify.assert_not_called()
+
+    @patch('users.views.send_password_reset_otp')
     def test_registration_rejects_duplicate_username_email_and_phone_before_otp(self, mocked_send):
         get_user_model().objects.create_user(
             username='phone-owner',
@@ -288,6 +393,7 @@ class AccountCrudTests(TestCase):
     @patch('users.views.verify_password_reset_otp', side_effect=[False, True])
     @patch('users.views.send_password_reset_otp')
     def test_admin_login_requires_valid_sms_otp(self, mocked_send, mocked_verify):
+        cache.clear()
         self.admin.phone_number = '09171234567'
         self.admin.save(update_fields=['phone_number'])
         client = APIClient()
@@ -300,12 +406,35 @@ class AccountCrudTests(TestCase):
         self.assertEqual(challenge_response.status_code, 202)
         self.assertEqual(challenge_response.data['mfa_method'], 'sms')
         self.assertEqual(challenge_response.data['mfa_methods'], ['sms'])
+        self.assertEqual(challenge_response.data['resend_cooldown_seconds'], 60)
         mocked_send.assert_called_once_with('639171234567', purpose='admin security verification')
+
+        token = challenge_response.data['mfa_token']
+        pending_key = f'admin_mfa:{token}'
+        early_resend = client.post('/api/auth/login/mfa/resend/', {'mfa_token': token}, format='json')
+        self.assertEqual(early_resend.status_code, 429)
+        self.assertGreater(early_resend.data['retry_after_seconds'], 0)
+        self.assertEqual(mocked_send.call_count, 1)
+
+        pending = cache.get(pending_key)
+        original_expiry = pending['expires_at']
+        pending['last_otp_sent_at'] -= 61
+        pending['attempts'] = 5
+        cache.set(pending_key, pending, timeout=600)
+        with patch('users.views.reserve_otp_send', return_value=(True, 0)):
+            resend = client.post('/api/auth/login/mfa/resend/', {'mfa_token': token}, format='json')
+        self.assertEqual(resend.status_code, 200)
+        self.assertEqual(resend.data['resend_cooldown_seconds'], 60)
+        self.assertEqual(mocked_send.call_count, 2)
+        renewed = cache.get(pending_key)
+        self.assertGreater(renewed['expires_at'], original_expiry)
+        self.assertEqual(renewed['attempts'], 0)
+        mocked_send.assert_called_with('639171234567', purpose='admin security verification')
 
         invalid_response = client.post('/api/auth/login/', {
             'username': self.admin.username,
             'password': 'AdminPass123!',
-            'mfa_token': challenge_response.data['mfa_token'],
+            'mfa_token': token,
             'mfa_code': '000000',
         }, format='json')
         self.assertEqual(invalid_response.status_code, 400)
@@ -314,13 +443,44 @@ class AccountCrudTests(TestCase):
         login_response = client.post('/api/auth/login/', {
             'username': self.admin.username,
             'password': 'AdminPass123!',
-            'mfa_token': challenge_response.data['mfa_token'],
+            'mfa_token': token,
             'mfa_code': '123456',
         }, format='json')
         self.assertEqual(login_response.status_code, 200)
         self.assertEqual(mocked_verify.call_args_list[0].args, ('639171234567', '000000'))
         self.assertEqual(mocked_verify.call_args_list[1].args, ('639171234567', '123456'))
         self.assertTrue(login_response.cookies['cav_access']['httponly'])
+
+    @override_settings(IPROG_SMS_API_TOKEN='test-token')
+    @patch('users.views.verify_password_reset_otp')
+    @patch('users.views.send_password_reset_otp')
+    def test_expired_admin_mfa_challenge_cannot_resend_or_complete_login(self, mocked_send, mocked_verify):
+        cache.clear()
+        self.admin.phone_number = '09171234567'
+        self.admin.save(update_fields=['phone_number'])
+        client = APIClient()
+        challenge = client.post('/api/auth/login/', {
+            'username': self.admin.username,
+            'password': 'AdminPass123!',
+        }, format='json')
+        token = challenge.data['mfa_token']
+        key = f'admin_mfa:{token}'
+        pending = cache.get(key)
+        pending['expires_at'] = timezone.now().timestamp() - 1
+        cache.set(key, pending, timeout=30)
+
+        resend = client.post('/api/auth/login/mfa/resend/', {'mfa_token': token}, format='json')
+        verify = client.post('/api/auth/login/', {
+            'username': self.admin.username,
+            'password': 'AdminPass123!',
+            'mfa_token': token,
+            'mfa_code': '123456',
+        }, format='json')
+
+        self.assertEqual(resend.status_code, 400)
+        self.assertEqual(verify.status_code, 400)
+        self.assertEqual(mocked_send.call_count, 1)
+        mocked_verify.assert_not_called()
 
     def test_privacy_consent_request_and_export_are_user_scoped(self):
         consent_response = self.client.post('/api/privacy/consents/', {

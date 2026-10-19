@@ -52,6 +52,7 @@ export const AuthProvider = ({ children }) => {
         }
         const response = await client.get('/api/auth/profile/', {
           signal: controller.signal,
+          timeout: 12000,
           skipAuthRedirect: true,
         });
         const profile = response.data || {};
@@ -87,7 +88,7 @@ export const AuthProvider = ({ children }) => {
   const completeLogin = async (fallbackUser) => {
     // Do not report success until the browser has proved that the HttpOnly
     // cookie issued by the login response can authenticate a protected call.
-    const profileResponse = await client.get('/api/auth/profile/', { skipAuthRedirect: true });
+    const profileResponse = await client.get('/api/auth/profile/', { skipAuthRedirect: true, timeout: 12000 });
     const profile = profileResponse.data || {};
     const userData = {
       id: profile.id ?? fallbackUser.id,
@@ -128,14 +129,17 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loginWithGoogle = async (credential, phoneNumber = '') => {
+  const loginWithGoogle = async (credential, phoneNumber = '', verification = {}) => {
     beginAuthTransition();
     loginInFlightRef.current = true;
     restoreControllerRef.current?.abort();
     try {
-      const response = await client.post('/api/auth/google/', { credential, phone_number: phoneNumber });
+      const response = await client.post('/api/auth/google/', { credential, phone_number: phoneNumber, ...verification });
       if (response.data.pending_verification) {
         return { success: false, pendingVerification: true, ...response.data };
+      }
+      if (response.data.mfa_required) {
+        return { success: false, mfaRequired: true, ...response.data };
       }
       const { role, username, email, id, profile_picture_url } = response.data;
       const userData = await completeLogin({ id, username, email, role, profile_picture_url });

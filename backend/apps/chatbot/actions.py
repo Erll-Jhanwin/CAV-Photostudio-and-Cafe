@@ -92,6 +92,7 @@ def _profile_payload(user, package, day, clock, idempotency_key):
     }
 
 
+@transaction.atomic
 def execute_chat_action(action, request, lang='en'):
     """Execute only an authenticated, explicitly confirmed action."""
     if not request.user or not request.user.is_authenticated:
@@ -111,14 +112,17 @@ def execute_chat_action(action, request, lang='en'):
     if action_type == 'CANCEL_BOOKING':
         booking_id = _int(action.get('booking_id'), 'booking_id')
         try:
-            booking = Booking.objects.select_related('package').get(id=booking_id, customer=request.user)
+            booking = Booking.objects.select_for_update().get(id=booking_id, customer=request.user)
         except Booking.DoesNotExist:
             raise ChatActionError('That booking was not found or is not yours.')
-        if booking.status != 'PENDING':
+        if booking.status not in {'PENDING', 'CANCELLED'}:
             raise ChatActionError('Only pending bookings can be cancelled from chat. Please contact staff for help.')
-        booking.status = 'CANCELLED'
-        booking.save(update_fields=['status'])
-        AuditLog.objects.create(user=request.user, action='BOOKING_CANCEL', description=f'Customer cancelled booking #{booking.id} through chatbot.')
+        if booking.status != 'CANCELLED':
+            booking.status = 'CANCELLED'
+            booking.save(update_fields=['status'])
+            AuditLog.objects.create(user=request.user, action='BOOKING_CANCEL', description=f'Customer cancelled booking #{booking.id} through chatbot.')
+            from notifications.booking_events import notify_booking_status
+            notify_booking_status(booking)
         return {
             'response': _lang_text(lang, f'Booking #{booking.id} has been cancelled.', f'Nakansela na ang booking #{booking.id}.'),
             'action': _public_action({'type': action_type, 'status': 'completed'}, booking=booking),
@@ -129,7 +133,7 @@ def execute_chat_action(action, request, lang='en'):
         booking = None
         if action_type == 'UPDATE_BOOKING':
             booking_id = _int(action.get('booking_id'), 'booking_id')
-            booking = Booking.objects.select_related('package', 'customer').get(id=booking_id, customer=request.user)
+            booking = Booking.objects.select_for_update().get(id=booking_id, customer=request.user)
             if not booking.is_customer_editable:
                 raise ChatActionError(booking.customer_edit_lock_reason or 'This booking can no longer be edited.')
         package = _package(action) if action_type == 'CREATE_BOOKING' or action.get('package_id') or action.get('package') else booking.package
@@ -145,6 +149,15 @@ def execute_chat_action(action, request, lang='en'):
             status='profile_required',
         )
 
+    idempotency_key = str(action.get('idempotency_key') or f'chat-{request.user.id}-{package.id}-{day.isoformat()}-{clock.strftime("%H%M")}')[:100]
+    if action_type == 'CREATE_BOOKING':
+        existing = Booking.objects.filter(customer=request.user, idempotency_key=idempotency_key).first()
+        if existing:
+            return {
+                'response': _lang_text(lang, f'Booking #{existing.id} was already created.', f'Nagawa na ang booking #{existing.id}.'),
+                'action': _public_action({'type': action_type, 'status': 'completed'}, existing.package, existing),
+                'source': 'booking_action',
+            }
     conflict = _availability_message(package, day, clock, lang, booking.id if booking else None)
     if conflict:
         raise ChatActionError(conflict, status='slot_unavailable')
@@ -164,8 +177,24 @@ def execute_chat_action(action, request, lang='en'):
             BookingDateLock.objects.select_for_update().get(pk=lock.pk)
             if not is_slot_available(package.id, day, clock, exclude_booking_id=booking.id):
                 raise ChatActionError(_lang_text(lang, 'That slot was just taken. Please choose another one.', 'Kinuha na ang slot. Pumili ng iba.'), status='slot_unavailable')
+            old_values = {field: str(booking.package_id if field == 'package' else getattr(booking, field) or '') for field in payload}
             updated = serializer.save()
-            AuditLog.objects.create(user=request.user, action='BOOKING_UPDATE', description=f'Updated booking #{updated.id} through chatbot.')
+            new_values = {field: str(updated.package_id if field == 'package' else getattr(updated, field) or '') for field in payload}
+            changed = [field for field in old_values if old_values[field] != new_values[field]]
+            if changed:
+                history = list(updated.change_history or [])
+                history.insert(0, {
+                    'id': len(history) + 1, 'changed_by': request.user.id,
+                    'changed_by_name': request.user.get_full_name() or request.user.username,
+                    'old_values': {field: old_values[field] for field in changed},
+                    'new_values': {field: new_values[field] for field in changed},
+                    'reason': 'Customer updated booking through chat', 'created_at': timezone.now().isoformat(),
+                })
+                updated.change_history = history
+                updated.save(update_fields=['change_history'])
+                AuditLog.objects.create(user=request.user, action='BOOKING_UPDATE', description=f'Updated booking #{updated.id} through chatbot.')
+                from notifications.booking_events import notify_booking_updated
+                notify_booking_updated(updated)
         return {
             'response': _lang_text(lang, f'Booking #{updated.id} was updated successfully.', f'Na-update na ang booking #{updated.id}.'),
             'action': _public_action({'type': action_type, 'status': 'completed', 'scheduled_date': day, 'scheduled_time': clock}, package, updated),
@@ -188,6 +217,8 @@ def execute_chat_action(action, request, lang='en'):
                     raise ChatActionError(_lang_text(lang, 'That slot was just taken. Please choose another one.', 'Kinuha na ang slot. Pumili ng iba.'), status='slot_unavailable')
                 booking = serializer.save(items=[])
                 AuditLog.objects.create(user=request.user, action='BOOKING_CREATE', description=f'Created booking #{booking.id} through chatbot.')
+                from notifications.booking_events import notify_booking_created
+                notify_booking_created(booking)
     except IntegrityError:
         raise ChatActionError(_lang_text(lang, 'That slot was just taken. Please choose another one.', 'Kinuha na ang slot. Pumili ng iba.'), status='slot_unavailable')
     return {

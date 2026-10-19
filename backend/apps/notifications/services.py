@@ -1,6 +1,5 @@
 import json
 import logging
-from functools import partial
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -10,10 +9,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from users.email_delivery import EmailDeliveryError, send_transactional_email
-from users.phone_numbers import normalize_philippine_mobile_number
-from users.sms_delivery import IProgSMSDeliveryError, send_transactional_sms
 
 from .models import Notification, NotificationDelivery, PushSubscription
+from .sms import send_sms_notification as _send_sms_notification
 
 logger = logging.getLogger(__name__)
 
@@ -177,77 +175,6 @@ def _send_email_notification(notification):
     )
 
 
-def _send_sms_notification(notification):
-    provider = 'iprogsms'
-    # Lock the notification row while creating and sending its SMS delivery.
-    # This closes the race where two workers both see no sent row and both call
-    # iProgSMS. A terminal delivery is never re-attempted automatically.
-    with transaction.atomic():
-        locked_notification = Notification.objects.select_for_update().select_related(
-            'user', 'booking', 'booking__customer',
-        ).get(pk=notification.pk)
-        existing_delivery = NotificationDelivery.objects.filter(
-            notification=locked_notification,
-            channel=NotificationDelivery.CHANNEL_SMS,
-        ).order_by('-id').first()
-        if existing_delivery:
-            logger.info(
-                'Skipping duplicate SMS delivery: notification_id=%s delivery_id=%s status=%s',
-                locked_notification.id,
-                existing_delivery.id,
-                existing_delivery.status,
-            )
-            return existing_delivery
-
-        delivery = _new_delivery(locked_notification, NotificationDelivery.CHANNEL_SMS, provider=provider)
-        customer = locked_notification.booking.customer if locked_notification.booking_id and locked_notification.booking else locked_notification.user
-        raw_phone = (customer.phone_number or '').strip()
-        normalized_phone = normalize_philippine_mobile_number(raw_phone)
-
-        if not _enabled('SMS_DELIVERY_ENABLED'):
-            return _skip(
-                delivery,
-                provider=provider,
-                code='disabled',
-                message='SMS delivery is disabled by configuration.',
-            )
-        if not getattr(settings, 'IPROG_SMS_API_TOKEN', '').strip():
-            return _skip(
-                delivery,
-                provider=provider,
-                code='missing_credentials',
-                message='IPROG_SMS_API_TOKEN is not configured.',
-            )
-        if not normalized_phone:
-            return _skip(
-                delivery,
-                provider=provider,
-                code='invalid_recipient',
-                message='The user does not have a valid Philippine mobile number.',
-            )
-
-        try:
-            result = send_transactional_sms(normalized_phone, locked_notification.message)
-        except IProgSMSDeliveryError as exc:
-            metadata = _safe_phone_metadata(normalized_phone)
-            if exc.status_code:
-                metadata['provider_status_code'] = exc.status_code
-            return _fail(
-                delivery,
-                provider=provider,
-                code=exc.code,
-                message=str(exc),
-                metadata=metadata,
-            )
-        return _set_delivery(
-            delivery,
-            status=NotificationDelivery.STATUS_SENT,
-            provider=result.get('provider', provider),
-            provider_message_id=result.get('provider_message_id', ''),
-            metadata=_safe_phone_metadata(normalized_phone),
-        )
-
-
 def _webpush(subscription):
     if not getattr(settings, 'PUSH_VAPID_PRIVATE_KEY', '').strip():
         raise PushDeliveryError('PUSH_VAPID_PRIVATE_KEY is not configured.', code='missing_credentials')
@@ -370,22 +297,35 @@ def dispatch_notification(notification):
             'user', 'booking', 'booking__customer',
         ).get(pk=notification)
 
-    deliveries = [
-        _send_email_notification(notification),
-        _send_sms_notification(notification),
-    ]
-    deliveries.extend(_send_push_notification(notification))
+    deliveries = []
+    # An email/push error must not prevent SMS from being attempted.
+    for channel, sender in [('sms', _send_sms_notification), ('email', _send_email_notification), ('push', _send_push_notification)]:
+        try:
+            result = sender(notification)
+            deliveries.extend(result if isinstance(result, list) else [result])
+        except Exception as exc:
+            logger.error('Notification dispatch failed notification_id=%s channel=%s exception_type=%s', notification.id, channel, type(exc).__name__)
     return deliveries
 
 
-def create_booking_notification(*, booking, notification_type, title, message):
+def create_booking_notification(*, booking, notification_type, title, message, event_key=None):
     """Persist a notification and dispatch it after its transaction commits."""
-    notification = Notification.objects.create(
-        user_id=booking.customer_id,
-        booking_id=booking.id,
-        notification_type=notification_type,
-        title=title,
-        message=message,
-    )
-    transaction.on_commit(partial(dispatch_notification, notification.id), robust=True)
+    values = dict(user_id=booking.customer_id, booking_id=booking.id,
+                  notification_type=notification_type, title=title, message=message)
+    if event_key:
+        notification, created = Notification.objects.get_or_create(event_key=event_key, defaults=values)
+        if not created:
+            return notification
+    else:
+        notification = Notification.objects.create(**values)
+
+    def deliver_after_commit():
+        try:
+            dispatch_notification(notification.id)
+        except Exception as exc:
+            logger.error('Post-commit notification dispatch failed notification_id=%s exception_type=%s', notification.id, type(exc).__name__)
+
+    # Django logs callback.__qualname__ when robust callbacks fail; partial()
+    # lacks that attribute and used to turn the error handler into another 500.
+    transaction.on_commit(deliver_after_commit, robust=True)
     return notification

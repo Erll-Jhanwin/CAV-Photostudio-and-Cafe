@@ -67,6 +67,8 @@ class ForecastingEngineTests(TestCase):
         })
         self.assertIn('mae', report['metrics'])
         self.assertFalse(report['data_sufficiency']['is_sufficient'])
+        self.assertFalse(report['data_sufficiency']['requested_30_day_observed_coverage']['available'])
+        self.assertEqual(report['data_sufficiency']['requested_30_day_observed_coverage']['observed_days'], 2)
 
     def test_new_snapshot_refreshes_active_data_without_deleting_old_history(self):
         first_path = self.write_history(self.sample_rows())
@@ -92,6 +94,7 @@ class ForecastingEngineTests(TestCase):
         self.assertEqual(report['sales_forecast'], [])
         self.assertEqual(report['actual_history'], [])
         self.assertFalse(report['data_sufficiency']['is_sufficient'])
+        self.assertFalse(report['data_sufficiency']['requested_30_day_observed_coverage']['available'])
 
 
 class ForecastingImportApiTests(TestCase):

@@ -306,6 +306,14 @@ class RegistrationOTPVerifySerializer(serializers.Serializer):
             raise serializers.ValidationError('OTP must contain 6 digits.')
         return value
 
+
+class RegistrationOTPResendSerializer(serializers.Serializer):
+    registration_token = serializers.CharField(min_length=32, max_length=128, trim_whitespace=True)
+
+
+class AdminMFAResendSerializer(serializers.Serializer):
+    mfa_token = serializers.CharField(min_length=32, max_length=128, trim_whitespace=True)
+
 class PasswordResetVerifySerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=20, trim_whitespace=True)
     otp = serializers.CharField(min_length=6, max_length=6, trim_whitespace=True)

@@ -20,6 +20,8 @@ SMS_DELIVERY_ENABLED=true
 IPROG_SMS_API_TOKEN=your_iprogsms_token
 IPROG_SMS_API_BASE_URL=https://www.iprogsms.com
 IPROG_SMS_API_TIMEOUT=15
+SMS_MAX_ATTEMPTS=3
+SMS_RETRY_DELAY_SECONDS=60
 BOOKING_REMINDER_WINDOW_MINUTES=30
 
 PUSH_DELIVERY_ENABLED=true
@@ -53,15 +55,36 @@ must be re-created after a rotation.
 The frontend asks for browser permission from the customer Notifications tab;
 permission is never requested during login or page load.
 
-Booking submission and approved booking-payment verification create customer
-notifications that use the registered phone number on the booking's customer
-account. When SMS delivery is enabled, iProgSMS sends the booking-submitted
-message with the booking date, time, selected package, and payment status.
-Already-attempted SMS deliveries are not sent again if the same notification is
-dispatched again, including after a provider failure. The failed delivery and
-provider-safe error details remain available in `NotificationDelivery` for
-operator review; a retry must create an explicit new notification so a timeout
-cannot accidentally duplicate a message.
+Booking submission, payment submission/approval/rejection, actual booking status
+changes, edits, and reminders create notifications for the booking customer's
+registered phone number. Messages include the date, Manila time, package, booking
+status, and payment status. Payment approval includes down-payment confirmation
+in one message. Repeating an unchanged status does not create another event.
+
+Events are saved in the same database transaction as the booking/payment change;
+delivery runs only after commit. SMS failures cannot roll back the saved booking.
+Event keys and locked delivery claims prevent repeated requests and concurrent
+workers from sending the same event twice. Logs contain IDs, error classifications,
+attempt counts and the recipient's last four digits, not tokens or full numbers.
+
+Run `python manage.py process_notification_deliveries` every minute in the same
+backend environment. It recovers undispatched keyed events, checks provider
+status, and retries definite transient failures with bounded backoff on the same
+delivery row. It does not broadcast historical unkeyed notifications. A connection
+timeout, rate limit, or explicit failed/undelivered report can be retried; an
+ambiguous timeout, malformed response, server failure, or interrupted submission
+is `unknown` and requires operator reconciliation before any resend. Do not create
+a fresh notification merely to retry an uncertain request. Configuration failures
+and skipped deliveries are not automatically replayed after configuration changes.
+
+SMS `accepted` means the provider queued the message; `sent` means the provider
+reported sent/completed, not proven handset receipt. Only an explicit `delivered`
+report sets `delivered_at`. The provider's HTTP 200 alone is never delivery proof.
+
+The authorized October 18 test found a valid token and 279 credits, but iProgSMS
+rejected the Smart/TNT recipient because an approved sender name is required.
+This is recorded as `sender_name_required`; obtain approval in the provider
+account before testing again. Do not work around this with an unapproved sender.
 
 ## Booking reminders
 
@@ -94,20 +117,19 @@ The command only considers the existing active booking statuses
 bookings are ignored. It locks and re-checks each booking immediately before
 creating a reminder. A rescheduled booking uses its new date/time and creates
 a new reminder signature; a previously delivered SMS cannot be recalled. The
-notification message itself is the idempotency signature, and a sent SMS is
-never sent again on repeated scheduler runs. Provider failures are captured in
-`NotificationDelivery` with `failed` status and `provider_error`; they do not
-roll back the booking. Use `--at 2026-10-18T08:00:00+08:00` for a deterministic
-dry-run/test and add `--dry-run` to inspect due reminders without creating
-notifications or contacting iProgSMS.
+event key includes the booking, reminder type and current schedule. Repeated
+scheduler runs do not resend it. Stale reminders are suppressed after cancellation
+or rescheduling. Failures remain in `NotificationDelivery`; they do not roll back
+the booking. Use `--at 2026-10-18T08:00:00+08:00 --dry-run` to inspect due
+reminders without creating notifications or contacting iProgSMS.
 
 ## Deployment checklist
 
 1. Add `pywebpush` (already pinned in `backend/requirements.txt`) and run the
-   notification migration in the target environment:
+   migrations, including `notifications.0006_sms_delivery_lifecycle`, in the target environment:
 
    ```text
-   python manage.py migrate notifications
+   python manage.py migrate
    ```
 
 2. Set the five `PUSH_*` variables in the backend environment. Never place the
@@ -115,7 +137,7 @@ notifications or contacting iProgSMS.
    Keep `PUSH_DELIVERY_ENABLED=false` until all three VAPID values are valid.
 
 3. Set `SMS_DELIVERY_ENABLED=true` alongside a valid iProgSMS token and
-   sufficient credits before expecting booking SMS. Keep it false in local
+   sufficient credits and an approved sender name for supported networks before expecting booking SMS. Keep it false in local
    development unless the configured recipient is an authorized test number.
 
 4. Serve the frontend from HTTPS. The service worker is published at
@@ -146,3 +168,12 @@ Provider calls are covered by mocked tests. A real end-to-end send requires
 provider credentials, a verified email sender, iProgSMS credits/recipient, and
 a browser subscription created over HTTPS. Missing credentials are recorded as
 `skipped` rather than making a network request.
+
+Keep Django database sessions in UTC with `USE_TZ=True`; display and scheduling
+remain in Asia/Manila. Do not restore the old custom Asia/Manila database-session
+override: it caused an eight-hour timestamp decoding error.
+
+Run isolated tests with `python manage.py test apps --settings=config.test_settings`.
+Use `TEST_DATABASE_URL` for an isolated localhost PostgreSQL database to exercise
+real row locks; never point the test runner at the production database. See
+[the audit report](system-audit-2026-10-18.md) for the verified scope and limits.

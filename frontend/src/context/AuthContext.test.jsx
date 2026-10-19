@@ -28,6 +28,23 @@ function AuthProbe() {
   );
 }
 
+function GoogleMFAProbe() {
+  const { loginWithGoogle } = useAuth();
+  const [result, setResult] = React.useState('');
+  return (
+    <div>
+      <span data-testid="google-mfa-result">{result}</span>
+      <button type="button" onClick={async () => {
+        const response = await loginWithGoogle('google-id-token', '', {
+          mfa_token: 'admin-mfa-token',
+          mfa_code: '123456',
+        });
+        setResult(response.mfaRequired ? 'verification-required' : response.error || 'complete');
+      }}>Verify Google admin</button>
+    </div>
+  );
+}
+
 const renderAuthProbe = () => render(
   <AuthProvider>
     <AuthProbe />
@@ -64,7 +81,7 @@ describe('AuthContext', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('customer'));
-    expect(client.get).toHaveBeenCalledWith('/api/auth/profile/', { skipAuthRedirect: true });
+    expect(client.get).toHaveBeenCalledWith('/api/auth/profile/', { skipAuthRedirect: true, timeout: 12000 });
     expect(JSON.parse(localStorage.getItem('user'))).toMatchObject({
       username: 'customer',
       role: 'CUSTOMER',
@@ -118,5 +135,28 @@ describe('AuthContext', () => {
       username: 'new-user',
       role: 'STAFF',
     });
+  });
+
+  test('Google admin login forwards the resendable MFA challenge without completing a session', async () => {
+    client.post.mockResolvedValue({
+      data: {
+        mfa_required: true,
+        mfa_token: 'admin-mfa-token',
+        mfa_method: 'sms',
+        resend_cooldown_seconds: 60,
+      },
+    });
+
+    render(<AuthProvider><GoogleMFAProbe /></AuthProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Verify Google admin' }));
+
+    await waitFor(() => expect(screen.getByTestId('google-mfa-result')).toHaveTextContent('verification-required'));
+    expect(client.post).toHaveBeenCalledWith('/api/auth/google/', {
+      credential: 'google-id-token',
+      phone_number: '',
+      mfa_token: 'admin-mfa-token',
+      mfa_code: '123456',
+    });
+    expect(client.get).not.toHaveBeenCalled();
   });
 });

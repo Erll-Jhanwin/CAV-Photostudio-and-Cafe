@@ -33,9 +33,10 @@ def parse_date_value(value):
 
 
 def parse_time_value(value):
-    if isinstance(value, time):
-        return value.replace(second=0, microsecond=0)
-    return datetime.strptime(str(value)[:5], '%H:%M').time()
+    parsed = value if isinstance(value, time) else time.fromisoformat(str(value))
+    if parsed.second or parsed.microsecond or parsed.tzinfo:
+        raise ValueError('Use an exact local time slot with zero seconds and no timezone offset.')
+    return parsed
 
 
 def get_booking_window(day, start_time, duration_minutes):
@@ -139,7 +140,7 @@ def get_available_slots(package_id, day, exclude_booking_id=None):
         slot_start, slot_end = get_booking_window(day, slot_time, duration_minutes)
         aware_slot_start = timezone.make_aware(slot_start, timezone.get_current_timezone())
         is_past = aware_slot_start <= now
-        is_outside_hours = slot_start.time() < BUSINESS_OPEN_TIME or slot_end.time() > BUSINESS_CLOSE_TIME
+        is_outside_hours = slot_start.time() < BUSINESS_OPEN_TIME or slot_end > datetime.combine(day, BUSINESS_CLOSE_TIME)
         is_booked = any(slot_overlaps(day, slot_time, duration_minutes, booking) for booking in existing_bookings)
         if is_past or is_outside_hours:
             status = 'UNAVAILABLE'
@@ -171,7 +172,10 @@ def get_available_slots(package_id, day, exclude_booking_id=None):
 
 
 def is_slot_available(package_id, day, slot_time, exclude_booking_id=None):
-    slot_time = parse_time_value(slot_time)
+    try:
+        slot_time = parse_time_value(slot_time)
+    except (ValueError, TypeError):
+        return False
     return any(
         slot['time'] == slot_time.strftime('%H:%M:%S') and slot['available']
         for slot in get_available_slots(package_id, day, exclude_booking_id)

@@ -48,3 +48,14 @@ export const getManilaTimeInputValue = (date = new Date()) => {
 };
 
 export const getManilaMonthValue = (date = new Date()) => getManilaDateInputValue(date).slice(0, 7);
+
+export const manilaInputToISOString = (day, time) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !/^\d{2}:\d{2}$/.test(time)) {
+    throw new Error('Enter a valid payment date and time.');
+  }
+  const value = new Date(`${day}T${time}:00+08:00`);
+  if (Number.isNaN(value.getTime()) || getManilaDateInputValue(value) !== day || getManilaTimeInputValue(value) !== time) {
+    throw new Error('Enter a valid payment date and time.');
+  }
+  return value.toISOString();
+};

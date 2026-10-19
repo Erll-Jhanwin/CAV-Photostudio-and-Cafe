@@ -55,5 +55,6 @@ class NotificationDeliverySerializer(serializers.ModelSerializer):
             'id', 'notification', 'user', 'channel', 'status', 'provider',
             'provider_message_id', 'error_code', 'error_message', 'metadata',
             'attempt_count', 'created_at', 'updated_at', 'sent_at',
+            'delivered_at', 'next_retry_at', 'last_checked_at',
         ]
         read_only_fields = fields

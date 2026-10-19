@@ -13,7 +13,6 @@ import dj_database_url
 from corsheaders.defaults import default_headers
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
-from django.db.backends.signals import connection_created
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -143,20 +142,9 @@ DATABASES = {
         ssl_require=IS_POSTGRES_DATABASE and env_bool('DATABASE_SSL_REQUIRE', True),
     )
 }
-DATABASES['default'].setdefault('OPTIONS', {})
-if IS_POSTGRES_DATABASE:
-    DATABASES['default']['OPTIONS']['options'] = f"-c timezone={os.environ.get('DATABASE_TIME_ZONE', APP_TIME_ZONE)}"
-
-
-def set_database_session_timezone(sender, connection, **kwargs):
-    if connection.vendor != 'postgresql':
-        return
-    db_timezone = os.environ.get('DATABASE_TIME_ZONE', APP_TIME_ZONE)
-    with connection.connection.cursor() as cursor:
-        cursor.execute('SET TIME ZONE %s', [db_timezone])
-
-
-connection_created.connect(set_database_session_timezone)
+# Let Django manage the database session timezone (UTC with USE_TZ=True).
+# Overriding it to Manila while Django decodes timestamps as UTC shifted every
+# retrieved timestamp by eight hours, including payment and retry deadlines.
 
 
 
@@ -180,7 +168,10 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT') or BASE_DIR / 'media')
+PAYMENT_QR_GCASH_URL = os.environ.get('PAYMENT_QR_GCASH_URL', '').strip()
+PAYMENT_QR_MAYA_URL = os.environ.get('PAYMENT_QR_MAYA_URL', '').strip()
+PAYMENT_QR_MARIBANK_URL = os.environ.get('PAYMENT_QR_MARIBANK_URL', '').strip()
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -201,6 +192,8 @@ RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 RESEND_API_URL = os.environ.get('RESEND_API_URL', 'https://api.resend.com/emails')
 EMAIL_DELIVERY_ENABLED = env_bool('EMAIL_DELIVERY_ENABLED', False)
 SMS_DELIVERY_ENABLED = env_bool('SMS_DELIVERY_ENABLED', False)
+SMS_MAX_ATTEMPTS = int(os.environ.get('SMS_MAX_ATTEMPTS', '3'))
+SMS_RETRY_DELAY_SECONDS = int(os.environ.get('SMS_RETRY_DELAY_SECONDS', '60'))
 BOOKING_REMINDER_WINDOW_MINUTES = int(os.environ.get('BOOKING_REMINDER_WINDOW_MINUTES', '30'))
 PUSH_DELIVERY_ENABLED = env_bool('PUSH_DELIVERY_ENABLED', False)
 PUSH_VAPID_PUBLIC_KEY = os.environ.get('PUSH_VAPID_PUBLIC_KEY', '').strip()
@@ -359,6 +352,16 @@ LOGGING = {
             'propagate': False,
         },
         'apps': {
+            'handlers': ['console'],
+            'level': os.environ.get('APP_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'notifications': {
+            'handlers': ['console'],
+            'level': os.environ.get('APP_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'booking': {
             'handlers': ['console'],
             'level': os.environ.get('APP_LOG_LEVEL', 'INFO'),
             'propagate': False,

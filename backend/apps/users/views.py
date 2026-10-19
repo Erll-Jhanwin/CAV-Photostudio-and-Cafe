@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import time
 
 from rest_framework import generics, permissions, status, views
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -23,6 +25,8 @@ from users.serializers import (
     ProfileSerializer,
     UserSerializer,
     RegisterSerializer,
+    AdminMFAResendSerializer,
+    RegistrationOTPResendSerializer,
     RegistrationOTPVerifySerializer,
     is_phone_number_taken,
     PasswordResetRequestSerializer,
@@ -53,6 +57,41 @@ SYSTEM_RESET_CONFIRMATION = 'RESET SYSTEM DATA'
 SYSTEM_RESET_LOCK_KEY = 'system_data_reset_in_progress'
 ADMIN_MFA_TTL_MINUTES = int(getattr(settings, 'ADMIN_MFA_TTL_MINUTES', 10))
 ADMIN_MFA_MAX_ATTEMPTS = int(getattr(settings, 'ADMIN_MFA_MAX_ATTEMPTS', 5))
+
+
+class OTPResendRateLimited(Exception):
+    def __init__(self, retry_after):
+        self.retry_after = max(1, int(retry_after or PASSWORD_RESET_RESEND_COOLDOWN_SECONDS))
+
+
+def reserve_otp_send(contact, request, purpose):
+    """Apply shared per-contact and per-IP OTP limits before provider calls."""
+    contact_hash = hashlib.sha256(str(contact).encode('utf-8')).hexdigest()
+    cooldown = PASSWORD_RESET_RESEND_COOLDOWN_SECONDS
+    cooldown_key = f'otp-send-cooldown:{purpose}:{contact_hash}'
+    if not cache.add(cooldown_key, 1, timeout=cooldown):
+        return False, cooldown
+
+    max_requests = PASSWORD_RESET_MAX_REQUESTS_PER_HOUR
+    client_ip = get_client_ip(request) if request is not None else ''
+    identities = [('phone', contact_hash)]
+    if client_ip:
+        ip_hash = hashlib.sha256(client_ip.encode('utf-8')).hexdigest()
+        identities.append(('ip', ip_hash))
+    allowed = True
+    for identity_type, identity_hash in identities:
+        key = f'otp-send-hour:{purpose}:{identity_type}:{identity_hash}'
+        if cache.add(key, 1, timeout=3600):
+            count = 1
+        else:
+            try:
+                count = cache.incr(key)
+            except ValueError:
+                cache.add(key, 1, timeout=3600)
+                count = 1
+        if count > max_requests:
+            allowed = False
+    return allowed, 3600 if not allowed else 0
 
 
 @ensure_csrf_cookie
@@ -101,20 +140,26 @@ def get_admin_mfa_methods(user):
     return []
 
 
-def create_admin_mfa_challenge(user, method='sms'):
+def create_admin_mfa_challenge(user, method='sms', request=None):
     method = str(method or '').lower()
     phone_number = normalize_philippine_mobile_number(user.phone_number)
     if method == 'sms' and not phone_number:
         return None
     if method != 'sms':
         return None
+    allowed, retry_after = reserve_otp_send(phone_number, request, 'admin_mfa')
+    if not allowed:
+        raise OTPResendRateLimited(retry_after)
     token = secrets.token_urlsafe(32)
+    now = time.time()
     pending = {
         'user_id': user.pk,
         'method': method,
         'phone_number': phone_number,
         'attempts': 0,
-        'expires_at': (timezone.now() + timezone.timedelta(minutes=ADMIN_MFA_TTL_MINUTES)).timestamp(),
+        'expires_at': now + ADMIN_MFA_TTL_MINUTES * 60,
+        'last_otp_sent_at': now,
+        'resend_count': 0,
     }
     send_password_reset_otp(phone_number, purpose='admin security verification')
     cache.set(f'admin_mfa:{token}', pending, timeout=ADMIN_MFA_TTL_MINUTES * 60)
@@ -148,7 +193,12 @@ def begin_admin_mfa(request, user):
     if method not in methods:
         return Response({'detail': 'Admin verification is available by SMS only.'}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        challenge = create_admin_mfa_challenge(user, method)
+        challenge = create_admin_mfa_challenge(user, method, request)
+    except OTPResendRateLimited as exc:
+        return Response(
+            {'detail': 'Please wait before requesting another verification code.', 'retry_after_seconds': exc.retry_after},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
     except (IProgSMSDeliveryError, OSError):
         logger.exception('Admin MFA delivery failed.')
         return Response({'detail': 'Admin SMS verification could not be sent. Check the configured delivery service.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -162,7 +212,69 @@ def begin_admin_mfa(request, user):
         'mfa_methods': methods,
         'contact_hint': mask_registration_contact(contact, 'phone'),
         'expires_in_minutes': ADMIN_MFA_TTL_MINUTES,
+        'resend_cooldown_seconds': PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
     }, status=status.HTTP_202_ACCEPTED)
+
+
+class AdminMFAResendView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'auth'
+
+    def post(self, request):
+        serializer = AdminMFAResendSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token = serializer.validated_data['mfa_token']
+        cache_key = f'admin_mfa:{token}'
+        pending = cache.get(cache_key)
+        now = time.time()
+        if not pending or now >= pending.get('expires_at', 0):
+            cache.delete(cache_key)
+            return Response(
+                {'detail': 'This admin verification session has expired. Sign in again to request a new code.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.filter(pk=pending.get('user_id'), is_active=True, role='ADMIN').first()
+        if not user or pending.get('method') != 'sms':
+            cache.delete(cache_key)
+            return Response({'detail': 'This admin verification session is no longer valid. Sign in again.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        elapsed = max(0, int(now - float(pending.get('last_otp_sent_at', 0))))
+        if elapsed < PASSWORD_RESET_RESEND_COOLDOWN_SECONDS:
+            retry_after = PASSWORD_RESET_RESEND_COOLDOWN_SECONDS - elapsed
+            return Response(
+                {'detail': 'Please wait before requesting another verification code.', 'retry_after_seconds': retry_after},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        phone_number = normalize_philippine_mobile_number(user.phone_number)
+        if not phone_number or phone_number != pending.get('phone_number'):
+            cache.delete(cache_key)
+            return Response({'detail': 'The registered mobile number changed. Sign in again to restart verification.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed, retry_after = reserve_otp_send(phone_number, request, 'admin_mfa')
+        if not allowed:
+            return Response(
+                {'detail': 'The verification-code request limit has been reached. Please try again later.', 'retry_after_seconds': retry_after},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        try:
+            send_password_reset_otp(phone_number, purpose='admin security verification')
+        except (IProgSMSDeliveryError, OSError):
+            logger.exception('Admin MFA resend failed.')
+            return Response({'detail': 'We could not resend the admin verification code. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        pending['attempts'] = 0
+        pending['last_otp_sent_at'] = now
+        pending['expires_at'] = now + ADMIN_MFA_TTL_MINUTES * 60
+        pending['resend_count'] = int(pending.get('resend_count', 0)) + 1
+        cache.set(cache_key, pending, timeout=ADMIN_MFA_TTL_MINUTES * 60)
+        return Response({
+            'detail': 'A new admin verification code was sent by SMS.',
+            'expires_in_minutes': ADMIN_MFA_TTL_MINUTES,
+            'resend_cooldown_seconds': PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
+        }, status=status.HTTP_200_OK)
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -273,7 +385,15 @@ class RegisterView(generics.CreateAPIView):
             'contact': contact,
             'attempts': 0,
             'expires_at': (timezone.now() + timezone.timedelta(minutes=PASSWORD_RESET_OTP_TTL_MINUTES)).timestamp(),
+            'last_otp_sent_at': time.time(),
         }
+
+        allowed, retry_after = reserve_otp_send(contact, request, 'registration')
+        if not allowed:
+            return Response(
+                {'detail': 'Please wait before requesting another verification code.', 'retry_after_seconds': retry_after},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
 
         try:
             send_password_reset_otp(contact, purpose='registration')
@@ -295,6 +415,58 @@ class RegisterView(generics.CreateAPIView):
             'contact_type': contact_type,
             'contact_hint': mask_registration_contact(contact, contact_type),
             'expires_in_minutes': PASSWORD_RESET_OTP_TTL_MINUTES,
+            'resend_cooldown_seconds': PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
+        }, status=status.HTTP_200_OK)
+
+
+class RegistrationOTPResendView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = 'auth'
+
+    def post(self, request):
+        serializer = RegistrationOTPResendSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        cache_key = f"registration_otp:{serializer.validated_data['registration_token']}"
+        pending = cache.get(cache_key)
+        now = time.time()
+        if (
+            not pending
+            or pending.get('contact_type') != 'phone'
+            or now >= pending.get('expires_at', 0)
+        ):
+            return Response({'detail': 'This verification session has expired. Restart registration to request a new code.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        last_sent_at = float(pending.get('last_otp_sent_at', 0))
+        elapsed = max(0, int(now - last_sent_at))
+        if elapsed < PASSWORD_RESET_RESEND_COOLDOWN_SECONDS:
+            retry_after = PASSWORD_RESET_RESEND_COOLDOWN_SECONDS - elapsed
+            return Response(
+                {'detail': 'Please wait before requesting another verification code.', 'retry_after_seconds': retry_after},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        allowed, retry_after = reserve_otp_send(pending['contact'], request, 'registration')
+        if not allowed:
+            return Response(
+                {'detail': 'Please wait before requesting another verification code.', 'retry_after_seconds': retry_after},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        try:
+            send_password_reset_otp(pending['contact'], purpose='registration')
+        except (IProgSMSDeliveryError, OSError):
+            logger.exception('Registration OTP resend failed.')
+            return Response({'detail': 'We could not send the verification code. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        pending['attempts'] = 0
+        pending['last_otp_sent_at'] = now
+        pending['expires_at'] = now + PASSWORD_RESET_OTP_TTL_MINUTES * 60
+        pending['resend_count'] = int(pending.get('resend_count', 0)) + 1
+        cache.set(cache_key, pending, timeout=PASSWORD_RESET_OTP_TTL_MINUTES * 60)
+        return Response({
+            'message': 'A new verification code was sent.',
+            'contact_hint': mask_registration_contact(pending['contact'], pending['contact_type']),
+            'expires_in_minutes': PASSWORD_RESET_OTP_TTL_MINUTES,
+            'resend_cooldown_seconds': PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
         }, status=status.HTTP_200_OK)
 
 
@@ -487,7 +659,14 @@ class GoogleAuthView(views.APIView):
                 'contact': phone_number,
                 'attempts': 0,
                 'expires_at': (timezone.now() + timezone.timedelta(minutes=PASSWORD_RESET_OTP_TTL_MINUTES)).timestamp(),
+                'last_otp_sent_at': time.time(),
             }
+            allowed, retry_after = reserve_otp_send(phone_number, request, 'registration')
+            if not allowed:
+                return Response(
+                    {'detail': 'Please wait before requesting another verification code.', 'retry_after_seconds': retry_after},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
             try:
                 send_password_reset_otp(phone_number, purpose='registration')
             except (IProgSMSDeliveryError, OSError):
@@ -508,6 +687,7 @@ class GoogleAuthView(views.APIView):
                 'contact_type': 'phone',
                 'contact_hint': mask_registration_contact(phone_number, 'phone'),
                 'expires_in_minutes': PASSWORD_RESET_OTP_TTL_MINUTES,
+                'resend_cooldown_seconds': PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
             }, status=status.HTTP_200_OK)
 
         if user.role == 'CUSTOMER':
@@ -785,7 +965,9 @@ def account_changed_fields(user, validated_data):
 
 def generic_password_reset_response():
     return Response({
-        "detail": "If that mobile number is registered, a one-time password has been sent."
+        "detail": "If this mobile number matches an account and a new code can be issued, check your SMS. For privacy, account status is not confirmed here.",
+        'expires_in_minutes': PASSWORD_RESET_OTP_TTL_MINUTES,
+        'resend_cooldown_seconds': PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
     }, status=status.HTTP_200_OK)
 
 def delete_queryset(label, queryset):
@@ -927,9 +1109,7 @@ class ForgotPasswordView(views.APIView):
             ip_address=get_client_ip(request),
         )
 
-        return Response({
-            "detail": "If that mobile number is registered, a one-time password has been sent.",
-        }, status=status.HTTP_200_OK)
+        return generic_password_reset_response()
 
 class PasswordResetVerifyOTPView(views.APIView):
     permission_classes = [permissions.AllowAny]
