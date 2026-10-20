@@ -1690,7 +1690,7 @@ export default function StaffDashboard() {
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Payment Booking Verification</h1>
-                  <p className="text-xs text-espresso/50 mt-1">Check GCash merchant records before approving down payments.</p>
+                  <p className="text-xs text-espresso/50 mt-1">Review each receipt and match its reference and amount with the selected payment provider before approval.</p>
                 </div>
                 <div className="w-full sm:w-64">
                   <Select
@@ -1793,7 +1793,7 @@ export default function StaffDashboard() {
                   <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={TABLE_PAGE_SIZE} />
                 </div>
               ) : (
-                <EmptyState icon={CreditCard} title="No payments found" description="GCash booking payments will appear here once customers submit proof." />
+                <EmptyState icon={CreditCard} title="No payments found" description="Booking payments will appear here once customers submit proof." />
               )}
             </div>
           )}

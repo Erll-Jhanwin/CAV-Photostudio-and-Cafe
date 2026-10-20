@@ -2116,8 +2116,8 @@ export default function AdminDashboard() {
               <Card className="!p-4 md:!p-5">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
                   <CardHeader
-                    title="GCash Payment Booking Verification"
-                    subtitle="Approve only after matching the reference, amount, date/time, and screenshot in the GCash merchant app."
+                    title="Booking Payment Verification"
+                    subtitle="Review the booking details and receipt, then match its reference and amount with the selected payment provider before approving."
                     className="mb-0"
                   />
                   <div className="w-full md:w-64">
@@ -2237,7 +2237,7 @@ export default function AdminDashboard() {
                   <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={paymentPageSize} setPageSize={setPaymentPageSize} />
                   </>
                 ) : (
-                  <EmptyState icon={CreditCard} title="No payments found" description="Submitted GCash booking payments will appear here for verification." />
+                  <EmptyState icon={CreditCard} title="No payments found" description="Submitted booking payments will appear here for verification." />
                 )}
               </Card>
             </div>

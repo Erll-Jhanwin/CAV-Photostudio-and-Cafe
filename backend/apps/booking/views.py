@@ -28,6 +28,7 @@ from booking.serializers import (
 from booking.availability import ACTIVE_BOOKING_STATUSES, get_available_slots, is_slot_available, parse_date_value
 from booking.payment_ocr import analyze_gcash_receipt
 from payment.models import Payment
+from payment.storage import SupabasePaymentProofStorage, SupabaseStorageError
 from audit.models import AuditLog
 from notifications.booking_events import (
     notify_booking_created, notify_booking_status, notify_booking_updated, notify_booking_payment,
@@ -41,6 +42,20 @@ IDEMPOTENCY_KEY_MAX_LENGTH = 100
 OBSOLETE_SERVICE_NAMES = ['Self-Shoot Studio', 'Boutique Portrait']
 
 logger = logging.getLogger(__name__)
+
+
+def cleanup_uncommitted_payment_receipt(payment):
+    """Best-effort removal when remote upload succeeded but its DB txn rolled back."""
+    if not payment or not payment.receipt:
+        return
+    try:
+        payment.receipt.storage.delete(payment.receipt.name)
+    except Exception as exc:
+        logger.error(
+            'Payment receipt cleanup failed after database rollback: payment_id=%s exception_type=%s',
+            payment.pk,
+            type(exc).__name__,
+        )
 
 
 def get_idempotency_key(request):
@@ -593,6 +608,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        payment = None
         try:
             with transaction.atomic():
                 booking = Booking.objects.select_for_update().get(pk=serializer.validated_data['booking'].id)
@@ -610,6 +626,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                                         description=f'Submitted payment #{payment.id} for booking #{booking.id}.')
                 notify_booking_payment(payment)
         except IntegrityError as exc:
+            cleanup_uncommitted_payment_receipt(payment)
             if idempotency_key:
                 existing_payment = payment_queryset.filter(idempotency_key=idempotency_key).select_related(
                     'booking', 'booking__customer', 'booking__package', 'verified_by'
@@ -624,6 +641,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                 status=status.HTTP_409_CONFLICT
             )
         except OSError as exc:
+            cleanup_uncommitted_payment_receipt(payment)
             booking_id = serializer.validated_data.get('booking').id if serializer.validated_data.get('booking') else None
             logger.error(
                 'Payment receipt storage failed: booking_id=%s metadata=%s exception_type=%s',
@@ -640,6 +658,9 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                 },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
+        except Exception:
+            cleanup_uncommitted_payment_receipt(payment)
+            raise
 
         return Response(self.get_serializer(payment).data, status=status.HTTP_201_CREATED)
 
@@ -683,12 +704,22 @@ class BookingPaymentReceiptView(views.APIView):
         if not payment or not payment.receipt:
             return Response({'detail': 'Payment proof not found.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            payment.receipt.open('rb')
-        except (OSError, ValueError):
-            return Response({'detail': 'Payment proof is unavailable.'}, status=status.HTTP_404_NOT_FOUND)
+            receipt_file = payment.receipt.open('rb')
+        except FileNotFoundError:
+            return Response({'detail': 'Payment proof not found.'}, status=status.HTTP_404_NOT_FOUND)
+        except (SupabaseStorageError, OSError, ValueError) as exc:
+            logger.error(
+                'Payment receipt retrieval failed: payment_id=%s exception_type=%s',
+                payment.pk,
+                type(exc).__name__,
+            )
+            return Response(
+                {'detail': 'Payment proof storage is temporarily unavailable.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         filename = payment.receipt.name.rsplit('/', 1)[-1].replace('"', '')
         content_type = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
-        response = FileResponse(payment.receipt, content_type=content_type)
+        response = FileResponse(receipt_file, content_type=content_type)
         response['Content-Disposition'] = f'inline; filename="{filename}"'
         response['X-Content-Type-Options'] = 'nosniff'
         response['Cache-Control'] = 'private, no-store'

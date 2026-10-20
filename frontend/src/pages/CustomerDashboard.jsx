@@ -2431,7 +2431,7 @@ export default function CustomerDashboard() {
                           disabled={paymentSubmitting || !paymentMethod || !selectedPaymentMethod?.configured || !selectedPaymentMethod?.qr_url || paymentQrFailed || (!paymentRequestStartedRef.current && (paymentReferenceStatus.checking || paymentReferenceStatus.exists))}
                           className="px-6 text-xs bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white"
                         >
-                          {paymentSubmitting ? 'Securing Your Slot...' : 'Reserve Your Session'}
+                          {paymentSubmitting ? 'Uploading Proof & Reserving...' : 'Reserve Your Session'}
                         </Button>
                       )}
                     </div>

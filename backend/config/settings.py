@@ -174,6 +174,12 @@ PAYMENT_QR_GCASH_URL = os.environ.get('PAYMENT_QR_GCASH_URL', '').strip()
 PAYMENT_QR_MAYA_URL = os.environ.get('PAYMENT_QR_MAYA_URL', '').strip()
 PAYMENT_QR_MARIBANK_URL = os.environ.get('PAYMENT_QR_MARIBANK_URL', '').strip()
 
+# Booking payment proofs use a private Supabase Storage bucket. The secret is
+# server-only; file access remains behind the authenticated Django receipt API.
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().rstrip('/')
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '').strip()
+SUPABASE_PAYMENT_PROOFS_BUCKET = os.environ.get('SUPABASE_PAYMENT_PROOFS_BUCKET', 'payment-proofs').strip()
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')

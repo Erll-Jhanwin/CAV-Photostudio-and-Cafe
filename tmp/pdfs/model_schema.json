@@ -1,0 +1,4199 @@
+{
+  "db_vendor_from_config": "postgresql",
+  "models": [
+    {
+      "app": "admin",
+      "model": "LogEntry",
+      "table": "django_admin_log",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "integer",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "action_time",
+          "field_name": "action_time",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "now",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "content_type_id",
+          "field_name": "content_type",
+          "type": "integer",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "django_content_type",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "object_id",
+          "field_name": "object_id",
+          "type": "text",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "object_repr",
+          "field_name": "object_repr",
+          "type": "varchar(200)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "action_flag",
+          "field_name": "action_flag",
+          "type": "smallint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "change_message",
+          "field_name": "change_message",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "auth",
+      "model": "Permission",
+      "table": "auth_permission",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "integer",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "name",
+          "field_name": "name",
+          "type": "varchar(255)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "content_type_id",
+          "field_name": "content_type",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "django_content_type",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "codename",
+          "field_name": "codename",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "auth",
+      "model": "Group_permissions",
+      "table": "auth_group_permissions",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "integer",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "group_id",
+          "field_name": "group",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "auth_group",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "permission_id",
+          "field_name": "permission",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "auth_permission",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "auth",
+      "model": "Group",
+      "table": "auth_group",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "integer",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "name",
+          "field_name": "name",
+          "type": "varchar(150)",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "permissions",
+          "field_name": "permissions",
+          "type": "M2M (through auth_group_permissions)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": "auth_permission",
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "contenttypes",
+      "model": "ContentType",
+      "table": "django_content_type",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "integer",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "app_label",
+          "field_name": "app_label",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "model",
+          "field_name": "model",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "sessions",
+      "model": "Session",
+      "table": "django_session",
+      "managed": true,
+      "fields": [
+        {
+          "name": "session_key",
+          "field_name": "session_key",
+          "type": "varchar(40)",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "session_data",
+          "field_name": "session_data",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "expire_date",
+          "field_name": "expire_date",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "token_blacklist",
+      "model": "OutstandingToken",
+      "table": "token_blacklist_outstandingtoken",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "jti",
+          "field_name": "jti",
+          "type": "varchar(255)",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "token",
+          "field_name": "token",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "expires_at",
+          "field_name": "expires_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "token_blacklist",
+      "model": "BlacklistedToken",
+      "table": "token_blacklist_blacklistedtoken",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "token_id",
+          "field_name": "token",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": true,
+          "default": null,
+          "relation": "token_blacklist_outstandingtoken",
+          "on_delete": null
+        },
+        {
+          "name": "blacklisted_at",
+          "field_name": "blacklisted_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "users",
+      "model": "CustomUser_groups",
+      "table": "users_customuser_groups",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "customuser_id",
+          "field_name": "customuser",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "group_id",
+          "field_name": "group",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "auth_group",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "users",
+      "model": "CustomUser_user_permissions",
+      "table": "users_customuser_user_permissions",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "customuser_id",
+          "field_name": "customuser",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "permission_id",
+          "field_name": "permission",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "auth_permission",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "users",
+      "model": "CustomUser",
+      "table": "users_customuser",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "password",
+          "field_name": "password",
+          "type": "varchar(128)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "last_login",
+          "field_name": "last_login",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "is_superuser",
+          "field_name": "is_superuser",
+          "type": "boolean",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "False",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "username",
+          "field_name": "username",
+          "type": "varchar(150)",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "first_name",
+          "field_name": "first_name",
+          "type": "varchar(150)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "last_name",
+          "field_name": "last_name",
+          "type": "varchar(150)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "email",
+          "field_name": "email",
+          "type": "varchar(254)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "is_staff",
+          "field_name": "is_staff",
+          "type": "boolean",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "False",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "is_active",
+          "field_name": "is_active",
+          "type": "boolean",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "True",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "date_joined",
+          "field_name": "date_joined",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "now",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "role",
+          "field_name": "role",
+          "type": "varchar(15)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'CUSTOMER'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "registration_method",
+          "field_name": "registration_method",
+          "type": "varchar(10)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "CustomUser.RegistrationMethod.LEGACY",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "phone_number",
+          "field_name": "phone_number",
+          "type": "varchar(20)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "''",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "address",
+          "field_name": "address",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "''",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "profile_picture",
+          "field_name": "profile_picture",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "profile_picture_external_url",
+          "field_name": "profile_picture_external_url",
+          "type": "varchar(500)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "groups",
+          "field_name": "groups",
+          "type": "M2M (through users_customuser_groups)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": "auth_group",
+          "on_delete": null
+        },
+        {
+          "name": "user_permissions",
+          "field_name": "user_permissions",
+          "type": "M2M (through users_customuser_user_permissions)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": "auth_permission",
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "users_customuser_email_unique_nonblank",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: expressions=(Lower(F(email)),) name='users_customuser_email_unique_nonblank' condition=(NOT (AND: ('email', '')))>"
+        },
+        {
+          "name": "users_customuser_phone_unique_nonblank",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: expressions=(Lower(F(phone_number)),) name='users_customuser_phone_unique_nonblank' condition=(NOT (AND: ('phone_number', '')))>"
+        },
+        {
+          "name": "users_customuser_username_ci_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: expressions=(Lower(F(username)),) name='users_customuser_username_ci_unique'>"
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "app": "users",
+      "model": "Customer",
+      "table": "users_customer",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": null
+        },
+        {
+          "name": "points",
+          "field_name": "points",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "birthdate",
+          "field_name": "birthdate",
+          "type": "date",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "loyalty_tier",
+          "field_name": "loyalty_tier",
+          "type": "varchar(20)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'Bronze'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "notes",
+          "field_name": "notes",
+          "type": "text",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "users",
+      "model": "PrivacyConsent",
+      "table": "users_privacyconsent",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "consent_type",
+          "field_name": "consent_type",
+          "type": "varchar(40)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "policy_version",
+          "field_name": "policy_version",
+          "type": "varchar(30)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "granted_at",
+          "field_name": "granted_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "withdrawn_at",
+          "field_name": "withdrawn_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "source",
+          "field_name": "source",
+          "type": "varchar(40)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'web'",
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "privacy_consent_version_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: fields=('user', 'consent_type', 'policy_version') name='privacy_consent_version_unique'>"
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "app": "users",
+      "model": "PrivacyRequest",
+      "table": "users_privacyrequest",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "request_type",
+          "field_name": "request_type",
+          "type": "varchar(20)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "details",
+          "field_name": "details",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "status",
+          "field_name": "status",
+          "type": "varchar(20)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'OPEN'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "response_notes",
+          "field_name": "response_notes",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "updated_at",
+          "field_name": "updated_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "users",
+      "model": "PasswordResetOTP",
+      "table": "users_passwordresetotp",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "email",
+          "field_name": "email",
+          "type": "varchar(254)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "''",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "phone_number",
+          "field_name": "phone_number",
+          "type": "varchar(20)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "''",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "otp_hash",
+          "field_name": "otp_hash",
+          "type": "varchar(128)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "''",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "reset_token_hash",
+          "field_name": "reset_token_hash",
+          "type": "varchar(128)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "expires_at",
+          "field_name": "expires_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "verified_at",
+          "field_name": "verified_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "used_at",
+          "field_name": "used_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "attempts",
+          "field_name": "attempts",
+          "type": "smallint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "request_ip",
+          "field_name": "request_ip",
+          "type": "inet",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": [
+        {
+          "name": "users_passw_user_id_87213a_idx",
+          "fields": [
+            "user",
+            "used_at",
+            "expires_at"
+          ],
+          "expressions": [],
+          "condition": null
+        },
+        {
+          "name": "users_passw_email_c46577_idx",
+          "fields": [
+            "email",
+            "created_at"
+          ],
+          "expressions": [],
+          "condition": null
+        },
+        {
+          "name": "users_protp_phone_created_idx",
+          "fields": [
+            "phone_number",
+            "created_at"
+          ],
+          "expressions": [],
+          "condition": null
+        }
+      ]
+    },
+    {
+      "app": "booking",
+      "model": "Service",
+      "table": "booking_service",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "name",
+          "field_name": "name",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "description",
+          "field_name": "description",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "duration_minutes",
+          "field_name": "duration_minutes",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "30",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "base_price",
+          "field_name": "base_price",
+          "type": "numeric(10, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "image_url",
+          "field_name": "image_url",
+          "type": "varchar(500)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "booking_service_name_ci_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: expressions=(Lower(F(name)),) name='booking_service_name_ci_unique'>"
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "app": "booking",
+      "model": "Package",
+      "table": "booking_package",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "service_id",
+          "field_name": "service",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "booking_service",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "name",
+          "field_name": "name",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "description",
+          "field_name": "description",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "price",
+          "field_name": "price",
+          "type": "numeric(10, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "inclusions",
+          "field_name": "inclusions",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "booking_package_service_name_ci_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: expressions=(F(service), Lower(F(name))) name='booking_package_service_name_ci_unique'>"
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "app": "booking",
+      "model": "Booking",
+      "table": "booking_booking",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "customer_id",
+          "field_name": "customer",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "package_id",
+          "field_name": "package",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "booking_package",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "scheduled_date",
+          "field_name": "scheduled_date",
+          "type": "date",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "scheduled_time",
+          "field_name": "scheduled_time",
+          "type": "time",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "status",
+          "field_name": "status",
+          "type": "varchar(32)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'PENDING'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "notes",
+          "field_name": "notes",
+          "type": "text",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "items",
+          "field_name": "items",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "list",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "change_history",
+          "field_name": "change_history",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "list",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "idempotency_key",
+          "field_name": "idempotency_key",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "booking_active_slot_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: fields=('scheduled_date', 'scheduled_time') name='booking_active_slot_unique' condition=(AND: ('status__in', ['PENDING', 'CONFIRMED', 'CONFIRMED_DP']))>"
+        },
+        {
+          "name": "booking_customer_idempotency_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: fields=('customer', 'idempotency_key') name='booking_customer_idempotency_unique' condition=(AND: ('idempotency_key__isnull', False), (NOT (AND: ('idempotency_key', ''))))>"
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "app": "booking",
+      "model": "BookingReview",
+      "table": "booking_bookingreview",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "booking_id",
+          "field_name": "booking",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": true,
+          "default": null,
+          "relation": "booking_booking",
+          "on_delete": null
+        },
+        {
+          "name": "customer_id",
+          "field_name": "customer",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "rating",
+          "field_name": "rating",
+          "type": "smallint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "feedback",
+          "field_name": "feedback",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "suggestions",
+          "field_name": "suggestions",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "updated_at",
+          "field_name": "updated_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "booking_review_rating_1_to_5",
+          "type": "CheckConstraint",
+          "definition": "<CheckConstraint: condition=(AND: ('rating__gte', 1), ('rating__lte', 5)) name='booking_review_rating_1_to_5'>"
+        },
+        {
+          "name": "booking_review_booking_customer_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: fields=('booking', 'customer') name='booking_review_booking_customer_unique'>"
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "app": "booking",
+      "model": "BookingDateLock",
+      "table": "booking_bookingdatelock",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "scheduled_date",
+          "field_name": "scheduled_date",
+          "type": "date",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "booking",
+      "model": "StudioUnavailableDate",
+      "table": "booking_studiounavailabledate",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "date",
+          "field_name": "date",
+          "type": "date",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "reason",
+          "field_name": "reason",
+          "type": "varchar(220)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_by_id",
+          "field_name": "created_by",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "updated_at",
+          "field_name": "updated_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "inventory",
+      "model": "Category",
+      "table": "inventory_category",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "name",
+          "field_name": "name",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "description",
+          "field_name": "description",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "is_active",
+          "field_name": "is_active",
+          "type": "boolean",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "True",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "now",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "updated_at",
+          "field_name": "updated_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "inventory",
+      "model": "Supplier",
+      "table": "inventory_supplier",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "name",
+          "field_name": "name",
+          "type": "varchar(150)",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "contact_person",
+          "field_name": "contact_person",
+          "type": "varchar(150)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "email",
+          "field_name": "email",
+          "type": "varchar(254)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "phone",
+          "field_name": "phone",
+          "type": "varchar(50)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "address",
+          "field_name": "address",
+          "type": "varchar(255)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "is_active",
+          "field_name": "is_active",
+          "type": "boolean",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "True",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "now",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "updated_at",
+          "field_name": "updated_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "inventory",
+      "model": "Product",
+      "table": "inventory_product",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "name",
+          "field_name": "name",
+          "type": "varchar(150)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "sku",
+          "field_name": "sku",
+          "type": "varchar(50)",
+          "pk": false,
+          "null": true,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "item_type",
+          "field_name": "item_type",
+          "type": "varchar(16)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'PRODUCT'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "category",
+          "field_name": "category",
+          "type": "integer",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "category_name",
+          "field_name": "category_name",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "category_description",
+          "field_name": "category_description",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "supplier",
+          "field_name": "supplier",
+          "type": "integer",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "supplier_details",
+          "field_name": "supplier_details",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "dict",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "unit",
+          "field_name": "unit",
+          "type": "varchar(30)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'pcs'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "base_unit",
+          "field_name": "base_unit",
+          "type": "varchar(2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "cost",
+          "field_name": "cost",
+          "type": "numeric(10, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0.0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "price",
+          "field_name": "price",
+          "type": "numeric(10, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0.0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "stock_level",
+          "field_name": "stock_level",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "stock_quantity",
+          "field_name": "stock_quantity",
+          "type": "numeric(12, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "reorder_point",
+          "field_name": "reorder_point",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "5",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "minimum_stock_level",
+          "field_name": "minimum_stock_level",
+          "type": "numeric(12, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "maximum_stock_level",
+          "field_name": "maximum_stock_level",
+          "type": "numeric(12, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "100",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "expiration_date",
+          "field_name": "expiration_date",
+          "type": "date",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "purchase_date",
+          "field_name": "purchase_date",
+          "type": "date",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "batch_number",
+          "field_name": "batch_number",
+          "type": "varchar(80)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "storage_location",
+          "field_name": "storage_location",
+          "type": "varchar(120)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "recipe_data",
+          "field_name": "recipe_data",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "list",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "is_cafe_item",
+          "field_name": "is_cafe_item",
+          "type": "boolean",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "True",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "is_active",
+          "field_name": "is_active",
+          "type": "boolean",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "True",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "image_url",
+          "field_name": "image_url",
+          "type": "varchar(500)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "now",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "updated_at",
+          "field_name": "updated_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "inventory",
+      "model": "InventoryEvent",
+      "table": "inventory_inventoryevent",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "event_type",
+          "field_name": "event_type",
+          "type": "varchar(32)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "product_id",
+          "field_name": "product",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "inventory_product",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "movement_type",
+          "field_name": "movement_type",
+          "type": "varchar(3)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "quantity",
+          "field_name": "quantity",
+          "type": "numeric(12, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "input_quantity",
+          "field_name": "input_quantity",
+          "type": "numeric(12, 2)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "input_unit",
+          "field_name": "input_unit",
+          "type": "varchar(3)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "reason",
+          "field_name": "reason",
+          "type": "varchar(150)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "supplier",
+          "field_name": "supplier",
+          "type": "integer",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "supplier_details",
+          "field_name": "supplier_details",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "dict",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "status",
+          "field_name": "status",
+          "type": "varchar(15)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "notes",
+          "field_name": "notes",
+          "type": "text",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "items",
+          "field_name": "items",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "list",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "payload",
+          "field_name": "payload",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "dict",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "updated_at",
+          "field_name": "updated_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "app": "payment",
+      "model": "Payment",
+      "table": "payment_payment",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "payment_type",
+          "field_name": "payment_type",
+          "type": "varchar(16)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "booking_id",
+          "field_name": "booking",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "booking_booking",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "order_id",
+          "field_name": "order",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "pos_order",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "amount",
+          "field_name": "amount",
+          "type": "numeric(10, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "method",
+          "field_name": "method",
+          "type": "varchar(15)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'GCASH'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "reference_number",
+          "field_name": "reference_number",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "transaction_id",
+          "field_name": "transaction_id",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "receipt",
+          "field_name": "receipt",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "status",
+          "field_name": "status",
+          "type": "varchar(24)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'PENDING'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "paid_at",
+          "field_name": "paid_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "verified_by_id",
+          "field_name": "verified_by",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "verified_at",
+          "field_name": "verified_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "admin_note",
+          "field_name": "admin_note",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "metadata",
+          "field_name": "metadata",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "dict",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "idempotency_key",
+          "field_name": "idempotency_key",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "updated_at",
+          "field_name": "updated_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "payment_has_one_parent",
+          "type": "CheckConstraint",
+          "definition": "<CheckConstraint: condition=(OR: (AND: ('booking_id__isnull', False), ('order_id__isnull', True), ('payment_type', 'BOOKING')), (AND: ('booking_id__isnull', True), ('order_id__isnull', False), ('payment_type', 'POS'))) name='payment_has_one_parent'>"
+        },
+        {
+          "name": "payment_type_reference_ci_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: expressions=(Lower(F(reference_number)), F(payment_type)) name='payment_type_reference_ci_unique' condition=(AND: ('reference_number__isnull', False), (NOT (AND: ('reference_number', ''))))>"
+        },
+        {
+          "name": "payment_type_idempotency_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: fields=('payment_type', 'idempotency_key') name='payment_type_idempotency_unique' condition=(AND: ('idempotency_key__isnull', False), (NOT (AND: ('idempotency_key', ''))))>"
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "app": "pos",
+      "model": "Order",
+      "table": "pos_order",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "staff_id",
+          "field_name": "staff",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "booking_id",
+          "field_name": "booking",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "booking_booking",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "subtotal",
+          "field_name": "subtotal",
+          "type": "numeric(10, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0.0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "discount_type",
+          "field_name": "discount_type",
+          "type": "varchar(10)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'FIXED'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "discount_value",
+          "field_name": "discount_value",
+          "type": "numeric(10, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0.0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "discount_amount",
+          "field_name": "discount_amount",
+          "type": "numeric(10, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0.0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "total",
+          "field_name": "total",
+          "type": "numeric(10, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0.0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "transaction_id",
+          "field_name": "transaction_id",
+          "type": "varchar(24)",
+          "pk": false,
+          "null": true,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "completed_at",
+          "field_name": "completed_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "payment_status",
+          "field_name": "payment_status",
+          "type": "varchar(15)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'PENDING'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "order_type",
+          "field_name": "order_type",
+          "type": "varchar(20)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'WALK_IN'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "line_items",
+          "field_name": "line_items",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "list",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "report_data",
+          "field_name": "report_data",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "dict",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "printed_at",
+          "field_name": "printed_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "print_status",
+          "field_name": "print_status",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "dict",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "idempotency_key",
+          "field_name": "idempotency_key",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "pos_order_staff_idempotency_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: fields=('staff', 'idempotency_key') name='pos_order_staff_idempotency_unique' condition=(AND: ('idempotency_key__isnull', False), (NOT (AND: ('idempotency_key', ''))))>"
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "app": "forecasting",
+      "model": "SalesHistoryImport",
+      "table": "forecasting_saleshistoryimport",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "source_name",
+          "field_name": "source_name",
+          "type": "varchar(120)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'cafe_sparkling_drinks'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "source_filename",
+          "field_name": "source_filename",
+          "type": "varchar(255)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "source_hash",
+          "field_name": "source_hash",
+          "type": "varchar(64)",
+          "pk": false,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "status",
+          "field_name": "status",
+          "type": "varchar(16)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'PENDING'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "is_active",
+          "field_name": "is_active",
+          "type": "boolean",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "False",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "row_count",
+          "field_name": "row_count",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "imported_row_count",
+          "field_name": "imported_row_count",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "skipped_row_count",
+          "field_name": "skipped_row_count",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "history_start",
+          "field_name": "history_start",
+          "type": "date",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "history_end",
+          "field_name": "history_end",
+          "type": "date",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "error_message",
+          "field_name": "error_message",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "completed_at",
+          "field_name": "completed_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "forecasting_one_active_sales_import_per_source",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: fields=('source_name',) name='forecasting_one_active_sales_import_per_source' condition=(AND: ('is_active', True))>"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "forecasting_source__09352b_idx",
+          "fields": [
+            "source_name",
+            "is_active"
+          ],
+          "expressions": [],
+          "condition": null
+        },
+        {
+          "name": "forecasting_status_8f9ffb_idx",
+          "fields": [
+            "status",
+            "created_at"
+          ],
+          "expressions": [],
+          "condition": null
+        }
+      ]
+    },
+    {
+      "app": "forecasting",
+      "model": "SalesHistoryRecord",
+      "table": "forecasting_saleshistoryrecord",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "import_batch_id",
+          "field_name": "import_batch",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "forecasting_saleshistoryimport",
+          "on_delete": "PROTECT"
+        },
+        {
+          "name": "source_row_number",
+          "field_name": "source_row_number",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "transaction_number",
+          "field_name": "transaction_number",
+          "type": "varchar(120)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "status",
+          "field_name": "status",
+          "type": "varchar(40)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "sold_at",
+          "field_name": "sold_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "sale_date",
+          "field_name": "sale_date",
+          "type": "date",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "quantity",
+          "field_name": "quantity",
+          "type": "numeric(12, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "total_amount",
+          "field_name": "total_amount",
+          "type": "numeric(14, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "total",
+          "field_name": "total",
+          "type": "numeric(14, 2)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "0",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "items_description",
+          "field_name": "items_description",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "forecasting_unique_sales_source_row",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: fields=('import_batch', 'source_row_number') name='forecasting_unique_sales_source_row'>"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "forecasting_import__219ce0_idx",
+          "fields": [
+            "import_batch",
+            "sale_date"
+          ],
+          "expressions": [],
+          "condition": null
+        },
+        {
+          "name": "forecasting_transac_dd6166_idx",
+          "fields": [
+            "transaction_number"
+          ],
+          "expressions": [],
+          "condition": null
+        }
+      ]
+    },
+    {
+      "app": "notifications",
+      "model": "Notification",
+      "table": "notifications_notification",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "booking_id",
+          "field_name": "booking",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "booking_booking",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "notification_type",
+          "field_name": "notification_type",
+          "type": "varchar(80)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "title",
+          "field_name": "title",
+          "type": "varchar(150)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "message",
+          "field_name": "message",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "event_key",
+          "field_name": "event_key",
+          "type": "varchar(180)",
+          "pk": false,
+          "null": true,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "is_read",
+          "field_name": "is_read",
+          "type": "boolean",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "False",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "read_at",
+          "field_name": "read_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": [
+        {
+          "name": "notificatio_user_id_6d7b1e_idx",
+          "fields": [
+            "user",
+            "is_read",
+            "-created_at"
+          ],
+          "expressions": [],
+          "condition": null
+        },
+        {
+          "name": "notificatio_user_id_f6a2bc_idx",
+          "fields": [
+            "user",
+            "-created_at"
+          ],
+          "expressions": [],
+          "condition": null
+        }
+      ]
+    },
+    {
+      "app": "notifications",
+      "model": "PushSubscription",
+      "table": "notifications_pushsubscription",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "CASCADE"
+        },
+        {
+          "name": "endpoint",
+          "field_name": "endpoint",
+          "type": "varchar(2048)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "p256dh",
+          "field_name": "p256dh",
+          "type": "varchar(255)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "auth",
+          "field_name": "auth",
+          "type": "varchar(255)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "user_agent",
+          "field_name": "user_agent",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "''",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "is_active",
+          "field_name": "is_active",
+          "type": "boolean",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "True",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "updated_at",
+          "field_name": "updated_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "notifications_push_user_endpoint_unique",
+          "type": "UniqueConstraint",
+          "definition": "<UniqueConstraint: fields=('user', 'endpoint') name='notifications_push_user_endpoint_unique'>"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "notif_push_user_active_idx",
+          "fields": [
+            "user",
+            "is_active"
+          ],
+          "expressions": [],
+          "condition": null
+        }
+      ]
+    },
+    {
+      "app": "notifications",
+      "model": "NotificationDelivery",
+      "table": "notifications_notificationdelivery",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "notification_id",
+          "field_name": "notification",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "notifications_notification",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "channel",
+          "field_name": "channel",
+          "type": "varchar(20)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "status",
+          "field_name": "status",
+          "type": "varchar(20)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "'queued'",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "provider",
+          "field_name": "provider",
+          "type": "varchar(40)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "''",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "provider_message_id",
+          "field_name": "provider_message_id",
+          "type": "varchar(255)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "''",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "error_code",
+          "field_name": "error_code",
+          "type": "varchar(80)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "''",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "error_message",
+          "field_name": "error_message",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "''",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "metadata",
+          "field_name": "metadata",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "dict",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "attempt_count",
+          "field_name": "attempt_count",
+          "type": "integer",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "1",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "created_at",
+          "field_name": "created_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "updated_at",
+          "field_name": "updated_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "sent_at",
+          "field_name": "sent_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "delivered_at",
+          "field_name": "delivered_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "next_retry_at",
+          "field_name": "next_retry_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "last_checked_at",
+          "field_name": "last_checked_at",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": [
+        {
+          "name": "notificatio_deliv_status_idx",
+          "fields": [
+            "channel",
+            "status",
+            "-created_at"
+          ],
+          "expressions": [],
+          "condition": null
+        },
+        {
+          "name": "notificatio_deliv_user_idx",
+          "fields": [
+            "user",
+            "-created_at"
+          ],
+          "expressions": [],
+          "condition": null
+        }
+      ]
+    },
+    {
+      "app": "audit",
+      "model": "AuditLog",
+      "table": "audit_auditlog",
+      "managed": true,
+      "fields": [
+        {
+          "name": "id",
+          "field_name": "id",
+          "type": "bigint",
+          "pk": true,
+          "null": false,
+          "unique": true,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "user_id",
+          "field_name": "user",
+          "type": "bigint",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": true,
+          "default": null,
+          "relation": "users_customuser",
+          "on_delete": "SET_NULL"
+        },
+        {
+          "name": "action",
+          "field_name": "action",
+          "type": "varchar(100)",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "description",
+          "field_name": "description",
+          "type": "text",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "metadata",
+          "field_name": "metadata",
+          "type": "jsonb",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": "dict",
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "ip_address",
+          "field_name": "ip_address",
+          "type": "varchar(45)",
+          "pk": false,
+          "null": true,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        },
+        {
+          "name": "timestamp",
+          "field_name": "timestamp",
+          "type": "timestamp with time zone",
+          "pk": false,
+          "null": false,
+          "unique": false,
+          "db_index": false,
+          "default": null,
+          "relation": null,
+          "on_delete": null
+        }
+      ],
+      "constraints": [],
+      "indexes": []
+    }
+  ],
+  "migrations": {
+    "admin": [
+      "0001_initial",
+      "0002_logentry_remove_auto_add",
+      "0003_logentry_add_action_flag_choices"
+    ],
+    "audit": [
+      "0001_initial",
+      "0002_initial",
+      "0003_auditlog_metadata",
+      "0004_prevent_audit_log_delete"
+    ],
+    "auth": [
+      "0001_initial",
+      "0002_alter_permission_name_max_length",
+      "0003_alter_user_email_max_length",
+      "0004_alter_user_username_opts",
+      "0005_alter_user_last_login_null",
+      "0006_require_contenttypes_0002",
+      "0007_alter_validators_add_error_messages",
+      "0008_alter_user_username_max_length",
+      "0009_alter_user_last_name_max_length",
+      "0010_alter_group_name_max_length",
+      "0011_update_proxy_permissions",
+      "0012_alter_user_first_name_max_length"
+    ],
+    "booking": [
+      "0001_initial",
+      "0002_initial",
+      "0003_alter_booking_status_bookingpayment",
+      "0004_bookingchangelog",
+      "0005_compact_booking_tables",
+      "0006_booking_uniqueness_idempotency",
+      "0007_studiounavailabledate",
+      "0008_bookingdatelock",
+      "0009_bookingreview"
+    ],
+    "chatbot": [
+      "0001_initial",
+      "0002_initial",
+      "0003_delete_chatbotfaq_delete_chatbotlog"
+    ],
+    "contenttypes": [
+      "0001_initial",
+      "0002_remove_content_type_name"
+    ],
+    "forecasting": [
+      "0001_initial",
+      "0002_initial",
+      "0003_alter_demandprediction_unique_together_and_more",
+      "0004_saleshistoryimport_saleshistoryrecord"
+    ],
+    "gallery": [
+      "0001_initial",
+      "0002_delete_galleryimage"
+    ],
+    "inventory": [
+      "0001_initial",
+      "0002_initial",
+      "0003_product_batch_number_product_expiration_date_and_more",
+      "0004_ingredient_ingredientstockmovement_recipeingredient",
+      "0005_product_is_active_deactivate_glossy_a4",
+      "0006_compact_inventory_tables",
+      "0007_catalog_reference_models"
+    ],
+    "notifications": [
+      "0001_initial",
+      "0002_initial",
+      "0003_delete_notification",
+      "0004_notification_booking_fields",
+      "0005_pushsubscription_notificationdelivery",
+      "0006_sms_delivery_lifecycle"
+    ],
+    "payment": [
+      "0001_initial",
+      "0002_payment_uniqueness_idempotency",
+      "0003_secure_receipt_upload_path",
+      "0004_alter_payment_method"
+    ],
+    "pos": [
+      "0001_initial",
+      "0002_initial",
+      "0003_alter_payment_method_alter_payment_transaction_id",
+      "0004_endofdayreport",
+      "0005_zreport_cash_fields",
+      "0006_order_discount_fields",
+      "0007_transaction_ids",
+      "0008_compact_pos_tables",
+      "0009_drop_legacy_items_column",
+      "0010_order_idempotency"
+    ],
+    "sales": [
+      "0001_initial",
+      "0002_delete_dailysalessummary"
+    ],
+    "sessions": [
+      "0001_initial"
+    ],
+    "token_blacklist": [
+      "0001_initial",
+      "0002_outstandingtoken_jti_hex",
+      "0003_auto_20171017_2007",
+      "0004_auto_20171017_2013",
+      "0005_remove_outstandingtoken_jti",
+      "0006_auto_20171017_2113",
+      "0007_auto_20171017_2214",
+      "0008_migrate_to_bigautofield",
+      "0010_fix_migrate_to_bigautofield",
+      "0011_linearizes_history",
+      "0012_alter_outstandingtoken_user",
+      "0013_alter_blacklistedtoken_options_and_more"
+    ],
+    "users": [
+      "0001_initial",
+      "0002_passwordresetotp",
+      "0003_customuser_profile_picture",
+      "0004_customuser_profile_picture_external_url",
+      "0005_normalize_customer_account_fields",
+      "0006_customuser_registration_method",
+      "0007_passwordresetotp_phone_number",
+      "0008_unique_registration_contacts",
+      "0009_privacy_controls"
+    ]
+  }
+}

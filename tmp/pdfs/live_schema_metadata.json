@@ -1,0 +1,5380 @@
+{
+  "status": "connected-read-only-schema-inspection",
+  "tables": [
+    {
+      "name": "audit_auditlog",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "action",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "description",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "ip_address",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 45,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "timestamp",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "metadata",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "audit_auditlog_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "audit_auditlog_user_id_c1cca96c_fk_users_customuser_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "audit_auditlog_pkey",
+          "definition": "CREATE UNIQUE INDEX audit_auditlog_pkey ON public.audit_auditlog USING btree (id)"
+        },
+        {
+          "name": "audit_auditlog_user_id_c1cca96c",
+          "definition": "CREATE INDEX audit_auditlog_user_id_c1cca96c ON public.audit_auditlog USING btree (user_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "auth_group",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 150,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "auth_group_name_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (name)",
+          "columns": [
+            "name"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "auth_group_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "auth_group_name_a6ea08ec_like",
+          "definition": "CREATE INDEX auth_group_name_a6ea08ec_like ON public.auth_group USING btree (name varchar_pattern_ops)"
+        },
+        {
+          "name": "auth_group_name_key",
+          "definition": "CREATE UNIQUE INDEX auth_group_name_key ON public.auth_group USING btree (name)"
+        },
+        {
+          "name": "auth_group_pkey",
+          "definition": "CREATE UNIQUE INDEX auth_group_pkey ON public.auth_group USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "auth_group_permissions",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "group_id",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "permission_id",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "auth_group_permissio_permission_id_84c5c92e_fk_auth_perm",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (permission_id) REFERENCES auth_permission(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "permission_id"
+          ],
+          "references_table": "auth_permission",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "auth_group_permissions_group_id_b120cbf9_fk_auth_group_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (group_id) REFERENCES auth_group(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "group_id"
+          ],
+          "references_table": "auth_group",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "auth_group_permissions_group_id_permission_id_0cd325b0_uniq",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (group_id, permission_id)",
+          "columns": [
+            "group_id",
+            "permission_id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "auth_group_permissions_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "auth_group_permissions_group_id_b120cbf9",
+          "definition": "CREATE INDEX auth_group_permissions_group_id_b120cbf9 ON public.auth_group_permissions USING btree (group_id)"
+        },
+        {
+          "name": "auth_group_permissions_group_id_permission_id_0cd325b0_uniq",
+          "definition": "CREATE UNIQUE INDEX auth_group_permissions_group_id_permission_id_0cd325b0_uniq ON public.auth_group_permissions USING btree (group_id, permission_id)"
+        },
+        {
+          "name": "auth_group_permissions_permission_id_84c5c92e",
+          "definition": "CREATE INDEX auth_group_permissions_permission_id_84c5c92e ON public.auth_group_permissions USING btree (permission_id)"
+        },
+        {
+          "name": "auth_group_permissions_pkey",
+          "definition": "CREATE UNIQUE INDEX auth_group_permissions_pkey ON public.auth_group_permissions USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "auth_permission",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 255,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "content_type_id",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "codename",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "auth_permission_content_type_id_2f476e4b_fk_django_co",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (content_type_id) REFERENCES django_content_type(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "content_type_id"
+          ],
+          "references_table": "django_content_type",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "auth_permission_content_type_id_codename_01ab375a_uniq",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (content_type_id, codename)",
+          "columns": [
+            "content_type_id",
+            "codename"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "auth_permission_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "auth_permission_content_type_id_2f476e4b",
+          "definition": "CREATE INDEX auth_permission_content_type_id_2f476e4b ON public.auth_permission USING btree (content_type_id)"
+        },
+        {
+          "name": "auth_permission_content_type_id_codename_01ab375a_uniq",
+          "definition": "CREATE UNIQUE INDEX auth_permission_content_type_id_codename_01ab375a_uniq ON public.auth_permission USING btree (content_type_id, codename)"
+        },
+        {
+          "name": "auth_permission_pkey",
+          "definition": "CREATE UNIQUE INDEX auth_permission_pkey ON public.auth_permission USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "booking_booking",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "scheduled_date",
+          "data_type": "date",
+          "udt": "date",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "scheduled_time",
+          "data_type": "time without time zone",
+          "udt": "time",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "status",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 32,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "notes",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "customer_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "package_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "change_history",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "items",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "idempotency_key",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "booking_booking_customer_id_4ba0ea8c_fk_users_customuser_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (customer_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "customer_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "booking_booking_package_id_f00bf119_fk_booking_package_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (package_id) REFERENCES booking_package(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "package_id"
+          ],
+          "references_table": "booking_package",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "booking_booking_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "booking_active_slot_unique",
+          "definition": "CREATE UNIQUE INDEX booking_active_slot_unique ON public.booking_booking USING btree (scheduled_date, scheduled_time) WHERE ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'CONFIRMED'::character varying, 'CONFIRMED_DP'::character varying])::text[]))"
+        },
+        {
+          "name": "booking_booking_customer_id_4ba0ea8c",
+          "definition": "CREATE INDEX booking_booking_customer_id_4ba0ea8c ON public.booking_booking USING btree (customer_id)"
+        },
+        {
+          "name": "booking_booking_package_id_f00bf119",
+          "definition": "CREATE INDEX booking_booking_package_id_f00bf119 ON public.booking_booking USING btree (package_id)"
+        },
+        {
+          "name": "booking_booking_pkey",
+          "definition": "CREATE UNIQUE INDEX booking_booking_pkey ON public.booking_booking USING btree (id)"
+        },
+        {
+          "name": "booking_customer_idempotency_unique",
+          "definition": "CREATE UNIQUE INDEX booking_customer_idempotency_unique ON public.booking_booking USING btree (customer_id, idempotency_key) WHERE ((idempotency_key IS NOT NULL) AND (NOT (((idempotency_key)::text = ''::text) AND (idempotency_key IS NOT NULL))))"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "booking_bookingdatelock",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "scheduled_date",
+          "data_type": "date",
+          "udt": "date",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "booking_bookingdatelock_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "booking_bookingdatelock_scheduled_date_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (scheduled_date)",
+          "columns": [
+            "scheduled_date"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "booking_bookingdatelock_pkey",
+          "definition": "CREATE UNIQUE INDEX booking_bookingdatelock_pkey ON public.booking_bookingdatelock USING btree (id)"
+        },
+        {
+          "name": "booking_bookingdatelock_scheduled_date_key",
+          "definition": "CREATE UNIQUE INDEX booking_bookingdatelock_scheduled_date_key ON public.booking_bookingdatelock USING btree (scheduled_date)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "booking_bookingreview",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "rating",
+          "data_type": "smallint",
+          "udt": "int2",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 16,
+          "scale": 0
+        },
+        {
+          "name": "feedback",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "suggestions",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "booking_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "customer_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "booking_bookingrevie_customer_id_f3e1343b_fk_users_cus",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (customer_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "customer_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "booking_bookingreview_booking_id_cf06c94b_fk_booking_booking_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (booking_id) REFERENCES booking_booking(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "booking_id"
+          ],
+          "references_table": "booking_booking",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "booking_bookingreview_booking_id_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (booking_id)",
+          "columns": [
+            "booking_id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "booking_bookingreview_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "booking_bookingreview_rating_check",
+          "type": "CHECK",
+          "definition": "CHECK ((rating >= 0))",
+          "columns": [
+            "rating"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "booking_review_booking_customer_unique",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (booking_id, customer_id)",
+          "columns": [
+            "booking_id",
+            "customer_id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "booking_review_rating_1_to_5",
+          "type": "CHECK",
+          "definition": "CHECK (((rating >= 1) AND (rating <= 5)))",
+          "columns": [
+            "rating"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "booking_bookingreview_booking_id_key",
+          "definition": "CREATE UNIQUE INDEX booking_bookingreview_booking_id_key ON public.booking_bookingreview USING btree (booking_id)"
+        },
+        {
+          "name": "booking_bookingreview_customer_id_f3e1343b",
+          "definition": "CREATE INDEX booking_bookingreview_customer_id_f3e1343b ON public.booking_bookingreview USING btree (customer_id)"
+        },
+        {
+          "name": "booking_bookingreview_pkey",
+          "definition": "CREATE UNIQUE INDEX booking_bookingreview_pkey ON public.booking_bookingreview USING btree (id)"
+        },
+        {
+          "name": "booking_review_booking_customer_unique",
+          "definition": "CREATE UNIQUE INDEX booking_review_booking_customer_unique ON public.booking_bookingreview USING btree (booking_id, customer_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "booking_package",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "description",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "price",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "inclusions",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "service_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "booking_package_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "booking_package_service_id_2d716b75_fk_booking_service_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (service_id) REFERENCES booking_service(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "service_id"
+          ],
+          "references_table": "booking_service",
+          "references_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "booking_package_pkey",
+          "definition": "CREATE UNIQUE INDEX booking_package_pkey ON public.booking_package USING btree (id)"
+        },
+        {
+          "name": "booking_package_service_id_2d716b75",
+          "definition": "CREATE INDEX booking_package_service_id_2d716b75 ON public.booking_package USING btree (service_id)"
+        },
+        {
+          "name": "booking_package_service_name_ci_unique",
+          "definition": "CREATE UNIQUE INDEX booking_package_service_name_ci_unique ON public.booking_package USING btree (service_id, lower((name)::text))"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "booking_service",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "description",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "duration_minutes",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "base_price",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "image_url",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 500,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "booking_service_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "booking_service_name_ci_unique",
+          "definition": "CREATE UNIQUE INDEX booking_service_name_ci_unique ON public.booking_service USING btree (lower((name)::text))"
+        },
+        {
+          "name": "booking_service_pkey",
+          "definition": "CREATE UNIQUE INDEX booking_service_pkey ON public.booking_service USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "booking_studiounavailabledate",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "date",
+          "data_type": "date",
+          "udt": "date",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "reason",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 220,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_by_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "booking_studiounavai_created_by_id_0069d534_fk_users_cus",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (created_by_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "created_by_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "booking_studiounavailabledate_date_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (date)",
+          "columns": [
+            "date"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "booking_studiounavailabledate_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "booking_studiounavailabledate_created_by_id_0069d534",
+          "definition": "CREATE INDEX booking_studiounavailabledate_created_by_id_0069d534 ON public.booking_studiounavailabledate USING btree (created_by_id)"
+        },
+        {
+          "name": "booking_studiounavailabledate_date_key",
+          "definition": "CREATE UNIQUE INDEX booking_studiounavailabledate_date_key ON public.booking_studiounavailabledate USING btree (date)"
+        },
+        {
+          "name": "booking_studiounavailabledate_pkey",
+          "definition": "CREATE UNIQUE INDEX booking_studiounavailabledate_pkey ON public.booking_studiounavailabledate USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "django_admin_log",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "action_time",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "object_id",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "object_repr",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 200,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "action_flag",
+          "data_type": "smallint",
+          "udt": "int2",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 16,
+          "scale": 0
+        },
+        {
+          "name": "change_message",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "content_type_id",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "django_admin_log_action_flag_check",
+          "type": "CHECK",
+          "definition": "CHECK ((action_flag >= 0))",
+          "columns": [
+            "action_flag"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "django_admin_log_content_type_id_c4bce8eb_fk_django_co",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (content_type_id) REFERENCES django_content_type(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "content_type_id"
+          ],
+          "references_table": "django_content_type",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "django_admin_log_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "django_admin_log_user_id_c564eba6_fk_users_customuser_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "django_admin_log_content_type_id_c4bce8eb",
+          "definition": "CREATE INDEX django_admin_log_content_type_id_c4bce8eb ON public.django_admin_log USING btree (content_type_id)"
+        },
+        {
+          "name": "django_admin_log_pkey",
+          "definition": "CREATE UNIQUE INDEX django_admin_log_pkey ON public.django_admin_log USING btree (id)"
+        },
+        {
+          "name": "django_admin_log_user_id_c564eba6",
+          "definition": "CREATE INDEX django_admin_log_user_id_c564eba6 ON public.django_admin_log USING btree (user_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "django_content_type",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "app_label",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "model",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "django_content_type_app_label_model_76bd3d3b_uniq",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (app_label, model)",
+          "columns": [
+            "app_label",
+            "model"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "django_content_type_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "django_content_type_app_label_model_76bd3d3b_uniq",
+          "definition": "CREATE UNIQUE INDEX django_content_type_app_label_model_76bd3d3b_uniq ON public.django_content_type USING btree (app_label, model)"
+        },
+        {
+          "name": "django_content_type_pkey",
+          "definition": "CREATE UNIQUE INDEX django_content_type_pkey ON public.django_content_type USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "django_migrations",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "app",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 255,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 255,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "applied",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "django_migrations_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "django_migrations_pkey",
+          "definition": "CREATE UNIQUE INDEX django_migrations_pkey ON public.django_migrations USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "django_session",
+      "columns": [
+        {
+          "name": "session_key",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 40,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "session_data",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "expire_date",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "django_session_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (session_key)",
+          "columns": [
+            "session_key"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "django_session_expire_date_a5c62663",
+          "definition": "CREATE INDEX django_session_expire_date_a5c62663 ON public.django_session USING btree (expire_date)"
+        },
+        {
+          "name": "django_session_pkey",
+          "definition": "CREATE UNIQUE INDEX django_session_pkey ON public.django_session USING btree (session_key)"
+        },
+        {
+          "name": "django_session_session_key_c0390e0f_like",
+          "definition": "CREATE INDEX django_session_session_key_c0390e0f_like ON public.django_session USING btree (session_key varchar_pattern_ops)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "forecasting_saleshistoryimport",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "source_name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 120,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "source_filename",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 255,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "source_hash",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 64,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "status",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 16,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "is_active",
+          "data_type": "boolean",
+          "udt": "bool",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "row_count",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "imported_row_count",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "skipped_row_count",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "history_start",
+          "data_type": "date",
+          "udt": "date",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "history_end",
+          "data_type": "date",
+          "udt": "date",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "error_message",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "completed_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "forecasting_saleshistoryimport_imported_row_count_check",
+          "type": "CHECK",
+          "definition": "CHECK ((imported_row_count >= 0))",
+          "columns": [
+            "imported_row_count"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "forecasting_saleshistoryimport_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "forecasting_saleshistoryimport_row_count_check",
+          "type": "CHECK",
+          "definition": "CHECK ((row_count >= 0))",
+          "columns": [
+            "row_count"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "forecasting_saleshistoryimport_skipped_row_count_check",
+          "type": "CHECK",
+          "definition": "CHECK ((skipped_row_count >= 0))",
+          "columns": [
+            "skipped_row_count"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "forecasting_saleshistoryimport_source_hash_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (source_hash)",
+          "columns": [
+            "source_hash"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "forecasting_one_active_sales_import_per_source",
+          "definition": "CREATE UNIQUE INDEX forecasting_one_active_sales_import_per_source ON public.forecasting_saleshistoryimport USING btree (source_name) WHERE is_active"
+        },
+        {
+          "name": "forecasting_saleshistoryimport_pkey",
+          "definition": "CREATE UNIQUE INDEX forecasting_saleshistoryimport_pkey ON public.forecasting_saleshistoryimport USING btree (id)"
+        },
+        {
+          "name": "forecasting_saleshistoryimport_source_hash_3a2306e7_like",
+          "definition": "CREATE INDEX forecasting_saleshistoryimport_source_hash_3a2306e7_like ON public.forecasting_saleshistoryimport USING btree (source_hash varchar_pattern_ops)"
+        },
+        {
+          "name": "forecasting_saleshistoryimport_source_hash_key",
+          "definition": "CREATE UNIQUE INDEX forecasting_saleshistoryimport_source_hash_key ON public.forecasting_saleshistoryimport USING btree (source_hash)"
+        },
+        {
+          "name": "forecasting_source__09352b_idx",
+          "definition": "CREATE INDEX forecasting_source__09352b_idx ON public.forecasting_saleshistoryimport USING btree (source_name, is_active)"
+        },
+        {
+          "name": "forecasting_status_8f9ffb_idx",
+          "definition": "CREATE INDEX forecasting_status_8f9ffb_idx ON public.forecasting_saleshistoryimport USING btree (status, created_at)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "forecasting_saleshistoryrecord",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "source_row_number",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "transaction_number",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 120,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "status",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 40,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "sold_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "sale_date",
+          "data_type": "date",
+          "udt": "date",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "quantity",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 12,
+          "scale": 2
+        },
+        {
+          "name": "total_amount",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 14,
+          "scale": 2
+        },
+        {
+          "name": "total",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 14,
+          "scale": 2
+        },
+        {
+          "name": "items_description",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "import_batch_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "forecasting_saleshis_import_batch_id_47388bb3_fk_forecasti",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (import_batch_id) REFERENCES forecasting_saleshistoryimport(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "import_batch_id"
+          ],
+          "references_table": "forecasting_saleshistoryimport",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "forecasting_saleshistoryrecord_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "forecasting_saleshistoryrecord_source_row_number_check",
+          "type": "CHECK",
+          "definition": "CHECK ((source_row_number >= 0))",
+          "columns": [
+            "source_row_number"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "forecasting_unique_sales_source_row",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (import_batch_id, source_row_number)",
+          "columns": [
+            "import_batch_id",
+            "source_row_number"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "forecasting_import__219ce0_idx",
+          "definition": "CREATE INDEX forecasting_import__219ce0_idx ON public.forecasting_saleshistoryrecord USING btree (import_batch_id, sale_date)"
+        },
+        {
+          "name": "forecasting_saleshistoryrecord_import_batch_id_47388bb3",
+          "definition": "CREATE INDEX forecasting_saleshistoryrecord_import_batch_id_47388bb3 ON public.forecasting_saleshistoryrecord USING btree (import_batch_id)"
+        },
+        {
+          "name": "forecasting_saleshistoryrecord_pkey",
+          "definition": "CREATE UNIQUE INDEX forecasting_saleshistoryrecord_pkey ON public.forecasting_saleshistoryrecord USING btree (id)"
+        },
+        {
+          "name": "forecasting_saleshistoryrecord_sale_date_0861ff3e",
+          "definition": "CREATE INDEX forecasting_saleshistoryrecord_sale_date_0861ff3e ON public.forecasting_saleshistoryrecord USING btree (sale_date)"
+        },
+        {
+          "name": "forecasting_transac_dd6166_idx",
+          "definition": "CREATE INDEX forecasting_transac_dd6166_idx ON public.forecasting_saleshistoryrecord USING btree (transaction_number)"
+        },
+        {
+          "name": "forecasting_unique_sales_source_row",
+          "definition": "CREATE UNIQUE INDEX forecasting_unique_sales_source_row ON public.forecasting_saleshistoryrecord USING btree (import_batch_id, source_row_number)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "inventory_category",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "description",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "is_active",
+          "data_type": "boolean",
+          "udt": "bool",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "inventory_category_name_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (name)",
+          "columns": [
+            "name"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "inventory_category_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "inventory_category_name_c89a8bc0_like",
+          "definition": "CREATE INDEX inventory_category_name_c89a8bc0_like ON public.inventory_category USING btree (name varchar_pattern_ops)"
+        },
+        {
+          "name": "inventory_category_name_key",
+          "definition": "CREATE UNIQUE INDEX inventory_category_name_key ON public.inventory_category USING btree (name)"
+        },
+        {
+          "name": "inventory_category_pkey",
+          "definition": "CREATE UNIQUE INDEX inventory_category_pkey ON public.inventory_category USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "inventory_inventoryevent",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "event_type",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 32,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "movement_type",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 3,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "quantity",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 12,
+          "scale": 2
+        },
+        {
+          "name": "input_quantity",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 12,
+          "scale": 2
+        },
+        {
+          "name": "input_unit",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 3,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "reason",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 150,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "supplier",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "supplier_details",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "status",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 15,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "notes",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "items",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "payload",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "product_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "inventory_inventorye_product_id_9bb76fad_fk_inventory",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (product_id) REFERENCES inventory_product(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "product_id"
+          ],
+          "references_table": "inventory_product",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "inventory_inventorye_user_id_fbbb6fe2_fk_users_cus",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "inventory_inventoryevent_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "inventory_inventoryevent_supplier_check",
+          "type": "CHECK",
+          "definition": "CHECK ((supplier >= 0))",
+          "columns": [
+            "supplier"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "inventory_inventoryevent_pkey",
+          "definition": "CREATE UNIQUE INDEX inventory_inventoryevent_pkey ON public.inventory_inventoryevent USING btree (id)"
+        },
+        {
+          "name": "inventory_inventoryevent_product_id_9bb76fad",
+          "definition": "CREATE INDEX inventory_inventoryevent_product_id_9bb76fad ON public.inventory_inventoryevent USING btree (product_id)"
+        },
+        {
+          "name": "inventory_inventoryevent_user_id_fbbb6fe2",
+          "definition": "CREATE INDEX inventory_inventoryevent_user_id_fbbb6fe2 ON public.inventory_inventoryevent USING btree (user_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "inventory_product",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 150,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "sku",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 50,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "cost",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "price",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "stock_level",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "reorder_point",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "is_cafe_item",
+          "data_type": "boolean",
+          "udt": "bool",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "image_url",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 500,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "category",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "supplier",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "batch_number",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 80,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "expiration_date",
+          "data_type": "date",
+          "udt": "date",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "maximum_stock_level",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 12,
+          "scale": 2
+        },
+        {
+          "name": "purchase_date",
+          "data_type": "date",
+          "udt": "date",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "storage_location",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 120,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "unit",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 30,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "is_active",
+          "data_type": "boolean",
+          "udt": "bool",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "base_unit",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 2,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "category_description",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "category_name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "item_type",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 16,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "minimum_stock_level",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 12,
+          "scale": 2
+        },
+        {
+          "name": "recipe_data",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "stock_quantity",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 12,
+          "scale": 2
+        },
+        {
+          "name": "supplier_details",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "inventory_product_category_ce037ffc_check",
+          "type": "CHECK",
+          "definition": "CHECK ((category >= 0))",
+          "columns": [
+            "category"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "inventory_product_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "inventory_product_sku_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (sku)",
+          "columns": [
+            "sku"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "inventory_product_supplier_5082039f_check",
+          "type": "CHECK",
+          "definition": "CHECK ((supplier >= 0))",
+          "columns": [
+            "supplier"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "inventory_product_pkey",
+          "definition": "CREATE UNIQUE INDEX inventory_product_pkey ON public.inventory_product USING btree (id)"
+        },
+        {
+          "name": "inventory_product_sku_2aad2a63_like",
+          "definition": "CREATE INDEX inventory_product_sku_2aad2a63_like ON public.inventory_product USING btree (sku varchar_pattern_ops)"
+        },
+        {
+          "name": "inventory_product_sku_key",
+          "definition": "CREATE UNIQUE INDEX inventory_product_sku_key ON public.inventory_product USING btree (sku)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "inventory_supplier",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 150,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "contact_person",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 150,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "email",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 254,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "phone",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 50,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "address",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 255,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "is_active",
+          "data_type": "boolean",
+          "udt": "bool",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "inventory_supplier_name_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (name)",
+          "columns": [
+            "name"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "inventory_supplier_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "inventory_supplier_name_727356f5_like",
+          "definition": "CREATE INDEX inventory_supplier_name_727356f5_like ON public.inventory_supplier USING btree (name varchar_pattern_ops)"
+        },
+        {
+          "name": "inventory_supplier_name_key",
+          "definition": "CREATE UNIQUE INDEX inventory_supplier_name_key ON public.inventory_supplier USING btree (name)"
+        },
+        {
+          "name": "inventory_supplier_pkey",
+          "definition": "CREATE UNIQUE INDEX inventory_supplier_pkey ON public.inventory_supplier USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "notifications_notification",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "notification_type",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 80,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "title",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 150,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "message",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "is_read",
+          "data_type": "boolean",
+          "udt": "bool",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "read_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "booking_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "event_key",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 180,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "notifications_notifi_booking_id_6e796c4c_fk_booking_b",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (booking_id) REFERENCES booking_booking(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "booking_id"
+          ],
+          "references_table": "booking_booking",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "notifications_notifi_user_id_b5e8c0ff_fk_users_cus",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "notifications_notification_event_key_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (event_key)",
+          "columns": [
+            "event_key"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "notifications_notification_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "notificatio_user_id_6d7b1e_idx",
+          "definition": "CREATE INDEX notificatio_user_id_6d7b1e_idx ON public.notifications_notification USING btree (user_id, is_read, created_at DESC)"
+        },
+        {
+          "name": "notificatio_user_id_f6a2bc_idx",
+          "definition": "CREATE INDEX notificatio_user_id_f6a2bc_idx ON public.notifications_notification USING btree (user_id, created_at DESC)"
+        },
+        {
+          "name": "notifications_notification_booking_id_6e796c4c",
+          "definition": "CREATE INDEX notifications_notification_booking_id_6e796c4c ON public.notifications_notification USING btree (booking_id)"
+        },
+        {
+          "name": "notifications_notification_event_key_9262fb0a_like",
+          "definition": "CREATE INDEX notifications_notification_event_key_9262fb0a_like ON public.notifications_notification USING btree (event_key varchar_pattern_ops)"
+        },
+        {
+          "name": "notifications_notification_event_key_key",
+          "definition": "CREATE UNIQUE INDEX notifications_notification_event_key_key ON public.notifications_notification USING btree (event_key)"
+        },
+        {
+          "name": "notifications_notification_pkey",
+          "definition": "CREATE UNIQUE INDEX notifications_notification_pkey ON public.notifications_notification USING btree (id)"
+        },
+        {
+          "name": "notifications_notification_user_id_b5e8c0ff",
+          "definition": "CREATE INDEX notifications_notification_user_id_b5e8c0ff ON public.notifications_notification USING btree (user_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "notifications_notificationdelivery",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "channel",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 20,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "status",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 20,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "provider",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 40,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "provider_message_id",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 255,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "error_code",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 80,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "error_message",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "metadata",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "attempt_count",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "sent_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "notification_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "delivered_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "next_retry_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "last_checked_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "notifications_notifi_notification_id_4ecbb380_fk_notificat",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (notification_id) REFERENCES notifications_notification(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "notification_id"
+          ],
+          "references_table": "notifications_notification",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "notifications_notifi_user_id_2fcc07e8_fk_users_cus",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "notifications_notificationdelivery_attempt_count_check",
+          "type": "CHECK",
+          "definition": "CHECK ((attempt_count >= 0))",
+          "columns": [
+            "attempt_count"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "notifications_notificationdelivery_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "notificatio_deliv_status_idx",
+          "definition": "CREATE INDEX notificatio_deliv_status_idx ON public.notifications_notificationdelivery USING btree (channel, status, created_at DESC)"
+        },
+        {
+          "name": "notificatio_deliv_user_idx",
+          "definition": "CREATE INDEX notificatio_deliv_user_idx ON public.notifications_notificationdelivery USING btree (user_id, created_at DESC)"
+        },
+        {
+          "name": "notifications_notificationdelivery_next_retry_at_924bf61e",
+          "definition": "CREATE INDEX notifications_notificationdelivery_next_retry_at_924bf61e ON public.notifications_notificationdelivery USING btree (next_retry_at)"
+        },
+        {
+          "name": "notifications_notificationdelivery_notification_id_4ecbb380",
+          "definition": "CREATE INDEX notifications_notificationdelivery_notification_id_4ecbb380 ON public.notifications_notificationdelivery USING btree (notification_id)"
+        },
+        {
+          "name": "notifications_notificationdelivery_pkey",
+          "definition": "CREATE UNIQUE INDEX notifications_notificationdelivery_pkey ON public.notifications_notificationdelivery USING btree (id)"
+        },
+        {
+          "name": "notifications_notificationdelivery_user_id_2fcc07e8",
+          "definition": "CREATE INDEX notifications_notificationdelivery_user_id_2fcc07e8 ON public.notifications_notificationdelivery USING btree (user_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "notifications_pushsubscription",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "endpoint",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 2048,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "p256dh",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 255,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "auth",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 255,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "user_agent",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "is_active",
+          "data_type": "boolean",
+          "udt": "bool",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "notifications_push_user_endpoint_unique",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (user_id, endpoint)",
+          "columns": [
+            "user_id",
+            "endpoint"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "notifications_pushsu_user_id_ffe8030a_fk_users_cus",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "notifications_pushsubscription_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "notif_push_user_active_idx",
+          "definition": "CREATE INDEX notif_push_user_active_idx ON public.notifications_pushsubscription USING btree (user_id, is_active)"
+        },
+        {
+          "name": "notifications_push_user_endpoint_unique",
+          "definition": "CREATE UNIQUE INDEX notifications_push_user_endpoint_unique ON public.notifications_pushsubscription USING btree (user_id, endpoint)"
+        },
+        {
+          "name": "notifications_pushsubscription_pkey",
+          "definition": "CREATE UNIQUE INDEX notifications_pushsubscription_pkey ON public.notifications_pushsubscription USING btree (id)"
+        },
+        {
+          "name": "notifications_pushsubscription_user_id_ffe8030a",
+          "definition": "CREATE INDEX notifications_pushsubscription_user_id_ffe8030a ON public.notifications_pushsubscription USING btree (user_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "payment_payment",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "payment_type",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 16,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "amount",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "method",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 15,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "reference_number",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "transaction_id",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "receipt",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "status",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 24,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "paid_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "verified_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "admin_note",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "metadata",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "booking_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "order_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "verified_by_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "idempotency_key",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "payment_has_one_parent",
+          "type": "CHECK",
+          "definition": "CHECK ((((booking_id IS NOT NULL) AND (order_id IS NULL) AND ((payment_type)::text = 'BOOKING'::text)) OR ((booking_id IS NULL) AND (order_id IS NOT NULL) AND ((payment_type)::text = 'POS'::text))))",
+          "columns": [
+            "booking_id",
+            "order_id",
+            "payment_type"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "payment_payment_booking_id_f378daee_fk_booking_booking_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (booking_id) REFERENCES booking_booking(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "booking_id"
+          ],
+          "references_table": "booking_booking",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "payment_payment_order_id_22b45881_fk_pos_order_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (order_id) REFERENCES pos_order(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "order_id"
+          ],
+          "references_table": "pos_order",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "payment_payment_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "payment_payment_verified_by_id_e553887b_fk_users_customuser_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (verified_by_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "verified_by_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "payment_payment_booking_id_f378daee",
+          "definition": "CREATE INDEX payment_payment_booking_id_f378daee ON public.payment_payment USING btree (booking_id)"
+        },
+        {
+          "name": "payment_payment_order_id_22b45881",
+          "definition": "CREATE INDEX payment_payment_order_id_22b45881 ON public.payment_payment USING btree (order_id)"
+        },
+        {
+          "name": "payment_payment_pkey",
+          "definition": "CREATE UNIQUE INDEX payment_payment_pkey ON public.payment_payment USING btree (id)"
+        },
+        {
+          "name": "payment_payment_verified_by_id_e553887b",
+          "definition": "CREATE INDEX payment_payment_verified_by_id_e553887b ON public.payment_payment USING btree (verified_by_id)"
+        },
+        {
+          "name": "payment_type_idempotency_unique",
+          "definition": "CREATE UNIQUE INDEX payment_type_idempotency_unique ON public.payment_payment USING btree (payment_type, idempotency_key) WHERE ((idempotency_key IS NOT NULL) AND (NOT (((idempotency_key)::text = ''::text) AND (idempotency_key IS NOT NULL))))"
+        },
+        {
+          "name": "payment_type_reference_ci_unique",
+          "definition": "CREATE UNIQUE INDEX payment_type_reference_ci_unique ON public.payment_payment USING btree (lower((reference_number)::text), payment_type) WHERE ((reference_number IS NOT NULL) AND (NOT (((reference_number)::text = ''::text) AND (reference_number IS NOT NULL))))"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "pos_order",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "total",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "payment_status",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 15,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "order_type",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 20,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "booking_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "staff_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "subtotal",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "discount_type",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 10,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "discount_value",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "discount_amount",
+          "data_type": "numeric",
+          "udt": "numeric",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 10,
+          "scale": 2
+        },
+        {
+          "name": "transaction_id",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 24,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "completed_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "print_status",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "printed_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "report_data",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "line_items",
+          "data_type": "jsonb",
+          "udt": "jsonb",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "idempotency_key",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "pos_order_booking_id_34c74e6c_fk_booking_booking_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (booking_id) REFERENCES booking_booking(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "booking_id"
+          ],
+          "references_table": "booking_booking",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "pos_order_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "pos_order_staff_id_d782535b_fk_users_customuser_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (staff_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "staff_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "pos_order_transaction_id_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (transaction_id)",
+          "columns": [
+            "transaction_id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "pos_order_booking_id_34c74e6c",
+          "definition": "CREATE INDEX pos_order_booking_id_34c74e6c ON public.pos_order USING btree (booking_id)"
+        },
+        {
+          "name": "pos_order_pkey",
+          "definition": "CREATE UNIQUE INDEX pos_order_pkey ON public.pos_order USING btree (id)"
+        },
+        {
+          "name": "pos_order_staff_id_d782535b",
+          "definition": "CREATE INDEX pos_order_staff_id_d782535b ON public.pos_order USING btree (staff_id)"
+        },
+        {
+          "name": "pos_order_staff_idempotency_unique",
+          "definition": "CREATE UNIQUE INDEX pos_order_staff_idempotency_unique ON public.pos_order USING btree (staff_id, idempotency_key) WHERE ((idempotency_key IS NOT NULL) AND (NOT (((idempotency_key)::text = ''::text) AND (idempotency_key IS NOT NULL))))"
+        },
+        {
+          "name": "pos_order_transaction_id_80e32b87_like",
+          "definition": "CREATE INDEX pos_order_transaction_id_80e32b87_like ON public.pos_order USING btree (transaction_id varchar_pattern_ops)"
+        },
+        {
+          "name": "pos_order_transaction_id_key",
+          "definition": "CREATE UNIQUE INDEX pos_order_transaction_id_key ON public.pos_order USING btree (transaction_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "token_blacklist_blacklistedtoken",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "blacklisted_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "token_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "token_blacklist_blacklistedtoken_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "token_blacklist_blacklistedtoken_token_id_3cc7fe56_fk",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (token_id) REFERENCES token_blacklist_outstandingtoken(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "token_id"
+          ],
+          "references_table": "token_blacklist_outstandingtoken",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "token_blacklist_blacklistedtoken_token_id_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (token_id)",
+          "columns": [
+            "token_id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "token_blacklist_blacklistedtoken_pkey",
+          "definition": "CREATE UNIQUE INDEX token_blacklist_blacklistedtoken_pkey ON public.token_blacklist_blacklistedtoken USING btree (id)"
+        },
+        {
+          "name": "token_blacklist_blacklistedtoken_token_id_key",
+          "definition": "CREATE UNIQUE INDEX token_blacklist_blacklistedtoken_token_id_key ON public.token_blacklist_blacklistedtoken USING btree (token_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "token_blacklist_outstandingtoken",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "token",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "expires_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "jti",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 255,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "token_blacklist_outs_user_id_83bc629a_fk_users_cus",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "token_blacklist_outstandingtoken_jti_hex_d9bdf6f7_uniq",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (jti)",
+          "columns": [
+            "jti"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "token_blacklist_outstandingtoken_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "token_blacklist_outstandingtoken_jti_hex_d9bdf6f7_like",
+          "definition": "CREATE INDEX token_blacklist_outstandingtoken_jti_hex_d9bdf6f7_like ON public.token_blacklist_outstandingtoken USING btree (jti varchar_pattern_ops)"
+        },
+        {
+          "name": "token_blacklist_outstandingtoken_jti_hex_d9bdf6f7_uniq",
+          "definition": "CREATE UNIQUE INDEX token_blacklist_outstandingtoken_jti_hex_d9bdf6f7_uniq ON public.token_blacklist_outstandingtoken USING btree (jti)"
+        },
+        {
+          "name": "token_blacklist_outstandingtoken_pkey",
+          "definition": "CREATE UNIQUE INDEX token_blacklist_outstandingtoken_pkey ON public.token_blacklist_outstandingtoken USING btree (id)"
+        },
+        {
+          "name": "token_blacklist_outstandingtoken_user_id_83bc629a",
+          "definition": "CREATE INDEX token_blacklist_outstandingtoken_user_id_83bc629a ON public.token_blacklist_outstandingtoken USING btree (user_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "users_customer",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "points",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        },
+        {
+          "name": "birthdate",
+          "data_type": "date",
+          "udt": "date",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "loyalty_tier",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 20,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "notes",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "users_customer_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "users_customer_user_id_a09bb4be_fk_users_customuser_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "users_customer_user_id_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (user_id)",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "users_customer_pkey",
+          "definition": "CREATE UNIQUE INDEX users_customer_pkey ON public.users_customer USING btree (id)"
+        },
+        {
+          "name": "users_customer_user_id_key",
+          "definition": "CREATE UNIQUE INDEX users_customer_user_id_key ON public.users_customer USING btree (user_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "users_customuser",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "password",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 128,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "last_login",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "is_superuser",
+          "data_type": "boolean",
+          "udt": "bool",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "username",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 150,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "first_name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 150,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "last_name",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 150,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "email",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 254,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "is_staff",
+          "data_type": "boolean",
+          "udt": "bool",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "is_active",
+          "data_type": "boolean",
+          "udt": "bool",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "date_joined",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "role",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 15,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "phone_number",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 20,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "address",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "profile_picture",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": true,
+          "default": null,
+          "max_length": 100,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "profile_picture_external_url",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 500,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "registration_method",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 10,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "users_customuser_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "users_customuser_username_key",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (username)",
+          "columns": [
+            "username"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "users_customuser_email_unique_nonblank",
+          "definition": "CREATE UNIQUE INDEX users_customuser_email_unique_nonblank ON public.users_customuser USING btree (lower((email)::text)) WHERE (NOT ((email)::text = ''::text))"
+        },
+        {
+          "name": "users_customuser_phone_unique_nonblank",
+          "definition": "CREATE UNIQUE INDEX users_customuser_phone_unique_nonblank ON public.users_customuser USING btree (lower((phone_number)::text)) WHERE (NOT ((phone_number)::text = ''::text))"
+        },
+        {
+          "name": "users_customuser_pkey",
+          "definition": "CREATE UNIQUE INDEX users_customuser_pkey ON public.users_customuser USING btree (id)"
+        },
+        {
+          "name": "users_customuser_username_80452fdf_like",
+          "definition": "CREATE INDEX users_customuser_username_80452fdf_like ON public.users_customuser USING btree (username varchar_pattern_ops)"
+        },
+        {
+          "name": "users_customuser_username_ci_unique",
+          "definition": "CREATE UNIQUE INDEX users_customuser_username_ci_unique ON public.users_customuser USING btree (lower((username)::text))"
+        },
+        {
+          "name": "users_customuser_username_key",
+          "definition": "CREATE UNIQUE INDEX users_customuser_username_key ON public.users_customuser USING btree (username)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "users_customuser_groups",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "customuser_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "group_id",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "users_customuser_gro_customuser_id_958147bf_fk_users_cus",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (customuser_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "customuser_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "users_customuser_groups_customuser_id_group_id_76b619e3_uniq",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (customuser_id, group_id)",
+          "columns": [
+            "customuser_id",
+            "group_id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "users_customuser_groups_group_id_01390b14_fk_auth_group_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (group_id) REFERENCES auth_group(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "group_id"
+          ],
+          "references_table": "auth_group",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "users_customuser_groups_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "users_customuser_groups_customuser_id_958147bf",
+          "definition": "CREATE INDEX users_customuser_groups_customuser_id_958147bf ON public.users_customuser_groups USING btree (customuser_id)"
+        },
+        {
+          "name": "users_customuser_groups_customuser_id_group_id_76b619e3_uniq",
+          "definition": "CREATE UNIQUE INDEX users_customuser_groups_customuser_id_group_id_76b619e3_uniq ON public.users_customuser_groups USING btree (customuser_id, group_id)"
+        },
+        {
+          "name": "users_customuser_groups_group_id_01390b14",
+          "definition": "CREATE INDEX users_customuser_groups_group_id_01390b14 ON public.users_customuser_groups USING btree (group_id)"
+        },
+        {
+          "name": "users_customuser_groups_pkey",
+          "definition": "CREATE UNIQUE INDEX users_customuser_groups_pkey ON public.users_customuser_groups USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "users_customuser_user_permissions",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "customuser_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "permission_id",
+          "data_type": "integer",
+          "udt": "int4",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 32,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "users_customuser_use_customuser_id_5771478b_fk_users_cus",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (customuser_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "customuser_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "users_customuser_use_permission_id_baaa2f74_fk_auth_perm",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (permission_id) REFERENCES auth_permission(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "permission_id"
+          ],
+          "references_table": "auth_permission",
+          "references_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "users_customuser_user_pe_customuser_id_permission_7a7debf6_uniq",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (customuser_id, permission_id)",
+          "columns": [
+            "customuser_id",
+            "permission_id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "users_customuser_user_permissions_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        }
+      ],
+      "indexes": [
+        {
+          "name": "users_customuser_user_pe_customuser_id_permission_7a7debf6_uniq",
+          "definition": "CREATE UNIQUE INDEX users_customuser_user_pe_customuser_id_permission_7a7debf6_uniq ON public.users_customuser_user_permissions USING btree (customuser_id, permission_id)"
+        },
+        {
+          "name": "users_customuser_user_permissions_customuser_id_5771478b",
+          "definition": "CREATE INDEX users_customuser_user_permissions_customuser_id_5771478b ON public.users_customuser_user_permissions USING btree (customuser_id)"
+        },
+        {
+          "name": "users_customuser_user_permissions_permission_id_baaa2f74",
+          "definition": "CREATE INDEX users_customuser_user_permissions_permission_id_baaa2f74 ON public.users_customuser_user_permissions USING btree (permission_id)"
+        },
+        {
+          "name": "users_customuser_user_permissions_pkey",
+          "definition": "CREATE UNIQUE INDEX users_customuser_user_permissions_pkey ON public.users_customuser_user_permissions USING btree (id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "users_passwordresetotp",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "email",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 254,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "otp_hash",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 128,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "reset_token_hash",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 128,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "expires_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "verified_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "used_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "attempts",
+          "data_type": "smallint",
+          "udt": "int2",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 16,
+          "scale": 0
+        },
+        {
+          "name": "request_ip",
+          "data_type": "inet",
+          "udt": "inet",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "phone_number",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 20,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "constraints": [
+        {
+          "name": "users_passwordresetotp_attempts_check",
+          "type": "CHECK",
+          "definition": "CHECK ((attempts >= 0))",
+          "columns": [
+            "attempts"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "users_passwordresetotp_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "users_passwordresetotp_user_id_4009c96d_fk_users_customuser_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "users_passw_email_c46577_idx",
+          "definition": "CREATE INDEX users_passw_email_c46577_idx ON public.users_passwordresetotp USING btree (email, created_at)"
+        },
+        {
+          "name": "users_passw_user_id_87213a_idx",
+          "definition": "CREATE INDEX users_passw_user_id_87213a_idx ON public.users_passwordresetotp USING btree (user_id, used_at, expires_at)"
+        },
+        {
+          "name": "users_passwordresetotp_pkey",
+          "definition": "CREATE UNIQUE INDEX users_passwordresetotp_pkey ON public.users_passwordresetotp USING btree (id)"
+        },
+        {
+          "name": "users_passwordresetotp_user_id_4009c96d",
+          "definition": "CREATE INDEX users_passwordresetotp_user_id_4009c96d ON public.users_passwordresetotp USING btree (user_id)"
+        },
+        {
+          "name": "users_protp_phone_created_idx",
+          "definition": "CREATE INDEX users_protp_phone_created_idx ON public.users_passwordresetotp USING btree (phone_number, created_at)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "users_privacyconsent",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "consent_type",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 40,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "policy_version",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 30,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "granted_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "withdrawn_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": true,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "source",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 40,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "privacy_consent_version_unique",
+          "type": "UNIQUE",
+          "definition": "UNIQUE (user_id, consent_type, policy_version)",
+          "columns": [
+            "user_id",
+            "consent_type",
+            "policy_version"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "users_privacyconsent_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "users_privacyconsent_user_id_ea3ad4f0_fk_users_customuser_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "privacy_consent_version_unique",
+          "definition": "CREATE UNIQUE INDEX privacy_consent_version_unique ON public.users_privacyconsent USING btree (user_id, consent_type, policy_version)"
+        },
+        {
+          "name": "users_privacyconsent_pkey",
+          "definition": "CREATE UNIQUE INDEX users_privacyconsent_pkey ON public.users_privacyconsent USING btree (id)"
+        },
+        {
+          "name": "users_privacyconsent_user_id_ea3ad4f0",
+          "definition": "CREATE INDEX users_privacyconsent_user_id_ea3ad4f0 ON public.users_privacyconsent USING btree (user_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    },
+    {
+      "name": "users_privacyrequest",
+      "columns": [
+        {
+          "name": "id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        },
+        {
+          "name": "request_type",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 20,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "details",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "status",
+          "data_type": "character varying",
+          "udt": "varchar",
+          "nullable": false,
+          "default": null,
+          "max_length": 20,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "response_notes",
+          "data_type": "text",
+          "udt": "text",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "created_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "updated_at",
+          "data_type": "timestamp with time zone",
+          "udt": "timestamptz",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "name": "user_id",
+          "data_type": "bigint",
+          "udt": "int8",
+          "nullable": false,
+          "default": null,
+          "max_length": null,
+          "precision": 64,
+          "scale": 0
+        }
+      ],
+      "constraints": [
+        {
+          "name": "users_privacyrequest_pkey",
+          "type": "PRIMARY KEY",
+          "definition": "PRIMARY KEY (id)",
+          "columns": [
+            "id"
+          ],
+          "references_table": null,
+          "references_columns": []
+        },
+        {
+          "name": "users_privacyrequest_user_id_5bcdd867_fk_users_customuser_id",
+          "type": "FOREIGN KEY",
+          "definition": "FOREIGN KEY (user_id) REFERENCES users_customuser(id) DEFERRABLE INITIALLY DEFERRED",
+          "columns": [
+            "user_id"
+          ],
+          "references_table": "users_customuser",
+          "references_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "users_privacyrequest_pkey",
+          "definition": "CREATE UNIQUE INDEX users_privacyrequest_pkey ON public.users_privacyrequest USING btree (id)"
+        },
+        {
+          "name": "users_privacyrequest_user_id_5bcdd867",
+          "definition": "CREATE INDEX users_privacyrequest_user_id_5bcdd867 ON public.users_privacyrequest USING btree (user_id)"
+        }
+      ],
+      "row_level_security_enabled": false
+    }
+  ],
+  "policies": [],
+  "applied_migrations": [
+    {
+      "app": "admin",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:07.194386+00:00"
+    },
+    {
+      "app": "admin",
+      "name": "0002_logentry_remove_auto_add",
+      "applied": "2026-07-08T10:15:07.434185+00:00"
+    },
+    {
+      "app": "admin",
+      "name": "0003_logentry_add_action_flag_choices",
+      "applied": "2026-07-08T10:15:07.855620+00:00"
+    },
+    {
+      "app": "audit",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:08.526889+00:00"
+    },
+    {
+      "app": "audit",
+      "name": "0002_initial",
+      "applied": "2026-07-08T10:15:09.622291+00:00"
+    },
+    {
+      "app": "audit",
+      "name": "0003_auditlog_metadata",
+      "applied": "2026-07-21T10:34:17.373519+00:00"
+    },
+    {
+      "app": "audit",
+      "name": "0004_prevent_audit_log_delete",
+      "applied": "2026-10-11T21:57:50.120424+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:14:55.426182+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0002_alter_permission_name_max_length",
+      "applied": "2026-07-08T10:14:55.836941+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0003_alter_user_email_max_length",
+      "applied": "2026-07-08T10:14:56.195356+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0004_alter_user_username_opts",
+      "applied": "2026-07-08T10:14:56.742588+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0005_alter_user_last_login_null",
+      "applied": "2026-07-08T10:14:57.374202+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0006_require_contenttypes_0002",
+      "applied": "2026-07-08T10:14:57.785615+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0007_alter_validators_add_error_messages",
+      "applied": "2026-07-08T10:14:58.234592+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0008_alter_user_username_max_length",
+      "applied": "2026-07-08T10:14:58.643477+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0009_alter_user_last_name_max_length",
+      "applied": "2026-07-08T10:14:59.328931+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0010_alter_group_name_max_length",
+      "applied": "2026-07-08T10:15:00.152355+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0011_update_proxy_permissions",
+      "applied": "2026-07-08T10:15:00.817151+00:00"
+    },
+    {
+      "app": "auth",
+      "name": "0012_alter_user_first_name_max_length",
+      "applied": "2026-07-08T10:15:01.374182+00:00"
+    },
+    {
+      "app": "booking",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:10.980068+00:00"
+    },
+    {
+      "app": "booking",
+      "name": "0002_initial",
+      "applied": "2026-07-08T10:15:13.108480+00:00"
+    },
+    {
+      "app": "booking",
+      "name": "0003_alter_booking_status_bookingpayment",
+      "applied": "2026-07-13T18:35:32.905109+00:00"
+    },
+    {
+      "app": "booking",
+      "name": "0004_bookingchangelog",
+      "applied": "2026-07-14T12:54:29.066982+00:00"
+    },
+    {
+      "app": "booking",
+      "name": "0005_compact_booking_tables",
+      "applied": "2026-07-21T10:34:21.873977+00:00"
+    },
+    {
+      "app": "booking",
+      "name": "0006_booking_uniqueness_idempotency",
+      "applied": "2026-07-21T11:51:54.538353+00:00"
+    },
+    {
+      "app": "booking",
+      "name": "0007_studiounavailabledate",
+      "applied": "2026-07-21T21:31:34.018283+00:00"
+    },
+    {
+      "app": "booking",
+      "name": "0008_bookingdatelock",
+      "applied": "2026-07-21T22:28:43.706052+00:00"
+    },
+    {
+      "app": "booking",
+      "name": "0009_bookingreview",
+      "applied": "2026-10-11T15:40:05.007395+00:00"
+    },
+    {
+      "app": "chatbot",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:14.140470+00:00"
+    },
+    {
+      "app": "chatbot",
+      "name": "0002_initial",
+      "applied": "2026-07-08T10:15:15.488649+00:00"
+    },
+    {
+      "app": "chatbot",
+      "name": "0003_delete_chatbotfaq_delete_chatbotlog",
+      "applied": "2026-07-21T10:34:23.536304+00:00"
+    },
+    {
+      "app": "contenttypes",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:14:51.959883+00:00"
+    },
+    {
+      "app": "contenttypes",
+      "name": "0002_remove_content_type_name",
+      "applied": "2026-07-08T10:14:53.056926+00:00"
+    },
+    {
+      "app": "forecasting",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:19.323149+00:00"
+    },
+    {
+      "app": "forecasting",
+      "name": "0002_initial",
+      "applied": "2026-07-08T10:15:20.711586+00:00"
+    },
+    {
+      "app": "forecasting",
+      "name": "0003_alter_demandprediction_unique_together_and_more",
+      "applied": "2026-07-21T10:34:25.344568+00:00"
+    },
+    {
+      "app": "forecasting",
+      "name": "0004_saleshistoryimport_saleshistoryrecord",
+      "applied": "2026-10-14T00:48:00.211911+00:00"
+    },
+    {
+      "app": "gallery",
+      "name": "0001_initial",
+      "applied": "2026-07-14T12:19:56.678630+00:00"
+    },
+    {
+      "app": "gallery",
+      "name": "0002_delete_galleryimage",
+      "applied": "2026-07-21T10:34:25.997697+00:00"
+    },
+    {
+      "app": "inventory",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:18.825495+00:00"
+    },
+    {
+      "app": "inventory",
+      "name": "0002_initial",
+      "applied": "2026-07-08T10:15:22.964206+00:00"
+    },
+    {
+      "app": "inventory",
+      "name": "0003_product_batch_number_product_expiration_date_and_more",
+      "applied": "2026-07-13T16:38:16.755750+00:00"
+    },
+    {
+      "app": "inventory",
+      "name": "0004_ingredient_ingredientstockmovement_recipeingredient",
+      "applied": "2026-07-13T17:13:09.917462+00:00"
+    },
+    {
+      "app": "inventory",
+      "name": "0005_product_is_active_deactivate_glossy_a4",
+      "applied": "2026-07-14T17:52:23.035172+00:00"
+    },
+    {
+      "app": "inventory",
+      "name": "0006_compact_inventory_tables",
+      "applied": "2026-07-21T10:38:31.678404+00:00"
+    },
+    {
+      "app": "inventory",
+      "name": "0007_catalog_reference_models",
+      "applied": "2026-10-18T08:47:39.136252+00:00"
+    },
+    {
+      "app": "notifications",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:23.684938+00:00"
+    },
+    {
+      "app": "notifications",
+      "name": "0002_initial",
+      "applied": "2026-07-08T10:15:25.115588+00:00"
+    },
+    {
+      "app": "notifications",
+      "name": "0003_delete_notification",
+      "applied": "2026-07-21T10:38:32.641590+00:00"
+    },
+    {
+      "app": "notifications",
+      "name": "0004_notification_booking_fields",
+      "applied": "2026-10-11T14:52:54.756413+00:00"
+    },
+    {
+      "app": "notifications",
+      "name": "0005_pushsubscription_notificationdelivery",
+      "applied": "2026-10-18T09:23:44.109528+00:00"
+    },
+    {
+      "app": "notifications",
+      "name": "0006_sms_delivery_lifecycle",
+      "applied": "2026-10-18T13:19:57.277876+00:00"
+    },
+    {
+      "app": "payment",
+      "name": "0001_initial",
+      "applied": "2026-07-21T10:34:18.809782+00:00"
+    },
+    {
+      "app": "payment",
+      "name": "0002_payment_uniqueness_idempotency",
+      "applied": "2026-07-21T11:51:55.616298+00:00"
+    },
+    {
+      "app": "payment",
+      "name": "0003_secure_receipt_upload_path",
+      "applied": "2026-07-22T12:46:15.152524+00:00"
+    },
+    {
+      "app": "payment",
+      "name": "0004_alter_payment_method",
+      "applied": "2026-10-19T06:22:47.149384+00:00"
+    },
+    {
+      "app": "pos",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:26.650866+00:00"
+    },
+    {
+      "app": "pos",
+      "name": "0002_initial",
+      "applied": "2026-07-08T10:15:29.035227+00:00"
+    },
+    {
+      "app": "pos",
+      "name": "0003_alter_payment_method_alter_payment_transaction_id",
+      "applied": "2026-07-13T16:38:16.993294+00:00"
+    },
+    {
+      "app": "pos",
+      "name": "0004_endofdayreport",
+      "applied": "2026-07-14T14:20:35.283952+00:00"
+    },
+    {
+      "app": "pos",
+      "name": "0005_zreport_cash_fields",
+      "applied": "2026-07-14T17:23:14.691610+00:00"
+    },
+    {
+      "app": "pos",
+      "name": "0006_order_discount_fields",
+      "applied": "2026-07-14T17:43:46.391680+00:00"
+    },
+    {
+      "app": "pos",
+      "name": "0007_transaction_ids",
+      "applied": "2026-07-14T18:14:59.482693+00:00"
+    },
+    {
+      "app": "pos",
+      "name": "0008_compact_pos_tables",
+      "applied": "2026-07-21T10:54:15.099849+00:00"
+    },
+    {
+      "app": "pos",
+      "name": "0009_drop_legacy_items_column",
+      "applied": "2026-07-21T10:55:26.687665+00:00"
+    },
+    {
+      "app": "pos",
+      "name": "0010_order_idempotency",
+      "applied": "2026-07-21T22:28:44.360631+00:00"
+    },
+    {
+      "app": "sales",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:29.498917+00:00"
+    },
+    {
+      "app": "sales",
+      "name": "0002_delete_dailysalessummary",
+      "applied": "2026-07-21T10:54:26.877707+00:00"
+    },
+    {
+      "app": "sessions",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:30.646198+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0001_initial",
+      "applied": "2026-07-20T16:05:14.083420+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0002_outstandingtoken_jti_hex",
+      "applied": "2026-07-20T16:05:14.489376+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0003_auto_20171017_2007",
+      "applied": "2026-07-20T16:05:15.250923+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0004_auto_20171017_2013",
+      "applied": "2026-07-20T16:05:16.211477+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0005_remove_outstandingtoken_jti",
+      "applied": "2026-07-20T16:05:17.201210+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0006_auto_20171017_2113",
+      "applied": "2026-07-20T16:05:18.016960+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0007_auto_20171017_2214",
+      "applied": "2026-07-20T16:05:19.653003+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0008_migrate_to_bigautofield",
+      "applied": "2026-07-20T16:05:21.569280+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0010_fix_migrate_to_bigautofield",
+      "applied": "2026-07-20T16:05:22.138744+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0011_linearizes_history",
+      "applied": "2026-07-20T16:05:22.491775+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0012_alter_outstandingtoken_user",
+      "applied": "2026-07-20T16:05:22.921474+00:00"
+    },
+    {
+      "app": "token_blacklist",
+      "name": "0013_alter_blacklistedtoken_options_and_more",
+      "applied": "2026-07-20T16:05:24.075110+00:00"
+    },
+    {
+      "app": "users",
+      "name": "0001_initial",
+      "applied": "2026-07-08T10:15:05.506524+00:00"
+    },
+    {
+      "app": "users",
+      "name": "0002_passwordresetotp",
+      "applied": "2026-07-20T17:52:27.321855+00:00"
+    },
+    {
+      "app": "users",
+      "name": "0003_customuser_profile_picture",
+      "applied": "2026-07-21T12:53:38.376389+00:00"
+    },
+    {
+      "app": "users",
+      "name": "0004_customuser_profile_picture_external_url",
+      "applied": "2026-07-21T13:13:22.803370+00:00"
+    },
+    {
+      "app": "users",
+      "name": "0005_normalize_customer_account_fields",
+      "applied": "2026-07-22T11:46:45.334345+00:00"
+    },
+    {
+      "app": "users",
+      "name": "0006_customuser_registration_method",
+      "applied": "2026-07-22T13:17:56.442043+00:00"
+    },
+    {
+      "app": "users",
+      "name": "0007_passwordresetotp_phone_number",
+      "applied": "2026-10-11T14:52:56.178843+00:00"
+    },
+    {
+      "app": "users",
+      "name": "0008_unique_registration_contacts",
+      "applied": "2026-10-11T21:18:31.435605+00:00"
+    },
+    {
+      "app": "users",
+      "name": "0009_privacy_controls",
+      "applied": "2026-10-11T21:57:51.772184+00:00"
+    }
+  ]
+}

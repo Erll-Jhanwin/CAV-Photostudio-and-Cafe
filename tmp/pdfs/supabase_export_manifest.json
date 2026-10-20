@@ -1,0 +1,1117 @@
+{
+  "output": "C:\\Users\\Erll\\OneDrive\\Desktop\\Cav Photo Studio & Cafe - Copy\\output\\pdf\\supabase_complete_data_export.pdf",
+  "snapshot_time": "2026-10-20T10:56:57.819054+00:00",
+  "table_count": 73,
+  "expected_total_rows": 1878,
+  "exported_record_markers": 1878,
+  "masked_credential_values": 437,
+  "errors": [],
+  "tables": [
+    {
+      "name": "auth.audit_log_entries",
+      "columns": [
+        "instance_id",
+        "id",
+        "payload",
+        "created_at",
+        "ip_address"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.custom_oauth_providers",
+      "columns": [
+        "id",
+        "provider_type",
+        "identifier",
+        "name",
+        "client_id",
+        "client_secret",
+        "acceptable_client_ids",
+        "scopes",
+        "pkce_enabled",
+        "attribute_mapping",
+        "authorization_params",
+        "enabled",
+        "email_optional",
+        "issuer",
+        "discovery_url",
+        "skip_nonce_check",
+        "cached_discovery",
+        "discovery_cached_at",
+        "authorization_url",
+        "token_url",
+        "userinfo_url",
+        "jwks_uri",
+        "created_at",
+        "updated_at",
+        "custom_claims_allowlist"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.flow_state",
+      "columns": [
+        "id",
+        "user_id",
+        "auth_code",
+        "code_challenge_method",
+        "code_challenge",
+        "provider_type",
+        "provider_access_token",
+        "provider_refresh_token",
+        "created_at",
+        "updated_at",
+        "authentication_method",
+        "auth_code_issued_at",
+        "invite_token",
+        "referrer",
+        "oauth_client_state_id",
+        "linking_target_id",
+        "email_optional"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.identities",
+      "columns": [
+        "provider_id",
+        "user_id",
+        "identity_data",
+        "provider",
+        "last_sign_in_at",
+        "created_at",
+        "updated_at",
+        "email",
+        "id"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.instances",
+      "columns": [
+        "id",
+        "uuid",
+        "raw_base_config",
+        "created_at",
+        "updated_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.mfa_amr_claims",
+      "columns": [
+        "session_id",
+        "created_at",
+        "updated_at",
+        "authentication_method",
+        "id"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.mfa_challenges",
+      "columns": [
+        "id",
+        "factor_id",
+        "created_at",
+        "verified_at",
+        "ip_address",
+        "otp_code",
+        "web_authn_session_data"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.mfa_factors",
+      "columns": [
+        "id",
+        "user_id",
+        "friendly_name",
+        "factor_type",
+        "status",
+        "created_at",
+        "updated_at",
+        "secret",
+        "phone",
+        "last_challenged_at",
+        "web_authn_credential",
+        "web_authn_aaguid",
+        "last_webauthn_challenge_data"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.mfa_recovery_code_sets",
+      "columns": [
+        "id",
+        "user_id",
+        "mfa_factor_id",
+        "failed_verification_count",
+        "verification_locked_until",
+        "created_at",
+        "updated_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.mfa_recovery_codes",
+      "columns": [
+        "id",
+        "mfa_recovery_code_set_id",
+        "code_hash",
+        "consumed_at",
+        "created_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.oauth_authorizations",
+      "columns": [
+        "id",
+        "authorization_id",
+        "client_id",
+        "user_id",
+        "redirect_uri",
+        "scope",
+        "state",
+        "resource",
+        "code_challenge",
+        "code_challenge_method",
+        "response_type",
+        "status",
+        "authorization_code",
+        "created_at",
+        "expires_at",
+        "approved_at",
+        "nonce"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.oauth_client_states",
+      "columns": [
+        "id",
+        "provider_type",
+        "code_verifier",
+        "created_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.oauth_clients",
+      "columns": [
+        "id",
+        "client_secret_hash",
+        "registration_type",
+        "redirect_uris",
+        "grant_types",
+        "client_name",
+        "client_uri",
+        "logo_uri",
+        "created_at",
+        "updated_at",
+        "deleted_at",
+        "client_type",
+        "token_endpoint_auth_method"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.oauth_consents",
+      "columns": [
+        "id",
+        "user_id",
+        "client_id",
+        "scopes",
+        "granted_at",
+        "revoked_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.one_time_tokens",
+      "columns": [
+        "id",
+        "user_id",
+        "token_type",
+        "token_hash",
+        "relates_to",
+        "created_at",
+        "updated_at",
+        "expires_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.refresh_tokens",
+      "columns": [
+        "instance_id",
+        "id",
+        "token",
+        "user_id",
+        "revoked",
+        "created_at",
+        "updated_at",
+        "parent",
+        "session_id"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.saml_providers",
+      "columns": [
+        "id",
+        "sso_provider_id",
+        "entity_id",
+        "metadata_xml",
+        "metadata_url",
+        "attribute_mapping",
+        "created_at",
+        "updated_at",
+        "name_id_format"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.saml_relay_states",
+      "columns": [
+        "id",
+        "sso_provider_id",
+        "request_id",
+        "for_email",
+        "redirect_to",
+        "created_at",
+        "updated_at",
+        "flow_state_id"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.schema_migrations",
+      "columns": [
+        "version"
+      ],
+      "expected_rows": 82
+    },
+    {
+      "name": "auth.scim_tokens",
+      "columns": [
+        "id",
+        "sso_provider_id",
+        "token_hash",
+        "prefix",
+        "created_at",
+        "expires_at",
+        "revoked_at",
+        "last_used_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.scim_users",
+      "columns": [
+        "id",
+        "sso_provider_id",
+        "user_id",
+        "resource",
+        "user_name",
+        "external_id",
+        "active",
+        "created_at",
+        "updated_at",
+        "deleted_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.sessions",
+      "columns": [
+        "id",
+        "user_id",
+        "created_at",
+        "updated_at",
+        "factor_id",
+        "aal",
+        "not_after",
+        "refreshed_at",
+        "user_agent",
+        "ip",
+        "tag",
+        "oauth_client_id",
+        "refresh_token_hmac_key",
+        "refresh_token_counter",
+        "scopes"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.sso_domains",
+      "columns": [
+        "id",
+        "sso_provider_id",
+        "domain",
+        "created_at",
+        "updated_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.sso_providers",
+      "columns": [
+        "id",
+        "resource_id",
+        "created_at",
+        "updated_at",
+        "disabled"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.users",
+      "columns": [
+        "instance_id",
+        "id",
+        "aud",
+        "role",
+        "email",
+        "encrypted_password",
+        "email_confirmed_at",
+        "invited_at",
+        "confirmation_token",
+        "confirmation_sent_at",
+        "recovery_token",
+        "recovery_sent_at",
+        "email_change_token_new",
+        "email_change",
+        "email_change_sent_at",
+        "last_sign_in_at",
+        "raw_app_meta_data",
+        "raw_user_meta_data",
+        "is_super_admin",
+        "created_at",
+        "updated_at",
+        "phone",
+        "phone_confirmed_at",
+        "phone_change",
+        "phone_change_token",
+        "phone_change_sent_at",
+        "confirmed_at",
+        "email_change_token_current",
+        "email_change_confirm_status",
+        "banned_until",
+        "reauthentication_token",
+        "reauthentication_sent_at",
+        "is_sso_user",
+        "deleted_at",
+        "is_anonymous"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.webauthn_challenges",
+      "columns": [
+        "id",
+        "user_id",
+        "challenge_type",
+        "session_data",
+        "created_at",
+        "expires_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "auth.webauthn_credentials",
+      "columns": [
+        "id",
+        "user_id",
+        "credential_id",
+        "public_key",
+        "attestation_type",
+        "aaguid",
+        "sign_count",
+        "transports",
+        "backup_eligible",
+        "backed_up",
+        "friendly_name",
+        "created_at",
+        "updated_at",
+        "last_used_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "public.audit_auditlog",
+      "columns": [
+        "id",
+        "action",
+        "description",
+        "ip_address",
+        "timestamp",
+        "user_id",
+        "metadata"
+      ],
+      "expected_rows": 564
+    },
+    {
+      "name": "public.auth_group",
+      "columns": [
+        "id",
+        "name"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "public.auth_group_permissions",
+      "columns": [
+        "id",
+        "group_id",
+        "permission_id"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "public.auth_permission",
+      "columns": [
+        "id",
+        "name",
+        "content_type_id",
+        "codename"
+      ],
+      "expected_rows": 196
+    },
+    {
+      "name": "public.booking_booking",
+      "columns": [
+        "id",
+        "scheduled_date",
+        "scheduled_time",
+        "status",
+        "notes",
+        "created_at",
+        "customer_id",
+        "package_id",
+        "change_history",
+        "items",
+        "idempotency_key"
+      ],
+      "expected_rows": 11
+    },
+    {
+      "name": "public.booking_bookingdatelock",
+      "columns": [
+        "id",
+        "scheduled_date"
+      ],
+      "expected_rows": 13
+    },
+    {
+      "name": "public.booking_bookingreview",
+      "columns": [
+        "id",
+        "rating",
+        "feedback",
+        "suggestions",
+        "created_at",
+        "updated_at",
+        "booking_id",
+        "customer_id"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "public.booking_package",
+      "columns": [
+        "id",
+        "name",
+        "description",
+        "price",
+        "inclusions",
+        "service_id"
+      ],
+      "expected_rows": 9
+    },
+    {
+      "name": "public.booking_service",
+      "columns": [
+        "id",
+        "name",
+        "description",
+        "duration_minutes",
+        "base_price",
+        "image_url"
+      ],
+      "expected_rows": 4
+    },
+    {
+      "name": "public.booking_studiounavailabledate",
+      "columns": [
+        "id",
+        "date",
+        "reason",
+        "created_at",
+        "updated_at",
+        "created_by_id"
+      ],
+      "expected_rows": 1
+    },
+    {
+      "name": "public.django_admin_log",
+      "columns": [
+        "id",
+        "action_time",
+        "object_id",
+        "object_repr",
+        "action_flag",
+        "change_message",
+        "content_type_id",
+        "user_id"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "public.django_content_type",
+      "columns": [
+        "id",
+        "app_label",
+        "model"
+      ],
+      "expected_rows": 49
+    },
+    {
+      "name": "public.django_migrations",
+      "columns": [
+        "id",
+        "app",
+        "name",
+        "applied"
+      ],
+      "expected_rows": 90
+    },
+    {
+      "name": "public.django_session",
+      "columns": [
+        "session_key",
+        "session_data",
+        "expire_date"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "public.forecasting_saleshistoryimport",
+      "columns": [
+        "id",
+        "source_name",
+        "source_filename",
+        "source_hash",
+        "status",
+        "is_active",
+        "row_count",
+        "imported_row_count",
+        "skipped_row_count",
+        "history_start",
+        "history_end",
+        "error_message",
+        "created_at",
+        "completed_at"
+      ],
+      "expected_rows": 1
+    },
+    {
+      "name": "public.forecasting_saleshistoryrecord",
+      "columns": [
+        "id",
+        "source_row_number",
+        "transaction_number",
+        "status",
+        "sold_at",
+        "sale_date",
+        "quantity",
+        "total_amount",
+        "total",
+        "items_description",
+        "import_batch_id"
+      ],
+      "expected_rows": 24
+    },
+    {
+      "name": "public.inventory_category",
+      "columns": [
+        "id",
+        "name",
+        "description",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ],
+      "expected_rows": 8
+    },
+    {
+      "name": "public.inventory_inventoryevent",
+      "columns": [
+        "id",
+        "event_type",
+        "movement_type",
+        "quantity",
+        "input_quantity",
+        "input_unit",
+        "reason",
+        "supplier",
+        "supplier_details",
+        "status",
+        "notes",
+        "items",
+        "payload",
+        "created_at",
+        "updated_at",
+        "product_id",
+        "user_id"
+      ],
+      "expected_rows": 49
+    },
+    {
+      "name": "public.inventory_product",
+      "columns": [
+        "id",
+        "name",
+        "sku",
+        "cost",
+        "price",
+        "stock_level",
+        "reorder_point",
+        "is_cafe_item",
+        "image_url",
+        "category",
+        "supplier",
+        "batch_number",
+        "expiration_date",
+        "maximum_stock_level",
+        "purchase_date",
+        "storage_location",
+        "unit",
+        "is_active",
+        "base_unit",
+        "category_description",
+        "category_name",
+        "created_at",
+        "item_type",
+        "minimum_stock_level",
+        "recipe_data",
+        "stock_quantity",
+        "supplier_details",
+        "updated_at"
+      ],
+      "expected_rows": 34
+    },
+    {
+      "name": "public.inventory_supplier",
+      "columns": [
+        "id",
+        "name",
+        "contact_person",
+        "email",
+        "phone",
+        "address",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ],
+      "expected_rows": 2
+    },
+    {
+      "name": "public.notifications_notification",
+      "columns": [
+        "id",
+        "notification_type",
+        "title",
+        "message",
+        "is_read",
+        "read_at",
+        "created_at",
+        "booking_id",
+        "user_id",
+        "event_key"
+      ],
+      "expected_rows": 30
+    },
+    {
+      "name": "public.notifications_notificationdelivery",
+      "columns": [
+        "id",
+        "channel",
+        "status",
+        "provider",
+        "provider_message_id",
+        "error_code",
+        "error_message",
+        "metadata",
+        "attempt_count",
+        "created_at",
+        "updated_at",
+        "sent_at",
+        "notification_id",
+        "user_id",
+        "delivered_at",
+        "next_retry_at",
+        "last_checked_at"
+      ],
+      "expected_rows": 60
+    },
+    {
+      "name": "public.notifications_pushsubscription",
+      "columns": [
+        "id",
+        "endpoint",
+        "p256dh",
+        "auth",
+        "user_agent",
+        "is_active",
+        "created_at",
+        "updated_at",
+        "user_id"
+      ],
+      "expected_rows": 1
+    },
+    {
+      "name": "public.payment_payment",
+      "columns": [
+        "id",
+        "payment_type",
+        "amount",
+        "method",
+        "reference_number",
+        "transaction_id",
+        "receipt",
+        "status",
+        "paid_at",
+        "verified_at",
+        "admin_note",
+        "metadata",
+        "created_at",
+        "updated_at",
+        "booking_id",
+        "order_id",
+        "verified_by_id",
+        "idempotency_key"
+      ],
+      "expected_rows": 23
+    },
+    {
+      "name": "public.pos_order",
+      "columns": [
+        "id",
+        "total",
+        "payment_status",
+        "order_type",
+        "created_at",
+        "booking_id",
+        "staff_id",
+        "subtotal",
+        "discount_type",
+        "discount_value",
+        "discount_amount",
+        "transaction_id",
+        "completed_at",
+        "print_status",
+        "printed_at",
+        "report_data",
+        "line_items",
+        "idempotency_key"
+      ],
+      "expected_rows": 18
+    },
+    {
+      "name": "public.token_blacklist_blacklistedtoken",
+      "columns": [
+        "id",
+        "blacklisted_at",
+        "token_id"
+      ],
+      "expected_rows": 97
+    },
+    {
+      "name": "public.token_blacklist_outstandingtoken",
+      "columns": [
+        "id",
+        "token",
+        "created_at",
+        "expires_at",
+        "user_id",
+        "jti"
+      ],
+      "expected_rows": 331
+    },
+    {
+      "name": "public.users_customer",
+      "columns": [
+        "id",
+        "points",
+        "birthdate",
+        "loyalty_tier",
+        "notes",
+        "user_id"
+      ],
+      "expected_rows": 4
+    },
+    {
+      "name": "public.users_customuser",
+      "columns": [
+        "id",
+        "password",
+        "last_login",
+        "is_superuser",
+        "username",
+        "first_name",
+        "last_name",
+        "email",
+        "is_staff",
+        "is_active",
+        "date_joined",
+        "role",
+        "phone_number",
+        "address",
+        "profile_picture",
+        "profile_picture_external_url",
+        "registration_method"
+      ],
+      "expected_rows": 8
+    },
+    {
+      "name": "public.users_customuser_groups",
+      "columns": [
+        "id",
+        "customuser_id",
+        "group_id"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "public.users_customuser_user_permissions",
+      "columns": [
+        "id",
+        "customuser_id",
+        "permission_id"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "public.users_passwordresetotp",
+      "columns": [
+        "id",
+        "email",
+        "otp_hash",
+        "reset_token_hash",
+        "created_at",
+        "expires_at",
+        "verified_at",
+        "used_at",
+        "attempts",
+        "request_ip",
+        "user_id",
+        "phone_number"
+      ],
+      "expected_rows": 1
+    },
+    {
+      "name": "public.users_privacyconsent",
+      "columns": [
+        "id",
+        "consent_type",
+        "policy_version",
+        "granted_at",
+        "withdrawn_at",
+        "source",
+        "user_id"
+      ],
+      "expected_rows": 6
+    },
+    {
+      "name": "public.users_privacyrequest",
+      "columns": [
+        "id",
+        "request_type",
+        "details",
+        "status",
+        "response_notes",
+        "created_at",
+        "updated_at",
+        "user_id"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "realtime.messages",
+      "columns": [
+        "topic",
+        "extension",
+        "payload",
+        "event",
+        "private",
+        "updated_at",
+        "inserted_at",
+        "id",
+        "binary_payload",
+        "skip_broadcast"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "realtime.schema_migrations",
+      "columns": [
+        "version",
+        "inserted_at"
+      ],
+      "expected_rows": 89
+    },
+    {
+      "name": "realtime.subscription",
+      "columns": [
+        "id",
+        "subscription_id",
+        "entity",
+        "filters",
+        "claims",
+        "claims_role",
+        "created_at",
+        "action_filter",
+        "selected_columns"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "storage.buckets",
+      "columns": [
+        "id",
+        "name",
+        "owner",
+        "created_at",
+        "updated_at",
+        "public",
+        "avif_autodetection",
+        "file_size_limit",
+        "allowed_mime_types",
+        "owner_id",
+        "type",
+        "versioning_status",
+        "lifecycle_configuration",
+        "lifecycle_configuration_generation"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "storage.buckets_analytics",
+      "columns": [
+        "name",
+        "type",
+        "format",
+        "created_at",
+        "updated_at",
+        "id",
+        "deleted_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "storage.buckets_vectors",
+      "columns": [
+        "id",
+        "type",
+        "created_at",
+        "updated_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "storage.migrations",
+      "columns": [
+        "id",
+        "name",
+        "hash",
+        "executed_at"
+      ],
+      "expected_rows": 73
+    },
+    {
+      "name": "storage.objects",
+      "columns": [
+        "id",
+        "bucket_id",
+        "name",
+        "owner",
+        "created_at",
+        "updated_at",
+        "last_accessed_at",
+        "metadata",
+        "path_tokens",
+        "version",
+        "owner_id",
+        "user_metadata",
+        "archived_at",
+        "is_delete_marker",
+        "is_versioned"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "storage.s3_multipart_uploads",
+      "columns": [
+        "id",
+        "in_progress_size",
+        "upload_signature",
+        "bucket_id",
+        "key",
+        "version",
+        "owner_id",
+        "created_at",
+        "user_metadata",
+        "metadata"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "storage.s3_multipart_uploads_parts",
+      "columns": [
+        "id",
+        "upload_id",
+        "size",
+        "part_number",
+        "bucket_id",
+        "key",
+        "etag",
+        "owner_id",
+        "version",
+        "created_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "storage.vector_indexes",
+      "columns": [
+        "id",
+        "name",
+        "bucket_id",
+        "data_type",
+        "dimension",
+        "distance_metric",
+        "metadata_configuration",
+        "created_at",
+        "updated_at"
+      ],
+      "expected_rows": 0
+    },
+    {
+      "name": "vault.secrets",
+      "columns": [
+        "id",
+        "name",
+        "description",
+        "secret",
+        "key_id",
+        "nonce",
+        "created_at",
+        "updated_at"
+      ],
+      "expected_rows": 0
+    }
+  ]
+}

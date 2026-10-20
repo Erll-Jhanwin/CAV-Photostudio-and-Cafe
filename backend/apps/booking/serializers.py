@@ -6,7 +6,7 @@ from booking.availability import is_slot_available
 from payment.models import Payment
 from users.serializers import UserSerializer, validate_unique_email, validate_unique_phone_number
 from users.phone_numbers import normalize_philippine_mobile_number
-from users.uploads import validate_receipt_upload
+from users.uploads import receipt_upload_path, validate_receipt_upload
 
 class PackageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -58,6 +58,30 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             'status', 'verified_by', 'verified_at', 'admin_note',
             'created_at', 'updated_at'
         ]
+
+    def create(self, validated_data):
+        receipt_upload = validated_data.pop('receipt', None)
+        stored_name = None
+        receipt_storage = Payment._meta.get_field('receipt').storage
+        if receipt_upload:
+            # Store the object first and persist only its opaque path in the
+            # existing Payment.receipt column. No local media copy is created.
+            stored_name = receipt_storage.save(
+                receipt_upload_path(None, receipt_upload.name),
+                receipt_upload,
+            )
+            validated_data['receipt'] = stored_name
+        try:
+            return super().create(validated_data)
+        except Exception:
+            if stored_name:
+                try:
+                    receipt_storage.delete(stored_name)
+                except Exception:
+                    # Preserve the database error; failed remote cleanup can
+                    # be reconciled from the orphaned UUID path if necessary.
+                    pass
+            raise
 
     def get_booking_details(self, obj):
         booking = obj.booking

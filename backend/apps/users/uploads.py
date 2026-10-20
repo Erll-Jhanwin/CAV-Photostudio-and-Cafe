@@ -52,7 +52,11 @@ def validate_profile_picture(upload):
 
 
 def validate_receipt_image(upload):
-    validated_image_format(upload, max_size=MAX_RECEIPT_SIZE, label='Receipt')
+    image_format = validated_image_format(upload, max_size=MAX_RECEIPT_SIZE, label='Receipt')
+    # Use an extension derived from the decoded image bytes, not the browser's
+    # filename, so the authenticated preview is served with the right MIME type.
+    extension = {'JPEG': '.jpg', 'PNG': '.png', 'WEBP': '.webp'}[image_format]
+    upload.name = f'receipt{extension}'
     return upload
 
 
@@ -68,6 +72,7 @@ def validate_receipt_upload(upload):
     if head.startswith(b'%PDF-'):
         if declared_type and declared_type != 'application/pdf':
             raise serializers.ValidationError('Receipt file type does not match its contents.')
+        upload.name = 'receipt.pdf'
         return upload
 
     return validate_receipt_image(upload)

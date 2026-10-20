@@ -1,0 +1,727 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+3 0 obj
+<< /Length 5467 >>
+stream
+1 J 1 j 0 G 0 g
+0 g 0 568 960 112 re f
+1 g
+BT /F2 10 Tf 1 0 0 1 36.0 642.0 Tm (CAV PHOTO STUDIO & CAFE  |  SYSTEM DESIGN) Tj ET
+BT /F2 24 Tf 1 0 0 1 36.0 608.0 Tm (System Architecture) Tj ET
+BT /F1 10 Tf 1 0 0 1 36.0 586.0 Tm (Runtime components and domain boundaries in the inspected source tree.) Tj ET
+0 g
+1 w 36.0 568.0 m 924.0 568.0 l S
+1.15 w 42.0 457.0 205.0 86.0 re S
+BT /F2 12 Tf 1 0 0 1 52.0 525.0 Tm (Actors and clients) Tj ET
+0.7 w 50.0 518.0 m 239.0 518.0 l S
+BT /F1 10 Tf 1 0 0 1 52.0 502.0 Tm (Browser users: public, CUSTOMER,) Tj ET
+BT /F1 10 Tf 1 0 0 1 52.0 488.0 Tm (STAFF, ADMIN) Tj ET
+BT /F1 10 Tf 1 0 0 1 52.0 474.0 Tm (Android app: Capacitor shell using) Tj ET
+1.15 w 285.0 457.0 285.0 86.0 re S
+BT /F2 12 Tf 1 0 0 1 295.0 525.0 Tm (React client \(frontend/\)) Tj ET
+0.7 w 293.0 518.0 m 562.0 518.0 l S
+BT /F1 10 Tf 1 0 0 1 295.0 502.0 Tm (React 19, Router, AuthContext, Axios client) Tj ET
+BT /F1 10 Tf 1 0 0 1 295.0 488.0 Tm (Landing, customer, staff, admin routes) Tj ET
+BT /F1 10 Tf 1 0 0 1 295.0 474.0 Tm (Cookie JWT + CSRF; native build targets production) Tj ET
+1.15 w 625.0 457.0 285.0 86.0 re S
+BT /F2 12 Tf 1 0 0 1 635.0 525.0 Tm (Transport / edge) Tj ET
+0.7 w 633.0 518.0 m 902.0 518.0 l S
+BT /F1 10 Tf 1 0 0 1 635.0 502.0 Tm (HTTPS to separate Render origins) Tj ET
+BT /F1 10 Tf 1 0 0 1 635.0 488.0 Tm (CORS allowlist; CSP and security headers) Tj ET
+BT /F1 10 Tf 1 0 0 1 635.0 474.0 Tm (JSON REST API; multipart for receipt and CSV) Tj ET
+1.05 w 247.0 500.0 m 285.0 500.0 l S
+285.0 500.0 m 278.7 503.0 l 278.7 497.0 l h f
+BT /F1 8 Tf 1 0 0 1 270.0 504.0 Tm (UI) Tj ET
+1.05 w 570.0 500.0 m 625.0 500.0 l S
+625.0 500.0 m 618.7 503.0 l 618.7 497.0 l h f
+BT /F1 8 Tf 1 0 0 1 601.5 504.0 Tm (HTTPS) Tj ET
+1.15 w 42.0 293.0 205.0 122.0 re S
+BT /F2 12 Tf 1 0 0 1 52.0 397.0 Tm (Django API foundation) Tj ET
+0.7 w 50.0 390.0 m 239.0 390.0 l S
+BT /F1 9 Tf 1 0 0 1 52.0 374.0 Tm (Django 5.2 + DRF + Gunicorn) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 361.0 Tm (Cookie JWT auth / refresh / blacklist) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 348.0 Tm (Role checks, serializers, throttles,) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 335.0 Tm (audit) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 322.0 Tm (Health endpoint; ORM transactions) Tj ET
+1.15 w 285.0 271.0 285.0 157.0 re S
+BT /F2 12 Tf 1 0 0 1 295.0 410.0 Tm (Customer-facing domains) Tj ET
+0.7 w 293.0 403.0 m 562.0 403.0 l S
+BT /F1 9 Tf 1 0 0 1 295.0 387.0 Tm (users / privacy / MFA) Tj ET
+BT /F1 9 Tf 1 0 0 1 295.0 374.0 Tm (booking + availability + payments) Tj ET
+BT /F1 9 Tf 1 0 0 1 295.0 361.0 Tm (notifications + push subscriptions) Tj ET
+BT /F1 9 Tf 1 0 0 1 295.0 348.0 Tm (chatbot \(hybrid local + optional LLM\)) Tj ET
+BT /F1 9 Tf 1 0 0 1 295.0 335.0 Tm (gallery + public catalogue) Tj ET
+1.15 w 625.0 271.0 285.0 157.0 re S
+BT /F2 12 Tf 1 0 0 1 635.0 410.0 Tm (Operations domains) Tj ET
+0.7 w 633.0 403.0 m 902.0 403.0 l S
+BT /F1 9 Tf 1 0 0 1 635.0 387.0 Tm (POS orders + payments + end-of-day) Tj ET
+BT /F1 9 Tf 1 0 0 1 635.0 374.0 Tm (inventory, ingredients, recipes, purchase orders) Tj ET
+BT /F1 9 Tf 1 0 0 1 635.0 361.0 Tm (dashboard analytics + forecasting) Tj ET
+BT /F1 9 Tf 1 0 0 1 635.0 348.0 Tm (audit + Django admin) Tj ET
+1.05 w 247.0 360.0 m 285.0 360.0 l S
+285.0 360.0 m 278.7 363.0 l 278.7 357.0 l h f
+1.05 w 570.0 360.0 m 625.0 360.0 l S
+625.0 360.0 m 618.7 363.0 l 618.7 357.0 l h f
+1.15 w 42.0 96.0 205.0 134.0 re S
+BT /F2 12 Tf 1 0 0 1 52.0 212.0 Tm (Core persistence) Tj ET
+0.7 w 50.0 205.0 m 239.0 205.0 l S
+BT /F1 9 Tf 1 0 0 1 52.0 189.0 Tm (PostgreSQL via DATABASE_URL) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 176.0 Tm (Supabase expected by deployment config) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 163.0 Tm (Django ORM; migrations) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 150.0 Tm (Relational records + selected JSON) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 137.0 Tm (fields) Tj ET
+1.15 w 285.0 96.0 285.0 134.0 re S
+BT /F2 12 Tf 1 0 0 1 295.0 212.0 Tm (Stored domains) Tj ET
+0.7 w 293.0 205.0 m 562.0 205.0 l S
+BT /F1 9 Tf 1 0 0 1 295.0 189.0 Tm (CustomUser / Customer / privacy requests) Tj ET
+BT /F1 9 Tf 1 0 0 1 295.0 176.0 Tm (Service -> Package -> Booking) Tj ET
+BT /F1 9 Tf 1 0 0 1 295.0 163.0 Tm (Payment -> Booking or POS Order) Tj ET
+BT /F1 9 Tf 1 0 0 1 295.0 150.0 Tm (Product / InventoryEvent / Order) Tj ET
+BT /F1 9 Tf 1 0 0 1 295.0 137.0 Tm (Notification / Delivery / AuditLog) Tj ET
+1.15 w 625.0 96.0 285.0 134.0 re S
+BT /F2 12 Tf 1 0 0 1 635.0 212.0 Tm (External and local adapters) Tj ET
+0.7 w 633.0 205.0 m 902.0 205.0 l S
+BT /F1 9 Tf 1 0 0 1 635.0 189.0 Tm (Resend or SMTP email; iProgSMS; Web Push) Tj ET
+BT /F1 9 Tf 1 0 0 1 635.0 176.0 Tm (OCR.space with local Tesseract fallback) Tj ET
+BT /F1 9 Tf 1 0 0 1 635.0 163.0 Tm (OpenRouter optional grounded response) Tj ET
+BT /F1 9 Tf 1 0 0 1 635.0 150.0 Tm (Browser/Android; local ESC/POS print bridge) Tj ET
+1.05 w 247.0 165.0 m 285.0 165.0 l S
+285.0 165.0 m 278.7 168.0 l 278.7 162.0 l h f
+BT /F1 8 Tf 1 0 0 1 270.0 169.0 Tm (ORM) Tj ET
+1.05 w 570.0 165.0 m 625.0 165.0 l S
+625.0 165.0 m 618.7 168.0 l 618.7 162.0 l h f
+BT /F1 8 Tf 1 0 0 1 601.5 169.0 Tm (I/O) Tj ET
+1.05 w 145.0 293.0 m 145.0 230.0 l S
+145.0 230.0 m 148.0 236.3 l 142.0 236.3 l h f
+1.05 w 770.0 271.0 m 770.0 230.0 l S
+770.0 230.0 m 773.0 236.3 l 767.0 236.3 l h f
+0.7 w 36.0 38.0 m 924.0 38.0 l S
+BT /F1 7 Tf 1 0 0 1 36.0 20.0 Tm (Sources: frontend/src/App.js; backend/config/{urls,settings}.py; backend/apps/*; backend/ml/*; render.yaml) Tj ET
+BT /F2 8 Tf 1 0 0 1 888.0 20.0 Tm (1 / 7) Tj ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 17 0 R /MediaBox [0 0 960 680] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 3 0 R >>
+endobj
+5 0 obj
+<< /Length 4394 >>
+stream
+1 J 1 j 0 G 0 g
+0 g 0 568 960 112 re f
+1 g
+BT /F2 10 Tf 1 0 0 1 36.0 642.0 Tm (CAV PHOTO STUDIO & CAFE  |  SYSTEM DESIGN) Tj ET
+BT /F2 24 Tf 1 0 0 1 36.0 608.0 Tm (Application Flowchart) Tj ET
+BT /F1 10 Tf 1 0 0 1 36.0 586.0 Tm (Entry, authorization, booking and POS paths traced through client routes and API views.) Tj ET
+0 g
+1 w 36.0 568.0 m 924.0 568.0 l S
+1.15 w 365.0 496.0 230.0 54.0 re S
+BT /F2 12 Tf 1 0 0 1 375.0 532.0 Tm (Open app / landing) Tj ET
+0.7 w 373.0 525.0 m 587.0 525.0 l S
+BT /F1 10 Tf 1 0 0 1 375.0 509.0 Tm (Public pages, services, packages, menu) Tj ET
+1.15 w 365.0 404.0 230.0 58.0 re S
+BT /F2 12 Tf 1 0 0 1 375.0 444.0 Tm (Authenticate?) Tj ET
+0.7 w 373.0 437.0 m 587.0 437.0 l S
+BT /F1 10 Tf 1 0 0 1 375.0 421.0 Tm (Login / register / Google; admin MFA) Tj ET
+1.05 w 480.0 496.0 m 480.0 462.0 l S
+480.0 462.0 m 483.0 468.3 l 477.0 468.3 l h f
+1.15 w 70.0 270.0 250.0 80.0 re S
+BT /F2 12 Tf 1 0 0 1 80.0 332.0 Tm (CUSTOMER path) Tj ET
+0.7 w 78.0 325.0 m 312.0 325.0 l S
+BT /F1 9 Tf 1 0 0 1 80.0 309.0 Tm (Customer dashboard; own bookings and payments) Tj ET
+BT /F1 9 Tf 1 0 0 1 80.0 296.0 Tm (Submit booking request + idempotency key) Tj ET
+1.15 w 355.0 270.0 250.0 80.0 re S
+BT /F2 12 Tf 1 0 0 1 365.0 332.0 Tm (STAFF path) Tj ET
+0.7 w 363.0 325.0 m 597.0 325.0 l S
+BT /F1 9 Tf 1 0 0 1 365.0 309.0 Tm (Staff dashboard; all bookings) Tj ET
+BT /F1 9 Tf 1 0 0 1 365.0 296.0 Tm (POS, inventory, booking payment verification) Tj ET
+1.15 w 640.0 270.0 250.0 80.0 re S
+BT /F2 12 Tf 1 0 0 1 650.0 332.0 Tm (ADMIN path) Tj ET
+0.7 w 648.0 325.0 m 882.0 325.0 l S
+BT /F1 9 Tf 1 0 0 1 650.0 309.0 Tm (Admin dashboard; staff accounts / settings) Tj ET
+BT /F1 9 Tf 1 0 0 1 650.0 296.0 Tm (Reports, forecasts, system administration) Tj ET
+1.05 w 405.0 404.0 m 195.0 350.0 l S
+195.0 350.0 m 201.9 348.6 l 200.3 354.5 l h f
+BT /F1 8 Tf 1 0 0 1 304.0 381.0 Tm (CUSTOMER) Tj ET
+1.05 w 480.0 404.0 m 480.0 350.0 l S
+480.0 350.0 m 483.0 356.3 l 477.0 356.3 l h f
+BT /F1 8 Tf 1 0 0 1 484.0 381.0 Tm (STAFF) Tj ET
+1.05 w 555.0 404.0 m 765.0 350.0 l S
+765.0 350.0 m 759.7 354.5 l 758.1 348.6 l h f
+BT /F1 8 Tf 1 0 0 1 664.0 381.0 Tm (ADMIN) Tj ET
+1.15 w 55.0 108.0 260.0 102.0 re S
+BT /F2 12 Tf 1 0 0 1 65.0 192.0 Tm (Booking transaction) Tj ET
+0.7 w 63.0 185.0 m 307.0 185.0 l S
+BT /F1 9 Tf 1 0 0 1 65.0 169.0 Tm (Check exact slot, active overlaps and date locks) Tj ET
+BT /F1 9 Tf 1 0 0 1 65.0 156.0 Tm (Create PENDING booking atomically/idempotently) Tj ET
+BT /F1 9 Tf 1 0 0 1 65.0 143.0 Tm (Notify customer; optional receipt + payment proof) Tj ET
+1.15 w 350.0 108.0 260.0 102.0 re S
+BT /F2 12 Tf 1 0 0 1 360.0 192.0 Tm (Payment verification) Tj ET
+0.7 w 358.0 185.0 m 602.0 185.0 l S
+BT /F1 9 Tf 1 0 0 1 360.0 169.0 Tm (Staff/admin approve or reject proof) Tj ET
+BT /F1 9 Tf 1 0 0 1 360.0 156.0 Tm (Update payment + booking state; audit action) Tj ET
+BT /F1 9 Tf 1 0 0 1 360.0 143.0 Tm (Notify customer of verification outcome) Tj ET
+1.15 w 645.0 108.0 260.0 102.0 re S
+BT /F2 12 Tf 1 0 0 1 655.0 192.0 Tm (POS transaction) Tj ET
+0.7 w 653.0 185.0 m 897.0 185.0 l S
+BT /F1 9 Tf 1 0 0 1 655.0 169.0 Tm (Validate products, recipe quantities, discount,) Tj ET
+BT /F1 9 Tf 1 0 0 1 655.0 156.0 Tm (payment) Tj ET
+BT /F1 9 Tf 1 0 0 1 655.0 143.0 Tm (Atomic order + stock/ingredient decrement + events) Tj ET
+BT /F1 9 Tf 1 0 0 1 655.0 130.0 Tm (Record payment/audit; receipt printing is optional) Tj ET
+1.05 w 195.0 270.0 m 185.0 210.0 l S
+185.0 210.0 m 189.0 215.7 l 183.0 216.7 l h f
+1.05 w 480.0 270.0 m 480.0 210.0 l S
+480.0 210.0 m 483.0 216.3 l 477.0 216.3 l h f
+BT /F1 8 Tf 1 0 0 1 484.0 244.0 Tm (booking/payment queue) Tj ET
+1.05 w 765.0 270.0 m 775.0 210.0 l S
+775.0 210.0 m 777.0 216.7 l 771.0 215.7 l h f
+BT /F1 8 Tf 1 0 0 1 774.0 244.0 Tm (staff POS capability) Tj ET
+1.15 w 230.0 52.0 500.0 34.0 re S
+BT /F2 12 Tf 1 0 0 1 240.0 68.0 Tm (Read models and outputs) Tj ET
+0.7 w 238.0 61.0 m 722.0 61.0 l S
+1.05 w 185.0 108.0 m 330.0 86.0 l S
+330.0 86.0 m 324.2 90.0 l 323.3 83.9 l h f
+1.05 w 480.0 108.0 m 480.0 86.0 l S
+480.0 86.0 m 483.0 92.3 l 477.0 92.3 l h f
+1.05 w 775.0 108.0 m 630.0 86.0 l S
+630.0 86.0 m 636.7 83.9 l 635.8 90.0 l h f
+0.7 w 36.0 38.0 m 924.0 38.0 l S
+BT /F1 7 Tf 1 0 0 1 36.0 20.0 Tm (Sources: frontend/src/App.js; backend/config/urls.py; booking/views.py; pos/views.py; notifications/booking_events.py) Tj ET
+BT /F2 8 Tf 1 0 0 1 888.0 20.0 Tm (2 / 7) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 17 0 R /MediaBox [0 0 960 680] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 5988 >>
+stream
+1 J 1 j 0 G 0 g
+0 g 0 568 960 112 re f
+1 g
+BT /F2 10 Tf 1 0 0 1 36.0 642.0 Tm (CAV PHOTO STUDIO & CAFE  |  SYSTEM DESIGN) Tj ET
+BT /F2 24 Tf 1 0 0 1 36.0 608.0 Tm (Role-Based Access Control \(RBAC\)) Tj ET
+BT /F1 10 Tf 1 0 0 1 36.0 586.0 Tm (Three application roles plus anonymous/public access. API permissions and per-record filters are shown.) Tj ET
+0 g
+1 w 36.0 568.0 m 924.0 568.0 l S
+1 w 42.0 505.0 168.0 38.0 re S
+BT /F2 10 Tf 1 0 0 1 50.0 519.0 Tm (Capability) Tj ET
+1 w 210.0 505.0 185.0 38.0 re S
+BT /F2 10 Tf 1 0 0 1 218.0 519.0 Tm (Public / Anonymous) Tj ET
+1 w 395.0 505.0 185.0 38.0 re S
+BT /F2 10 Tf 1 0 0 1 403.0 519.0 Tm (CUSTOMER) Tj ET
+1 w 580.0 505.0 185.0 38.0 re S
+BT /F2 10 Tf 1 0 0 1 588.0 519.0 Tm (STAFF) Tj ET
+1 w 765.0 505.0 153.0 38.0 re S
+BT /F2 10 Tf 1 0 0 1 773.0 519.0 Tm (ADMIN) Tj ET
+0.65 w 42.0 448.0 168.0 57.0 re S
+BT /F2 8.2 Tf 1 0 0 1 49.0 489.0 Tm (Landing catalogue) Tj ET
+0.65 w 210.0 448.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 217.0 489.0 Tm (Read services, packages,) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 217.0 479.0 Tm (gallery, active products) Tj ET
+0.65 w 395.0 448.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 402.0 489.0 Tm (Read) Tj ET
+0.65 w 580.0 448.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 587.0 489.0 Tm (Read) Tj ET
+0.65 w 765.0 448.0 153.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 772.0 489.0 Tm (Read) Tj ET
+0.65 w 42.0 391.0 168.0 57.0 re S
+BT /F2 8.2 Tf 1 0 0 1 49.0 432.0 Tm (Account and profile) Tj ET
+0.65 w 210.0 391.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 217.0 432.0 Tm (Login/register/reset; no private) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 217.0 422.0 Tm (records) Tj ET
+0.65 w 395.0 391.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 402.0 432.0 Tm (Own profile, consent, export,) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 402.0 422.0 Tm (requests) Tj ET
+0.65 w 580.0 391.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 587.0 432.0 Tm (Own profile; admin manages) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 587.0 422.0 Tm (accounts) Tj ET
+0.65 w 765.0 391.0 153.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 772.0 432.0 Tm (Manage staff/users; reset) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 772.0 422.0 Tm (protected) Tj ET
+0.65 w 42.0 334.0 168.0 57.0 re S
+BT /F2 8.2 Tf 1 0 0 1 49.0 375.0 Tm (Booking records) Tj ET
+0.65 w 210.0 334.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 217.0 375.0 Tm (No create/read) Tj ET
+0.65 w 395.0 334.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 402.0 375.0 Tm (Create; own bookings only; edit) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 402.0 365.0 Tm (rules/time window) Tj ET
+0.65 w 580.0 334.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 587.0 375.0 Tm (All bookings; update/validate) Tj ET
+0.65 w 765.0 334.0 153.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 772.0 375.0 Tm (All bookings; admin-only) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 772.0 365.0 Tm (studio date blocks) Tj ET
+0.65 w 42.0 277.0 168.0 57.0 re S
+BT /F2 8.2 Tf 1 0 0 1 49.0 318.0 Tm (Booking payments) Tj ET
+0.65 w 210.0 277.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 217.0 318.0 Tm (Read payment methods) Tj ET
+0.65 w 395.0 277.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 402.0 318.0 Tm (Submit own proof; own) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 402.0 308.0 Tm (status/receipt) Tj ET
+0.65 w 580.0 277.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 587.0 318.0 Tm (Verify APPROVED/REJECTED; view) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 587.0 308.0 Tm (all) Tj ET
+0.65 w 765.0 277.0 153.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 772.0 318.0 Tm (Verify APPROVED/REJECTED;) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 772.0 308.0 Tm (view all) Tj ET
+0.65 w 42.0 220.0 168.0 57.0 re S
+BT /F2 8.2 Tf 1 0 0 1 49.0 261.0 Tm (POS and inventory) Tj ET
+0.65 w 210.0 220.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 217.0 261.0 Tm (Public active menu only) Tj ET
+0.65 w 395.0 220.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 402.0 261.0 Tm (No operational writes) Tj ET
+0.65 w 580.0 220.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 587.0 261.0 Tm (Orders/payments;) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 587.0 251.0 Tm (product/stock/ingredient/PO) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 587.0 241.0 Tm (operations) Tj ET
+0.65 w 765.0 220.0 153.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 772.0 261.0 Tm (Same operational) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 772.0 251.0 Tm (capabilities; reports) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 772.0 241.0 Tm (admin-only EOD) Tj ET
+0.65 w 42.0 163.0 168.0 57.0 re S
+BT /F2 8.2 Tf 1 0 0 1 49.0 204.0 Tm (Analytics / forecasting) Tj ET
+0.65 w 210.0 163.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 217.0 204.0 Tm (No access) Tj ET
+0.65 w 395.0 163.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 402.0 204.0 Tm (No access) Tj ET
+0.65 w 580.0 163.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 587.0 204.0 Tm (Dashboard + forecast; upload) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 587.0 194.0 Tm (history CSV) Tj ET
+0.65 w 765.0 163.0 153.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 772.0 204.0 Tm (Dashboard + forecast;) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 772.0 194.0 Tm (upload history CSV) Tj ET
+0.65 w 42.0 106.0 168.0 57.0 re S
+BT /F2 8.2 Tf 1 0 0 1 49.0 147.0 Tm (Admin-only actions) Tj ET
+0.65 w 210.0 106.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 217.0 147.0 Tm (No access) Tj ET
+0.65 w 395.0 106.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 402.0 147.0 Tm (No access) Tj ET
+0.65 w 580.0 106.0 185.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 587.0 147.0 Tm (No access) Tj ET
+0.65 w 765.0 106.0 153.0 57.0 re S
+BT /F1 8.2 Tf 1 0 0 1 772.0 147.0 Tm (Staff CRUD, FAQ) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 772.0 137.0 Tm (management, system reset,) Tj ET
+BT /F1 8.2 Tf 1 0 0 1 772.0 127.0 Tm (EOD reports,) Tj ET
+0.8 w 42.0 50.0 868.0 48.0 re S
+BT /F2 10 Tf 1 0 0 1 52.0 82.0 Tm (Enforcement notes) Tj ET
+BT /F1 8.5 Tf 1 0 0 1 52.0 67.0 Tm (Default API access requires authentication; public endpoints explicitly opt out.) Tj ET
+BT /F1 8.5 Tf 1 0 0 1 52.0 55.0 Tm (CUSTOMER booking/payment records are owner-filtered; STAFF and ADMIN share operations access.) Tj ET
+0.7 w 36.0 38.0 m 924.0 38.0 l S
+BT /F1 7 Tf 1 0 0 1 36.0 20.0 Tm (Sources: users/permissions.py; users/views.py; booking/views.py; inventory/views.py; pos/views.py; dashboard/views.py; forecasting/views.py) Tj ET
+BT /F2 8 Tf 1 0 0 1 888.0 20.0 Tm (3 / 7) Tj ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 17 0 R /MediaBox [0 0 960 680] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 4447 >>
+stream
+1 J 1 j 0 G 0 g
+0 g 0 568 960 112 re f
+1 g
+BT /F2 10 Tf 1 0 0 1 36.0 642.0 Tm (CAV PHOTO STUDIO & CAFE  |  SYSTEM DESIGN) Tj ET
+BT /F2 24 Tf 1 0 0 1 36.0 608.0 Tm (Deployment Diagram) Tj ET
+BT /F1 10 Tf 1 0 0 1 36.0 586.0 Tm (Production topology from Render configuration, Dockerfile, Django settings and Capacitor client configuration.) Tj ET
+0 g
+1 w 36.0 568.0 m 924.0 568.0 l S
+1.15 w 42.0 418.0 200.0 112.0 re S
+BT /F2 12 Tf 1 0 0 1 52.0 512.0 Tm (User devices) Tj ET
+0.7 w 50.0 505.0 m 234.0 505.0 l S
+BT /F1 9 Tf 1 0 0 1 52.0 489.0 Tm (Desktop/mobile browser) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 476.0 Tm (Android Capacitor app) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 463.0 Tm (Local staff print bridge runs on) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 450.0 Tm (workstation when used) Tj ET
+1.15 w 310.0 405.0 260.0 138.0 re S
+BT /F2 12 Tf 1 0 0 1 320.0 525.0 Tm (Render static site) Tj ET
+0.7 w 318.0 518.0 m 562.0 518.0 l S
+BT /F1 9 Tf 1 0 0 1 320.0 502.0 Tm (cav-photostudio-and-cafe-frontend) Tj ET
+BT /F1 9 Tf 1 0 0 1 320.0 489.0 Tm (npm ci -> npm run build) Tj ET
+BT /F1 9 Tf 1 0 0 1 320.0 476.0 Tm (Publishes frontend/build; SPA rewrite to) Tj ET
+BT /F1 9 Tf 1 0 0 1 320.0 463.0 Tm (index.html) Tj ET
+BT /F1 9 Tf 1 0 0 1 320.0 450.0 Tm (CSP, HSTS, no-store and other response headers) Tj ET
+1.15 w 680.0 405.0 238.0 138.0 re S
+BT /F2 12 Tf 1 0 0 1 690.0 525.0 Tm (Render web service) Tj ET
+0.7 w 688.0 518.0 m 910.0 518.0 l S
+BT /F1 9 Tf 1 0 0 1 690.0 502.0 Tm (cav-photostudio-and-cafe) Tj ET
+BT /F1 9 Tf 1 0 0 1 690.0 489.0 Tm (Python 3.11-slim + Tesseract) Tj ET
+BT /F1 9 Tf 1 0 0 1 690.0 476.0 Tm (migrate + migrate --check -> Gunicorn WSGI) Tj ET
+BT /F1 9 Tf 1 0 0 1 690.0 463.0 Tm (/health/ endpoint; collectstatic at image) Tj ET
+BT /F1 9 Tf 1 0 0 1 690.0 450.0 Tm (build) Tj ET
+1.05 w 242.0 478.0 m 310.0 478.0 l S
+310.0 478.0 m 303.7 481.0 l 303.7 475.0 l h f
+BT /F1 8 Tf 1 0 0 1 280.0 482.0 Tm (HTTPS) Tj ET
+1.05 w 570.0 478.0 m 680.0 478.0 l S
+680.0 478.0 m 673.7 481.0 l 673.7 475.0 l h f
+BT /F1 8 Tf 1 0 0 1 629.0 482.0 Tm (HTTPS REST / cookie JWT) Tj ET
+1.15 w 680.0 224.0 238.0 112.0 re S
+BT /F2 12 Tf 1 0 0 1 690.0 318.0 Tm (PostgreSQL database) Tj ET
+0.7 w 688.0 311.0 m 910.0 311.0 l S
+BT /F1 9 Tf 1 0 0 1 690.0 295.0 Tm (DATABASE_URL required by settings) Tj ET
+BT /F1 9 Tf 1 0 0 1 690.0 282.0 Tm (Supabase PostgreSQL expected in production) Tj ET
+BT /F1 9 Tf 1 0 0 1 690.0 269.0 Tm (TLS required for PostgreSQL by default; ORM) Tj ET
+BT /F1 9 Tf 1 0 0 1 690.0 256.0 Tm (migrations) Tj ET
+1.05 w 800.0 405.0 m 800.0 336.0 l S
+800.0 336.0 m 803.0 342.3 l 797.0 342.3 l h f
+BT /F1 8 Tf 1 0 0 1 804.0 374.5 Tm (Django ORM) Tj ET
+1.15 w 354.0 224.0 216.0 112.0 re S
+BT /F2 12 Tf 1 0 0 1 364.0 318.0 Tm (External delivery / AI) Tj ET
+0.7 w 362.0 311.0 m 562.0 311.0 l S
+BT /F1 9 Tf 1 0 0 1 364.0 295.0 Tm (Resend API or SMTP; iProgSMS) Tj ET
+BT /F1 9 Tf 1 0 0 1 364.0 282.0 Tm (Web Push provider endpoints) Tj ET
+BT /F1 9 Tf 1 0 0 1 364.0 269.0 Tm (OpenRouter optional) Tj ET
+1.05 w 720.0 380.0 m 570.0 300.0 l S
+570.0 300.0 m 577.0 300.3 l 574.1 305.7 l h f
+BT /F1 8 Tf 1 0 0 1 649.0 344.0 Tm (outbound HTTPS) Tj ET
+1.15 w 42.0 224.0 200.0 112.0 re S
+BT /F2 12 Tf 1 0 0 1 52.0 318.0 Tm (Local / native services) Tj ET
+0.7 w 50.0 311.0 m 234.0 311.0 l S
+BT /F1 9 Tf 1 0 0 1 52.0 295.0 Tm (Local print bridge -> OS printer) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 282.0 Tm (Capacitor origins allowed by CORS) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 269.0 Tm (Mobile API defaults to deployed) Tj ET
+BT /F1 9 Tf 1 0 0 1 52.0 256.0 Tm (backend) Tj ET
+1.05 w 142.0 418.0 m 142.0 336.0 l S
+142.0 336.0 m 145.0 342.3 l 139.0 342.3 l h f
+BT /F1 8 Tf 1 0 0 1 146.0 381.0 Tm (local only) Tj ET
+1.15 w 310.0 90.0 608.0 80.0 re S
+BT /F2 12 Tf 1 0 0 1 320.0 152.0 Tm (Operational settings) Tj ET
+0.7 w 318.0 145.0 m 910.0 145.0 l S
+BT /F1 9 Tf 1 0 0 1 320.0 129.0 Tm (Secrets and toggles are environment-based: Django secret, DATABASE_URL, CORS origins, provider keys, delivery flags, QR) Tj ET
+BT /F1 9 Tf 1 0 0 1 320.0 116.0 Tm (URLs, media path. Uploaded media path is configurable; no object-storage service is declared in render.yaml.) Tj ET
+1.05 w 800.0 224.0 m 800.0 170.0 l S
+800.0 170.0 m 803.0 176.3 l 797.0 176.3 l h f
+0.7 w 36.0 38.0 m 924.0 38.0 l S
+BT /F1 7 Tf 1 0 0 1 36.0 20.0 Tm (Sources: render.yaml; backend/Dockerfile; backend/config/settings.py; frontend/src/api/config.js; frontend/serve-build.js) Tj ET
+BT /F2 8 Tf 1 0 0 1 888.0 20.0 Tm (4 / 7) Tj ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 17 0 R /MediaBox [0 0 960 680] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 9 0 R >>
+endobj
+11 0 obj
+<< /Length 4864 >>
+stream
+1 J 1 j 0 G 0 g
+0 g 0 568 960 112 re f
+1 g
+BT /F2 10 Tf 1 0 0 1 36.0 642.0 Tm (CAV PHOTO STUDIO & CAFE  |  SYSTEM DESIGN) Tj ET
+BT /F2 24 Tf 1 0 0 1 36.0 608.0 Tm (Input - Process - Output \(IPO\)) Tj ET
+BT /F1 10 Tf 1 0 0 1 36.0 586.0 Tm (Inputs, processing rules and persisted/returned outputs for four implemented workflows.) Tj ET
+0 g
+1 w 36.0 568.0 m 924.0 568.0 l S
+1 w 42.0 509.0 260.0 34.0 re S
+BT /F2 11 Tf 1 0 0 1 52.0 520.0 Tm (INPUT) Tj ET
+1 w 350.0 509.0 260.0 34.0 re S
+BT /F2 11 Tf 1 0 0 1 360.0 520.0 Tm (PROCESS) Tj ET
+1 w 658.0 509.0 260.0 34.0 re S
+BT /F2 11 Tf 1 0 0 1 668.0 520.0 Tm (OUTPUT) Tj ET
+BT /F2 9 Tf 1 0 0 1 45.0 484.0 Tm (BOOKING) Tj ET
+0.7 w 42.0 404.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 49.0 463.0 Tm (Authenticated customer: package, date, time,) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 49.0 454.0 Tm (notes, idempotency key) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 49.0 443.0 Tm (Payment proof / reference, if submitted) Tj ET
+0.7 w 350.0 404.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 357.0 463.0 Tm (Check role, package, business hours, overlaps,) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 454.0 Tm (unavailable dates) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 443.0 Tm (Lock date and create/update transactionally;) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 434.0 Tm (payment proof stored) Tj ET
+0.7 w 658.0 404.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 665.0 463.0 Tm (Booking status + history; Payment linked to) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 665.0 454.0 Tm (Booking) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 665.0 443.0 Tm (Notification records; later staff verification) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 665.0 434.0 Tm (changes status) Tj ET
+BT /F2 9 Tf 1 0 0 1 45.0 375.0 Tm (POS SALE) Tj ET
+0.7 w 42.0 295.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 49.0 354.0 Tm (Staff cart with product IDs/qty, optional) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 49.0 345.0 Tm (booking link, discount) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 49.0 334.0 Tm (Payment details + optional print request) Tj ET
+0.7 w 350.0 295.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 357.0 354.0 Tm (Validate active products and stock/recipe) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 345.0 Tm (ingredients) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 334.0 Tm (Atomic order/payment/stock updates; append) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 325.0 Tm (InventoryEvent + AuditLog) Tj ET
+0.7 w 658.0 295.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 665.0 354.0 Tm (Order with line_items and payment status) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 665.0 343.0 Tm (Inventory counts/movements; printable receipt) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 665.0 334.0 Tm (response) Tj ET
+BT /F2 9 Tf 1 0 0 1 45.0 266.0 Tm (FORECAST) Tj ET
+0.7 w 42.0 186.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 49.0 245.0 Tm (Staff/admin CSV upload \(<=10 MB\) or configured) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 49.0 236.0 Tm (source CSV) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 49.0 225.0 Tm (Date, quantity/amount/items columns) Tj ET
+0.7 w 350.0 186.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 357.0 245.0 Tm (Normalize aliases; parse rows; skip invalid;) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 236.0 Tm (hash/dedupe; atomically activate snapshot) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 225.0 Tm (Exclude cancelled/void/refund-like statuses;) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 216.0 Tm (aggregate series; choose moving average or) Tj ET
+0.7 w 658.0 186.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 665.0 245.0 Tm (Sales/demand forecast ranges, metrics,) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 665.0 236.0 Tm (data-quality status) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 665.0 225.0 Tm (Reorder recommendations using live inventory) Tj ET
+BT /F2 9 Tf 1 0 0 1 45.0 157.0 Tm (CHATBOT / DASHBOARD) Tj ET
+0.7 w 42.0 77.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 49.0 136.0 Tm (Question/history/role OR date range/grain) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 49.0 127.0 Tm (query) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 49.0 116.0 Tm (Database bookings, orders, payments,) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 49.0 107.0 Tm (inventory; approved knowledge) Tj ET
+0.7 w 350.0 77.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 357.0 136.0 Tm (Safety checks; live lookup / FAQ retrieval;) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 127.0 Tm (optional grounded OpenRouter) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 116.0 Tm (Dashboard aggregation over paid orders,) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 357.0 107.0 Tm (approved booking payments and inventory) Tj ET
+0.7 w 658.0 77.0 260.0 74.0 re S
+BT /F1 7.5 Tf 1 0 0 1 665.0 136.0 Tm (Answer + source/citations; explicit action) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 665.0 127.0 Tm (proposal/confirmation) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 665.0 116.0 Tm (JSON metrics, trends, bookings, alerts, top) Tj ET
+BT /F1 7.5 Tf 1 0 0 1 665.0 107.0 Tm (products/packages) Tj ET
+0.7 w 36.0 38.0 m 924.0 38.0 l S
+BT /F1 7 Tf 1 0 0 1 36.0 20.0 Tm (Sources: booking/views.py; booking/availability.py; pos/views.py; inventory/models.py; forecasting/*; chatbot/views.py; dashboard/views.py) Tj ET
+BT /F2 8 Tf 1 0 0 1 888.0 20.0 Tm (5 / 7) Tj ET
+endstream
+endobj
+12 0 obj
+<< /Type /Page /Parent 17 0 R /MediaBox [0 0 960 680] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 11 0 R >>
+endobj
+13 0 obj
+<< /Length 4550 >>
+stream
+1 J 1 j 0 G 0 g
+0 g 0 568 960 112 re f
+1 g
+BT /F2 10 Tf 1 0 0 1 36.0 642.0 Tm (CAV PHOTO STUDIO & CAFE  |  SYSTEM DESIGN) Tj ET
+BT /F2 24 Tf 1 0 0 1 36.0 608.0 Tm (System Context Diagram) Tj ET
+BT /F1 10 Tf 1 0 0 1 36.0 586.0 Tm (CAV system boundaries and the external actors/services that exchange data with the implemented application.) Tj ET
+0 g
+1 w 36.0 568.0 m 924.0 568.0 l S
+1.15 w 350.0 270.0 260.0 135.0 re S
+BT /F2 12 Tf 1 0 0 1 360.0 387.0 Tm (CAV Management System) Tj ET
+0.7 w 358.0 380.0 m 602.0 380.0 l S
+BT /F1 9 Tf 1 0 0 1 360.0 364.0 Tm (React / Capacitor client) Tj ET
+BT /F1 9 Tf 1 0 0 1 360.0 351.0 Tm (Django REST API + role checks) Tj ET
+BT /F1 9 Tf 1 0 0 1 360.0 338.0 Tm (PostgreSQL via Django ORM) Tj ET
+BT /F1 9 Tf 1 0 0 1 360.0 325.0 Tm (Booking, POS, inventory, analytics, chatbot,) Tj ET
+BT /F1 9 Tf 1 0 0 1 360.0 312.0 Tm (notification domains) Tj ET
+1.15 w 45.0 453.0 225.0 82.0 re S
+BT /F2 12 Tf 1 0 0 1 55.0 517.0 Tm (Customer) Tj ET
+0.7 w 53.0 510.0 m 262.0 510.0 l S
+BT /F1 9 Tf 1 0 0 1 55.0 494.0 Tm (Browse catalogue; register/login) Tj ET
+BT /F1 9 Tf 1 0 0 1 55.0 481.0 Tm (Book, submit payment proof) Tj ET
+BT /F1 9 Tf 1 0 0 1 55.0 468.0 Tm (Chat, receive notifications) Tj ET
+1.15 w 45.0 168.0 225.0 82.0 re S
+BT /F2 12 Tf 1 0 0 1 55.0 232.0 Tm (Staff / Admin) Tj ET
+0.7 w 53.0 225.0 m 262.0 225.0 l S
+BT /F1 9 Tf 1 0 0 1 55.0 209.0 Tm (Manage bookings / verification) Tj ET
+BT /F1 9 Tf 1 0 0 1 55.0 196.0 Tm (Run POS and inventory) Tj ET
+BT /F1 9 Tf 1 0 0 1 55.0 183.0 Tm (View analytics / forecasts) Tj ET
+1.15 w 720.0 458.0 200.0 82.0 re S
+BT /F2 12 Tf 1 0 0 1 730.0 522.0 Tm (Payment / receipt sources) Tj ET
+0.7 w 728.0 515.0 m 912.0 515.0 l S
+BT /F1 8.5 Tf 1 0 0 1 730.0 499.0 Tm (GCash / Maya / MariBank proof) Tj ET
+BT /F1 8.5 Tf 1 0 0 1 730.0 486.5 Tm (QR assets configured by URL) Tj ET
+BT /F1 8.5 Tf 1 0 0 1 730.0 474.0 Tm (Manual review; no payment gateway) Tj ET
+1.15 w 720.0 333.0 200.0 82.0 re S
+BT /F2 12 Tf 1 0 0 1 730.0 397.0 Tm (Communication providers) Tj ET
+0.7 w 728.0 390.0 m 912.0 390.0 l S
+BT /F1 9 Tf 1 0 0 1 730.0 374.0 Tm (SMTP or Resend email) Tj ET
+BT /F1 9 Tf 1 0 0 1 730.0 361.0 Tm (iProgSMS) Tj ET
+BT /F1 9 Tf 1 0 0 1 730.0 348.0 Tm (Web Push subscriptions) Tj ET
+1.15 w 720.0 208.0 200.0 82.0 re S
+BT /F2 12 Tf 1 0 0 1 730.0 272.0 Tm (OCR / language providers) Tj ET
+0.7 w 728.0 265.0 m 912.0 265.0 l S
+BT /F1 8.5 Tf 1 0 0 1 730.0 249.0 Tm (OCR.space; local Tesseract fallback) Tj ET
+BT /F1 8.5 Tf 1 0 0 1 730.0 236.5 Tm (OpenRouter optional grounded rewrite) Tj ET
+BT /F1 8.5 Tf 1 0 0 1 730.0 224.0 Tm (Local FAQ/live-data fallback) Tj ET
+1.15 w 350.0 113.0 260.0 82.0 re S
+BT /F2 12 Tf 1 0 0 1 360.0 177.0 Tm (Forecast history source) Tj ET
+0.7 w 358.0 170.0 m 602.0 170.0 l S
+BT /F1 9 Tf 1 0 0 1 360.0 154.0 Tm (Uploaded CSV via staff endpoint) Tj ET
+BT /F1 9 Tf 1 0 0 1 360.0 141.0 Tm (or configured project CSV import) Tj ET
+BT /F1 9 Tf 1 0 0 1 360.0 128.0 Tm (Snapshot stored in forecasting tables) Tj ET
+1.15 w 350.0 453.0 260.0 82.0 re S
+BT /F2 12 Tf 1 0 0 1 360.0 517.0 Tm (Browser / workstation) Tj ET
+0.7 w 358.0 510.0 m 602.0 510.0 l S
+BT /F1 9 Tf 1 0 0 1 360.0 494.0 Tm (Web client and Android shell) Tj ET
+BT /F1 9 Tf 1 0 0 1 360.0 481.0 Tm (Optional local receipt bridge + printer) Tj ET
+BT /F1 9 Tf 1 0 0 1 360.0 468.0 Tm (No remote printer service) Tj ET
+1.05 w 270.0 495.0 m 350.0 375.0 l S
+350.0 375.0 m 349.0 381.9 l 344.0 378.6 l h f
+BT /F1 8 Tf 1 0 0 1 314.0 439.0 Tm (HTTPS UI) Tj ET
+1.05 w 270.0 210.0 m 350.0 290.0 l S
+350.0 290.0 m 343.4 287.7 l 347.7 283.4 l h f
+BT /F1 8 Tf 1 0 0 1 314.0 254.0 Tm (HTTPS UI) Tj ET
+1.05 w 610.0 355.0 m 720.0 500.0 l S
+720.0 500.0 m 713.8 496.8 l 718.6 493.1 l h f
+BT /F1 8 Tf 1 0 0 1 669.0 431.5 Tm (payment proof) Tj ET
+1.05 w 720.0 380.0 m 610.0 340.0 l S
+610.0 340.0 m 617.0 339.3 l 614.9 345.0 l h f
+BT /F1 8 Tf 1 0 0 1 669.0 364.0 Tm (email/SMS/push) Tj ET
+1.05 w 610.0 325.0 m 720.0 250.0 l S
+720.0 250.0 m 716.5 256.1 l 713.1 251.0 l h f
+BT /F1 8 Tf 1 0 0 1 669.0 291.5 Tm (optional outbound) Tj ET
+1.05 w 610.0 155.0 m 480.0 270.0 l S
+480.0 270.0 m 482.7 263.5 l 486.7 268.1 l h f
+BT /F1 8 Tf 1 0 0 1 549.0 216.5 Tm (CSV upload/import) Tj ET
+1.05 w 480.0 405.0 m 480.0 453.0 l S
+480.0 453.0 m 477.0 446.7 l 483.0 446.7 l h f
+BT /F1 8 Tf 1 0 0 1 484.0 433.0 Tm (client API) Tj ET
+0.7 w 36.0 38.0 m 924.0 38.0 l S
+BT /F1 7 Tf 1 0 0 1 36.0 20.0 Tm (Sources: frontend/src/*; backend/config/urls.py; backend/config/settings.py; backend/apps/*; backend/ml/*) Tj ET
+BT /F2 8 Tf 1 0 0 1 888.0 20.0 Tm (6 / 7) Tj ET
+endstream
+endobj
+14 0 obj
+<< /Type /Page /Parent 17 0 R /MediaBox [0 0 960 680] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 13 0 R >>
+endobj
+15 0 obj
+<< /Length 5954 >>
+stream
+1 J 1 j 0 G 0 g
+0 g 0 568 960 112 re f
+1 g
+BT /F2 10 Tf 1 0 0 1 36.0 642.0 Tm (CAV PHOTO STUDIO & CAFE  |  SYSTEM DESIGN) Tj ET
+BT /F2 24 Tf 1 0 0 1 36.0 608.0 Tm (Data Pipeline) Tj ET
+BT /F1 10 Tf 1 0 0 1 36.0 586.0 Tm (Persisted business events and analytical feeds; forecast-history ingestion is separate from operational POS transactions.) Tj ET
+0 g
+1 w 36.0 568.0 m 924.0 568.0 l S
+1.15 w 42.0 440.0 180.0 100.0 re S
+BT /F2 12 Tf 1 0 0 1 52.0 522.0 Tm (Booking intake) Tj ET
+0.7 w 50.0 515.0 m 214.0 515.0 l S
+BT /F1 8.7 Tf 1 0 0 1 52.0 499.0 Tm (Validate availability + idempotency) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 52.0 486.3 Tm (Create Booking; optional proof) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 52.0 473.6 Tm (Payment) Tj ET
+1.15 w 260.0 440.0 180.0 100.0 re S
+BT /F2 12 Tf 1 0 0 1 270.0 522.0 Tm (Booking state change) Tj ET
+0.7 w 268.0 515.0 m 432.0 515.0 l S
+BT /F1 8.7 Tf 1 0 0 1 270.0 499.0 Tm (Staff/admin verifies proof) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 270.0 486.3 Tm (Approve/reject updates Payment +) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 270.0 473.6 Tm (Booking) Tj ET
+1.15 w 478.0 440.0 180.0 100.0 re S
+BT /F2 12 Tf 1 0 0 1 488.0 522.0 Tm (POS checkout) Tj ET
+0.7 w 486.0 515.0 m 650.0 515.0 l S
+BT /F1 8.7 Tf 1 0 0 1 488.0 499.0 Tm (Validate cart / recipe needs) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 488.0 486.3 Tm (Atomic Order + Payment + stock) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 488.0 473.6 Tm (change) Tj ET
+1.15 w 696.0 440.0 222.0 100.0 re S
+BT /F2 12 Tf 1 0 0 1 706.0 522.0 Tm (Operational records) Tj ET
+0.7 w 704.0 515.0 m 910.0 515.0 l S
+BT /F1 8.7 Tf 1 0 0 1 706.0 499.0 Tm (Booking, Payment, Order) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 706.0 486.3 Tm (Product + InventoryEvent) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 706.0 473.6 Tm (AuditLog) Tj ET
+1.05 w 222.0 490.0 m 260.0 490.0 l S
+260.0 490.0 m 253.7 493.0 l 253.7 487.0 l h f
+1.05 w 440.0 490.0 m 450.0 490.0 l S
+1.05 w 450.0 490.0 m 450.0 415.0 l S
+1.05 w 450.0 415.0 m 680.0 415.0 l S
+1.05 w 680.0 415.0 m 720.0 440.0 l S
+720.0 440.0 m 713.0 439.2 l 716.3 434.1 l h f
+BT /F1 8 Tf 1 0 0 1 704.0 431.5 Tm (verified status) Tj ET
+1.05 w 658.0 490.0 m 696.0 490.0 l S
+696.0 490.0 m 689.7 493.0 l 689.7 487.0 l h f
+BT /F1 8 Tf 1 0 0 1 681.0 494.0 Tm (POS records) Tj ET
+1.15 w 42.0 289.0 180.0 86.0 re S
+BT /F2 12 Tf 1 0 0 1 52.0 357.0 Tm (Domain event) Tj ET
+0.7 w 50.0 350.0 m 214.0 350.0 l S
+BT /F1 8.7 Tf 1 0 0 1 52.0 334.0 Tm (Booking created / changed) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 52.0 321.3 Tm (Payment outcome) Tj ET
+1.15 w 260.0 289.0 180.0 86.0 re S
+BT /F2 12 Tf 1 0 0 1 270.0 357.0 Tm (Notification service) Tj ET
+0.7 w 268.0 350.0 m 432.0 350.0 l S
+BT /F1 8.7 Tf 1 0 0 1 270.0 334.0 Tm (Create in-app Notification) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 270.0 321.3 Tm (Queue email / SMS / push delivery) Tj ET
+1.15 w 478.0 289.0 180.0 86.0 re S
+BT /F2 12 Tf 1 0 0 1 488.0 357.0 Tm (Delivery lifecycle) Tj ET
+0.7 w 486.0 350.0 m 650.0 350.0 l S
+BT /F1 8.7 Tf 1 0 0 1 488.0 334.0 Tm (Provider acceptance/status) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 488.0 321.3 Tm (Retry windows; delivery records) Tj ET
+1.15 w 696.0 289.0 222.0 86.0 re S
+BT /F2 12 Tf 1 0 0 1 706.0 357.0 Tm (Recipients / admin view) Tj ET
+0.7 w 704.0 350.0 m 910.0 350.0 l S
+BT /F1 8.7 Tf 1 0 0 1 706.0 334.0 Tm (User inbox / browser push) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 706.0 321.3 Tm (Email / SMS providers) Tj ET
+BT /F1 8.7 Tf 1 0 0 1 706.0 308.6 Tm (Admin inspects delivery records) Tj ET
+1.05 w 222.0 332.0 m 260.0 332.0 l S
+260.0 332.0 m 253.7 335.0 l 253.7 329.0 l h f
+1.05 w 440.0 332.0 m 478.0 332.0 l S
+478.0 332.0 m 471.7 335.0 l 471.7 329.0 l h f
+1.05 w 658.0 332.0 m 696.0 332.0 l S
+696.0 332.0 m 689.7 335.0 l 689.7 329.0 l h f
+1.15 w 42.0 105.0 180.0 105.0 re S
+BT /F2 12 Tf 1 0 0 1 52.0 192.0 Tm (CSV input) Tj ET
+0.7 w 50.0 185.0 m 214.0 185.0 l S
+BT /F1 8.5 Tf 1 0 0 1 52.0 169.0 Tm (Staff upload or configured file) Tj ET
+BT /F1 8.5 Tf 1 0 0 1 52.0 156.5 Tm (Hash and schema validation) Tj ET
+BT /F1 8.5 Tf 1 0 0 1 52.0 144.0 Tm (Invalid rows counted/skipped) Tj ET
+1.15 w 260.0 105.0 180.0 105.0 re S
+BT /F2 12 Tf 1 0 0 1 270.0 192.0 Tm (Normalize + snapshot) Tj ET
+0.7 w 268.0 185.0 m 432.0 185.0 l S
+BT /F1 8.3 Tf 1 0 0 1 270.0 169.0 Tm (SalesHistoryImport metadata) Tj ET
+BT /F1 8.3 Tf 1 0 0 1 270.0 156.7 Tm (SalesHistoryRecord normalized rows) Tj ET
+BT /F1 8.3 Tf 1 0 0 1 270.0 144.4 Tm (Atomic activation; deduplicate by) Tj ET
+BT /F1 8.3 Tf 1 0 0 1 270.0 132.1 Tm (hash) Tj ET
+1.15 w 478.0 105.0 180.0 105.0 re S
+BT /F2 12 Tf 1 0 0 1 488.0 192.0 Tm (Forecast engine) Tj ET
+0.7 w 486.0 185.0 m 650.0 185.0 l S
+BT /F1 8.1 Tf 1 0 0 1 488.0 169.0 Tm (Exclude cancel/void/refund) Tj ET
+BT /F1 8.1 Tf 1 0 0 1 488.0 156.9 Tm (Aggregate daily sales + parsed items) Tj ET
+BT /F1 8.1 Tf 1 0 0 1 488.0 144.8 Tm (7-day mean / damped Holt; 90-day) Tj ET
+BT /F1 8.1 Tf 1 0 0 1 488.0 132.7 Tm (horizon) Tj ET
+1.15 w 696.0 105.0 222.0 105.0 re S
+BT /F2 12 Tf 1 0 0 1 706.0 192.0 Tm (Consumers) Tj ET
+0.7 w 704.0 185.0 m 910.0 185.0 l S
+BT /F1 8.0 Tf 1 0 0 1 706.0 169.0 Tm (Staff/admin forecast API) Tj ET
+BT /F1 8.0 Tf 1 0 0 1 706.0 157.0 Tm (Dashboard reads live Orders, approved booking) Tj ET
+BT /F1 8.0 Tf 1 0 0 1 706.0 145.0 Tm (Payments, inventory separately) Tj ET
+BT /F1 8.0 Tf 1 0 0 1 706.0 133.0 Tm (Reorder suggestions use current stock) Tj ET
+1.05 w 222.0 157.0 m 260.0 157.0 l S
+260.0 157.0 m 253.7 160.0 l 253.7 154.0 l h f
+1.05 w 440.0 157.0 m 478.0 157.0 l S
+478.0 157.0 m 471.7 160.0 l 471.7 154.0 l h f
+1.05 w 658.0 157.0 m 696.0 157.0 l S
+696.0 157.0 m 689.7 160.0 l 689.7 154.0 l h f
+0.8 w 42.0 52.0 876.0 34.0 re S
+BT /F2 9 Tf 1 0 0 1 54.0 64.0 Tm (No POS-to-forecast ETL is present: imported CSV snapshots feed the forecast engine; operational records feed dashboard analytics.) Tj ET
+0.7 w 36.0 38.0 m 924.0 38.0 l S
+BT /F1 7 Tf 1 0 0 1 36.0 20.0 Tm (Sources: pos/views.py; payment/models.py; inventory/models.py; booking/views.py; notifications/*; forecasting/*; dashboard/views.py) Tj ET
+BT /F2 8 Tf 1 0 0 1 888.0 20.0 Tm (7 / 7) Tj ET
+endstream
+endobj
+16 0 obj
+<< /Type /Page /Parent 17 0 R /MediaBox [0 0 960 680] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 15 0 R >>
+endobj
+17 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R 10 0 R 12 0 R 14 0 R 16 0 R] /Count 7 >>
+endobj
+18 0 obj
+<< /Type /Catalog /Pages 17 0 R >>
+endobj
+xref
+0 19
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000000160 00000 n 
+0000005679 00000 n 
+0000005816 00000 n 
+0000010262 00000 n 
+0000010399 00000 n 
+0000016439 00000 n 
+0000016576 00000 n 
+0000021075 00000 n 
+0000021213 00000 n 
+0000026130 00000 n 
+0000026269 00000 n 
+0000030872 00000 n 
+0000031011 00000 n 
+0000037018 00000 n 
+0000037157 00000 n 
+0000037255 00000 n 
+trailer
+<< /Size 19 /Root 18 0 R >>
+startxref
+37306
+%%EOF
