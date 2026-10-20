@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from users.permissions import IsAdmin
 
 from .models import AuditLog
-from .recorder import sanitize_metadata
+from .recorder import module_for_action, sanitize_metadata
 from django.utils.dateparse import parse_date
 
 
@@ -117,7 +117,7 @@ class AuditLogListView(APIView):
             'name': row.actor_name or (row.user.get_full_name().strip() or row.user.username if row.user else 'System'),
             'role': row.actor_role or (getattr(row.user, 'role', '') if row.user else 'SYSTEM'),
             'action': row.action,
-            'module': row.module or row.action.split('_', 1)[0],
+            'module': row.module or module_for_action(row.action),
             'record_reference': row.record_reference or str(row.metadata.get('booking_id') or row.metadata.get('request_id') or ''),
             'description': row.description,
             'details': sanitize_metadata(row.metadata),

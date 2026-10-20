@@ -3,7 +3,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from audit.models import AuditLog
-from audit.recorder import safe_change_details
+from audit.recorder import module_for_action, safe_change_details
 
 
 class ClientRuntimeErrorViewTests(TestCase):
@@ -86,6 +86,10 @@ class ClientRuntimeErrorViewTests(TestCase):
     def test_change_details_never_include_sensitive_fields_or_values(self):
         details = safe_change_details({'status': 'CONFIRMED', 'password': 'secret', 'otp_code': '123456', 'payment_reference': 'ABC'})
         self.assertEqual(details, {'changed_fields': ['payment_reference', 'status']})
+
+    def test_historical_action_module_is_inferred_without_rewriting_the_record(self):
+        self.assertEqual(module_for_action('BOOKING_PAYMENT_SUBMIT'), 'bookings')
+        self.assertEqual(module_for_action('POS_PAYMENT'), 'pos')
 
     def test_persisted_audit_record_redacts_sensitive_metadata(self):
         record = AuditLog.objects.create(

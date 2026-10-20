@@ -58,15 +58,8 @@ class AuditLog(models.Model):
             if not self.actor_role:
                 self.actor_role = self.user.role
         if not self.module:
-            prefix = self.action.upper().split('_', 1)[0]
-            self.module = {
-                'USER': 'auth', 'AUTH': 'auth', 'BOOKING': 'bookings', 'POS': 'pos',
-                'PRODUCT': 'inventory', 'INVENTORY': 'inventory', 'INGREDIENT': 'inventory',
-                'CATEGORY': 'inventory', 'SUPPLIER': 'inventory', 'PO': 'inventory',
-                'STOCK': 'inventory', 'ADMIN': 'users', 'PRIVACY': 'privacy',
-                'FAQ': 'chatbot', 'CLIENT': 'system', 'SYSTEM': 'system',
-                'NOTIFICATION': 'notifications', 'PAYMENT': 'payments', 'GALLERY': 'gallery',
-            }.get(prefix, prefix.lower()[:80])
+            from .recorder import module_for_action
+            self.module = module_for_action(self.action)
         if not self.record_reference and isinstance(self.metadata, dict):
             for key in ('booking_id', 'payment_id', 'order_id', 'product_id', 'user_id', 'request_id', 'report_id', 'record_id'):
                 value = self.metadata.get(key)

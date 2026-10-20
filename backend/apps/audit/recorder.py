@@ -38,6 +38,19 @@ def module_for_path(path):
     return 'system'
 
 
+def module_for_action(action):
+    prefix = str(action or '').upper().split('_', 1)[0]
+    return {
+        'USER': 'auth', 'AUTH': 'auth', 'BOOKING': 'bookings', 'POS': 'pos',
+        'TRANSACTION': 'pos', 'PRODUCT': 'inventory', 'INVENTORY': 'inventory',
+        'INGREDIENT': 'inventory', 'CATEGORY': 'inventory', 'SUPPLIER': 'inventory',
+        'PO': 'inventory', 'STOCK': 'inventory', 'ADMIN': 'users', 'ACCOUNT': 'users',
+        'STAFF': 'users', 'PRIVACY': 'privacy', 'FAQ': 'chatbot', 'CLIENT': 'system',
+        'SYSTEM': 'system', 'NOTIFICATION': 'notifications', 'PAYMENT': 'payments',
+        'GALLERY': 'gallery', 'REPORT': 'pos',
+    }.get(prefix, prefix.lower()[:80])
+
+
 def record_activity(*, user=None, action, description, module='', record_reference='', metadata=None, ip_address=None):
     user_id = getattr(user, 'pk', None)
     actor_name = ''
