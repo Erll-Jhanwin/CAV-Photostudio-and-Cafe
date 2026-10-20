@@ -3,6 +3,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from audit.models import AuditLog
+from audit.recorder import safe_change_details
 
 
 class ClientRuntimeErrorViewTests(TestCase):
@@ -53,6 +54,57 @@ class ClientRuntimeErrorViewTests(TestCase):
             AuditLog.objects.filter(pk=record.pk).delete()
         with self.assertRaises(PermissionError):
             record.delete()
+        with self.assertRaises(PermissionError):
+            AuditLog.objects.filter(pk=record.pk).update(description='changed')
+        with self.assertRaises(PermissionError):
+            record.description = 'changed'
+
+    def test_admin_can_search_and_page_audit_logs(self):
+        for index in range(27):
+            AuditLog.objects.create(
+                user=self.admin,
+                action='BOOKING_UPDATE' if index < 2 else 'INVENTORY_ADJUST',
+                description=f'Activity {index}',
+                module='bookings' if index < 2 else 'inventory',
+                record_reference=str(index),
+            )
+
+        response = self.client.get('/api/audit/logs/?search=Activity&page=2&page_size=10')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 27)
+        self.assertEqual(len(response.data['results']), 10)
+
+        filtered = self.client.get('/api/audit/logs/?module=bookings')
+        self.assertEqual(filtered.data['count'], 2)
+        self.assertTrue(all(row['role'] == 'ADMIN' for row in filtered.data['results']))
+
+    def test_customer_cannot_read_audit_logs(self):
+        customer = get_user_model().objects.create_user(username='audit-customer', password='CustomerPass123!', role='CUSTOMER')
+        self.client.force_authenticate(customer)
+        self.assertEqual(self.client.get('/api/audit/logs/').status_code, 403)
+
+    def test_change_details_never_include_sensitive_fields_or_values(self):
+        details = safe_change_details({'status': 'CONFIRMED', 'password': 'secret', 'otp_code': '123456', 'payment_reference': 'ABC'})
+        self.assertEqual(details, {'changed_fields': ['payment_reference', 'status']})
+
+    def test_persisted_audit_record_redacts_sensitive_metadata(self):
+        record = AuditLog.objects.create(
+            user=self.admin,
+            action='TEST',
+            description='Bearer abc.def.ghi was removed',
+            metadata={'otp': '123456', 'safe': 'ok', 'nested': {'refresh_token': 'secret'}},
+        )
+        self.assertEqual(record.metadata, {'safe': 'ok', 'nested': {}})
+        self.assertNotIn('abc.def.ghi', record.description)
+
+    def test_actor_snapshot_survives_account_deletion(self):
+        actor_id = self.admin.pk
+        record = AuditLog.objects.create(user=self.admin, action='ADMIN_ACCOUNT_DELETE', description='Account deleted')
+        self.admin.delete()
+        record.refresh_from_db()
+        self.assertIsNone(record.user)
+        self.assertEqual(record.actor_user_id, actor_id)
+        self.assertEqual(record.actor_name, 'runtime-admin')
 
     def test_health_endpoint_exposes_only_service_status(self):
         response = self.client.get('/health/')

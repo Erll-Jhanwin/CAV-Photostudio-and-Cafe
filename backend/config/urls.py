@@ -47,7 +47,7 @@ from chatbot.views import ChatbotQueryView, FAQListCreateView, FAQDetailUpdateVi
 from dashboard.views import DashboardAnalyticsView
 from forecasting.views import ForecastingDataView, SalesHistoryImportView
 from gallery.views import GalleryImageListView
-from audit.views import ClientRuntimeErrorView
+from audit.views import AuditLogListView, ClientRuntimeErrorView
 from config.health import health_check
 from notifications.views import (
     NotificationDeliveryListView,
@@ -135,6 +135,7 @@ urlpatterns = [
     path('api/forecasting/predictions/', ForecastingDataView.as_view(), name='forecasting_predictions'),
     path('api/forecasting/history/import/', SalesHistoryImportView.as_view(), name='forecasting_history_import'),
     path('api/audit/client-runtime-errors/', ClientRuntimeErrorView.as_view(), name='client_runtime_errors'),
+    path('api/audit/logs/', AuditLogListView.as_view(), name='audit_log_list'),
 
     # Customer notifications
     path('api/notifications/', NotificationListView.as_view(), name='notification_list'),

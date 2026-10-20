@@ -350,12 +350,22 @@ class LogoutView(views.APIView):
     throttle_scope = 'auth'
 
     def post(self, request):
+        user = request.user if getattr(request.user, 'is_authenticated', False) else None
         refresh = request.COOKIES.get(settings.AUTH_REFRESH_COOKIE_NAME)
         if refresh:
             try:
                 RefreshToken(refresh).blacklist()
             except Exception:
                 logger.info('Logout received an expired or already revoked refresh token.', exc_info=True)
+        if user:
+            AuditLog.objects.create(
+                user=user,
+                action='USER_LOGOUT',
+                description=f'User {user.username} logged out.',
+                ip_address=get_client_ip(request),
+                metadata={'module': 'auth'},
+                module='auth',
+            )
         return remove_auth_cookies(Response({'detail': 'Signed out securely.'}, status=status.HTTP_200_OK))
 
 class RegisterView(generics.CreateAPIView):

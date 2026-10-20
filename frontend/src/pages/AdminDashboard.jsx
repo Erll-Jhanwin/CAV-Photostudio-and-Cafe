@@ -6,7 +6,7 @@ import {
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
   X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
   ArrowDownRight, Eye, Camera, Printer, Upload, ChevronLeft, ChevronRight,
-  Star, Quote, ThumbsUp, ThumbsDown, Minus
+  Star, Quote, ThumbsUp, ThumbsDown, Minus, ClipboardList
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -26,6 +26,7 @@ import { DataTable as DashboardTable, PaginationControls, paginateRows, sortRows
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
+import AuditLogsPage from './admin/AuditLogsPage';
 import {
   getEmailError,
   getPasswordError,
@@ -1129,10 +1130,11 @@ export default function AdminDashboard() {
     { key: 'staff', label: 'Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
     { key: 'reviews', label: 'Reviews & Feedback', icon: Star, active: activeTab === 'reviews', onClick: () => setActiveTab('reviews') },
+    { key: 'audit', label: 'Audit Logs', icon: ClipboardList, active: activeTab === 'audit', onClick: () => setActiveTab('audit') },
     { key: 'system', label: 'System Controls', icon: AlertTriangle, active: activeTab === 'system', onClick: () => setActiveTab('system') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', system: 'System Controls' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', audit: 'Audit Logs', system: 'System Controls' };
   const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
   const metrics = asRecord(analytics?.metrics);
   const statusData = [
@@ -2613,6 +2615,8 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {activeTab === 'audit' && <AuditLogsPage />}
+
           {/* SYSTEM CONTROLS */}
           {activeTab === 'system' && (
             <div className="w-full max-w-5xl space-y-4 animate-in-up" key="system">
@@ -2644,7 +2648,7 @@ export default function AdminDashboard() {
                         </div>
                         <div className="rounded-2xl border border-red-200 bg-white/80 p-4">
                           <p className="mb-2 font-black uppercase tracking-[0.14em] text-red-700">Deleted</p>
-                          <p className="leading-relaxed text-espresso/65">Bookings, booking payments, POS orders/payments, reports, forecasts, sales summaries, stock movement history, purchase orders, notifications, chatbot logs, reset OTPs, old audit logs, and non-admin users.</p>
+                          <p className="leading-relaxed text-espresso/65">Bookings, booking payments, POS orders/payments, reports, forecasts, sales summaries, stock movement history, purchase orders, notifications, chatbot logs, reset OTPs, and non-admin users. Audit logs are retained.</p>
                         </div>
                       </div>
                     </div>
