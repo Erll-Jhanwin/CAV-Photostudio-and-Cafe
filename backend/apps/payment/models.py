@@ -52,6 +52,9 @@ class Payment(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['payment_type', 'status', 'paid_at'], name='payment_type_status_date_idx'),
+        ]
         constraints = [
             models.CheckConstraint(
                 check=(

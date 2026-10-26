@@ -1,12 +1,15 @@
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from booking.models import Booking, Package, Service
 from payment.models import Payment
+from pos.models import Order
 
 
 class DashboardAnalyticsTests(TestCase):
@@ -82,3 +85,52 @@ class DashboardAnalyticsTests(TestCase):
         self.assertEqual(response.data['metrics']['booking_payment_revenue'], 500.0)
         self.assertEqual(response.data['metrics']['total_revenue'], 500.0)
         self.assertEqual(response.data['sales_history_chart'][0]['booking_revenue'], 500.0)
+
+    def test_analytics_query_count_stays_bounded_as_sales_and_bookings_grow(self):
+        today = timezone.localdate()
+
+        def request_and_count_queries():
+            with CaptureQueriesContext(connection) as queries:
+                response = self.client.get('/api/dashboard/analytics/', {
+                    'start': today.isoformat(),
+                    'end': (today + timedelta(days=30)).isoformat(),
+                })
+            self.assertEqual(response.status_code, 200)
+            return len(queries)
+
+        Order.objects.create(
+            staff=self.admin,
+            order_type='WALK_IN',
+            payment_status='PAID',
+            subtotal='10.00',
+            total='10.00',
+            line_items=[{'quantity': 1, 'subtotal': '10.00', 'product_details': {'name': 'Test item'}}],
+        )
+        Booking.objects.create(
+            customer=self.customer,
+            package=self.package,
+            scheduled_date=today,
+            scheduled_time='09:00',
+            status='PENDING',
+        )
+        small_dataset_queries = request_and_count_queries()
+
+        for index in range(20):
+            Order.objects.create(
+                staff=self.admin,
+                order_type='WALK_IN',
+                payment_status='PAID',
+                subtotal='10.00',
+                total='10.00',
+                line_items=[{'quantity': 2, 'subtotal': '10.00', 'product_details': {'name': f'Test item {index}'}}],
+            )
+            Booking.objects.create(
+                customer=self.customer,
+                package=self.package,
+                scheduled_date=today + timedelta(days=index + 1),
+                scheduled_time=f'{index + 1:02}:00',
+                status='PENDING',
+            )
+
+        large_dataset_queries = request_and_count_queries()
+        self.assertEqual(large_dataset_queries, small_dataset_queries)

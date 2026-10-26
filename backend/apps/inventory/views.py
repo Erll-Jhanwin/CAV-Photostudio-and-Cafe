@@ -25,13 +25,17 @@ from users.permissions import IsStaffOrAdmin
 
 def apply_limit(queryset, request, default=None, maximum=300):
     raw_limit = request.query_params.get('limit')
-    if raw_limit is None:
-        return queryset[:default] if default else queryset
     try:
-        limit = min(max(int(raw_limit), 1), maximum)
+        limit = default if raw_limit is None else min(max(int(raw_limit), 1), maximum)
     except (TypeError, ValueError):
-        return queryset[:default] if default else queryset
-    return queryset[:limit]
+        limit = default
+    try:
+        offset = min(max(int(request.query_params.get('offset', 0)), 0), 100000)
+    except (TypeError, ValueError):
+        offset = 0
+    if limit is None:
+        return queryset[offset:] if offset else queryset
+    return queryset[offset:offset + limit]
 
 
 def normalize_purchase_order_items(items_data, allow_inactive=False):
@@ -91,8 +95,13 @@ class ProductListCreateView(generics.ListCreateAPIView):
         queryset = Product.objects.filter(item_type=Product.PRODUCT)
         if not include_inactive:
             queryset = queryset.filter(is_active=True)
+        if not (
+            self.request.user.is_authenticated
+            and self.request.user.role in ['STAFF', 'ADMIN']
+        ):
+            queryset = queryset.defer('recipe_data', 'supplier_details')
         queryset = queryset.order_by('name')
-        return apply_limit(queryset, self.request)
+        return apply_limit(queryset, self.request, default=100)
 
     def get_serializer_class(self):
         if self.request.method == 'GET' and (not self.request.user.is_authenticated or self.request.user.role == 'CUSTOMER'):
@@ -213,7 +222,7 @@ class IngredientListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         queryset = Product.objects.filter(item_type=Product.INGREDIENT).order_by('name')
-        return apply_limit(queryset, self.request)
+        return apply_limit(queryset, self.request, default=100)
 
     def create(self, request, *args, **kwargs):
         if request.user.role not in ['STAFF', 'ADMIN']:

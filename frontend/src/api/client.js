@@ -46,6 +46,7 @@ let csrfTokenCache = '';
 let authGeneration = 0;
 const queryCache = new Map();
 const pendingQueries = new Map();
+let queryCacheGeneration = 0;
 
 const getCsrfCookie = () => {
   if (typeof document === 'undefined') return '';
@@ -62,6 +63,7 @@ export const beginAuthTransition = () => {
   refreshController?.abort();
   refreshController = null;
   refreshPromise = null;
+  clearQueryCache();
   return authGeneration;
 };
 
@@ -102,11 +104,13 @@ const stableValue = (value) => {
   return value;
 };
 
-const getQueryKey = (url, config = {}) => `${url}?${JSON.stringify(stableValue(config.params || {}))}`;
+const getQueryKey = (url, config = {}) => `${authGeneration}:${queryCacheGeneration}:${url}?${JSON.stringify(stableValue(config.params || {}))}`;
 
 export const clearQueryCache = (prefix = '') => {
   if (!prefix) {
+    queryCacheGeneration += 1;
     queryCache.clear();
+    pendingQueries.clear();
     return;
   }
   Array.from(queryCache.keys()).forEach(key => {
@@ -120,7 +124,7 @@ export const getCached = async (url, config = {}, { maxAge = 20_000, force = fal
   if (!force && cached && Date.now() - cached.savedAt < maxAge) {
     return cached.response;
   }
-  if (!force && pendingQueries.has(key)) return pendingQueries.get(key);
+  if (pendingQueries.has(key)) return pendingQueries.get(key);
 
   const request = client.get(url, config)
     .then(response => {

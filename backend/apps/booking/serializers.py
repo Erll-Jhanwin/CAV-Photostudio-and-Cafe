@@ -1,4 +1,5 @@
 from decimal import Decimal
+import logging
 import re
 from rest_framework import serializers
 from booking.models import Service, Package, Booking, BookingReview, StudioUnavailableDate
@@ -6,6 +7,8 @@ from booking.availability import is_slot_available
 from payment.models import Payment
 from users.serializers import UserSerializer, validate_unique_email, validate_unique_phone_number
 from users.phone_numbers import normalize_philippine_mobile_number
+
+logger = logging.getLogger(__name__)
 from users.uploads import receipt_upload_path, validate_receipt_upload
 
 class PackageSerializer(serializers.ModelSerializer):
@@ -77,10 +80,14 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             if stored_name:
                 try:
                     receipt_storage.delete(stored_name)
-                except Exception:
+                except Exception as cleanup_error:
                     # Preserve the database error; failed remote cleanup can
                     # be reconciled from the orphaned UUID path if necessary.
-                    pass
+                    logger.warning(
+                        'Payment receipt cleanup failed after database write error; '
+                        'exception_type=%s',
+                        type(cleanup_error).__name__,
+                    )
             raise
 
     def get_booking_details(self, obj):

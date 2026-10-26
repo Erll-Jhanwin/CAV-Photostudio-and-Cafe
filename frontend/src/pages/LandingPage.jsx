@@ -696,7 +696,15 @@ export default function LandingPage({ page = 'home' }) {
         ]));
       }
 
-      setGalleryImages(normalizeGalleryImages(localGalleryImages));
+      try {
+        const galleryRes = await getCached('/api/gallery/images/');
+        setGalleryImages(normalizeGalleryImages([
+          ...normalizeGalleryImages(galleryRes.data),
+          ...localGalleryImages,
+        ]));
+      } catch {
+        setGalleryImages(normalizeGalleryImages(localGalleryImages));
+      }
       setLoaded(true);
     }
     fetchData();

@@ -3,6 +3,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from inventory.models import Category, InventoryEvent, Product, Supplier
+from inventory.serializers import ProductSerializer
 
 
 class StockMovementWriteTests(TestCase):
@@ -87,6 +88,58 @@ class CatalogReferenceCrudTests(TestCase):
         self.assertTrue(any(row['id'] == category_id for row in self.client.get('/api/inventory/categories/?include_inactive=true').data))
         self.assertFalse(Category.objects.get(pk=category_id).is_active)
         self.assertFalse(Supplier.objects.get(pk=supplier_id).is_active)
+
+
+class ProductSerializationQueryTests(TestCase):
+    def test_recipe_catalog_serialization_uses_bounded_reference_queries(self):
+        category = Category.objects.create(name='Bulk Menu Category')
+        ingredient = Product.objects.create(
+            name='Bulk Menu Ingredient',
+            sku='BULK-MENU-INGREDIENT',
+            item_type=Product.INGREDIENT,
+            category=category.id,
+            category_name=category.name,
+            stock_quantity='100.00',
+            minimum_stock_level='1.00',
+            maximum_stock_level='200.00',
+            base_unit='G',
+        )
+        products = [
+            Product.objects.create(
+                name=f'Bulk Menu Drink {number}',
+                sku=f'BULK-MENU-{number}',
+                item_type=Product.PRODUCT,
+                category=category.id,
+                recipe_data=[{'ingredient': ingredient.id, 'quantity': '5'}],
+            )
+            for number in range(8)
+        ]
+
+        with self.assertNumQueries(2):
+            payload = ProductSerializer(products, many=True).data
+
+        self.assertEqual(len(payload), 8)
+        self.assertEqual(payload[0]['recipe_items'][0]['ingredient_details']['id'], ingredient.id)
+        self.assertEqual(payload[0]['available_servings'], 20)
+
+    def test_product_list_supports_bounded_offset_windows(self):
+        Product.objects.bulk_create([
+            Product(
+                name=f'Window Product {number}',
+                sku=f'WINDOW-PRODUCT-{number}',
+                item_type=Product.PRODUCT,
+            )
+            for number in range(5)
+        ])
+        client = APIClient()
+        first = client.get('/api/inventory/products/?limit=2&offset=0')
+        second = client.get('/api/inventory/products/?limit=2&offset=2')
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(len(first.data), 2)
+        self.assertEqual(len(second.data), 2)
+        self.assertTrue({row['id'] for row in first.data}.isdisjoint({row['id'] for row in second.data}))
 
 
 class PurchaseOrderLifecycleTests(TestCase):

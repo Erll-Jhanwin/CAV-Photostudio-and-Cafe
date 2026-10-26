@@ -73,6 +73,12 @@ class Product(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['item_type', 'is_active', 'name'], name='inv_item_active_name_idx'),
+            models.Index(fields=['item_type', 'name'], name='inv_item_name_idx'),
+        ]
+
     def __str__(self):
         return self.name
 
@@ -176,6 +182,9 @@ class InventoryEvent(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['event_type', '-created_at'], name='inv_event_created_idx'),
+        ]
 
     @property
     def timestamp(self):

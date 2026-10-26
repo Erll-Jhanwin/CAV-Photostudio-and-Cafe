@@ -822,13 +822,101 @@ class PrivacyRequestView(views.APIView):
 
     def post(self, request):
         request_type = str(request.data.get('request_type') or '').strip().upper()
-        details = str(request.data.get('details') or '').strip()[:4000]
+        details = str(request.data.get('details') or '').strip()
         valid_types = {value for value, _ in PrivacyRequest.REQUEST_TYPES}
         if request_type not in valid_types:
             return Response({'request_type': 'Unsupported privacy request type.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(details) > 4000:
+            return Response({'details': 'Details must be 4,000 characters or fewer.'}, status=status.HTTP_400_BAD_REQUEST)
         item = PrivacyRequest.objects.create(user=request.user, request_type=request_type, details=details)
         AuditLog.objects.create(user=request.user, action='PRIVACY_REQUEST_CREATED', description=f'Privacy request created: {request_type}.', metadata={'request_id': item.id, 'request_type': request_type}, ip_address=get_client_ip(request))
         return Response({'id': item.id, 'request_type': item.request_type, 'status': item.status, 'created_at': item.created_at}, status=status.HTTP_201_CREATED)
+
+
+class AdminPrivacyRequestListView(views.APIView):
+    permission_classes = [IsAdmin]
+    throttle_scope = 'sensitive'
+
+    def get(self, request):
+        items = PrivacyRequest.objects.select_related('user').all()
+        requested_status = str(request.query_params.get('status') or '').strip().upper()
+        valid_statuses = {value for value, _ in PrivacyRequest.STATUS_CHOICES}
+        if requested_status:
+            if requested_status not in valid_statuses:
+                return Response({'status': 'Unsupported privacy request status.'}, status=status.HTTP_400_BAD_REQUEST)
+            items = items.filter(status=requested_status)
+        return Response([
+            {
+                'id': item.id,
+                'user_id': item.user_id,
+                'customer_name': item.user.get_full_name().strip() or item.user.username,
+                'customer_email': item.user.email,
+                'request_type': item.request_type,
+                'details': item.details,
+                'status': item.status,
+                'response_notes': item.response_notes,
+                'created_at': item.created_at,
+                'updated_at': item.updated_at,
+            }
+            for item in items[:500]
+        ])
+
+
+class AdminPrivacyRequestDetailView(views.APIView):
+    permission_classes = [IsAdmin]
+    throttle_scope = 'sensitive'
+
+    def patch(self, request, pk):
+        new_status = str(request.data.get('status') or '').strip().upper()
+        valid_statuses = {value for value, _ in PrivacyRequest.STATUS_CHOICES}
+        if new_status not in valid_statuses:
+            return Response({'status': 'Choose IN_PROGRESS, COMPLETED, or REJECTED.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        notes_supplied = 'response_notes' in request.data
+        response_notes = str(request.data.get('response_notes') or '').strip()
+        if len(response_notes) > 4000:
+            return Response({'response_notes': 'Response notes must be 4,000 characters or fewer.'}, status=status.HTTP_400_BAD_REQUEST)
+        if new_status in {'COMPLETED', 'REJECTED'} and not response_notes:
+            return Response({'response_notes': 'Add a response note before completing or rejecting a request.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            try:
+                item = PrivacyRequest.objects.select_for_update().get(pk=pk)
+            except PrivacyRequest.DoesNotExist:
+                return Response({'detail': 'Privacy request not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            allowed_transitions = {
+                'OPEN': {'OPEN', 'IN_PROGRESS', 'COMPLETED', 'REJECTED'},
+                'IN_PROGRESS': {'IN_PROGRESS', 'COMPLETED', 'REJECTED'},
+                'COMPLETED': {'COMPLETED'},
+                'REJECTED': {'REJECTED'},
+            }
+            if new_status not in allowed_transitions[item.status]:
+                return Response(
+                    {'detail': 'Completed and rejected privacy requests cannot be reopened.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            previous_status = item.status
+            item.status = new_status
+            if notes_supplied:
+                item.response_notes = response_notes
+            item.save(update_fields=['status', 'response_notes', 'updated_at'])
+            AuditLog.objects.create(
+                user=request.user,
+                action='PRIVACY_REQUEST_REVIEWED',
+                description=f'Privacy request #{item.pk} moved from {previous_status} to {new_status}.',
+                metadata={'request_id': item.pk, 'previous_status': previous_status, 'status': new_status},
+                ip_address=get_client_ip(request),
+            )
+
+        return Response({
+            'id': item.id,
+            'request_type': item.request_type,
+            'status': item.status,
+            'response_notes': item.response_notes,
+            'updated_at': item.updated_at,
+        })
 
 
 class PrivacyExportView(views.APIView):
@@ -865,7 +953,16 @@ class StaffListView(generics.ListCreateAPIView):
     permission_classes = [IsAdmin]
 
     def get_queryset(self):
-        return User.objects.all().order_by('role', 'username')
+        queryset = User.objects.all().order_by('role', 'username')
+        try:
+            limit = min(max(int(self.request.query_params.get('limit', 100)), 1), 500)
+        except (TypeError, ValueError):
+            limit = 100
+        try:
+            offset = min(max(int(self.request.query_params.get('offset', 0)), 0), 100000)
+        except (TypeError, ValueError):
+            offset = 0
+        return queryset[offset:offset + limit]
 
     def create(self, request, *args, **kwargs):
         if request.user.role != 'ADMIN':
@@ -1002,7 +1099,7 @@ class SystemDataResetView(views.APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if not admin_password:
-            return Response({"admin_password": "Admin password is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"admin_password": "Admin password is required."}, status=status.HTTP_400_BAD_REQUEST)  # nosec B105
 
         if not cache.add(SYSTEM_RESET_LOCK_KEY, request.user.pk, timeout=300):
             return Response(
@@ -1215,7 +1312,7 @@ class PasswordResetConfirmView(views.APIView):
         user.set_password(new_password)
         user.save(update_fields=['password'])
         reset_otp.used_at = now
-        reset_otp.reset_token_hash = ''
+        reset_otp.reset_token_hash = ''  # nosec B105
         reset_otp.save(update_fields=['used_at', 'reset_token_hash'])
         PasswordResetOTP.objects.filter(user=user, used_at__isnull=True).exclude(pk=reset_otp.pk).update(used_at=now)
 

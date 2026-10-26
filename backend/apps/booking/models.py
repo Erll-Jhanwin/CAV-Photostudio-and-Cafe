@@ -76,6 +76,9 @@ class Booking(models.Model):
                 name='booking_customer_idempotency_unique',
             ),
         ]
+        indexes = [
+            models.Index(fields=['created_at', 'status'], name='booking_created_status_idx'),
+        ]
 
     @property
     def starts_at(self):

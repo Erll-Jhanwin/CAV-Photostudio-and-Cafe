@@ -6,7 +6,7 @@ import {
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
   X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
   ArrowDownRight, Eye, Camera, Printer, Upload, ChevronLeft, ChevronRight,
-  Star, Quote, ThumbsUp, ThumbsDown, Minus, ClipboardList
+  Star, Quote, ThumbsUp, ThumbsDown, Minus, ClipboardList, ShieldCheck
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -27,6 +27,8 @@ import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
 import AuditLogsPage from './admin/AuditLogsPage';
+import GalleryManager from './admin/GalleryManager';
+import PrivacyRequestsManager from './admin/PrivacyRequestsManager';
 import {
   getEmailError,
   getPasswordError,
@@ -1130,11 +1132,13 @@ export default function AdminDashboard() {
     { key: 'staff', label: 'Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
     { key: 'reviews', label: 'Reviews & Feedback', icon: Star, active: activeTab === 'reviews', onClick: () => setActiveTab('reviews') },
+    { key: 'gallery', label: 'Photo Gallery', icon: Camera, active: activeTab === 'gallery', onClick: () => setActiveTab('gallery') },
+    { key: 'privacy', label: 'Privacy Requests', icon: ShieldCheck, active: activeTab === 'privacy', onClick: () => setActiveTab('privacy') },
     { key: 'audit', label: 'Audit Logs', icon: ClipboardList, active: activeTab === 'audit', onClick: () => setActiveTab('audit') },
     { key: 'system', label: 'System Controls', icon: AlertTriangle, active: activeTab === 'system', onClick: () => setActiveTab('system') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', audit: 'Audit Logs', system: 'System Controls' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', gallery: 'Photo Gallery', privacy: 'Privacy Requests', audit: 'Audit Logs', system: 'System Controls' };
   const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
   const metrics = asRecord(analytics?.metrics);
   const statusData = [
@@ -2614,6 +2618,9 @@ export default function AdminDashboard() {
               </Card>
             </div>
           )}
+
+          {activeTab === 'gallery' && <GalleryManager />}
+          {activeTab === 'privacy' && <PrivacyRequestsManager />}
 
           {activeTab === 'audit' && <AuditLogsPage />}
 

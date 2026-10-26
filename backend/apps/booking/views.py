@@ -74,13 +74,17 @@ def lock_booking_date(day):
 
 def apply_limit(queryset, request, default=None, maximum=200):
     raw_limit = request.query_params.get('limit')
-    if raw_limit is None:
-        return queryset[:default] if default else queryset
     try:
-        limit = min(max(int(raw_limit), 1), maximum)
+        limit = default if raw_limit is None else min(max(int(raw_limit), 1), maximum)
     except (TypeError, ValueError):
-        return queryset[:default] if default else queryset
-    return queryset[:limit]
+        limit = default
+    try:
+        offset = min(max(int(request.query_params.get('offset', 0)), 0), 100000)
+    except (TypeError, ValueError):
+        offset = 0
+    if limit is None:
+        return queryset[offset:] if offset else queryset
+    return queryset[offset:offset + limit]
 
 class ServiceListView(generics.ListAPIView):
     serializer_class = ServiceSerializer
@@ -241,7 +245,7 @@ class StudioUnavailableDateDetailView(generics.RetrieveUpdateDestroyAPIView):
 class BookingListCreateView(generics.ListCreateAPIView):
     serializer_class = BookingSerializer
     permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [filters.SearchFilter]
+    filter_backends = []
     search_fields = ['customer__username', 'customer__email']
 
     def get_queryset(self):
@@ -268,10 +272,14 @@ class BookingListCreateView(generics.ListCreateAPIView):
                 queryset = queryset.filter(status=status_param)
             if self.request.query_params.get('active') == 'true':
                 queryset = queryset.filter(status__in=['PENDING', 'CONFIRMED', 'CONFIRMED_DP'])
-            return apply_limit(queryset.order_by('scheduled_date', 'scheduled_time', 'id'), self.request, maximum=500)
+            if self.request.query_params.get('search'):
+                queryset = filters.SearchFilter().filter_queryset(self.request, queryset, self)
+            return apply_limit(queryset.order_by('scheduled_date', 'scheduled_time', 'id'), self.request, default=100, maximum=500)
         # Customers only see their own bookings
         queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service', 'review').prefetch_related('payments').distinct().order_by('-scheduled_date', '-created_at', '-id')
-        return apply_limit(queryset, self.request)
+        if self.request.query_params.get('search'):
+            queryset = filters.SearchFilter().filter_queryset(self.request, queryset, self)
+        return apply_limit(queryset, self.request, default=100, maximum=500)
 
     def create(self, request, *args, **kwargs):
         # Allow client booking
@@ -559,16 +567,17 @@ class BookingReviewListView(generics.ListAPIView):
     permission_classes = [IsStaffOrAdmin]
 
     def get_queryset(self):
-        return BookingReview.objects.select_related(
+        queryset = BookingReview.objects.select_related(
             'customer', 'booking', 'booking__package', 'booking__package__service'
         ).order_by('-created_at', '-id')
+        return apply_limit(queryset, self.request, default=100, maximum=500)
 
 
 class BookingPaymentListCreateView(generics.ListCreateAPIView):
     serializer_class = BookingPaymentSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
-    filter_backends = [filters.SearchFilter]
+    filter_backends = []
     search_fields = ['reference_number', 'booking__customer__username', 'booking__customer__email']
 
     def get_queryset(self):
@@ -582,6 +591,8 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
         status_param = self.request.query_params.get('status')
         if status_param:
             queryset = queryset.filter(status=status_param)
+        if self.request.query_params.get('search'):
+            queryset = filters.SearchFilter().filter_queryset(self.request, queryset, self)
         if user.role in ['STAFF', 'ADMIN']:
             return apply_limit(queryset, self.request, default=100)
         return apply_limit(queryset.filter(booking__customer=user), self.request, default=100)

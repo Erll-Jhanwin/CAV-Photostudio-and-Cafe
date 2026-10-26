@@ -20,7 +20,7 @@ def _post_i_progsms(path, payload):
 
     base_url = getattr(settings, 'IPROG_SMS_API_BASE_URL', 'https://www.iprogsms.com').rstrip('/')
     try:
-        response = requests.post(
+        response = requests.post(  # nosec B113
             f'{base_url}{path}',
             json={**payload, 'api_token': api_token},
             timeout=getattr(settings, 'IPROG_SMS_API_TIMEOUT', 15),

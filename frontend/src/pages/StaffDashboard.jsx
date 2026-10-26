@@ -5,7 +5,7 @@ import {
   ShoppingBag, Package, DollarSign, Search, Plus,
   Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
   PackageCheck, Clock, CalendarOff, Archive, Printer, ClipboardList, Settings2,
-  Trash2, Truck, Save
+  Trash2, Truck, Save, Camera
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -24,6 +24,7 @@ import { getLocalPrinters, getLocalPrintingSetupMessage, isLocalStaffConsole, op
 import { brandAssets } from '../utils/cavAssets';
 import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
+import GalleryManager from './admin/GalleryManager';
 
 export function StaffSkeleton() {
   return (
@@ -90,9 +91,10 @@ const formatReceiptCurrency = (value) => `PHP ${Number(value || 0).toLocaleStrin
   maximumFractionDigits: 2,
 })}`;
 
-const readStaffCache = (key) => {
+const staffCacheStorageKey = (userId, key) => `staff:${userId || 'unknown'}:${key}`;
+const readStaffCache = (userId, key) => {
   try {
-    const cached = JSON.parse(localStorage.getItem(`staff:${key}`) || 'null');
+    const cached = JSON.parse(localStorage.getItem(staffCacheStorageKey(userId, key)) || 'null');
     if (!cached || Date.now() - cached.timestamp > STAFF_CACHE_TTL_MS) return null;
     return cached.data;
   } catch {
@@ -100,9 +102,9 @@ const readStaffCache = (key) => {
   }
 };
 
-const writeStaffCache = (key, data) => {
+const writeStaffCache = (userId, key, data) => {
   try {
-    localStorage.setItem(`staff:${key}`, JSON.stringify({ timestamp: Date.now(), data }));
+    localStorage.setItem(staffCacheStorageKey(userId, key), JSON.stringify({ timestamp: Date.now(), data }));
   } catch {
     /* ignore cache write failures */
   }
@@ -302,8 +304,8 @@ export default function StaffDashboard() {
   const tabLoadInFlightRef = useRef(new Set());
 
   const loadStaticInventoryOptions = useCallback(async (force = false) => {
-    const cachedCategories = !force ? readStaffCache('categories') : null;
-    const cachedSuppliers = !force ? readStaffCache('suppliers') : null;
+    const cachedCategories = !force ? readStaffCache(user?.id, 'categories') : null;
+    const cachedSuppliers = !force ? readStaffCache(user?.id, 'suppliers') : null;
     if (cachedCategories) setCategories(normalizeRowsById(cachedCategories, row => row?.name));
     if (cachedSuppliers) setSuppliers(normalizeRowsById(cachedSuppliers, row => row?.name));
     if (cachedCategories && cachedSuppliers && !force) return;
@@ -316,16 +318,16 @@ export default function StaffDashboard() {
     const uniqueSuppliers = normalizeRowsById(suppliersRes.data, row => row?.name);
     setCategories(uniqueCategories);
     setSuppliers(uniqueSuppliers);
-    writeStaffCache('categories', uniqueCategories);
-    writeStaffCache('suppliers', uniqueSuppliers);
-  }, []);
+    writeStaffCache(user?.id, 'categories', uniqueCategories);
+    writeStaffCache(user?.id, 'suppliers', uniqueSuppliers);
+  }, [user?.id]);
 
   const refreshProducts = useCallback(async () => {
     const productsRes = await getCached('/api/inventory/products/', { params: { limit: 240 } }, { force: true });
     const uniqueProducts = normalizeRowsById(productsRes.data, row => row?.name);
     setProducts(uniqueProducts);
-    writeStaffCache('products', uniqueProducts);
-  }, []);
+    writeStaffCache(user?.id, 'products', uniqueProducts);
+  }, [user?.id]);
 
   const ensureDefaultRecipesOnce = useCallback(async () => {
     if (sessionStorage.getItem('staff:recipesChecked')) return;
@@ -341,14 +343,15 @@ export default function StaffDashboard() {
   }, [refreshProducts]);
 
   const loadTabData = useCallback(async (tab = activeTab, force = false) => {
-    if (!force && (loadedTabs[tab] || tabLoadInFlightRef.current.has(tab))) return;
+    if (tabLoadInFlightRef.current.has(tab)) return;
+    if (!force && loadedTabs[tab]) return;
     tabLoadInFlightRef.current.add(tab);
     try {
       setError('');
       setLoadingResources(current => ({ ...current, [tab]: true }));
 
       if (tab === 'pos') {
-        const cachedProducts = !force ? readStaffCache('products') : null;
+        const cachedProducts = !force ? readStaffCache(user?.id, 'products') : null;
         if (cachedProducts?.length) {
           setProducts(normalizeRowsById(cachedProducts, row => row?.name));
           setLoading(false);
@@ -356,7 +359,7 @@ export default function StaffDashboard() {
         const productsRes = await getCached('/api/inventory/products/', { params: { limit: 240 } }, { force });
         const uniqueProducts = normalizeRowsById(productsRes.data, row => row?.name);
         setProducts(uniqueProducts);
-        writeStaffCache('products', uniqueProducts);
+        writeStaffCache(user?.id, 'products', uniqueProducts);
         ensureDefaultRecipesOnce();
       } else if (tab === 'payments') {
         const paymentsRes = await getCached('/api/bookings/payments/', { params: { limit: 100 } }, { force });
@@ -395,7 +398,7 @@ export default function StaffDashboard() {
       setLoading(false);
       setInitialDataReady(true);
     }
-  }, [activeTab, loadedTabs, ensureDefaultRecipesOnce, loadStaticInventoryOptions]);
+  }, [activeTab, loadedTabs, ensureDefaultRecipesOnce, loadStaticInventoryOptions, user?.id]);
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) {
@@ -1270,9 +1273,10 @@ export default function StaffDashboard() {
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
     { key: 'catalog', label: 'Catalog & Purchasing', icon: ClipboardList, active: activeTab === 'catalog', onClick: () => setActiveTab('catalog') },
     { key: 'sales', label: 'Daily Sales Logs', icon: DollarSign, active: activeTab === 'sales', onClick: () => setActiveTab('sales') },
+    { key: 'gallery', label: 'Photo Gallery', icon: Camera, active: activeTab === 'gallery', onClick: () => setActiveTab('gallery') },
   ];
 
-  const pageTitles = { pos: 'POS Terminal', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs' };
+  const pageTitles = { pos: 'POS Terminal', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs', gallery: 'Photo Gallery' };
   const isCurrentTabLoading = !!loadingResources[activeTab];
   const toggleSort = (current, setter, key, column = {}) => {
     setter(current.key === key
@@ -1401,6 +1405,8 @@ export default function StaffDashboard() {
               <span className="text-xs font-bold text-espresso">Loading {pageTitles[activeTab]}...</span>
             </div>
           )}
+
+          {activeTab === 'gallery' && <GalleryManager />}
 
           {/* POS */}
           {activeTab === 'pos' && (

@@ -26,13 +26,15 @@ POS_IDEMPOTENCY_KEY_MAX_LENGTH = 100
 
 def apply_limit(queryset, request, default=50, maximum=200):
     raw_limit = request.query_params.get('limit')
-    if raw_limit is None:
-        return queryset[:default]
     try:
-        limit = min(max(int(raw_limit), 1), maximum)
+        limit = default if raw_limit is None else min(max(int(raw_limit), 1), maximum)
     except (TypeError, ValueError):
-        return queryset[:default]
-    return queryset[:limit]
+        limit = default
+    try:
+        offset = min(max(int(request.query_params.get('offset', 0)), 0), 100000)
+    except (TypeError, ValueError):
+        offset = 0
+    return queryset[offset:offset + limit]
 
 
 def validate_payment_method(method):

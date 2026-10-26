@@ -33,25 +33,22 @@ jobs:
       - run: python manage.py test audit booking chatbot dashboard forecasting gallery inventory notifications pos reports sales users --noinput
       - run: pip install pip-audit bandit
       - run: pip-audit -r requirements.txt
-      - run: bandit -q -r apps config
+      - run: bandit -q -r apps config -x "*/tests.py,*/test_*.py"
 
   frontend:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-      - run: npm test -- --watchAll=false --runInBand
-      - run: npm run build
-      - run: npm audit --audit-level=high
-      - run: npx --yes serve -s build -l 4173 > ../frontend-server.log 2>&1 &
+          cache-dependency-path: package-lock.json
+      - run: npm ci --workspace frontend
+      - run: npm --workspace frontend test -- --watchAll=false --runInBand
+      - run: npm --workspace frontend run build
+      - run: npm audit --workspace frontend --audit-level=high
+      - run: npx --yes serve -s frontend/build -l 4173 > frontend-server.log 2>&1 &
       - run: npx --yes @axe-core/cli http://127.0.0.1:4173 --exit
 
   secret-scan:

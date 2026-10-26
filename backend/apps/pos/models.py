@@ -36,6 +36,9 @@ class Order(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['payment_status', 'created_at'], name='pos_status_created_idx'),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=['staff', 'idempotency_key'],

@@ -397,6 +397,18 @@ export default function CustomerDashboard() {
   const bookingRequestStartedRef = useRef(false);
   const paymentRequestStartedRef = useRef(false);
   const dashboardFetchSeqRef = useRef(0);
+  const availabilityMountedRef = useRef(true);
+  const monthAvailabilityRequestRef = useRef(0);
+  const dayAvailabilityRequestRef = useRef(0);
+
+  useEffect(() => {
+    availabilityMountedRef.current = true;
+    return () => {
+      availabilityMountedRef.current = false;
+      monthAvailabilityRequestRef.current += 1;
+      dayAvailabilityRequestRef.current += 1;
+    };
+  }, []);
 
   const fetchNotifications = useCallback(async ({ force = false } = {}) => {
     try {
@@ -847,32 +859,42 @@ export default function CustomerDashboard() {
 
   const fetchMonthAvailability = useCallback(async () => {
     if (!selectedPackage) return;
+    const requestId = ++monthAvailabilityRequestRef.current;
+    const requestIsCurrent = () => (
+      availabilityMountedRef.current && requestId === monthAvailabilityRequestRef.current
+    );
     try {
       setAvailabilityLoading(true);
       setAvailabilityError('');
       const res = await client.get('/api/bookings/availability/', {
         params: { package: selectedPackage.id, month: calendarMonth }
       });
+      if (!requestIsCurrent()) return;
       const availabilityMap = {};
       res.data.dates?.forEach(day => {
         availabilityMap[day.date] = day;
       });
       setMonthAvailability(availabilityMap);
     } catch {
-      setAvailabilityError('Could not load calendar availability.');
+      if (requestIsCurrent()) setAvailabilityError('Could not load calendar availability.');
     } finally {
-      setAvailabilityLoading(false);
+      if (requestIsCurrent()) setAvailabilityLoading(false);
     }
   }, [selectedPackage, calendarMonth]);
 
   const fetchDayAvailability = useCallback(async (dateValue = selectedDate) => {
     if (!selectedPackage || !dateValue) return null;
+    const requestId = ++dayAvailabilityRequestRef.current;
+    const requestIsCurrent = () => (
+      availabilityMountedRef.current && requestId === dayAvailabilityRequestRef.current
+    );
     try {
       setSlotLoading(true);
       setAvailabilityError('');
       const res = await client.get('/api/bookings/availability/', {
         params: { package: selectedPackage.id, date: dateValue, ...(pendingPaymentBookingId ? { exclude_booking: pendingPaymentBookingId } : {}) }
       });
+      if (!requestIsCurrent()) return null;
       setDayAvailability(res.data);
       setSelectedTime(current => (
         current && !bookingSubmitInFlightRef.current && !pendingPaymentBookingId
@@ -880,10 +902,10 @@ export default function CustomerDashboard() {
       ));
       return res.data;
     } catch {
-      setAvailabilityError('Could not load time-slot availability.');
+      if (requestIsCurrent()) setAvailabilityError('Could not load time-slot availability.');
       return null;
     } finally {
-      setSlotLoading(false);
+      if (requestIsCurrent()) setSlotLoading(false);
     }
   }, [selectedPackage, selectedDate, pendingPaymentBookingId]);
 

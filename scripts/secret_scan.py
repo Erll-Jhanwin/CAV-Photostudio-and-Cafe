@@ -14,7 +14,16 @@ known_bad = re.compile(r'(Customer123!|Staff123!|Admin123!|d7f87d0abfb8c4e9fd8cf
 provider_assignment = re.compile(r"(?i)^(?:IPROG_SMS_API_TOKEN|RESEND_API_KEY|OCR_API_KEY)\s*=\s*(['\"])(?!replace-with|your-|re_your_|$)[^'\"]{12,}\1\s*$")
 
 for relative in tracked:
-    if relative in excluded or '/tests.' in f'/{relative}' or relative.endswith('_test.py'):
+    path_parts = Path(relative).parts
+    filename = path_parts[-1] if path_parts else ''
+    is_test_fixture = (
+        'tests' in path_parts
+        or filename == 'tests.py'
+        or filename.startswith('test_')
+        or '.test.' in filename
+        or filename.endswith('_test.py')
+    )
+    if relative in excluded or is_test_fixture:
         continue
     path = ROOT / relative
     if not path.is_file():

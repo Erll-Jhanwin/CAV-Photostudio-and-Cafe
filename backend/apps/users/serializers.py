@@ -160,17 +160,17 @@ class ProfileSerializer(UserSerializer):
 
         if current_password and not new_password:
             raise serializers.ValidationError({
-                'new_password': 'Enter a new password to complete the password change.'
+                'new_password': 'Enter a new password to complete the password change.'  # nosec B105
             })
         if not new_password:
             return attrs
         if self.instance.has_usable_password() and not current_password:
             raise serializers.ValidationError({
-                'current_password': 'Enter your current password.'
+                'current_password': 'Enter your current password.'  # nosec B105
             })
         if self.instance.has_usable_password() and not self.instance.check_password(current_password):
             raise serializers.ValidationError({
-                'current_password': 'Current password is incorrect.'
+                'current_password': 'Current password is incorrect.'  # nosec B105
             })
         validate_password(new_password, user=self.instance)
         return attrs
@@ -200,7 +200,7 @@ class AccountSerializer(UserSerializer):
         errors = {}
 
         if not self.instance and not attrs.get('password'):
-            errors['password'] = 'Password is required.'
+            errors['password'] = 'Password is required.'  # nosec B105
 
         if role == 'CUSTOMER':
             effective = lambda name: attrs.get(name, getattr(self.instance, name, ''))

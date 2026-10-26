@@ -44,6 +44,68 @@ def supplier_for(supplier_id):
     return next((item for item in DEFAULT_SUPPLIERS if item['id'] == supplier_id), None)
 
 
+def _reference_id(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def prime_product_reference_cache(context, products, *, include_recipes=True, include_suppliers=True):
+    """Bulk-load catalog references used by product serializers."""
+    category_ids, supplier_ids, ingredient_ids = set(), set(), set()
+    for product in products:
+        category_id = _reference_id(product.category)
+        supplier_id = _reference_id(product.supplier)
+        if category_id is not None:
+            category_ids.add(category_id)
+        if include_suppliers and supplier_id is not None and not product.supplier_details:
+            supplier_ids.add(supplier_id)
+        if include_recipes:
+            for recipe_item in product.recipe_data or []:
+                ingredient_id = _reference_id(recipe_item.get('ingredient')) if isinstance(recipe_item, dict) else None
+                if ingredient_id is not None:
+                    ingredient_ids.add(ingredient_id)
+
+    context['_inventory_category_cache'] = {
+        row['id']: row for row in Category.objects.filter(pk__in=category_ids).values(
+            'id', 'name', 'description', 'is_active'
+        )
+    }
+    context['_inventory_supplier_cache'] = {
+        row['id']: row for row in Supplier.objects.filter(pk__in=supplier_ids).values(
+            'id', 'name', 'contact_person', 'email', 'phone', 'address', 'is_active'
+        )
+    }
+    context['_inventory_ingredient_cache'] = {
+        ingredient.id: ingredient
+        for ingredient in Product.objects.filter(pk__in=ingredient_ids, item_type=Product.INGREDIENT)
+    }
+
+
+def _reference_from_cache(context, cache_key, value, defaults, fallback):
+    reference_id = _reference_id(value)
+    if reference_id is None:
+        return None
+    if cache_key not in context:
+        return fallback(value)
+    return context[cache_key].get(reference_id) or next(
+        (item for item in defaults if item['id'] == reference_id), None
+    )
+
+
+class ProductReferenceListSerializer(serializers.ListSerializer):
+    def to_representation(self, data):
+        rows = list(data)
+        prime_product_reference_cache(
+            self.context,
+            rows,
+            include_recipes=getattr(self.child, 'preload_recipe_references', True),
+            include_suppliers=getattr(self.child, 'preload_supplier_references', True),
+        )
+        return super().to_representation(rows)
+
+
 def active_category(category_id):
     if category_id in (None, ''):
         return None
@@ -86,6 +148,7 @@ class SupplierSerializer(serializers.ModelSerializer):
 
 
 class IngredientSerializer(serializers.ModelSerializer):
+    preload_recipe_references = False
     category_details = serializers.SerializerMethodField()
     supplier_details = serializers.SerializerMethodField()
     inventory_status = serializers.CharField(read_only=True)
@@ -95,6 +158,7 @@ class IngredientSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product
+        list_serializer_class = ProductReferenceListSerializer
         fields = [
             'id', 'name', 'category', 'category_details', 'supplier', 'supplier_details',
             'base_unit', 'stock_quantity', 'minimum_stock_level', 'maximum_stock_level',
@@ -104,10 +168,14 @@ class IngredientSerializer(serializers.ModelSerializer):
         ]
 
     def get_category_details(self, obj):
-        return category_for(obj.category) or {'id': obj.category, 'name': obj.category_name or 'Uncategorized', 'description': obj.category_description}
+        return _reference_from_cache(
+            self.context, '_inventory_category_cache', obj.category, DEFAULT_CATEGORIES, category_for
+        ) or {'id': obj.category, 'name': obj.category_name or 'Uncategorized', 'description': obj.category_description}
 
     def get_supplier_details(self, obj):
-        return obj.supplier_details or supplier_for(obj.supplier)
+        return obj.supplier_details or _reference_from_cache(
+            self.context, '_inventory_supplier_cache', obj.supplier, DEFAULT_SUPPLIERS, supplier_for
+        )
 
     def validate(self, attrs):
         minimum = attrs.get('minimum_stock_level', getattr(self.instance, 'minimum_stock_level', 0))
@@ -190,6 +258,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product
+        list_serializer_class = ProductReferenceListSerializer
         fields = [
             'id', 'name', 'sku', 'category', 'category_details', 'supplier',
             'supplier_details', 'unit', 'cost', 'price', 'stock_level', 'reorder_point',
@@ -200,15 +269,17 @@ class ProductSerializer(serializers.ModelSerializer):
         ]
 
     def get_category_details(self, obj):
-        return category_for(obj.category) or {'id': obj.category, 'name': obj.category_name or 'Uncategorized', 'description': obj.category_description}
+        return _reference_from_cache(
+            self.context, '_inventory_category_cache', obj.category, DEFAULT_CATEGORIES, category_for
+        ) or {'id': obj.category, 'name': obj.category_name or 'Uncategorized', 'description': obj.category_description}
 
     def get_supplier_details(self, obj):
-        return obj.supplier_details or supplier_for(obj.supplier)
+        return obj.supplier_details or _reference_from_cache(
+            self.context, '_inventory_supplier_cache', obj.supplier, DEFAULT_SUPPLIERS, supplier_for
+        )
 
     def get_recipe_items(self, obj):
-        ingredient_ids = [item.get('ingredient') for item in obj.recipe_data or []]
-        ingredients = Product.objects.filter(id__in=ingredient_ids, item_type=Product.INGREDIENT)
-        by_id = {ingredient.id: ingredient for ingredient in ingredients}
+        by_id = self._ingredients_by_id(obj)
         rows = []
         for index, item in enumerate(obj.recipe_data or [], start=1):
             ingredient = by_id.get(item.get('ingredient'))
@@ -216,7 +287,7 @@ class ProductSerializer(serializers.ModelSerializer):
                 'id': item.get('id') or index,
                 'product': obj.id,
                 'ingredient': item.get('ingredient'),
-                'ingredient_details': IngredientSerializer(ingredient).data if ingredient else None,
+                'ingredient_details': IngredientSerializer(ingredient, context=self.context).data if ingredient else None,
                 'ingredient_name': ingredient.name if ingredient else item.get('ingredient_name', ''),
                 'quantity': item.get('quantity'),
                 'base_unit': ingredient.base_unit if ingredient else item.get('base_unit', ''),
@@ -227,9 +298,7 @@ class ProductSerializer(serializers.ModelSerializer):
         recipe_items = obj.recipe_data or []
         if not recipe_items:
             return obj.stock_level
-        ingredient_ids = [item.get('ingredient') for item in recipe_items]
-        ingredients = Product.objects.filter(id__in=ingredient_ids, item_type=Product.INGREDIENT)
-        by_id = {ingredient.id: ingredient for ingredient in ingredients}
+        by_id = self._ingredients_by_id(obj)
         servings = []
         for item in recipe_items:
             ingredient = by_id.get(item.get('ingredient'))
@@ -240,6 +309,22 @@ class ProductSerializer(serializers.ModelSerializer):
             if ingredient and quantity > 0:
                 servings.append(int(ingredient.stock_quantity // quantity))
         return min(servings) if servings else obj.stock_level
+
+    def _ingredients_by_id(self, obj):
+        if '_inventory_ingredient_cache' in self.context:
+            return self.context['_inventory_ingredient_cache']
+        ingredient_ids = {
+            _reference_id(item.get('ingredient'))
+            for item in obj.recipe_data or []
+            if isinstance(item, dict)
+        }
+        ingredient_ids.discard(None)
+        by_id = {
+            ingredient.id: ingredient
+            for ingredient in Product.objects.filter(pk__in=ingredient_ids, item_type=Product.INGREDIENT)
+        }
+        self.context['_inventory_ingredient_cache'] = by_id
+        return by_id
 
     def validate(self, attrs):
         minimum = attrs.get('reorder_point', getattr(self.instance, 'reorder_point', 0))
@@ -284,14 +369,19 @@ class ProductSerializer(serializers.ModelSerializer):
 class PublicProductSerializer(serializers.ModelSerializer):
     """Expose only menu-safe fields to anonymous visitors."""
 
+    preload_recipe_references = False
+    preload_supplier_references = False
     category_details = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
+        list_serializer_class = ProductReferenceListSerializer
         fields = ['id', 'name', 'category', 'category_details', 'price', 'is_cafe_item', 'is_active', 'image_url']
 
     def get_category_details(self, obj):
-        return category_for(obj.category) or {'id': obj.category, 'name': obj.category_name or 'Uncategorized', 'description': obj.category_description}
+        return _reference_from_cache(
+            self.context, '_inventory_category_cache', obj.category, DEFAULT_CATEGORIES, category_for
+        ) or {'id': obj.category, 'name': obj.category_name or 'Uncategorized', 'description': obj.category_description}
 
 
 class StockMovementSerializer(serializers.ModelSerializer):

@@ -1,4 +1,4 @@
-# Booking payment proof storage
+1# Booking payment proof storage
 
 Booking receipts use the existing `payment_payment.receipt` field. Django stores an opaque object path in that column and uploads the bytes to the private Supabase Storage bucket `payment-proofs`. No new application table is required. The object itself is outside the Render filesystem, so backend restarts and redeploys do not remove it.
 

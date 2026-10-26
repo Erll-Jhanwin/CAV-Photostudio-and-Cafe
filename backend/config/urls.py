@@ -26,6 +26,8 @@ from users.views import (
     LogoutView,
     PrivacyConsentView,
     PrivacyRequestView,
+    AdminPrivacyRequestListView,
+    AdminPrivacyRequestDetailView,
     PrivacyExportView,
 )
 from booking.views import (
@@ -46,7 +48,7 @@ from pos.views import OrderListCreateView, OrderDetailView, PaymentCreateView, E
 from chatbot.views import ChatbotQueryView, FAQListCreateView, FAQDetailUpdateView
 from dashboard.views import DashboardAnalyticsView
 from forecasting.views import ForecastingDataView, SalesHistoryImportView
-from gallery.views import GalleryImageListView
+from gallery.views import GalleryImageDetailView, GalleryImageListView
 from audit.views import AuditLogListView, ClientRuntimeErrorView
 from config.health import health_check
 from notifications.views import (
@@ -75,6 +77,8 @@ urlpatterns = [
     path('api/auth/profile/', UserProfileView.as_view(), name='auth_profile'),
     path('api/privacy/consents/', PrivacyConsentView.as_view(), name='privacy_consents'),
     path('api/privacy/requests/', PrivacyRequestView.as_view(), name='privacy_requests'),
+    path('api/privacy/requests/admin/', AdminPrivacyRequestListView.as_view(), name='privacy_requests_admin'),
+    path('api/privacy/requests/admin/<int:pk>/', AdminPrivacyRequestDetailView.as_view(), name='privacy_request_admin_detail'),
     path('api/privacy/export/', PrivacyExportView.as_view(), name='privacy_export'),
     path('api/auth/users/', StaffListView.as_view(), name='staff_list'),
     path('api/auth/users/<int:pk>/', StaffDetailView.as_view(), name='staff_detail'),
@@ -147,6 +151,7 @@ urlpatterns = [
 
     # Landing gallery
     path('api/gallery/images/', GalleryImageListView.as_view(), name='gallery_image_list'),
+    path('api/gallery/images/<int:pk>/', GalleryImageDetailView.as_view(), name='gallery_image_detail'),
 ]
 
 if settings.DEBUG:

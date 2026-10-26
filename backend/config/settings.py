@@ -39,7 +39,7 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or os.environ.get('SECRET_KEY')
 if not SECRET_KEY:
     if not DEBUG:
         raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false.')
-    SECRET_KEY = 'django-insecure-local-development-only-change-me'
+    SECRET_KEY = 'django-insecure-local-development-only-change-me'  # nosec B105
 
 APP_TIME_ZONE = os.environ.get('TIME_ZONE', 'Asia/Manila')
 ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS', ['localhost', '127.0.0.1', '[::1]', 'testserver'])
@@ -135,14 +135,18 @@ if not DATABASE_URL:
     raise ImproperlyConfigured('DATABASE_URL must be set to the Supabase/PostgreSQL connection string.')
 
 IS_POSTGRES_DATABASE = DATABASE_URL.startswith(('postgres://', 'postgresql://', 'postgresql+'))
+DB_CONN_MAX_AGE_SECONDS = max(0, int(os.environ.get('DB_CONN_MAX_AGE_SECONDS', '60')))
 
 DATABASES = {
     'default': dj_database_url.parse(
         DATABASE_URL,
-        conn_max_age=600,
+        conn_max_age=DB_CONN_MAX_AGE_SECONDS,
         ssl_require=IS_POSTGRES_DATABASE and env_bool('DATABASE_SSL_REQUIRE', True),
     )
 }
+DATABASES['default']['CONN_HEALTH_CHECKS'] = env_bool('DB_CONN_HEALTH_CHECKS', True)
+if IS_POSTGRES_DATABASE and env_bool('DB_DISABLE_SERVER_SIDE_CURSORS', False):
+    DATABASES['default'].setdefault('OPTIONS', {})['DISABLE_SERVER_SIDE_CURSORS'] = True
 # Let Django manage the database session timezone (UTC with USE_TZ=True).
 # Overriding it to Manila while Django decodes timestamps as UTC shifted every
 # retrieved timestamp by eight hours, including payment and retry deadlines.
@@ -179,6 +183,22 @@ PAYMENT_QR_MARIBANK_URL = os.environ.get('PAYMENT_QR_MARIBANK_URL', '').strip()
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().rstrip('/')
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '').strip()
 SUPABASE_PAYMENT_PROOFS_BUCKET = os.environ.get('SUPABASE_PAYMENT_PROOFS_BUCKET', 'payment-proofs').strip()
+SUPABASE_GALLERY_BUCKET = os.environ.get('SUPABASE_GALLERY_BUCKET', 'gallery').strip()
+GALLERY_STORAGE_BACKEND = os.environ.get(
+    'GALLERY_STORAGE_BACKEND', 'local' if DEBUG else 'supabase'
+).strip().lower()
+if GALLERY_STORAGE_BACKEND == 'supabase':
+    STORAGES = {
+        'default': {'BACKEND': 'gallery.storage.SupabaseGalleryStorage'},
+        'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+    }
+elif GALLERY_STORAGE_BACKEND == 'local':
+    STORAGES = {
+        'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+        'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+    }
+else:
+    raise ImproperlyConfigured('GALLERY_STORAGE_BACKEND must be either local or supabase.')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

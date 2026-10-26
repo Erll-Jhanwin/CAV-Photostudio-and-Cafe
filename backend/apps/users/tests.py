@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 from unittest.mock import Mock, patch
 
-from users.models import Customer, PasswordResetOTP
+from users.models import Customer, PasswordResetOTP, PrivacyRequest
 from audit.models import AuditLog
 from users.sms_delivery import send_password_reset_otp, verify_password_reset_otp
 
@@ -601,3 +601,70 @@ class SecurityBoundaryTests(TestCase):
         }, format='multipart')
         self.assertEqual(response.status_code, 400)
         self.assertIn('profile_picture', response.data)
+
+
+class AdminPrivacyRequestWorkflowTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.customer = User.objects.create_user('privacy-customer', password='Customer123!', role='CUSTOMER')
+        self.staff = User.objects.create_user('privacy-staff', password='Staff123!', role='STAFF')
+        self.admin = User.objects.create_user('privacy-admin', password='Admin123!', role='ADMIN')
+        self.privacy_request = PrivacyRequest.objects.create(
+            user=self.customer,
+            request_type='ACCESS',
+            details='Please provide a copy of my data.',
+        )
+        self.client = APIClient()
+
+    def test_admin_can_review_and_complete_case_with_audited_response(self):
+        self.client.force_authenticate(self.admin)
+        listed = self.client.get('/api/privacy/requests/admin/?status=OPEN')
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.data[0]['id'], self.privacy_request.id)
+        self.assertEqual(listed.data[0]['customer_name'], self.customer.username)
+
+        in_progress = self.client.patch(
+            f'/api/privacy/requests/admin/{self.privacy_request.id}/',
+            {'status': 'IN_PROGRESS', 'response_notes': 'Identity verified; collecting the requested export.'},
+            format='json',
+        )
+        self.assertEqual(in_progress.status_code, 200, in_progress.data)
+
+        completed = self.client.patch(
+            f'/api/privacy/requests/admin/{self.privacy_request.id}/',
+            {'status': 'COMPLETED', 'response_notes': 'Secure export delivered to the verified account.'},
+            format='json',
+        )
+        self.assertEqual(completed.status_code, 200, completed.data)
+        self.privacy_request.refresh_from_db()
+        self.assertEqual(self.privacy_request.status, 'COMPLETED')
+        self.assertIn('Secure export delivered', self.privacy_request.response_notes)
+        self.assertGreaterEqual(AuditLog.objects.filter(action='PRIVACY_REQUEST_REVIEWED').count(), 2)
+
+        reopened = self.client.patch(
+            f'/api/privacy/requests/admin/{self.privacy_request.id}/',
+            {'status': 'OPEN'},
+            format='json',
+        )
+        self.assertEqual(reopened.status_code, 409)
+
+    def test_privacy_queue_and_mutations_are_admin_only(self):
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.client.get('/api/privacy/requests/admin/').status_code, 403)
+        self.assertEqual(self.client.patch(
+            f'/api/privacy/requests/admin/{self.privacy_request.id}/',
+            {'status': 'IN_PROGRESS'}, format='json',
+        ).status_code, 403)
+
+    def test_terminal_status_requires_response_notes_and_request_size_is_validated(self):
+        self.client.force_authenticate(self.admin)
+        missing_notes = self.client.patch(
+            f'/api/privacy/requests/admin/{self.privacy_request.id}/',
+            {'status': 'COMPLETED'}, format='json',
+        )
+        self.assertEqual(missing_notes.status_code, 400)
+
+        too_long = self.client.post('/api/privacy/requests/', {
+            'request_type': 'ACCESS', 'details': 'x' * 4001,
+        }, format='json')
+        self.assertEqual(too_long.status_code, 400)

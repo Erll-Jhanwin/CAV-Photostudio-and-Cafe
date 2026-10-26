@@ -1,7 +1,8 @@
 import ctypes
 import platform
 import shutil
-import subprocess
+# POSIX printing passes fixed arguments to the system printer without a shell.
+import subprocess  # nosec B404
 import textwrap
 from ctypes import wintypes
 from decimal import Decimal, InvalidOperation
@@ -436,7 +437,7 @@ def _print_posix(content):
         return None, "No printer command is available on this system."
 
     command = [lp, "-o", "media=Custom.58x200mm", "-o", "page-left=0", "-o", "page-right=0", "-o", "page-top=0", "-o", "page-bottom=0"]
-    result = subprocess.run(command, input=content.encode("utf-8"), capture_output=True, timeout=10)
+    result = subprocess.run(command, input=content.encode("utf-8"), capture_output=True, timeout=10)  # nosec B603
     if result.returncode != 0:
         return None, (result.stderr.decode("utf-8", errors="replace").strip() or "The receipt could not be printed.")
     return "default", None

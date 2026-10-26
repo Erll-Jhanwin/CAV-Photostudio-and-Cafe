@@ -13,26 +13,26 @@
 <body>
 <main class="page">
 <section class="hero">
-<p class="eyebrow">Evidence-based audit · 19 October 2026</p>
+<p class="eyebrow">Evidence-based audit · 26 October 2026</p>
 <h1>CAV Photo Studio &amp; Café<br>Project Progress Dashboard</h1>
-<p class="sub">Implementation progress based on the current checkout: source paths, automated checks, local configuration and build output. This report is a standalone artifact; no application code, database structure or runtime data was changed for this dashboard.</p>
-<div class="meta"><span>Scope <strong>current working tree</strong></span><span>Validation <strong>isolated local tests</strong></span><span>Production access <strong>not verified</strong></span></div>
-<div class="scorebox"><div><div class="label" style="color:#f6e9af">Weighted implementation progress</div><div class="score" id="score">76%</div><span style="color:#f6ede0b8;font-size:12px">Evidence-weighted estimate, rounded to a whole percent</span></div><div><div class="track" role="progressbar" aria-label="Overall implementation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="76"><div class="fill" id="overallbar" style="width:76%"></div></div><div class="legend"><span>0 · absent</span><span>Implemented locally; deployment and live-service gaps remain</span><span>100 · production-evidenced</span></div></div></div>
+<p class="sub">Implementation progress based on inspected source, routes, automated coverage, configuration and packaged assets. Refreshed 26 October 2026; includes the production-readiness fixes and verification recorded in the companion audit report.</p>
+<div class="meta"><span>Scope <strong>current working tree</strong></span><span>Validation <strong>isolated SQLite + frontend tests/build + security scans</strong></span><span>Production access <strong>not checked</strong></span></div>
+<div class="scorebox"><div><div class="label" style="color:#f6e9af">Weighted implementation progress</div><div class="score" id="score">78%</div><span style="color:#f6ede0b8;font-size:12px">Evidence-weighted estimate, rounded to a whole percent</span></div><div><div class="track" role="progressbar" aria-label="Overall implementation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="78"><div class="fill" id="overallbar" style="width:77.53%"></div></div><div class="legend"><span>0 · absent</span><span>Implemented locally; deployment and live-service gaps remain</span><span>100 · production-evidenced</span></div></div></div>
 </section>
 <section class="section grid kpis" aria-label="Verification summary">
-<div class="kpi"><div class="label">Backend suite</div><div class="value">115 pass</div><div class="muted">2 skipped: SQLite row-lock limits</div></div>
-<div class="kpi"><div class="label">Frontend suite</div><div class="value">15 pass</div><div class="muted">5 test suites</div></div>
-<div class="kpi"><div class="label">Django checks</div><div class="value">PASS</div><div class="muted">No system-check issues</div></div>
+<div class="kpi"><div class="label">Backend suite</div><div class="value">141 pass</div><div class="muted">143 total; 2 skipped on SQLite</div></div>
+<div class="kpi"><div class="label">Frontend suite</div><div class="value">26 pass</div><div class="muted">8 suites; Dashboard focused recheck 5/5</div></div>
+<div class="kpi"><div class="label">Django checks</div><div class="value">PASS*</div><div class="muted">Release flags check clean; local dev config has expected warnings</div></div>
 <div class="kpi"><div class="label">Migration drift</div><div class="value">NONE</div><div class="muted">No model changes detected</div></div>
-<div class="kpi"><div class="label">Production build</div><div class="value">PASS</div><div class="muted">React optimized build compiled</div></div>
+<div class="kpi"><div class="label">Production build</div><div class="value">PASS</div><div class="muted">Final frontend build and artifact verification passed</div></div>
 <div class="kpi"><div class="label">Django domains</div><div class="value">13</div><div class="muted">Installed project apps</div></div>
 </section>
 <section class="section">
-<div class="head"><div><h2>Executive status</h2><p>Core customer, staff and admin paths have broad implementation and local automated coverage. Release confidence is reduced by sparse real sales history, unverified live providers, and deployment/database checks that require the actual target environment.</p></div><button class="print" onclick="window.print()">Print dashboard</button></div>
+<div class="head"><div><h2>Executive status</h2><p>Core customer, staff and admin paths have broad implementation. Backend and frontend suites, migration checks, production build, secret scan, Bandit and Python dependency audit passed. Production confidence remains limited by missing browser E2E, provider/storage/database verification and 18 high npm audit findings.</p></div><button class="print" onclick="window.print()">Print dashboard</button></div>
 <div class="grid statusgrid">
-<article class="status complete"><div class="label">Completed implementation areas</div><div class="value">5 / 15</div><div class="muted">Public site, accounts/OTP, booking/payment flow, POS and inventory/purchasing have working code paths and automated local verification.</div><ul><li>Booking filters, QR selection, proof access controls and loading/error handling are present.</li><li>Payment QR image assets for GCash, Maya and MariBank exist in the frontend public folder.</li><li>“Complete” means local implementation evidence; it does not mean live payment or production acceptance.</li></ul></article>
-<article class="status ongoing"><div class="label">Ongoing / needs operational proof</div><div class="value">9 / 15</div><div class="muted">Admin, chatbot, forecasting, notifications, gallery, privacy controls, native packaging, release QA and deployment integrations.</div><ul><li>Provider-backed SMS, push and email require credentials, migrations, schedules and recipient/device checks.</li><li>Forecast logic is present, but bundled actual sales span only 11 distinct dates.</li><li>Production database, storage persistence, security settings and native build remain unverified.</li></ul></article>
-<article class="status pending"><div class="label">Pending feature areas</div><div class="value">1 / 15</div><div class="muted">The dedicated reports and sales Django apps are placeholder files.</div><ul><li>Current reports and sales summaries are served through other app domains.</li><li>Gallery staff/admin create, edit and delete controls are absent.</li><li>Additional delivery and launch work remains listed below.</li></ul></article>
+<article class="status complete"><div class="label">Implemented locally</div><div class="value">5 / 15 modules</div><div class="muted">Public site, accounts/OTP, booking/payment flow, POS and inventory/purchasing have substantial working code paths and backend coverage.</div><ul><li>Booking filters, QR selection, proof access controls and loading/error handling are present in source.</li><li>QR image files for GCash, Maya and MariBank are bundled; account identity and ownership are unverified.</li><li>“Implemented locally” does not mean production acceptance.</li></ul></article>
+<article class="status ongoing"><div class="label">Partial / needs evidence</div><div class="value">9 / 15 modules</div><div class="muted">Admin, chatbot, forecasting, notifications, gallery, privacy controls, native packaging, release QA and integrations have material operational or evidence gaps.</div><ul><li>SMS, push and email need authorized provider credentials, schedules and recipient/device delivery checks.</li><li>Forecast logic is present, but bundled actual sales span only 11 distinct dates.</li><li>Production database, durable storage, deployment settings and native build remain unverified; npm audit has 18 high findings.</li></ul></article>
+<article class="status pending"><div class="label">Pending feature areas</div><div class="value">1 / 15</div><div class="muted">The dedicated reports and sales Django apps are placeholder files.</div><ul><li>Current reports and sales summaries are served through other app domains.</li><li>Gallery management is implemented and locally tested; real bucket persistence remains to verify.</li><li>Additional delivery and launch work remains listed below.</li></ul></article>
 </div>
 </section>
 <section class="section">
@@ -42,37 +42,40 @@
 <section class="section grid cols">
 <article class="card"><h2>Completed features</h2><ul class="list">
 <li><strong>OTP regeneration:</strong> resend path includes expiry, attempt limits and rate limiting; covered by backend tests.</li>
-<li><strong>Payments:</strong> GCash, Maya and MariBank selection, method-specific QR display and server-side availability checks are wired. Three local QR assets are present; their live payment destination and production URLs still need validation.</li>
+<li><strong>Payments:</strong> GCash, Maya and MariBank selection, method-specific QR display and server-side availability checks are wired. Three local QR image assets and example URL settings are present; account identity, ownership and live payment were not validated.</li>
 <li><strong>Proof of payment:</strong> uploaded file is linked to booking/payment and served through an authenticated endpoint with access checks and private cache headers.</li>
 <li><strong>Dashboard access:</strong> bounded API calls and independent request results allow usable error states instead of an endless initial spinner.</li>
 <li><strong>Booking filters:</strong> Pending, Verified, Completed and Canceled filters/counts are implemented in the customer history view.</li>
 <li><strong>Notifications:</strong> SMS/push delivery records, provider result handling, booking customer targeting and reminder deduplication have local tests. Tests do not prove handset/browser receipt.</li>
+<li><strong>Persistent gallery:</strong> gallery records, validated upload and staff/admin CRUD endpoints, management screens and public display are implemented; API/UI tests cover permissions and failure paths.</li>
+<li><strong>Privacy cases:</strong> admin review queue, role checks, notes-required completion/rejection and terminal-state protections are implemented and covered by backend tests.</li>
+<li><strong>Release security checks:</strong> secret scan, Bandit app/config scan and Python dependency audit pass; Capacitor Android critical advisory is cleared.</li>
 <li><strong>Forecast data guard:</strong> imports preserve other tables and reporting distinguishes observed data from imputed dates; 30 actual dates are not currently available.</li>
-<li><strong>Core operations:</strong> POS, inventory, purchase orders, admin workflows, authentication/privacy endpoints and public content are present in source and domain tests.</li>
+<li><strong>Core operations:</strong> POS, shift closeouts, inventory, purchase orders, admin workflows, authentication/privacy endpoints and public content are present in source. The fresh 143-test backend run passed 141 tests; two were skipped on SQLite.</li>
 </ul></article>
 <article class="card"><h2>Ongoing tasks</h2><ul class="list">
-<li>Validate and apply migrations against the intended deployed database; the test suite uses isolated SQLite and does not establish production schema state.</li>
+<li>Validate and apply migrations against the intended deployed database; the fresh suite uses isolated SQLite and does not establish production schema state. Two PostgreSQL row-lock tests were skipped in this run.</li>
 <li>Set durable backend media storage and verify a proof upload survives service restart.</li>
-<li>Configure verified SMS/email credentials and push VAPID keys; schedule delivery workers/reminders and test authorized real recipients/devices.</li>
+<li>Configure verified SMS/email credentials and push VAPID keys; schedule delivery workers/reminders and test authorized real recipients/devices. Current local delivery is disabled.</li>
 <li>Provide a validated sales export with at least 30 observed sales dates; do not synthesize transactions to fill gaps.</li>
 <li>Verify production QR image URLs and confirm the codes resolve to the studio’s intended accounts.</li>
-<li>Run browser acceptance/accessibility checks, physical receipt printer checks, and a supported Android/Gradle build.</li>
-<li>Resolve React test <code>act(...)</code> warnings in asynchronous booking-calendar tests.</li>
+<li>Run browser acceptance/accessibility checks, physical receipt printer checks, and a supported Android/Gradle build. The Dashboard test still emits non-failing React <code>act(...)</code> warnings.</li>
 </ul></article>
 </section>
 <section class="section grid cols">
 <article class="card"><h2>Pending features</h2><ul class="list">
-<li><strong>Dedicated reports/sales modules:</strong> <code>backend/apps/reports</code> and <code>backend/apps/sales</code> currently contain placeholder views/tests; existing reporting is implemented in other domains.</li>
-<li><strong>Gallery administration:</strong> public gallery viewing exists, but staff/admin CRUD workflows are not present.</li>
-<li><strong>End-to-end release evidence:</strong> no production-like browser journey, live notification receipt, or Android artifact is evidenced in this audit.</li>
+<li><strong>Dedicated reports/sales modules:</strong> <code>backend/apps/reports</code> and <code>backend/apps/sales</code> contain placeholder views; working shift closeout reports are implemented under POS.</li>
+<li><strong>End-to-end release evidence:</strong> no production-like browser journey, live notification receipt, or Android artifact was verified in this review.</li>
 </ul></article>
 <article class="card"><h2>Identified issues and limits</h2>
 <div class="issue"><span class="badge warn">Data</span><div class="issue-title">Forecast history is too sparse for the 30-day target</div><p>Bundled July 2025 CSV: 24 transaction rows across 11 distinct recorded dates. Forecast code can report missing coverage, but real history must come from a validated business export.</p></div>
-<div class="issue"><span class="badge warn">Integrations</span><div class="issue-title">Mock/provider acceptance is not live delivery</div><p>SMS, push, email and chatbot tests exercise local logic or mocked adapters. Production credentials, scheduling, network delivery and recipient confirmation are not established.</p></div>
+<div class="issue"><span class="badge warn">Integrations</span><div class="issue-title">Provider acceptance is not live delivery</div><p>SMS, push, email and chatbot tests exercise local logic or mocked adapters. A controlled iProgSMS check recorded in the 18 Oct audit was rejected for a sender-name approval requirement; successful handset delivery is not evidenced.</p></div>
 <div class="issue"><span class="badge info">Database</span><div class="issue-title">Production migration state was not checked</div><p>Migration drift is clean and tests create an isolated database. No claim is made that the live database has applied the current migration graph.</p></div>
 <div class="issue"><span class="badge info">QA</span><div class="issue-title">Two backend tests are skipped on SQLite</div><p>They require PostgreSQL row-lock behavior. Run those cases against the target PostgreSQL engine before relying on concurrency guarantees.</p></div>
-<div class="issue"><span class="badge info">Frontend QA</span><div class="issue-title">React async test warnings remain</div><p>All frontend assertions pass, but calendar availability updates produce <code>act(...)</code> warnings in the customer dashboard tests.</p></div>
-<div class="issue"><span class="badge info">Scope</span><div class="issue-title">Production security and secret/dependency gates not refreshed</div><p>This audit did not run live deployment checks, npm/pip vulnerability scans, or the repository secret scanner. CI configuration exists; current gate status is unverified here.</p></div>
+<div class="issue"><span class="badge warn">Frontend QA</span><div class="issue-title">Browser acceptance remains unverified</div><p>Jest passed 8 suites / 26 tests and the production build passed. CustomerDashboard tests emit non-failing React <code>act(...)</code> warnings; browser console, responsive and accessibility checks need a browser runner.</p></div>
+<div class="issue"><span class="badge warn">Deployment</span><div class="issue-title">Repository deployment blueprint defines only the frontend</div><p><code>render.yaml</code> configures a static site pointing at a separate backend URL; it does not provision backend deployment, persistent media or notification schedules. Those must be managed and checked separately.</p></div>
+<div class="issue"><span class="badge fail">Dependency audit</span><div class="issue-title">Frontend npm audit has 18 high findings</div><p>The audit reports 58 findings total (9 low, 31 moderate, 18 high, no critical). Remaining highs are chiefly in the pinned Create React App/Tailwind 3 toolchain; proposed forced fixes are breaking or invalid.</p></div>
+<div class="issue"><span class="badge info">Scope</span><div class="issue-title">Live deployment and provider gates remain open</div><p>Release-flag Django check, secret scan, Bandit and Python dependency audit passed. No production access, live provider delivery, persistent production database/storage or browser E2E was used.</p></div>
 </article>
 </section>
 <section class="section grid cols">
@@ -80,40 +83,42 @@
 <li><strong>Close data and schema gaps:</strong> load a real sales export, validate forecast dates, and run migrations plus smoke tests on a staging copy of the production database.</li>
 <li><strong>Prove payment and file persistence:</strong> set production-accessible QR URLs, validate account ownership, configure persistent media storage, and test an authorized booking proof upload/retrieval.</li>
 <li><strong>Activate notifications:</strong> configure SMS/email/push credentials and schedules, then verify delivery to an authorized handset/browser and inspect delivery logs.</li>
-<li><strong>Clear release gates:</strong> run the secret and dependency scans, deployment security checks, browser/accessibility acceptance, and PostgreSQL concurrency tests.</li>
-<li><strong>Finish scoped features:</strong> decide whether gallery administration and dedicated reports/sales modules are required for launch; implement and test them if in scope.</li>
+<li><strong>Clear remaining release gates:</strong> migrate or safely patch the frontend build toolchain to clear npm high findings, then run browser/accessibility acceptance and PostgreSQL concurrency tests.</li>
+<li><strong>Verify completed workflows:</strong> configure persistent gallery storage and run the staff/admin gallery and privacy flows in a production-like browser environment.</li>
 <li><strong>Build native target:</strong> validate a supported JDK/Gradle pairing and produce an Android artifact.</li>
 </ol></article>
 <article class="card"><h2>Verification record</h2><div class="tablewrap"><table style="min-width:0"><thead><tr><th>Check</th><th>Result</th></tr></thead><tbody>
-<tr><td>Backend tests</td><td><span class="badge pass">115 passed</span></td></tr>
+<tr><td>Backend tests</td><td><span class="badge pass">141 passed of 143</span></td></tr>
 <tr><td>SQLite-only skips</td><td><span class="badge warn">2 skipped</span></td></tr>
-<tr><td>Frontend tests</td><td><span class="badge pass">15 passed</span></td></tr>
+<tr><td>Frontend tests</td><td><span class="badge pass">8 suites / 26 passed; focused 5/5</span></td></tr>
 <tr><td>Django system check</td><td><span class="badge pass">Clean</span></td></tr>
 <tr><td>Model/migration drift</td><td><span class="badge pass">None detected</span></td></tr>
-<tr><td>Frontend production build</td><td><span class="badge pass">Compiled</span></td></tr>
+<tr><td>Frontend production build</td><td><span class="badge pass">Final build and artifact check passed</span></td></tr>
+<tr><td>Secret / Bandit / pip audits</td><td><span class="badge pass">Passed</span></td></tr>
+<tr><td>Frontend npm audit</td><td><span class="badge fail">18 high findings remain</span></td></tr>
 <tr><td>Production integrations/database</td><td><span class="badge blocked">Unverified</span></td></tr>
 </tbody></table></div></article>
 </section>
-<section class="section note"><strong>Scoring and scope.</strong> Each module has a weight based on its product scope and a 0–100 evidence score. Overall progress is the sum of <code>weight × module score</code>, rounded to the nearest whole percentage. Scores award implementation and local test evidence; missing user paths, sparse input data, unverified external services, and absent production proof reduce the score. This is a transparent engineering estimate, not a claim that 76% of all possible work is objectively complete. The report changes only this HTML artifact.</section>
-<footer class="foot">CAV Photo Studio &amp; Café · Project Progress Dashboard · Review date: 19 October 2026 · Open this file in a browser or print to PDF.</footer>
+<section class="section note"><strong>Scoring and scope.</strong> Each module has a weight based on its product scope and a 0–100 evidence score. Current total is <code>77.53%</code>, displayed as 78% after rounding the sum of <code>weight × module score</code>. Scores reflect inspected implementations, test coverage and evidence gaps; this is an evidence-based engineering estimate, not an exact count of all possible work. See <code>docs/production-readiness-audit-2026-10-26.md</code> for commands, findings and external blockers.</section>
+<footer class="foot">CAV Photo Studio &amp; Café · Project Progress Dashboard · Review date: 26 October 2026 · Open this file in a browser or print to PDF.</footer>
 </main>
 <script>
 const items=[
-{name:'Public website & routing',weight:6,score:95,status:'complete',evidence:'Landing/content pages, booking guide, privacy page, login and role routes are present; optimized frontend build passes.',remaining:'Browser end-to-end and accessibility checks were not run.'},
+{name:'Public website & routing',weight:6,score:95,status:'complete',evidence:'Landing/content pages, booking guide, privacy page, login and role routes are present; final optimized production build and artifact verification passed.',remaining:'Fresh browser end-to-end and accessibility checks were not run.'},
 {name:'Authentication & accounts',weight:9,score:90,status:'complete',evidence:'Cookie JWT/CSRF flows, OTP registration/reset/resend, role paths, profiles and privacy controls have automated coverage.',remaining:'Live cross-origin production authentication and provider delivery remain unverified.'},
-{name:'Customer booking & payments',weight:14,score:88,status:'complete',evidence:'Booking lifecycle, availability, customer history filters, payment methods, QR rendering and protected proof retrieval are implemented.',remaining:'Validate real QR destinations and production API/media behavior.'},
+{name:'Customer booking & payments',weight:14,score:89,status:'complete',evidence:'Booking lifecycle, availability, customer history filters, payment methods, QR rendering and protected proof retrieval are implemented; calendar stale-response guards are tested.',remaining:'Validate real QR destinations and production API/media behavior.'},
 {name:'Staff POS & receipts',weight:8,score:90,status:'complete',evidence:'Checkout, payment records, stock deduction, idempotency and receipt paths are implemented and covered by backend tests.',remaining:'Physical printer output and real device acceptance remain.'},
 {name:'Inventory, catalog & purchasing',weight:8,score:88,status:'complete',evidence:'Product/ingredient, recipe, supplier/category and purchase-order flows are present with lifecycle validation.',remaining:'Production database migration and browser acceptance are unverified.'},
 {name:'Admin dashboard & operations',weight:9,score:88,status:'ongoing',evidence:'Admin analytics, calendar, accounts, reviews, payment verification and operational controls have UI/API paths.',remaining:'No production-data browser acceptance journey was run.'},
 {name:'Chatbot & FAQ',weight:4,score:80,status:'ongoing',evidence:'FAQ-backed local responses, customer chat and provider fallback are implemented; backend suite passes.',remaining:'Live provider configuration and response quality are unverified.'},
 {name:'Forecasting & data quality',weight:5,score:72,status:'ongoing',evidence:'Import, deduplication, forecast methods and observed-date coverage validation are implemented.',remaining:'Bundled source has 11 actual dates; validated 30-day business history and production quality checks are missing.'},
-{name:'Notifications',weight:9,score:68,status:'ongoing',evidence:'In-app, SMS, push and email paths include delivery outcomes, retries/cleanup and booking-customer routing; tests pass locally.',remaining:'Credentials, persistent schema, worker schedules and real recipient/device delivery remain unverified.'},
-{name:'Gallery & media',weight:3,score:65,status:'ongoing',evidence:'Public gallery API and frontend viewing paths exist.',remaining:'Staff/admin gallery create, edit and delete workflows are absent.'},
-{name:'Audit, privacy & compliance',weight:6,score:82,status:'ongoing',evidence:'Audit logging, consent/privacy request paths and retention tooling are present.',remaining:'Production controls and operational privacy-case completion were not verified.'},
-{name:'Dedicated reports & sales domains',weight:4,score:5,status:'pending',evidence:'Reporting functions exist in dashboard/POS domains; named Django reports and sales views/tests are placeholders.',remaining:'Implement dedicated domain endpoints/UI only if required by product scope.'},
+{name:'Notifications',weight:9,score:68,status:'ongoing',evidence:'In-app, SMS, push and email paths include delivery outcomes, retries/cleanup and booking-customer routing; mocked/local tests pass.',remaining:'Credentials, worker schedules and real recipient/device delivery remain unverified; local SMS/email are disabled.'},
+{name:'Gallery & media',weight:3,score:88,status:'ongoing',evidence:'Persistent GalleryImage records, restore/seed migration, storage adapter, public API, permission-gated CRUD, staff/admin UI and landing-page integration have tests.',remaining:'Configure and verify actual durable bucket uploads/read/delete in a non-production environment.'},
+{name:'Audit, privacy & compliance',weight:6,score:88,status:'ongoing',evidence:'Audit logging, consent/privacy request paths, retention tooling and admin privacy review lifecycle have role/state tests.',remaining:'Verify deployed privacy process, deletion/export behavior and production controls with authorized operators.'},
+{name:'Dedicated reports & sales domains',weight:4,score:5,status:'pending',evidence:'POS shift closeout reports are implemented; the separate Django reports and sales apps have placeholder views.',remaining:'Implement dedicated domain endpoints/UI only if required by product scope.'},
 {name:'Android / Capacitor packaging',weight:3,score:35,status:'ongoing',evidence:'Capacitor configuration and Android project are present.',remaining:'A supported toolchain build and installable artifact were not verified.'},
-{name:'CI, QA & release readiness',weight:7,score:55,status:'ongoing',evidence:'CI defines backend/frontend tests, builds and security/accessibility gates; local test/build checks pass.',remaining:'Secret/dependency/deploy scans, browser accessibility and release pipeline were not executed during this audit.'},
-{name:'Database & external integrations',weight:5,score:48,status:'ongoing',evidence:'Settings and adapters exist for database, media, payment QR and provider integrations; local QR settings resolve for all three methods.',remaining:'Live database migrations, durable media, production QR URLs and provider connectivity require environment verification.'}
+{name:'CI, QA & release readiness',weight:7,score:66,status:'ongoing',evidence:'Backend 143-test suite, frontend 8-suite run, build, secret scan, Bandit app/config scan, and pip-audit passed; Django release-flags check passed.',remaining:'18 high npm findings remain; browser E2E/accessibility and deployed release pipeline are unverified.'},
+{name:'Database & external integrations',weight:5,score:48,status:'ongoing',evidence:'Migrations apply and drift check passes on isolated SQLite; PostgreSQL, storage and provider adapters are wired and locally tested.',remaining:'Production PostgreSQL, durable gallery/proof storage, payment account identity and provider connectivity require authorized environment verification.'}
 ];
 const totalWeight=items.reduce((a,x)=>a+x.weight,0);
 const total=items.reduce((a,x)=>a+x.weight*x.score/100,0);
