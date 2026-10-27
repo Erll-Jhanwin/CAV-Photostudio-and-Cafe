@@ -58,6 +58,16 @@ class SupabasePaymentProofStorageTests(TestCase):
         with self.assertRaises(ValueError):
             storage.url('booking_receipts/proof.png')
 
+    def test_current_supabase_secret_key_uses_apikey_without_bearer(self):
+        headers = SupabasePaymentProofStorage._headers('sb_secret_test-only')
+        self.assertEqual(headers['apikey'], 'sb_secret_test-only')
+        self.assertNotIn('Authorization', headers)
+        with override_settings(SUPABASE_SERVICE_ROLE_KEY='', SUPABASE_SECRET_KEY='sb_secret_test-only'):
+            self.assertEqual(
+                SupabasePaymentProofStorage()._config()[1],
+                'sb_secret_test-only',
+            )
+
     def test_debug_mode_uses_local_django_storage_without_supabase_credentials(self):
         storage = SupabasePaymentProofStorage()
         with override_settings(DEBUG=True, SUPABASE_URL='', SUPABASE_SERVICE_ROLE_KEY=''):

@@ -181,12 +181,13 @@ PAYMENT_QR_MARIBANK_URL = os.environ.get('PAYMENT_QR_MARIBANK_URL', '').strip()
 # Booking payment proofs use a private Supabase Storage bucket. The secret is
 # server-only; file access remains behind the authenticated Django receipt API.
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().rstrip('/')
-SUPABASE_SERVICE_ROLE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '').strip()
+SUPABASE_SECRET_KEY = os.environ.get('SUPABASE_SECRET_KEY', '').strip()
+# Prefer Supabase's current secret-key format; retain the legacy variable name
+# for existing deployments using a JWT-based service_role key.
+SUPABASE_SERVICE_ROLE_KEY = (
+    SUPABASE_SECRET_KEY or os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '').strip()
+)
 SUPABASE_PAYMENT_PROOFS_BUCKET = os.environ.get('SUPABASE_PAYMENT_PROOFS_BUCKET', 'payment-proofs').strip()
-if not DEBUG and not IS_TESTING and (not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY):
-    raise ImproperlyConfigured(
-        'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for private payment proof storage.'
-    )
 SUPABASE_GALLERY_BUCKET = os.environ.get('SUPABASE_GALLERY_BUCKET', 'gallery').strip()
 GALLERY_STORAGE_BACKEND = os.environ.get(
     'GALLERY_STORAGE_BACKEND', 'local' if DEBUG else 'supabase'

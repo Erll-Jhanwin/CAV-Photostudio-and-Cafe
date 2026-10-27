@@ -37,7 +37,11 @@ class SupabasePaymentProofStorage(Storage):
 
     def _config(self):
         base_url = str(getattr(settings, 'SUPABASE_URL', '') or '').strip().rstrip('/')
-        api_key = str(getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', '') or '').strip()
+        api_key = str(
+            getattr(settings, 'SUPABASE_SECRET_KEY', '')
+            or getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', '')
+            or ''
+        ).strip()
         bucket = str(getattr(settings, 'SUPABASE_PAYMENT_PROOFS_BUCKET', 'payment-proofs') or '').strip()
         if not base_url or not api_key:
             raise SupabaseStorageError('Supabase receipt storage is not configured.')
@@ -64,10 +68,12 @@ class SupabasePaymentProofStorage(Storage):
 
     @staticmethod
     def _headers(api_key, content_type=None):
-        headers = {
-            'apikey': api_key,
-            'Authorization': f'Bearer {api_key}',
-        }
+        # Current Supabase secret keys (sb_secret_...) are API keys, not JWTs;
+        # sending one as a Bearer token causes Supabase to reject it as an
+        # invalid JWT. Legacy service_role keys remain JWTs and use both headers.
+        headers = {'apikey': api_key}
+        if not api_key.startswith('sb_secret_'):
+            headers['Authorization'] = f'Bearer {api_key}'
         if content_type:
             headers['Content-Type'] = content_type
         return headers
