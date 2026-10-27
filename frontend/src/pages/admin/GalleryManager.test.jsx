@@ -37,7 +37,7 @@ describe('GalleryManager', () => {
     render(<GalleryManager />);
 
     expect(await screen.findByText('Studio portrait')).toBeInTheDocument();
-    expect(screen.getByText('Public')).toBeInTheDocument();
+    expect(screen.getAllByText('Public')).toHaveLength(2);
     expect(client.get).toHaveBeenCalledWith('/api/gallery/images/', {
       params: { include_unfeatured: 'true' },
     });
@@ -89,6 +89,47 @@ describe('GalleryManager', () => {
     fireEvent.error(image);
 
     expect(await screen.findByText('This image could not be loaded. Upload a replacement to restore it.')).toBeInTheDocument();
+  });
+
+  test('opens an accessible preview and supports next, previous, and Escape controls', async () => {
+    const secondImage = {
+      ...galleryRecord,
+      id: 8,
+      title: 'Café details',
+      category: 'CAFE',
+      category_label: 'Café',
+      image_url: 'https://images.example.test/gallery/cafe.png',
+    };
+    client.get.mockResolvedValue({ data: [galleryRecord, secondImage] });
+    render(<GalleryManager />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview Studio portrait' }));
+    expect(screen.getByRole('dialog', { name: 'Image preview: Studio portrait' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Next image' }));
+    expect(screen.getByRole('dialog', { name: 'Image preview: Café details' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous image' }));
+    expect(screen.getByRole('dialog', { name: 'Image preview: Studio portrait' })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: /Image preview/ })).not.toBeInTheDocument();
+  });
+
+  test('filters images by category and displays category counts', async () => {
+    const secondImage = {
+      ...galleryRecord,
+      id: 8,
+      title: 'Café details',
+      category: 'CAFE',
+      category_label: 'Café',
+      image_url: 'https://images.example.test/gallery/cafe.png',
+    };
+    client.get.mockResolvedValue({ data: [galleryRecord, secondImage] });
+    render(<GalleryManager />);
+
+    expect(await screen.findByText('Studio portrait')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Café/ }));
+    expect(screen.getByText('Café details')).toBeInTheDocument();
+    expect(screen.queryByText('Studio portrait')).not.toBeInTheDocument();
   });
 
   test('deletes a gallery image and reloads the managed list', async () => {
