@@ -656,10 +656,11 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             cleanup_uncommitted_payment_receipt(payment)
             booking_id = serializer.validated_data.get('booking').id if serializer.validated_data.get('booking') else None
             logger.error(
-                'Payment receipt storage failed: booking_id=%s metadata=%s exception_type=%s',
+                'Payment receipt storage failed: booking_id=%s metadata=%s exception_type=%s storage_error=%s',
                 booking_id,
                 request_metadata,
                 type(exc).__name__,
+                str(exc) if isinstance(exc, SupabaseStorageError) else '',
             )
             return Response(
                 {
@@ -721,9 +722,10 @@ class BookingPaymentReceiptView(views.APIView):
             return Response({'detail': 'Payment proof not found.'}, status=status.HTTP_404_NOT_FOUND)
         except (SupabaseStorageError, OSError, ValueError) as exc:
             logger.error(
-                'Payment receipt retrieval failed: payment_id=%s exception_type=%s',
+                'Payment receipt retrieval failed: payment_id=%s exception_type=%s storage_error=%s',
                 payment.pk,
                 type(exc).__name__,
+                str(exc) if isinstance(exc, SupabaseStorageError) else '',
             )
             return Response(
                 {'detail': 'Payment proof storage is temporarily unavailable.'},

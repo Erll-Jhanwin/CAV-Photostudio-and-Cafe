@@ -666,8 +666,8 @@ export default function LoginPage() {
         <ArrowLeft className="h-4 w-4" /> Return Home
       </button>
 
-      <div className="relative z-10 grid w-full max-w-6xl overflow-hidden rounded-[28px] bg-espresso-dark shadow-[0_36px_90px_rgba(46,26,17,0.28)] lg:min-h-[720px] lg:grid-cols-[1.08fr_0.92fr]">
-        <section className="relative flex min-h-[360px] flex-col justify-between overflow-hidden bg-espresso p-8 text-cream sm:p-10 lg:p-12">
+      <div className="relative z-10 grid w-full min-w-0 max-w-6xl overflow-hidden rounded-[28px] bg-espresso-dark shadow-[0_36px_90px_rgba(46,26,17,0.28)] lg:min-h-[720px] lg:grid-cols-[1.08fr_0.92fr]">
+        <section className="relative hidden min-h-[360px] flex-col justify-between overflow-hidden bg-espresso p-8 text-cream sm:p-10 lg:flex lg:p-12">
           <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(212,175,55,0.22),transparent_32%),radial-gradient(circle_at_82%_22%,rgba(255,255,255,0.12),transparent_24%)]" />
           <div className="absolute -bottom-24 -right-20 h-72 w-72 rounded-full border border-gold/20" />
           <div className="absolute bottom-12 right-12 h-28 w-28 rounded-full bg-gold/10 blur-2xl" />
@@ -722,8 +722,8 @@ export default function LoginPage() {
           </div>
         </section>
 
-        <section className="flex items-center bg-cream px-5 py-8 sm:px-8 lg:px-10">
-          <div className="mx-auto w-full max-w-md space-y-6">
+        <section className="flex min-w-0 items-center bg-cream px-4 py-8 sm:px-8 lg:px-10">
+          <div className="mx-auto w-full min-w-0 max-w-md space-y-6">
             <div className="space-y-2">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold">{formKicker}</p>
               <h2 className="text-3xl font-black tracking-tight text-espresso sm:text-4xl">{formTitle}</h2>

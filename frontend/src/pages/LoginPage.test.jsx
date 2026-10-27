@@ -25,6 +25,26 @@ jest.mock('react-router-dom', () => ({
 
 const renderLogin = () => render(<LoginPage />);
 
+describe('responsive authentication layout', () => {
+  test('hides the marketing panel below desktop while login and registration share a full-width form', () => {
+    renderLogin();
+
+    const marketingPanel = screen.getByRole('heading', {
+      name: 'Welcome to your CAV experience.',
+    }).closest('section');
+    const loginForm = screen.getByRole('heading', { name: 'Sign in to CAV' }).closest('section');
+
+    expect(marketingPanel).toHaveClass('hidden', 'lg:flex');
+    expect(loginForm).toHaveClass('min-w-0', 'bg-cream');
+    expect(loginForm.querySelector('.max-w-md')).toHaveClass('w-full', 'min-w-0');
+
+    fireEvent.click(screen.getByRole('button', { name: 'New to CAV? Create an account' }));
+
+    expect(screen.getByRole('heading', { name: 'Join CAV today' })).toBeInTheDocument();
+    expect(marketingPanel).toHaveClass('hidden', 'lg:flex');
+  });
+});
+
 describe('OTP resend flows', () => {
   beforeEach(() => {
     jest.useFakeTimers();
