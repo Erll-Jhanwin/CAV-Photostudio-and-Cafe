@@ -2159,8 +2159,12 @@ export default function AdminDashboard() {
                               </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                                 <div>
+                                  <p className="text-espresso/45 font-black uppercase tracking-wider">Booking</p>
+                                  <p className="font-bold text-espresso">#{payment.booking}</p>
+                                </div>
+                                <div>
                                   <p className="text-espresso/45 font-black uppercase tracking-wider">Package</p>
-                                  <p className="font-bold text-espresso">{details.package_name || details.package_details?.name || 'N/A'}</p>
+                                  <p className="font-bold text-espresso">{details.service_name ? `${details.service_name} · ` : ''}{details.package_name || details.package_details?.name || 'N/A'}</p>
                                   <p className="text-espresso/50">{details.scheduled_date} at {details.scheduled_time}</p>
                                 </div>
                                 <div>
@@ -2171,6 +2175,10 @@ export default function AdminDashboard() {
                             </div>
 
                             <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div className="rounded-2xl bg-cream/70 border border-espresso/[0.04] p-3">
+                                <p className="text-espresso/45 font-black uppercase tracking-wider">Payment Method</p>
+                                <p className="font-black text-espresso">{payment.method_label || payment.method || 'Unknown'}</p>
+                              </div>
                               <div className="rounded-2xl bg-cream/70 border border-espresso/[0.04] p-3">
                                 <p className="text-espresso/45 font-black uppercase tracking-wider">Reference</p>
                                 <p className="font-black text-espresso break-all">{payment.reference_number}</p>

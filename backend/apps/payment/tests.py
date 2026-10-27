@@ -58,6 +58,14 @@ class SupabasePaymentProofStorageTests(TestCase):
         with self.assertRaises(ValueError):
             storage.url('booking_receipts/proof.png')
 
+    def test_debug_mode_uses_local_django_storage_without_supabase_credentials(self):
+        storage = SupabasePaymentProofStorage()
+        with override_settings(DEBUG=True, SUPABASE_URL='', SUPABASE_SERVICE_ROLE_KEY=''):
+            name = storage.save('booking_receipts/local-proof.png', receipt_image())
+            with storage.open(name, 'rb') as stored:
+                self.assertTrue(stored.read().startswith(b'\x89PNG\r\n\x1a\n'))
+            storage.delete(name)
+
 
 @override_settings(
     IS_TESTING=False,
@@ -121,6 +129,10 @@ class BookingPaymentProofFlowTests(TestCase):
         self.assertEqual(submitted.status_code, 201, submitted.data)
         payment = Payment.objects.get(pk=submitted.data['id'])
         self.assertEqual(payment.status, 'PENDING_VERIFICATION')
+        self.assertEqual(submitted.data['method'], 'GCASH')
+        self.assertEqual(submitted.data['method_label'], 'GCash')
+        self.assertEqual(submitted.data['booking_details']['id'], approved_booking.pk)
+        self.assertEqual(submitted.data['booking_details']['package_name'], self.package.name)
         self.assertTrue(payment.receipt.name.startswith('booking_receipts/'))
         self.assertTrue(payment.receipt.name.endswith('.png'))
         self.assertNotIn('demo-project.supabase.co', submitted.data['receipt_url'])

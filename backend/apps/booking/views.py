@@ -586,6 +586,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             'booking',
             'booking__customer',
             'booking__package',
+            'booking__package__service',
             'verified_by'
         ).distinct().order_by('-created_at', '-id')
         status_param = self.request.query_params.get('status')
@@ -612,7 +613,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             payment_queryset = payment_queryset.filter(booking__customer=request.user)
         if idempotency_key:
             existing_payment = payment_queryset.filter(idempotency_key=idempotency_key).select_related(
-                'booking', 'booking__customer', 'booking__package', 'verified_by'
+                'booking', 'booking__customer', 'booking__package', 'booking__package__service', 'verified_by'
             ).first()
             if existing_payment:
                 return Response(self.get_serializer(existing_payment).data, status=status.HTTP_200_OK)
@@ -640,7 +641,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             cleanup_uncommitted_payment_receipt(payment)
             if idempotency_key:
                 existing_payment = payment_queryset.filter(idempotency_key=idempotency_key).select_related(
-                    'booking', 'booking__customer', 'booking__package', 'verified_by'
+                    'booking', 'booking__customer', 'booking__package', 'booking__package__service', 'verified_by'
                 ).first()
                 if existing_payment:
                     return Response(self.get_serializer(existing_payment).data, status=status.HTTP_200_OK)
@@ -786,7 +787,9 @@ class BookingPaymentOcrView(views.APIView):
 class BookingPaymentVerifyView(generics.UpdateAPIView):
     serializer_class = BookingPaymentSerializer
     permission_classes = [IsStaffOrAdmin]
-    queryset = Payment.objects.filter(payment_type=Payment.BOOKING).select_related('booking', 'booking__customer', 'booking__package', 'verified_by').distinct()
+    queryset = Payment.objects.filter(payment_type=Payment.BOOKING).select_related(
+        'booking', 'booking__customer', 'booking__package', 'booking__package__service', 'verified_by'
+    ).distinct()
 
     @transaction.atomic
     def update(self, request, *args, **kwargs):

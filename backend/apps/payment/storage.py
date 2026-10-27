@@ -29,9 +29,11 @@ class SupabasePaymentProofStorage(Storage):
     timeout = 30
 
     def _test_storage(self):
-        # Tests use Django's isolated in-memory storage unless they explicitly
-        # configure and mock the Supabase HTTP API.
-        return default_storage if getattr(settings, 'IS_TESTING', False) else None
+        # Tests use isolated in-memory storage and local development can use
+        # MEDIA_ROOT. Deployed environments always use the private bucket.
+        return default_storage if (
+            getattr(settings, 'IS_TESTING', False) or getattr(settings, 'DEBUG', False)
+        ) else None
 
     def _config(self):
         base_url = str(getattr(settings, 'SUPABASE_URL', '') or '').strip().rstrip('/')

@@ -44,6 +44,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     receipt = serializers.FileField(write_only=True, required=False, allow_null=True)
     booking_details = serializers.SerializerMethodField()
     receipt_url = serializers.SerializerMethodField()
+    method_label = serializers.SerializerMethodField()
     method = serializers.ChoiceField(choices=[('GCASH', 'GCash'), ('MAYA', 'Maya'), ('MARIBANK', 'MariBank')], required=False)
     verified_by_details = UserSerializer(source='verified_by', read_only=True)
     required_down_payment = serializers.SerializerMethodField()
@@ -52,7 +53,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = [
-            'id', 'booking', 'booking_details', 'reference_number', 'amount', 'method',
+            'id', 'booking', 'booking_details', 'reference_number', 'amount', 'method', 'method_label',
             'paid_at', 'receipt', 'receipt_url', 'status', 'verified_by',
             'verified_by_details', 'verified_at', 'admin_note',
             'required_down_payment', 'idempotency_key', 'created_at', 'updated_at'
@@ -102,7 +103,11 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             'customer_profile_picture_url': UserSerializer(booking.customer, context=self.context).data.get('profile_picture_url', ''),
             'package_name': booking.package.name,
             'package_price': booking.package.price,
+            'service_name': booking.package.service.name,
         }
+
+    def get_method_label(self, obj):
+        return obj.get_method_display()
 
     def get_receipt_url(self, obj):
         if not obj.receipt:

@@ -1728,6 +1728,9 @@ export default function StaffDashboard() {
                               <StatusBadge status={payment.status} />
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-espresso/60">
+                              <span>Booking: <strong className="text-espresso">#{payment.booking}</strong></span>
+                              <span>Payment method: <strong className="text-espresso">{payment.method_label || payment.method || 'Unknown'}</strong></span>
+                              <span>Service: <strong className="text-espresso">{details.service_name || 'N/A'}</strong></span>
                               <span>Package: <strong className="text-espresso">{details.package_name || 'N/A'}</strong></span>
                               <span>Schedule: <strong className="text-espresso">{details.scheduled_date} {details.scheduled_time}</strong></span>
                               <span>Reference: <strong className="text-espresso break-all">{payment.reference_number}</strong></span>
