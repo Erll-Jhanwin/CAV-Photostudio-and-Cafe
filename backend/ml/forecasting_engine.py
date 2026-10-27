@@ -477,7 +477,9 @@ def train_and_forecast_demand():
 
 def get_reorder_recommendations():
     reorders = []
-    for product in Product.objects.filter(item_type=Product.PRODUCT, is_active=True):
+    for product in Product.objects.filter(item_type=Product.PRODUCT, is_active=True).only(
+        'id', 'name', 'stock_level', 'reorder_point', 'supplier_details',
+    ):
         seven_day_forecast = max(0, int(product.reorder_point or 0))
         projected_stock = product.stock_level - seven_day_forecast
         needs_reorder = product.stock_level <= product.reorder_point or projected_stock <= 0

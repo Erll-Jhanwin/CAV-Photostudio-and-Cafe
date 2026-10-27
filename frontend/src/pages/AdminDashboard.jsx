@@ -206,7 +206,6 @@ function SalesForecastTooltip({ active, payload, label }) {
     </div>
   );
 }
-
 // Charts measure their container and can occasionally fail in restricted or
 // mid-layout browser states. Keep the rest of the management console usable
 // when a third-party chart cannot initialise.
@@ -255,7 +254,6 @@ function PerformanceList({ rows, primaryKey, midKey, midLabel }) {
     </div>
   );
 }
-
 export function AdminSkeleton({ pageTitle }) {
   return (
     <div className="min-h-screen bg-cream flex flex-col md:flex-row">
@@ -399,6 +397,7 @@ export default function AdminDashboard() {
   const [systemResetError, setSystemResetError] = useState('');
   const [tabLoading, setTabLoading] = useState({});
   const dashboardFetchSeqRef = useRef(0);
+  const forecastFetchSeqRef = useRef(0);
 
   const loadAdminTabData = useCallback(async (tab, { force = false } = {}) => {
     if (tab === 'analytics' || tab === 'system') return;
@@ -434,31 +433,34 @@ export default function AdminDashboard() {
     }
   }, [bookingCalendarMonth]);
 
+  const loadForecast = useCallback(async ({ force = false } = {}) => {
+    const requestSeq = forecastFetchSeqRef.current + 1;
+    forecastFetchSeqRef.current = requestSeq;
+    try {
+      const response = await getCached('/api/forecasting/predictions/', {}, { force });
+      if (requestSeq !== forecastFetchSeqRef.current) return;
+      const data = response?.data || null;
+      if (data) {
+        setForecast(data);
+        setForecastError(data.status && data.status !== 'ok' ? (data.detail || 'Sales history is not ready for forecasting.') : '');
+      }
+    } catch (error) {
+      if (requestSeq === forecastFetchSeqRef.current) {
+        setForecastError(getApiErrorMessage(error, 'Forecast data could not be loaded.'));
+      }
+    }
+  }, []);
+
   const fetchData = useCallback(async ({ background = false } = {}) => {
     const requestSeq = dashboardFetchSeqRef.current + 1;
     dashboardFetchSeqRef.current = requestSeq;
     try {
       if (!background) setLoading(true);
       const range = getRangeDates(datePreset, customStart, customEnd);
-      const responses = await Promise.allSettled([
-        getCached('/api/dashboard/analytics/', { params: { ...range, grain: 'daily' } }, { force: background }),
-        getCached('/api/forecasting/predictions/', {}, { force: background }),
-      ]);
+      const response = await getCached('/api/dashboard/analytics/', { params: { ...range, grain: 'daily' } }, { force: background });
       if (requestSeq !== dashboardFetchSeqRef.current) return;
-      const data = (index) => {
-        const response = responses[index];
-        return response?.status === 'fulfilled' ? response.value?.data || null : null;
-      };
-      if (data(0)) setAnalytics(normalizeDashboardAnalytics(data(0)));
-      if (data(1)) {
-        setForecast(data(1));
-        setForecastError(data(1)?.status && data(1).status !== 'ok' ? (data(1).detail || 'Sales history is not ready for forecasting.') : '');
-      }
-
-      const failedResponse = responses.find(response => response.status === 'rejected');
-      setDataError(failedResponse
-        ? `Some dashboard data could not be refreshed. ${getApiErrorMessage(failedResponse.reason)}`
-        : '');
+      if (response?.data) setAnalytics(normalizeDashboardAnalytics(response.data));
+      setDataError('');
     } catch (err) {
       console.error(err);
       if (requestSeq === dashboardFetchSeqRef.current) {
@@ -479,6 +481,25 @@ export default function AdminDashboard() {
     }
     fetchData();
   }, [user, navigate, fetchData]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'ADMIN' || !initialDataReady) return undefined;
+    let cancelled = false;
+    let idleId;
+    const timerId = window.setTimeout(() => {
+      if (cancelled) return;
+      if (typeof window.requestIdleCallback === 'function') {
+        idleId = window.requestIdleCallback(() => { if (!cancelled) void loadForecast(); }, { timeout: 2500 });
+      } else {
+        void loadForecast();
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+      if (idleId !== undefined && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleId);
+    };
+  }, [user, initialDataReady, loadForecast]);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') return;
@@ -712,7 +733,7 @@ export default function AdminDashboard() {
   const handleRetrain = async () => {
     setRetrainLoading(true);
     try {
-      await fetchData();
+      await loadForecast({ force: true });
     } finally {
       setRetrainLoading(false);
     }
@@ -730,7 +751,7 @@ export default function AdminDashboard() {
       formData.append('file', salesHistoryFile);
       await client.post('/api/forecasting/history/import/', formData);
       setSalesHistoryFile(null);
-      await fetchData({ background: true });
+      await loadForecast({ force: true });
     } catch (error) {
       setForecastError(getApiErrorMessage(error, 'Sales history could not be imported.'));
     } finally {
@@ -1276,11 +1297,14 @@ export default function AdminDashboard() {
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
         <main className={`flex-1 min-h-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${activeTab === 'reports' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+          {['payments', 'staff', 'faq'].includes(activeTab) && (
+            <h1 className="heading-page mb-4 text-espresso">{pageTitles[activeTab]}</h1>
+          )}
           {receiptPrintError && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h4 className="font-bold text-sm">Receipt Not Printed</h4>
+                <p className="text-sm font-semibold leading-snug">Receipt Not Printed</p>
                 <p className="text-xs text-amber-700/90 mt-1">{receiptPrintError}</p>
               </div>
               <button type="button" onClick={() => setReceiptPrintError('')} className="text-amber-700/70 hover:text-amber-900">
@@ -1310,7 +1334,7 @@ export default function AdminDashboard() {
               <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.24em] text-gold-dark font-black mb-1">CAV InsightHub</p>
-                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Business Overview</h1>
+                  <h1 className="heading-page text-espresso">Business Overview</h1>
                   <p className="text-xs text-espresso/55 mt-1">Real-time sales, bookings, POS activity, and performance insights.</p>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row">
@@ -1511,8 +1535,9 @@ export default function AdminDashboard() {
               </div>
 
               {forecastError && (
-                <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">
-                  Forecast unavailable: {forecastError}
+                <div role="alert" className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800">
+                  <span className="flex-1">Forecast unavailable: {forecastError}</span>
+                  <Button size="sm" variant="outline" onClick={() => loadForecast({ force: true })}>Retry forecast</Button>
                 </div>
               )}
               {!forecastError && forecast?.status === 'ok' && (
@@ -1557,7 +1582,14 @@ export default function AdminDashboard() {
                         ))}
                       </div>
                     </div>
-                    <div className="h-[300px] 2xl:h-[360px] w-full">
+                    <div className="h-[300px] 2xl:h-[360px] w-full" aria-busy={!forecast && !forecastError}>
+                      {!forecast && !forecastError && (
+                        <div className="h-full flex flex-col items-center justify-center gap-3 rounded-2xl bg-cream/60" role="status">
+                          <Skeleton className="h-5 w-48" />
+                          <Skeleton className="h-48 w-[85%] rounded-xl" />
+                          <span className="sr-only">Loading forecast data</span>
+                        </div>
+                      )}
                       {forecastChartData.length > 0 ? (
                         <DashboardChartBoundary resetKey={`${forecastView}:${forecastChartData.length}:${visibleSeries.actual}:${visibleSeries.forecast}:${visibleSeries.combined}`}>
                           <ResponsiveContainer width="100%" height="100%">
@@ -1575,9 +1607,9 @@ export default function AdminDashboard() {
                             </ComposedChart>
                           </ResponsiveContainer>
                         </DashboardChartBoundary>
-                      ) : (
+                      ) : (forecast || forecastError) ? (
                         <EmptyState icon={BarChart2} title="No sales or forecast data" description="Run forecasting or select a date range with completed revenue." />
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 </Card>
@@ -1758,7 +1790,7 @@ export default function AdminDashboard() {
               <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.24em] text-gold-dark font-black mb-1">Live Scheduling</p>
-                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Booking Calendar</h1>
+                  <h1 className="heading-page text-espresso">Booking Calendar</h1>
                   <p className="text-xs text-espresso/55 mt-1">Manage studio availability, studio sessions, and off-site event photoshoots.</p>
                 </div>
                 <div className="inline-flex rounded-[20px] border border-espresso/10 bg-white p-1 shadow-sm">
@@ -2001,7 +2033,7 @@ export default function AdminDashboard() {
             <div className="flex h-full min-h-0 w-full flex-col gap-4 animate-in-up" key="reports">
               <div className="shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
-                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">End-of-Day Reports</h1>
+                  <h1 className="heading-page text-espresso">End-of-Day Reports</h1>
                   <p className="text-xs text-espresso/50 mt-1">Print shift closeout reports and reprint saved records.</p>
                 </div>
                 <Button variant="gold" size="sm" icon={Printer} onClick={() => openEndOfDayModal()}>
@@ -2530,7 +2562,7 @@ export default function AdminDashboard() {
             <div className="w-full space-y-4 animate-in-up" key="reviews">
               <div>
                 <p className="mb-1 text-[10px] font-black uppercase tracking-[0.24em] text-gold-dark">Customer Voice</p>
-                <h1 className="font-sans text-2xl font-extrabold text-espresso md:text-3xl">Reviews &amp; Feedback</h1>
+                <h1 className="heading-page text-espresso">Reviews &amp; Feedback</h1>
                 <p className="mt-1 max-w-2xl text-xs leading-relaxed text-espresso/55">
                   See what customers are saying about their completed studio sessions.
                 </p>
@@ -2637,7 +2669,7 @@ export default function AdminDashboard() {
             <div className="w-full max-w-5xl space-y-4 animate-in-up" key="system">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.24em] text-gold-dark font-black mb-1">Protected Admin Action</p>
-                <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">System Controls</h1>
+                <h1 className="heading-page text-espresso">System Controls</h1>
                 <p className="mt-1 max-w-2xl text-xs leading-relaxed text-espresso/55">
                   Reset operational records for a clean system state while keeping the business catalog intact.
                 </p>
@@ -2651,7 +2683,7 @@ export default function AdminDashboard() {
                     </div>
                     <div className="min-w-0 space-y-3">
                       <div>
-                        <h2 className="text-lg font-black text-espresso">Reset System Data</h2>
+                        <h2 className="heading-section text-espresso">Reset System Data</h2>
                         <p className="mt-1 max-w-2xl text-sm leading-relaxed text-espresso/62">
                           This deletes transactional and user-generated database records. It cannot be undone from the dashboard.
                         </p>
@@ -2945,3 +2977,4 @@ export default function AdminDashboard() {
     </div>
   );
 }
+

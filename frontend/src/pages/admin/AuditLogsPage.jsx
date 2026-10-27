@@ -53,7 +53,7 @@ export default function AuditLogsPage() {
     <div className="w-full space-y-5 animate-in-up">
       <Card className="p-4 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <CardHeader title="Audit Logs" subtitle="A searchable record of account, booking, payment, inventory, and system activity." />
+          <CardHeader headingLevel={1} title="Audit Logs" subtitle="A searchable record of account, booking, payment, inventory, and system activity." />
           <button type="button" onClick={() => setRefreshKey(value => value + 1)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-espresso/10 bg-white px-3 py-2 text-xs font-bold text-espresso hover:bg-cream" aria-label="Refresh audit logs">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>

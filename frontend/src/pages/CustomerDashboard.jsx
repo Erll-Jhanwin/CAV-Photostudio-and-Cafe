@@ -616,10 +616,43 @@ export default function CustomerDashboard() {
     try {
       if (!background) setLoading(true);
       setDashboardError('');
+      const profileRequest = client.get('/api/auth/profile/', { timeout: 12000 })
+        .then(({ data: p }) => {
+          if (requestSeq !== dashboardFetchSeqRef.current || !p) return;
+          setProfileUsername(p.username || '');
+          setFirstName(p.first_name || '');
+          setLastName(p.last_name || '');
+          setBookingEmail(p.email || user?.email || '');
+          setPhone(p.phone_number || '');
+          setAddress(p.address || '');
+          updateStoredUser?.({
+            username: p.username,
+            email: p.email,
+            role: p.role,
+            first_name: p.first_name,
+            last_name: p.last_name,
+            profile_picture_url: p.profile_picture_url,
+          });
+          setProfilePictureFile(null);
+          setProfilePictureRemove(false);
+          setProfilePicturePreview(current => {
+            if (current) URL.revokeObjectURL(current);
+            return '';
+          });
+          if (p.customer_profile) {
+            setPoints(p.customer_profile.points || 0);
+            setLoyaltyTier(p.customer_profile.loyalty_tier || 'Bronze');
+          }
+        })
+        .catch(() => {
+          if (requestSeq === dashboardFetchSeqRef.current) {
+            setDashboardError(current => current || 'Your bookings loaded, but account details could not refresh. Retry to refresh them.');
+          }
+        });
+
       const results = await Promise.allSettled([
         client.get('/api/bookings/services/', { timeout: 12000 }),
         client.get('/api/bookings/', { timeout: 12000 }),
-        client.get('/api/auth/profile/', { timeout: 12000 }),
       ]);
       if (requestSeq !== dashboardFetchSeqRef.current) return;
       const failures = [];
@@ -628,35 +661,8 @@ export default function CustomerDashboard() {
       if (results[1].status === 'fulfilled') setBookings(normalizeBookings(results[1].value.data));
       else failures.push('bookings');
       setGalleryImages(normalizeGalleryImages(localGalleryImages));
-      if (results[2].status === 'rejected') failures.push('profile');
-      const p = results[2].status === 'fulfilled' ? results[2].value.data : null;
-      if (p) {
-      setProfileUsername(p.username || '');
-      setFirstName(p.first_name || '');
-      setLastName(p.last_name || '');
-      setBookingEmail(p.email || user?.email || '');
-      setPhone(p.phone_number || '');
-      setAddress(p.address || '');
-      updateStoredUser?.({
-        username: p.username,
-        email: p.email,
-        role: p.role,
-        first_name: p.first_name,
-        last_name: p.last_name,
-        profile_picture_url: p.profile_picture_url,
-      });
-      setProfilePictureFile(null);
-      setProfilePictureRemove(false);
-      setProfilePicturePreview(current => {
-        if (current) URL.revokeObjectURL(current);
-        return '';
-      });
-      if (p.customer_profile) {
-        setPoints(p.customer_profile.points || 0);
-        setLoyaltyTier(p.customer_profile.loyalty_tier || 'Bronze');
-      }
-      }
       if (failures.length) setDashboardError(`Some dashboard data could not load (${failures.join(', ')}). Retry to refresh it.`);
+      void profileRequest;
       // Notifications are supplemental to the account view. Keep older backend
       // deployments from blocking the dashboard while they receive the API migration.
       void fetchNotifications({ force: background });
@@ -1648,7 +1654,7 @@ export default function CustomerDashboard() {
           {activeTab === 'book' && (
             <div className="space-y-6 animate-in-up" key="book">
               <div>
-                <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Book a Photography Session</h1>
+                <h1 className="heading-page text-espresso">Book a Photography Session</h1>
                 <p className="text-xs text-espresso/50 mt-1">Reserve your premium studio slot or custom event package below.</p>
               </div>
 
@@ -1906,7 +1912,7 @@ export default function CustomerDashboard() {
                                                             {getPackageIcon(pkg.name)}
                                                           </div>
                                                           <div className="min-w-0 flex-1">
-                                                            <h4 className="font-extrabold text-espresso text-xs tracking-tight leading-snug">{pkg.name}</h4>
+                                                            <h4 className="text-sm font-semibold leading-snug tracking-tight text-espresso">{pkg.name}</h4>
                                                             {/* Small detail text */}
                                                             {parsed.isSplit ? (
                                                               <div className="flex gap-1.5 mt-1 text-[9px] font-bold text-espresso/50">
@@ -2541,7 +2547,7 @@ export default function CustomerDashboard() {
           {activeTab === 'history' && (
             <div className="max-w-[1520px] mx-auto space-y-6 md:space-y-8 animate-in-up" key="history">
               <div>
-                <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso leading-tight">Booking History</h1>
+                <h1 className="heading-page text-espresso">Booking History</h1>
                 <p className="text-xs text-espresso/55 mt-1">Track reservations, schedules, add-ons, and booking progress.</p>
               </div>
 
@@ -2718,7 +2724,7 @@ export default function CustomerDashboard() {
           {activeTab === 'profile' && (
             <div className="space-y-6 animate-in-up" key="profile">
               <div>
-                <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Account Profile</h1>
+                <h1 className="heading-page text-espresso">Account Profile</h1>
                 <p className="text-xs text-espresso/50 mt-1">Update your personal details and check loyalty points.</p>
               </div>
 
@@ -2853,7 +2859,7 @@ export default function CustomerDashboard() {
                           <Avatar user={profileAvatarUser} size="md" className="border-white/10 bg-white/10 text-cream" />
                           <div className="min-w-0">
                           <p className="text-[9px] uppercase tracking-widest text-gold font-bold">Loyalty Card</p>
-                          <h4 className="mt-1 truncate font-sans text-xl font-extrabold text-white">{user?.username}</h4>
+                          <h2 className="heading-section mt-1 truncate text-white">{user?.username}</h2>
                           </div>
                         </div>
                         <span className="bg-gold/10 text-gold border border-gold/20 rounded-lg px-2.5 py-0.5 text-xs font-bold uppercase">{loyaltyTier}</span>
@@ -2891,7 +2897,7 @@ export default function CustomerDashboard() {
           {activeTab === 'notifications' && (
             <div className="space-y-6 animate-in-up" key="notifications">
               <div>
-                <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Your Notifications</h1>
+                <h1 className="heading-page text-espresso">Your Notifications</h1>
                 <p className="text-xs text-espresso/50 mt-1">Stay updated on your booking approvals and changes.</p>
               </div>
 
@@ -2949,7 +2955,7 @@ export default function CustomerDashboard() {
                       </div>
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
-                          <h4 className="font-bold text-sm text-espresso">{n.title}</h4>
+                          <h2 className="heading-card text-espresso">{n.title}</h2>
                           <span className={`shrink-0 text-[9px] uppercase tracking-wider font-black ${unread ? 'text-gold-dark' : 'text-espresso/30'}`}>
                             {unread ? 'Unread' : 'Read'}
                           </span>
@@ -3620,7 +3626,7 @@ export default function CustomerDashboard() {
                     <Coffee className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-white">CAV AI Assistant</h4>
+                    <p className="text-sm font-semibold leading-snug text-white">CAV AI Assistant</p>
                     <span className="text-[10px] text-gold/80">Online &middot; FAQ Assistant</span>
                   </div>
                 </div>

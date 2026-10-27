@@ -45,6 +45,24 @@ beforeEach(() => {
   }));
 });
 
+test('shows the customer dashboard while the supplemental profile refresh is still pending', async () => {
+  let resolveProfile;
+  client.get.mockImplementation(url => {
+    if (url === '/api/auth/profile/') {
+      return new Promise(resolve => { resolveProfile = resolve; });
+    }
+    if (url === '/api/bookings/services/') return Promise.resolve({ data: [service] });
+    if (url === '/api/bookings/') return Promise.resolve({ data: [] });
+    if (url === '/api/bookings/payment-methods/') return Promise.resolve({ data: { methods: [] } });
+    return Promise.resolve({ data: [] });
+  });
+
+  render(<CustomerDashboard />);
+
+  expect(await screen.findByRole('button', { name: 'Book a Session' })).toBeInTheDocument();
+  expect(resolveProfile).toBeDefined();
+});
+
 async function fillPayment(container) {
   fireEvent.change(screen.getByLabelText('GCash Reference No.'), { target: { value: 'GCASH-TEST-001' } });
   fireEvent.change(screen.getByLabelText('Payment Date'), { target: { value: '2026-10-18' } });

@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { getCached } from '../api/client';
 
 const mockNavigate = jest.fn();
 const mockUser = { id: 1, username: 'admin', role: 'ADMIN' };
@@ -62,5 +63,27 @@ describe('AdminDashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Accounts' }));
     expect(await screen.findByText('Existing Accounts')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add account' })).toBeInTheDocument();
+  });
+
+  it('renders the analytics dashboard before the slower forecast request finishes', async () => {
+    let resolveForecast;
+    getCached.mockImplementation(url => {
+      if (url.includes('/api/forecasting/predictions/')) {
+        return new Promise(resolve => { resolveForecast = resolve; });
+      }
+      return Promise.resolve({ data: {
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
+        top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
+        low_stock_alerts: [], inventory_alerts: [],
+      } });
+    });
+
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+
+    expect(await screen.findByText('Business Overview')).toBeInTheDocument();
+    await waitFor(() => expect(resolveForecast).toBeDefined());
+    expect(getCached).toHaveBeenCalledWith('/api/dashboard/analytics/', expect.any(Object), expect.any(Object));
+    await act(async () => resolveForecast({ data: { sales_forecast: [], reorder_recommendations: [] } }));
   });
 });

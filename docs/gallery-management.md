@@ -10,18 +10,26 @@ delete them.
 ## Storage setup
 
 Local development uses Django file storage under `MEDIA_ROOT`. Production
-defaults to `GALLERY_STORAGE_BACKEND=supabase`, using the server-only
-`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` values. Set
-`SUPABASE_GALLERY_BUCKET` to a Supabase Storage bucket configured as public.
-Public access is needed so gallery image URLs can be rendered on the landing
-page; uploads and deletes still use the backend service-role credential. Never
-put that credential in frontend configuration.
+defaults to `GALLERY_STORAGE_BACKEND=supabase`, using `SUPABASE_URL` and a
+server-only Supabase key. Current `sb_secret_...` keys can be configured as
+`SUPABASE_SECRET_KEY`; legacy service-role JWT keys remain supported through
+`SUPABASE_SERVICE_ROLE_KEY`. Set `SUPABASE_GALLERY_BUCKET` to an existing
+Supabase Storage bucket configured as public. Public access lets browsers read
+image objects; uploads and deletes still use the backend credential. Do not add
+anonymous insert, update, or delete policies to `storage.objects` and never
+expose either key in frontend configuration.
 
-`backend/.env.example` lists the gallery settings. The service-role key and
-bucket policy are deployment secrets/configuration and must be verified in the
-hosting provider. This repository does not provision the bucket or backend
-deployment. Keep `MEDIA_ROOT` on persistent storage when explicitly choosing
-`GALLERY_STORAGE_BACKEND=local` in a deployed environment.
+The catalog is queried through Django's database connection and role-checked
+API. The browser never queries the Supabase database directly. Uploads use the
+server key, which bypasses Storage RLS; public reads use the bucket's
+public-object behavior. Keep catalog mutations behind staff/admin API
+permissions.
+
+`backend/.env.example` lists the gallery settings. The server key and bucket
+visibility are deployment configuration and must be verified in the backend
+host and Supabase project. This repository's Render blueprint does not provision
+the backend or bucket. Keep `MEDIA_ROOT` on persistent storage when explicitly
+choosing `GALLERY_STORAGE_BACKEND=local` in a deployed environment.
 
 ## Archived gallery records
 

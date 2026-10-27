@@ -4,7 +4,9 @@ from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
 from PIL import Image
@@ -124,6 +126,29 @@ class BookingAvailabilityPolicyTests(TestCase):
 
         self.assertFalse(any(slot['available'] for slot in event_slots))
         self.assertTrue(all(slot['notice'] == 'Studio sessions already booked on this date.' for slot in event_slots))
+
+    def test_monthly_availability_batches_database_reads(self):
+        Booking.objects.create(
+            customer=self.customer,
+            package=self.event_package,
+            scheduled_date=self.future_day,
+            scheduled_time='13:00',
+            status='CONFIRMED',
+        )
+        client = APIClient()
+        client.force_authenticate(self.customer)
+
+        with CaptureQueriesContext(connection) as queries:
+            response = client.get('/api/bookings/availability/', {
+                'package': self.studio_package.id,
+                'month': self.future_day.strftime('%Y-%m'),
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(len(queries), 4, [query['sql'] for query in queries])
+        day = next(item for item in response.data['dates'] if item['date'] == self.future_day.isoformat())
+        self.assertEqual(day['status'], 'STUDIO_UNAVAILABLE')
+        self.assertEqual(day['notice'], 'Unavailable due to an event photoshoot.')
 
 
 class BookingWriteSafetyTests(TestCase):

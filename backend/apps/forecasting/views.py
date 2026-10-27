@@ -1,6 +1,8 @@
 import os
 import tempfile
 
+from django.core.cache import cache
+from django.utils import timezone
 from rest_framework import views
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
@@ -10,11 +12,23 @@ from ml.forecasting_engine import generate_forecast_report
 from ml.sales_history_repository import import_sales_history_csv
 from users.permissions import IsStaffOrAdmin
 
+FORECAST_CACHE_SECONDS = 20
+
+
+def forecast_cache_key():
+    return f'forecasting:dashboard-report:v1:{timezone.localdate().isoformat()}'
+
+
 class ForecastingDataView(views.APIView):
     permission_classes = [IsStaffOrAdmin]
 
     def get(self, request, *args, **kwargs):
-        return Response(generate_forecast_report())
+        report = cache.get_or_set(
+            forecast_cache_key(),
+            generate_forecast_report,
+            timeout=FORECAST_CACHE_SECONDS,
+        )
+        return Response(report)
 
 
 class SalesHistoryImportView(views.APIView):
@@ -50,4 +64,6 @@ class SalesHistoryImportView(views.APIView):
         response_status = status.HTTP_201_CREATED if result.get('imported') else status.HTTP_200_OK
         if result.get('status') != 'ok':
             response_status = status.HTTP_400_BAD_REQUEST
+        elif result.get('imported'):
+            cache.delete(forecast_cache_key())
         return Response(result, status=response_status)

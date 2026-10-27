@@ -17,7 +17,15 @@ os.environ['DJANGO_DEBUG'] = 'false'
 from .settings import *  # noqa: E402,F403
 
 EMAIL_DELIVERY_ENABLED = SMS_DELIVERY_ENABLED = PUSH_DELIVERY_ENABLED = False
+SMS_ASYNC_DELIVERY_ENABLED = False
 IPROG_SMS_API_TOKEN = RESEND_API_KEY = OPENROUTER_API_KEY = OCR_API_KEY = ''
+REDIS_URL = ''
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'isolated-tests-only',
+    },
+}
 SECURE_SSL_REDIRECT = False
 ALLOWED_HOSTS = ['testserver', 'localhost', '127.0.0.1']
 PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']

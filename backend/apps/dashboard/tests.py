@@ -20,6 +20,12 @@ class DashboardAnalyticsTests(TestCase):
             password='Admin123!',
             role='ADMIN',
         )
+        self.staff = get_user_model().objects.create_user(
+            username='dashboard-staff',
+            email='dashboard-staff@example.com',
+            password='Staff123!',
+            role='STAFF',
+        )
         self.customer = get_user_model().objects.create_user(
             username='dashboard-customer',
             email='dashboard-customer@example.com',
@@ -40,6 +46,17 @@ class DashboardAnalyticsTests(TestCase):
         )
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
+
+    def test_analytics_access_matches_staff_and_admin_roles(self):
+        for user, expected_status in [
+            (self.admin, 200),
+            (self.staff, 200),
+            (self.customer, 403),
+        ]:
+            with self.subTest(role=user.role):
+                self.client.force_authenticate(user)
+                response = self.client.get('/api/dashboard/analytics/')
+                self.assertEqual(response.status_code, expected_status)
 
     def test_recent_bookings_are_not_limited_by_the_reporting_range(self):
         booking = Booking.objects.create(

@@ -481,9 +481,9 @@ function GallerySection({ images = [] }) {
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
           <div className="space-y-5 max-w-3xl">
             <span className="text-gold font-bold uppercase tracking-[0.18em] text-xs md:text-sm">Gallery</span>
-            <h2 className="font-sans text-4xl md:text-5xl lg:text-6xl font-extrabold leading-[1.04] text-espresso text-balance">
+            <h1 className="font-sans text-4xl md:text-5xl lg:text-6xl font-extrabold leading-[1.04] text-espresso text-balance">
               Studio moments, café details, and finished sessions
-            </h2>
+            </h1>
             <p className="text-espresso/70 text-base md:text-lg leading-relaxed">
               Browse recent scenes from CAV, organized by the package they represent and updated from the gallery catalog.
             </p>
@@ -941,9 +941,9 @@ export default function LandingPage({ page = 'home' }) {
           {/* Section Header */}
           <div className="text-center space-y-5 max-w-3xl mx-auto">
             <span className="text-gold font-bold uppercase tracking-[0.18em] text-xs md:text-sm">1. Choose Service</span>
-            <h2 className="font-sans text-4xl md:text-5xl lg:text-6xl font-extrabold leading-[1.04] text-espresso text-balance">
+            <h1 className="font-sans text-4xl md:text-5xl lg:text-6xl font-extrabold leading-[1.04] text-espresso text-balance">
               Choose between a studio session or full photo service booking
-            </h2>
+            </h1>
             <p className="text-espresso/70 text-base md:text-lg leading-relaxed">Let's create amazing memories together.</p>
           </div>
 
@@ -1197,7 +1197,7 @@ export default function LandingPage({ page = 'home' }) {
         <div className="max-w-7xl mx-auto space-y-12 md:space-y-[4.5rem]">
           <div className="text-center space-y-5 max-w-3xl mx-auto">
             <span className="text-gold font-bold uppercase tracking-[0.18em] text-xs md:text-sm">Artisanal Café</span>
-            <h2 className="font-sans text-4xl md:text-5xl lg:text-6xl font-extrabold leading-[1.04] text-espresso text-balance">From the Espresso Bar</h2>
+            <h1 className="font-sans text-4xl md:text-5xl lg:text-6xl font-extrabold leading-[1.04] text-espresso text-balance">From the Espresso Bar</h1>
             <p className="text-espresso/70 text-base md:text-lg leading-relaxed">
               Refresh and re-energize. Our coffees are brewed from premium hand-picked beans, and pastries are freshly baked daily.
             </p>
@@ -1215,7 +1215,7 @@ export default function LandingPage({ page = 'home' }) {
         <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-20 items-center relative z-10">
           <div className="space-y-6 md:space-y-7">
             <span className="text-gold font-bold uppercase tracking-[0.18em] text-xs md:text-sm">About CAV</span>
-            <h2 className="font-sans text-4xl md:text-5xl font-extrabold leading-[1.05] text-white text-balance">Blending Lens &amp; Aroma</h2>
+            <h1 className="font-sans text-4xl md:text-5xl font-extrabold leading-[1.05] text-white text-balance">Blending Lens &amp; Aroma</h1>
             <p className="text-cream/72 leading-relaxed text-base md:text-lg">
               CAV was founded by a team of professional photographers and specialty baristas. We wanted to create a comfortable space where creatives, friends, and co-workers can gather.
             </p>
@@ -1253,7 +1253,7 @@ export default function LandingPage({ page = 'home' }) {
                   <Coffee className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm text-white">CAV AI Assistant</h4>
+                  <p className="text-sm font-semibold leading-snug text-white">CAV AI Assistant</p>
                   <span className="text-[10px] text-gold/80">Online &middot; FAQ Assistant</span>
                 </div>
               </div>

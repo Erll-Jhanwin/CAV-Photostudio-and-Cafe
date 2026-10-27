@@ -32,6 +32,7 @@ export default function GalleryManager() {
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [brokenImageIds, setBrokenImageIds] = useState(() => new Set());
 
   const loadImages = useCallback(async () => {
     setLoading(true);
@@ -41,6 +42,7 @@ export default function GalleryManager() {
         params: { include_unfeatured: 'true' },
       });
       setImages(Array.isArray(response.data) ? response.data : []);
+      setBrokenImageIds(new Set());
     } catch (requestError) {
       setError(getApiErrorMessage(requestError, 'Could not load gallery images.'));
     } finally {
@@ -130,7 +132,9 @@ export default function GalleryManager() {
   };
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.2fr)]" key="gallery">
+    <div className="space-y-4" key="gallery">
+      <h1 className="heading-page text-espresso">Photo Gallery</h1>
+      <div className="grid gap-4 xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.2fr)]">
       <Card className="!p-4 md:!p-5">
         <CardHeader
           title={editingId ? 'Edit Gallery Image' : 'Add to Gallery'}
@@ -218,11 +222,24 @@ export default function GalleryManager() {
           <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
             {images.map(image => (
               <article key={image.id} className="overflow-hidden rounded-2xl border border-espresso/10 bg-white">
-                {image.image_url ? (
-                  <img src={image.image_url} alt={image.alt_text || image.title} loading="lazy" className="h-44 w-full object-cover" />
+                {image.image_url && !brokenImageIds.has(image.id) ? (
+                  <img
+                    src={image.image_url}
+                    alt={image.alt_text || image.title}
+                    loading="lazy"
+                    onError={() => setBrokenImageIds(current => {
+                      if (current.has(image.id)) return current;
+                      const next = new Set(current);
+                      next.add(image.id);
+                      return next;
+                    })}
+                    className="h-44 w-full object-cover"
+                  />
                 ) : (
                   <div className="flex h-44 items-center justify-center bg-cream px-4 text-center text-xs text-espresso/60">
-                    Archived gallery record. Upload a replacement image before publishing.
+                    {image.image_url
+                      ? 'This image could not be loaded. Upload a replacement to restore it.'
+                      : 'Archived gallery record. Upload a replacement image before publishing.'}
                   </div>
                 )}
                 <div className="space-y-2 p-3">
@@ -254,6 +271,7 @@ export default function GalleryManager() {
           <EmptyState icon={Camera} title="No managed images yet" description="Uploaded gallery records will appear here." />
         )}
       </Card>
+      </div>
     </div>
   );
 }

@@ -29,6 +29,7 @@ const galleryRecord = {
 describe('GalleryManager', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    window.confirm = jest.fn(() => true);
     client.get.mockResolvedValue({ data: [galleryRecord] });
   });
 
@@ -79,6 +80,26 @@ describe('GalleryManager', () => {
     const formData = client.post.mock.calls[0][1];
     expect(formData.get('title')).toBe('Uploaded image');
     expect(formData.get('image')).toBe(upload);
+  });
+
+  test('shows a replacement prompt when a stored image URL cannot be loaded', async () => {
+    render(<GalleryManager />);
+    const image = await screen.findByRole('img', { name: 'A portrait in the studio' });
+
+    fireEvent.error(image);
+
+    expect(await screen.findByText('This image could not be loaded. Upload a replacement to restore it.')).toBeInTheDocument();
+  });
+
+  test('deletes a gallery image and reloads the managed list', async () => {
+    client.delete.mockResolvedValue({ status: 204 });
+    render(<GalleryManager />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Studio portrait' }));
+
+    await waitFor(() => expect(client.delete).toHaveBeenCalledWith('/api/gallery/images/7/'));
+    expect(window.confirm).toHaveBeenCalledWith('Delete “Studio portrait” from the gallery?');
+    expect(await screen.findByText('Gallery image deleted.')).toBeInTheDocument();
+    expect(client.get).toHaveBeenCalledTimes(2);
   });
 
 });

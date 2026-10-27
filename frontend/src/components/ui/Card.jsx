@@ -14,11 +14,12 @@ export function Card({ children, className = '', padding = true, hover = false, 
   );
 }
 
-export function CardHeader({ title, subtitle, action, className = '' }) {
+export function CardHeader({ title, subtitle, action, className = '', headingLevel = 2 }) {
+  const Heading = `h${Math.min(6, Math.max(1, Math.floor(Number(headingLevel) || 2)))}`;
   return (
     <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 ${className}`}>
       <div className="space-y-1.5">
-        <h3 className="font-sans text-lg md:text-xl font-extrabold tracking-tight text-espresso">{title}</h3>
+        <Heading className="heading-section text-espresso">{title}</Heading>
         {subtitle && <p className="text-sm leading-relaxed text-espresso/65">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
@@ -30,7 +31,7 @@ export function CardSection({ title, children, className = '' }) {
   return (
     <div className={`space-y-5 ${className}`}>
       {title && (
-        <h4 className="text-xs font-bold text-espresso/60 uppercase tracking-[0.16em]">{title}</h4>
+        <h3 className="heading-card text-espresso/75">{title}</h3>
       )}
       {children}
     </div>

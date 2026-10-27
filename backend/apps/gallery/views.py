@@ -7,12 +7,29 @@ from rest_framework.response import Response
 
 from audit.models import AuditLog
 from users.permissions import IsStaffOrAdmin
+from payment.storage import SupabaseStorageError
 
 from .models import GalleryImage
 from .serializers import GalleryImageSerializer
 
 
 logger = logging.getLogger(__name__)
+
+
+def storage_error_response(operation, error, image_id=None):
+    cause = error.__cause__
+    logger.error(
+        'Gallery storage operation failed operation=%s record_id=%s exception_type=%s cause_type=%s storage_error=%s.',
+        operation,
+        image_id,
+        type(error).__name__,
+        type(cause).__name__ if cause else '',
+        str(error),
+    )
+    return Response(
+        {'detail': 'Gallery image storage is temporarily unavailable. Please try again shortly.'},
+        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
 
 
 class GalleryImageListView(views.APIView):
@@ -55,14 +72,17 @@ class GalleryImageListView(views.APIView):
     def post(self, request):
         serializer = GalleryImageSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        with transaction.atomic():
-            image = serializer.save()
-            AuditLog.objects.create(
-                user=request.user,
-                action='GALLERY_IMAGE_CREATE',
-                description=f'Created gallery image #{image.pk}.',
-                metadata={'record_id': image.pk, 'category': image.category},
-            )
+        try:
+            with transaction.atomic():
+                image = serializer.save()
+                AuditLog.objects.create(
+                    user=request.user,
+                    action='GALLERY_IMAGE_CREATE',
+                    description=f'Created gallery image #{image.pk}.',
+                    metadata={'record_id': image.pk, 'category': image.category},
+                )
+        except SupabaseStorageError as exc:
+            return storage_error_response('upload', exc)
         return Response(
             GalleryImageSerializer(image, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
@@ -98,13 +118,17 @@ class GalleryImageDetailView(views.APIView):
             context={'request': request},
         )
         serializer.is_valid(raise_exception=True)
-        updated = serializer.save()
-        AuditLog.objects.create(
-            user=request.user,
-            action='GALLERY_IMAGE_UPDATE',
-            description=f'Updated gallery image #{updated.pk}.',
-            metadata={'record_id': updated.pk, 'category': updated.category},
-        )
+        try:
+            with transaction.atomic():
+                updated = serializer.save()
+                AuditLog.objects.create(
+                    user=request.user,
+                    action='GALLERY_IMAGE_UPDATE',
+                    description=f'Updated gallery image #{updated.pk}.',
+                    metadata={'record_id': updated.pk, 'category': updated.category},
+                )
+        except SupabaseStorageError as exc:
+            return storage_error_response('update', exc, image_id=image.pk)
         return Response(GalleryImageSerializer(updated, context={'request': request}).data)
 
     def delete(self, request, pk):
@@ -114,8 +138,13 @@ class GalleryImageDetailView(views.APIView):
         if image.image:
             try:
                 image.image.storage.delete(image.image.name)
-            except OSError:
-                logger.warning('Gallery image deletion failed for record %s.', image.pk)
+            except OSError as exc:
+                logger.error(
+                    'Gallery storage operation failed operation=delete record_id=%s exception_type=%s storage_error=%s.',
+                    image.pk,
+                    type(exc).__name__,
+                    str(exc),
+                )
                 return Response(
                     {'detail': 'The image could not be removed from storage. The gallery record was kept.'},
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,

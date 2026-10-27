@@ -1,6 +1,7 @@
 import calendar
 import logging
 import mimetypes
+from collections import defaultdict
 from urllib.parse import urlsplit
 
 from django.conf import settings
@@ -25,7 +26,15 @@ from booking.serializers import (
     BookingReviewSerializer,
     StudioUnavailableDateSerializer,
 )
-from booking.availability import ACTIVE_BOOKING_STATUSES, get_available_slots, is_slot_available, parse_date_value
+from booking.availability import (
+    ACTIVE_BOOKING_STATUSES,
+    get_available_slots,
+    get_available_slots_from_data,
+    is_photo_service_event_package,
+    is_studio_session_package,
+    is_slot_available,
+    parse_date_value,
+)
 from booking.payment_ocr import analyze_gcash_receipt
 from payment.models import Payment
 from payment.storage import SupabasePaymentProofStorage, SupabaseStorageError
@@ -120,7 +129,7 @@ class BookingAvailabilityView(views.APIView):
             return Response({"package": "Package must be a valid ID."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            package = Package.objects.get(id=package_id)
+            package = Package.objects.select_related('service').get(id=package_id)
         except Package.DoesNotExist:
             return Response({"package": "Package not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -159,13 +168,38 @@ class BookingAvailabilityView(views.APIView):
             return Response({"month": "Use YYYY-MM."}, status=status.HTTP_400_BAD_REQUEST)
 
         today = timezone.localdate()
+        month_start = date(year, month_number, 1)
+        month_end = date(year, month_number, days_in_month)
+        bookings_by_day = defaultdict(list)
+        for booking in Booking.objects.filter(
+            scheduled_date__range=(month_start, month_end),
+            status__in=ACTIVE_BOOKING_STATUSES,
+        ).select_related('package', 'package__service'):
+            bookings_by_day[booking.scheduled_date].append(booking)
+        manual_blocks = dict(StudioUnavailableDate.objects.filter(
+            date__range=(month_start, month_end),
+        ).values_list('date', 'reason'))
+
         dates = []
         for day_number in range(1, days_in_month + 1):
             day = date(year, month_number, day_number)
             if day < today:
                 dates.append({"date": day.isoformat(), "status": "UNAVAILABLE", "available_count": 0})
                 continue
-            slots = get_available_slots(package.id, day, exclude_booking_id=exclude_booking_id)
+            studio_notice = manual_blocks.get(day, '')
+            if is_studio_session_package(package) and not studio_notice and any(
+                is_photo_service_event_package(booking.package)
+                for booking in bookings_by_day[day]
+                if booking.id != exclude_booking_id
+            ):
+                studio_notice = 'Unavailable due to an event photoshoot.'
+            slots = get_available_slots_from_data(
+                package,
+                day,
+                bookings_by_day[day],
+                exclude_booking_id=exclude_booking_id,
+                studio_unavailable_reason=studio_notice,
+            )
             available_count = sum(1 for slot in slots if slot['available'])
             studio_notice = next((slot.get('notice') for slot in slots if slot.get('status') == 'STUDIO_UNAVAILABLE' and slot.get('notice')), '')
             dates.append({

@@ -1365,7 +1365,7 @@ export default function StaffDashboard() {
             <div className="bg-red-50 border border-red-100 text-red-800 p-5 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
               <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h4 className="font-bold text-sm">Connection Error</h4>
+                <p className="text-sm font-semibold leading-snug">Connection Error</p>
                 <p className="text-xs text-red-600/80 mt-1">{error}</p>
               </div>
               <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData(activeTab, true)}>Reconnect Dashboard</Button>
@@ -1376,7 +1376,7 @@ export default function StaffDashboard() {
             <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl mb-6 flex flex-col gap-3 shadow-sm sm:flex-row sm:items-start">
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h4 className="font-bold text-sm">Receipt Not Printed</h4>
+                <p className="text-sm font-semibold leading-snug">Receipt Not Printed</p>
                 <p className="text-xs text-amber-700/90 mt-1">{receiptPrintError}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -1414,7 +1414,7 @@ export default function StaffDashboard() {
               <div className="lg:col-span-8 space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <div>
-                    <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">POS Terminal</h1>
+                    <h1 className="heading-page text-espresso">POS Terminal</h1>
                     <p className="text-xs text-espresso/50 mt-1">Build customer orders for walk-ins or cafe purchases.</p>
                   </div>
                 </div>
@@ -1528,7 +1528,7 @@ export default function StaffDashboard() {
 
                       {/* Info row */}
                       <div className="p-3 flex flex-col gap-1 flex-1">
-                        <h4 className="font-bold text-xs text-espresso group-hover:text-gold transition-colors leading-snug">{prod.name}</h4>
+                        <h3 className="heading-card text-espresso transition-colors group-hover:text-gold">{prod.name}</h3>
                         <div className="flex items-center justify-between mt-auto pt-1">
                           <span className="text-xs text-gold font-bold">₱{prod.price}</span>
                           {prod.is_cafe_item && (
@@ -1695,7 +1695,7 @@ export default function StaffDashboard() {
             <div className="space-y-6 animate-in-up" key="payments">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Payment Booking Verification</h1>
+                  <h1 className="heading-page text-espresso">Payment Booking Verification</h1>
                   <p className="text-xs text-espresso/50 mt-1">Review each receipt and match its reference and amount with the selected payment provider before approval.</p>
                 </div>
                 <div className="w-full sm:w-64">
@@ -1812,7 +1812,7 @@ export default function StaffDashboard() {
             <div className="space-y-6 animate-in-up" key="inventory">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Live Inventory</h1>
+                  <h1 className="heading-page text-espresso">Live Inventory</h1>
                   <p className="text-xs text-espresso/50 mt-1">Monitor stock levels, expiry risk, and purchasing actions.</p>
                 </div>
                 <Button variant="primary" size="sm" icon={Plus} onClick={() => setProductModalOpen(true)}>
@@ -1965,7 +1965,7 @@ export default function StaffDashboard() {
             <div className="space-y-6 animate-in-up" key="catalog">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Catalog &amp; Purchasing</h1>
+                  <h1 className="heading-page text-espresso">Catalog &amp; Purchasing</h1>
                   <p className="text-xs text-espresso/50 mt-1">Manage sellable products, reference data, and the full purchase-order lifecycle.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -2033,7 +2033,7 @@ export default function StaffDashboard() {
               <div className="space-y-3">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <h2 className="font-sans text-xl font-extrabold text-espresso">Sellable Catalog</h2>
+                    <h2 className="heading-section text-espresso">Sellable Catalog</h2>
                     <p className="text-xs text-espresso/50 mt-1">Changes here flow to the POS after the next refresh.</p>
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
@@ -2072,7 +2072,7 @@ export default function StaffDashboard() {
               <div className="space-y-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
-                    <h2 className="font-sans text-xl font-extrabold text-espresso">Purchase Orders</h2>
+                    <h2 className="heading-section text-espresso">Purchase Orders</h2>
                     <p className="text-xs text-espresso/50 mt-1">Create, edit ordered drafts, receive stock once, or cancel an order.</p>
                   </div>
                   <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
@@ -2114,7 +2114,7 @@ export default function StaffDashboard() {
             <div className="space-y-6 animate-in-up" key="sales">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                  <h1 className="font-sans text-2xl md:text-3xl font-extrabold text-espresso">Daily Sales Logs</h1>
+                  <h1 className="heading-page text-espresso">Daily Sales Logs</h1>
                   <p className="text-xs text-espresso/50 mt-1">Review historical transactions and receipt details.</p>
                 </div>
                 <div className="w-full sm:w-auto flex flex-col lg:flex-row lg:items-end gap-3">

@@ -11,7 +11,7 @@ from django.utils import timezone
 from users.email_delivery import EmailDeliveryError, send_transactional_email
 
 from .models import Notification, NotificationDelivery, PushSubscription
-from .sms import send_sms_notification as _send_sms_notification
+from .sms import queue_sms_notification, send_sms_notification as _send_sms_notification
 
 logger = logging.getLogger(__name__)
 
@@ -290,7 +290,7 @@ def _send_push_notification(notification):
     return deliveries
 
 
-def dispatch_notification(notification):
+def dispatch_notification(notification, *, skip_channels=()):
     """Attempt every configured channel and persist one status per attempt."""
     if isinstance(notification, (int, str)):
         notification = Notification.objects.select_related(
@@ -300,6 +300,8 @@ def dispatch_notification(notification):
     deliveries = []
     # An email/push error must not prevent SMS from being attempted.
     for channel, sender in [('sms', _send_sms_notification), ('email', _send_email_notification), ('push', _send_push_notification)]:
+        if channel in skip_channels:
+            continue
         try:
             result = sender(notification)
             deliveries.extend(result if isinstance(result, list) else [result])
@@ -321,7 +323,11 @@ def create_booking_notification(*, booking, notification_type, title, message, e
 
     def deliver_after_commit():
         try:
-            dispatch_notification(notification.id)
+            if getattr(settings, 'SMS_ASYNC_DELIVERY_ENABLED', False):
+                queue_sms_notification(notification.id)
+                dispatch_notification(notification.id, skip_channels={'sms'})
+            else:
+                dispatch_notification(notification.id)
         except Exception as exc:
             logger.error('Post-commit notification dispatch failed notification_id=%s exception_type=%s', notification.id, type(exc).__name__)
 

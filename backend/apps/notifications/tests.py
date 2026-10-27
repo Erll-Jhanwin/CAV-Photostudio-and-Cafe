@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 from booking.models import Booking, Package, Service
 from notifications.models import Notification, NotificationDelivery, PushSubscription
 from notifications.services import dispatch_notification
+from notifications.sms import process_sms_deliveries
 from payment.models import Payment
 
 
@@ -144,6 +145,49 @@ class BookingNotificationTests(TestCase):
         self.assertEqual(mocked_post.call_count, 1)
         self.assertEqual(mocked_post.call_args.kwargs['json']['phone_number'], '639171234567')
         self.assertIn('Payment status: Not submitted', mocked_post.call_args.kwargs['json']['message'])
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=False,
+        SMS_DELIVERY_ENABLED=True,
+        SMS_ASYNC_DELIVERY_ENABLED=True,
+        IPROG_SMS_API_TOKEN='test-token',
+        IPROG_SMS_API_BASE_URL='https://sms.example.test',
+        PUSH_DELIVERY_ENABLED=False,
+    )
+    @patch('users.sms_delivery.requests.post')
+    def test_async_sms_is_queued_and_sent_by_the_delivery_worker(self, mocked_post):
+        mocked_post.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={'status': 200, 'message_id': 'sms-queued-booking'}),
+        )
+        scheduled_date = timezone.localdate() + timedelta(days=23)
+        self.client.force_authenticate(self.customer)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post('/api/bookings/', {
+                'package': self.booking.package_id,
+                'scheduled_date': scheduled_date.isoformat(),
+                'scheduled_time': '13:00',
+                'first_name': 'Queued',
+                'last_name': 'Customer',
+                'email': self.customer.email,
+                'phone_number': '09171234567',
+                'address': 'CAV Studio',
+                'idempotency_key': 'notification-sms-queued-booking-1',
+            }, format='json')
+
+        self.assertEqual(response.status_code, 201)
+        delivery = NotificationDelivery.objects.get(channel='sms')
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_QUEUED)
+        self.assertEqual(delivery.attempt_count, 0)
+        mocked_post.assert_not_called()
+
+        process_sms_deliveries()
+
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_ACCEPTED)
+        self.assertEqual(delivery.attempt_count, 1)
+        mocked_post.assert_called_once()
 
     @override_settings(
         EMAIL_DELIVERY_ENABLED=False,

@@ -300,31 +300,34 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     throttle_scope = 'auth'
 
     def post(self, request, *args, **kwargs):
-        response = super().post(request, *args, **kwargs)
-        if response.status_code == status.HTTP_200_OK:
-            user = User.objects.filter(pk=response.data.get('id')).first()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.user
+        if user.role == 'ADMIN' and not request.data.get('mfa_token'):
+            return begin_admin_mfa(request, user)
+        if user.role == 'ADMIN':
             mfa_token = request.data.get('mfa_token')
             mfa_code = str(request.data.get('mfa_code') or '')
-            if user and user.role == 'ADMIN' and not mfa_token:
-                return begin_admin_mfa(request, user)
-            if user and user.role == 'ADMIN':
-                try:
-                    valid_mfa = len(mfa_code) == 6 and admin_mfa_is_valid(mfa_token, mfa_code, user)
-                except IProgSMSDeliveryError:
-                    logger.exception('Admin SMS MFA verification failed.')
-                    return Response({'detail': 'Admin SMS verification is temporarily unavailable. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-                if not valid_mfa:
-                    return Response({'detail': 'Invalid or expired admin verification code.'}, status=status.HTTP_400_BAD_REQUEST)
-            access = response.data.pop('access', None)
-            refresh = response.data.pop('refresh', None)
-            if access and refresh:
-                set_auth_cookies(response, access, refresh, request)
-                AuditLog.objects.create(
-                    user=user,
-                    action='USER_LOGIN',
-                    description=f'User {user.username} logged in successfully.',
-                    ip_address=get_client_ip(request),
-                )
+            try:
+                valid_mfa = len(mfa_code) == 6 and admin_mfa_is_valid(mfa_token, mfa_code, user)
+            except IProgSMSDeliveryError:
+                logger.exception('Admin SMS MFA verification failed.')
+                return Response({'detail': 'Admin SMS verification is temporarily unavailable. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            if not valid_mfa:
+                return Response({'detail': 'Invalid or expired admin verification code.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        data = dict(serializer.validated_data)
+        access = data.pop('access', None)
+        refresh = data.pop('refresh', None)
+        response = Response(data, status=status.HTTP_200_OK)
+        if access and refresh:
+            set_auth_cookies(response, access, refresh, request)
+            AuditLog.objects.create(
+                user=user,
+                action='USER_LOGIN',
+                description=f'User {user.username} logged in successfully.',
+                ip_address=get_client_ip(request),
+            )
         return response
 
 

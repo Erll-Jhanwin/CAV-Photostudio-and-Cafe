@@ -8,6 +8,7 @@ import os
 import sys
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 import dj_database_url
 from corsheaders.defaults import default_headers
@@ -135,7 +136,16 @@ if not DATABASE_URL:
     raise ImproperlyConfigured('DATABASE_URL must be set to the Supabase/PostgreSQL connection string.')
 
 IS_POSTGRES_DATABASE = DATABASE_URL.startswith(('postgres://', 'postgresql://', 'postgresql+'))
-DB_CONN_MAX_AGE_SECONDS = max(0, int(os.environ.get('DB_CONN_MAX_AGE_SECONDS', '60')))
+database_url_parts = urlparse(DATABASE_URL)
+IS_TRANSACTION_POOLER = (
+    IS_POSTGRES_DATABASE
+    and database_url_parts.port == 6543
+    and (database_url_parts.hostname or '').endswith('.pooler.supabase.com')
+)
+DB_CONN_MAX_AGE_SECONDS = max(
+    0,
+    int(os.environ.get('DB_CONN_MAX_AGE_SECONDS', '0' if IS_TRANSACTION_POOLER else '60')),
+)
 
 DATABASES = {
     'default': dj_database_url.parse(
@@ -145,8 +155,14 @@ DATABASES = {
     )
 }
 DATABASES['default']['CONN_HEALTH_CHECKS'] = env_bool('DB_CONN_HEALTH_CHECKS', True)
-if IS_POSTGRES_DATABASE and env_bool('DB_DISABLE_SERVER_SIDE_CURSORS', False):
-    DATABASES['default'].setdefault('OPTIONS', {})['DISABLE_SERVER_SIDE_CURSORS'] = True
+if IS_POSTGRES_DATABASE:
+    DATABASES['default'].setdefault('OPTIONS', {})['connect_timeout'] = max(
+        1, int(os.environ.get('DB_CONNECT_TIMEOUT_SECONDS', '5'))
+    )
+if IS_POSTGRES_DATABASE:
+    DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = env_bool(
+        'DB_DISABLE_SERVER_SIDE_CURSORS', IS_TRANSACTION_POOLER
+    )
 # Let Django manage the database session timezone (UTC with USE_TZ=True).
 # Overriding it to Manila while Django decodes timestamps as UTC shifted every
 # retrieved timestamp by eight hours, including payment and retry deadlines.
@@ -224,6 +240,7 @@ RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
 RESEND_API_URL = os.environ.get('RESEND_API_URL', 'https://api.resend.com/emails')
 EMAIL_DELIVERY_ENABLED = env_bool('EMAIL_DELIVERY_ENABLED', False)
 SMS_DELIVERY_ENABLED = env_bool('SMS_DELIVERY_ENABLED', False)
+SMS_ASYNC_DELIVERY_ENABLED = env_bool('SMS_ASYNC_DELIVERY_ENABLED', False)
 SMS_MAX_ATTEMPTS = int(os.environ.get('SMS_MAX_ATTEMPTS', '3'))
 SMS_RETRY_DELAY_SECONDS = int(os.environ.get('SMS_RETRY_DELAY_SECONDS', '60'))
 BOOKING_REMINDER_WINDOW_MINUTES = int(os.environ.get('BOOKING_REMINDER_WINDOW_MINUTES', '30'))
@@ -255,6 +272,29 @@ OPENROUTER_APP_NAME = os.environ.get('OPENROUTER_APP_NAME', 'CAV Photo Studio an
 SALES_HISTORY_CSV_PATH = os.environ.get('SALES_HISTORY_CSV_PATH', '')
 
 # REST Framework configurations
+REDIS_URL = os.environ.get('REDIS_URL', '').strip()
+if REDIS_URL:
+    # Shared cache keeps OTP/MFA state and DRF throttles consistent when
+    # requests move between Gunicorn workers or Render instances.
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+            'TIMEOUT': 300,
+            'KEY_PREFIX': os.environ.get('CACHE_KEY_PREFIX', 'cav-photo-studio'),
+        },
+    }
+else:
+    # Local development remains self-contained. Multi-instance production
+    # deployments should set REDIS_URL to a private Redis-compatible service.
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'cav-photo-studio-default',
+            'TIMEOUT': 300,
+        },
+    }
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'users.authentication.CookieJWTAuthentication',

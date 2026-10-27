@@ -6,7 +6,7 @@ export function EmptyState({ icon: Icon, title, description, action, className =
           <Icon className="w-8 h-8 text-espresso/20" />
         </div>
       )}
-      <h4 className="text-sm font-bold text-espresso/50 mb-1">{title || 'Nothing here yet'}</h4>
+      <h3 className="heading-card mb-1 text-espresso">{title || 'Nothing here yet'}</h3>
       {description && <p className="text-xs text-espresso/35 max-w-xs">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>

@@ -46,18 +46,40 @@ def _obsolete_reminder(notification):
     )
 
 
-def send_sms_notification(notification, *, retry=False):
+def queue_sms_notification(notification_id):
+    """Create one durable queued delivery without contacting the SMS provider."""
+    with transaction.atomic():
+        notification = Notification.objects.select_for_update().get(pk=notification_id)
+        delivery = Delivery.objects.filter(
+            notification=notification,
+            channel=Delivery.CHANNEL_SMS,
+        ).order_by('id').first()
+        if delivery:
+            return delivery
+        return Delivery.objects.create(
+            notification=notification,
+            user_id=notification.user_id,
+            channel=Delivery.CHANNEL_SMS,
+            status=Delivery.STATUS_QUEUED,
+            provider='iprogsms',
+            attempt_count=0,
+        )
+
+
+def send_sms_notification(notification, *, retry=False, queued=False):
     # Lock only the notification table. Joining nullable booking relations in a
     # FOR UPDATE query is illegal on PostgreSQL (SQLSTATE 0A000).
     with transaction.atomic():
         notification = Notification.objects.select_for_update().get(pk=notification.pk)
         delivery = Delivery.objects.filter(notification=notification, channel='sms').order_by('id').first()
         if delivery:
-            if not (
+            is_queued_work = queued and delivery.status == Delivery.STATUS_QUEUED
+            is_retryable_work = (
                 retry and delivery.status == Delivery.STATUS_FAILED
                 and delivery.next_retry_at and delivery.next_retry_at <= timezone.now()
                 and delivery.attempt_count < getattr(settings, 'SMS_MAX_ATTEMPTS', 3)
-            ):
+            )
+            if not (is_queued_work or is_retryable_work):
                 return delivery
         else:
             delivery = Delivery.objects.create(
@@ -142,6 +164,13 @@ def process_sms_deliveries(limit=100):
     )
     if not getattr(settings, 'SMS_DELIVERY_ENABLED', False):
         return
+    queued_deliveries = Delivery.objects.filter(
+        channel=Delivery.CHANNEL_SMS,
+        status=Delivery.STATUS_QUEUED,
+        notification__isnull=False,
+    ).select_related('notification').order_by('id')[:limit]
+    for delivery in queued_deliveries:
+        send_sms_notification(delivery.notification, queued=True)
     # Only recover events created by the durable event pipeline. Legacy rows
     # without event keys may be months old; deployment must not broadcast them.
     pending = Notification.objects.filter(event_key__isnull=False).exclude(deliveries__channel='sms').order_by('id')[:limit]

@@ -67,7 +67,7 @@ export function Modal({ open, onClose, title, children, className = '', bodyClas
       <div className={`relative bg-white/95 rounded-[24px] border border-white/70 shadow-[0_32px_90px_rgba(28,15,10,0.26)] w-full ${sizes[size] || sizes.md} animate-in-scale ${className}`}>
         {title && (
           <div className="flex items-center justify-between p-6 md:p-7 border-b border-espresso/[0.06]">
-            <h3 id="modal-title" className="font-sans text-xl md:text-2xl font-extrabold tracking-tight text-espresso">{title}</h3>
+            <h2 id="modal-title" className="heading-dialog text-espresso">{title}</h2>
             <button
               onClick={onClose}
               aria-label="Close modal"

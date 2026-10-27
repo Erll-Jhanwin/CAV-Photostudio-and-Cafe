@@ -64,7 +64,7 @@ export default function PrivacyRequestsManager() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-gold-dark">Privacy operations</p>
-          <h1 className="text-2xl font-extrabold text-espresso md:text-3xl">Privacy Requests</h1>
+          <h1 className="heading-page text-espresso">Privacy Requests</h1>
           <p className="mt-1 text-xs text-espresso/60">Review access, correction, deletion, objection and export requests. Record the action taken before closing a case.</p>
         </div>
         <Button type="button" variant="outline" size="sm" icon={RefreshCw} onClick={loadRequests} loading={loading} disabled={loading}>Refresh</Button>

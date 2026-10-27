@@ -1,9 +1,11 @@
 import logging
 
 from PIL import Image, UnidentifiedImageError
+from django.db import transaction
 from rest_framework import serializers
 
 from users.uploads import validated_image_format
+from payment.storage import SupabaseStorageError
 
 from .models import GalleryImage
 
@@ -29,17 +31,32 @@ class GalleryImageSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'created_at', 'updated_at')
 
     def get_image_url(self, obj):
-        if obj.image:
-            url = obj.image.url
-        else:
-            url = obj.source_url
-        if not url:
-            return None
-        request = self.context.get('request')
-        return request.build_absolute_uri(url) if request and url.startswith('/') else url
+        if hasattr(obj, '_gallery_image_url'):
+            return obj._gallery_image_url
+        try:
+            if obj.image:
+                url = obj.image.url
+                request = self.context.get('request')
+                if request and url and url.startswith('/'):
+                    url = request.build_absolute_uri(url)
+            else:
+                # Relative source URLs point at frontend assets. Keep them
+                # relative so the browser resolves them on the frontend host,
+                # not on the API host.
+                url = obj.source_url
+        except SupabaseStorageError as exc:
+            logger.warning(
+                'Gallery image URL unavailable record_id=%s exception_type=%s storage_error=%s.',
+                obj.pk,
+                type(exc).__name__,
+                str(exc),
+            )
+            url = None
+        obj._gallery_image_url = url or None
+        return obj._gallery_image_url
 
     def get_image_missing(self, obj):
-        return not bool(obj.image or obj.source_url)
+        return not bool(self.get_image_url(obj))
 
     def validate_image(self, upload):
         try:
@@ -82,8 +99,19 @@ class GalleryImageSerializer(serializers.ModelSerializer):
             validated_data['source_url'] = ''
         updated = super().update(instance, validated_data)
         if replacing_image and previous_image and previous_image.name != updated.image.name:
-            try:
-                previous_image.storage.delete(previous_image.name)
-            except OSError:
-                logger.warning('Could not remove replaced gallery image from storage.')
+            previous_name = previous_image.name
+            storage = previous_image.storage
+
+            def remove_replaced_image():
+                try:
+                    storage.delete(previous_name)
+                except OSError as exc:
+                    logger.warning(
+                        'Could not remove replaced gallery image record_id=%s exception_type=%s storage_error=%s.',
+                        updated.pk,
+                        type(exc).__name__,
+                        str(exc),
+                    )
+
+            transaction.on_commit(remove_replaced_image)
         return updated

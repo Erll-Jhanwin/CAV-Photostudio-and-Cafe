@@ -118,16 +118,26 @@ def has_active_studio_bookings(existing_bookings):
     return any(is_studio_session_package(booking.package) for booking in existing_bookings)
 
 
-def get_available_slots(package_id, day, exclude_booking_id=None):
-    package = Package.objects.select_related('service').get(id=package_id)
+def get_available_slots_from_data(
+    package,
+    day,
+    existing_bookings,
+    *,
+    exclude_booking_id=None,
+    studio_unavailable_reason=None,
+):
+    """Build slots from prefetched records so month views avoid per-day queries."""
     duration_minutes = package.service.duration_minutes or 30
     now = timezone.localtime()
-    existing_bookings = list(get_existing_bookings(day, exclude_booking_id))
-    studio_unavailable_reason = (
-        get_studio_unavailable_reason(day, existing_bookings)
-        if is_studio_session_package(package)
-        else ''
-    )
+    existing_bookings = [
+        booking for booking in existing_bookings
+        if booking.id != exclude_booking_id
+    ]
+    if is_studio_session_package(package):
+        if studio_unavailable_reason is None:
+            studio_unavailable_reason = get_studio_unavailable_reason(day, existing_bookings)
+    else:
+        studio_unavailable_reason = ''
     event_unavailable_reason = (
         'Studio sessions already booked on this date.'
         if is_photo_service_event_package(package) and has_active_studio_bookings(existing_bookings)
@@ -169,6 +179,12 @@ def get_available_slots(package_id, day, exclude_booking_id=None):
         })
 
     return slots
+
+
+def get_available_slots(package_id, day, exclude_booking_id=None):
+    package = Package.objects.select_related('service').get(id=package_id)
+    existing_bookings = list(get_existing_bookings(day, exclude_booking_id))
+    return get_available_slots_from_data(package, day, existing_bookings)
 
 
 def is_slot_available(package_id, day, slot_time, exclude_booking_id=None):

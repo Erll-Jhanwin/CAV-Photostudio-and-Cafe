@@ -8,7 +8,10 @@ from django.test import TestCase, override_settings
 from PIL import Image
 from rest_framework.test import APIClient
 
+from payment.storage import SupabaseStorageError
+
 from .models import GalleryImage
+from .serializers import GalleryImageSerializer
 from .storage import SupabaseGalleryStorage
 
 
@@ -39,6 +42,8 @@ class GalleryImageAPITests(TestCase):
         self.assertIn('Studio feature', listed_titles)
         self.assertIn('Studio Session', listed_titles)
         self.assertNotIn('Hidden café image', listed_titles)
+        studio_sample = next(item for item in response.data if item['title'] == 'Studio Session')
+        self.assertEqual(studio_sample['image_url'], '/assets/pics/solo/solo%20pic%20landscape.jpg')
         uploaded_record = next(item for item in response.data if item['title'] == 'Studio feature')
         self.assertEqual(uploaded_record['category_label'], 'Studio')
         self.assertTrue(uploaded_record['image_url'].endswith('.png'))
@@ -70,10 +75,11 @@ class GalleryImageAPITests(TestCase):
         self.assertEqual(record.created_by, self.staff)
         original_name = record.image.name
 
-        updated = self.client.patch(f'/api/gallery/images/{image_id}/', {
-            'title': 'Updated portrait',
-            'image': png_upload('replacement.png', color=(10, 80, 110)),
-        }, format='multipart')
+        with self.captureOnCommitCallbacks(execute=True):
+            updated = self.client.patch(f'/api/gallery/images/{image_id}/', {
+                'title': 'Updated portrait',
+                'image': png_upload('replacement.png', color=(10, 80, 110)),
+            }, format='multipart')
         self.assertEqual(updated.status_code, 200, updated.data)
         record.refresh_from_db()
         self.assertEqual(record.title, 'Updated portrait')
@@ -99,6 +105,36 @@ class GalleryImageAPITests(TestCase):
             'image': SimpleUploadedFile('large.png', b'x' * (5 * 1024 * 1024 + 1), content_type='image/png'),
         }, format='multipart')
         self.assertEqual(too_large.status_code, 400)
+
+    @patch.object(GalleryImageSerializer, 'create', side_effect=SupabaseStorageError('Supabase Storage upload failed (403).'))
+    def test_upload_storage_permission_failure_returns_retryable_status(self, _storage_create):
+        self.client.force_authenticate(self.staff)
+        initial_count = GalleryImage.objects.count()
+        response = self.client.post('/api/gallery/images/', {
+            'title': 'Storage failure',
+            'category': 'STUDIO',
+            'image': png_upload(),
+        }, format='multipart')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.data['detail'],
+            'Gallery image storage is temporarily unavailable. Please try again shortly.',
+        )
+        self.assertEqual(GalleryImage.objects.count(), initial_count)
+
+    @patch.object(GalleryImageSerializer, 'update', side_effect=SupabaseStorageError('Supabase Storage upload failed (403).'))
+    def test_update_storage_failure_preserves_the_existing_record(self, _storage_update):
+        image = GalleryImage.objects.create(title='Existing image', image=png_upload())
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(f'/api/gallery/images/{image.pk}/', {
+            'title': 'Updated title',
+            'image': png_upload('replacement.png'),
+        }, format='multipart')
+
+        self.assertEqual(response.status_code, 503)
+        image.refresh_from_db()
+        self.assertEqual(image.title, 'Existing image')
 
     @patch('gallery.views.GalleryImage.objects.get')
     def test_storage_failure_keeps_database_record_on_delete(self, mocked_get):
@@ -141,6 +177,45 @@ class SupabaseGalleryStorageTests(TestCase):
             'https://project.example.test/storage/v1/object/public/gallery-public/gallery/example.png',
         )
         self.assertNotIn('test-only-secret', public_url)
+
+    @override_settings(
+        DEBUG=False,
+        SUPABASE_URL='https://project.example.test',
+        SUPABASE_SECRET_KEY='sb_secret_test-only',
+        SUPABASE_SERVICE_ROLE_KEY='',
+        SUPABASE_GALLERY_BUCKET='gallery-public',
+        IS_TESTING=False,
+    )
+    @patch('payment.storage.requests.post')
+    def test_current_supabase_secret_key_is_sent_as_apikey_only(self, mocked_post):
+        mocked_post.return_value = Mock(status_code=200)
+        SupabaseGalleryStorage().save('gallery/secret-key.png', ContentFile(b'image-bytes', name='image.png'))
+
+        headers = mocked_post.call_args.kwargs['headers']
+        self.assertEqual(headers['apikey'], 'sb_secret_test-only')
+        self.assertNotIn('Authorization', headers)
+
+    @override_settings(
+        DEBUG=False,
+        SUPABASE_URL='https://project.example.test',
+        SUPABASE_SERVICE_ROLE_KEY='legacy-service-role-test',
+        SUPABASE_GALLERY_BUCKET='gallery-public',
+        IS_TESTING=False,
+    )
+    @patch('payment.storage.requests.delete')
+    def test_delete_uses_server_credentials_and_scoped_object_path(self, mocked_delete):
+        mocked_delete.return_value = Mock(status_code=200)
+        SupabaseGalleryStorage().delete('gallery/remove-me.png')
+
+        self.assertEqual(
+            mocked_delete.call_args.args[0],
+            'https://project.example.test/storage/v1/object/gallery-public',
+        )
+        self.assertEqual(mocked_delete.call_args.kwargs['json'], {'prefixes': ['gallery/remove-me.png']})
+        self.assertEqual(
+            mocked_delete.call_args.kwargs['headers']['Authorization'],
+            'Bearer legacy-service-role-test',
+        )
 
     @override_settings(
         DEBUG=False,

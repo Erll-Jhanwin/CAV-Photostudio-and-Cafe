@@ -17,7 +17,11 @@ class SupabaseGalleryStorage(SupabasePaymentProofStorage):
 
     def _config(self):
         base_url = str(getattr(settings, 'SUPABASE_URL', '') or '').strip().rstrip('/')
-        api_key = str(getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', '') or '').strip()
+        api_key = str(
+            getattr(settings, 'SUPABASE_SECRET_KEY', '')
+            or getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', '')
+            or ''
+        ).strip()
         bucket = str(getattr(settings, 'SUPABASE_GALLERY_BUCKET', 'gallery') or '').strip()
         if not base_url or not api_key:
             raise SupabaseStorageError('Supabase gallery storage is not configured.')
