@@ -5,7 +5,7 @@ import {
   ShoppingBag, Package, DollarSign, Search, Plus,
   Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
   PackageCheck, Clock, CalendarOff, Archive, Printer, ClipboardList, Settings2,
-  Trash2, Truck, Save, Camera, Download, Calendar
+  Trash2, Truck, Save, Calendar
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -25,7 +25,6 @@ import { getLocalPrinters, getLocalPrintingSetupMessage, isLocalStaffConsole, op
 import { brandAssets } from '../utils/cavAssets';
 import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
-import GalleryManager from './admin/GalleryManager';
 
 export function StaffSkeleton() {
   return (
@@ -227,12 +226,6 @@ export default function StaffDashboard() {
   const [catalogSuppliers, setCatalogSuppliers] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
-  const [photoBookings, setPhotoBookings] = useState([]);
-  const [customerPhotos, setCustomerPhotos] = useState([]);
-  const [photoBookingId, setPhotoBookingId] = useState('');
-  const [photoTitle, setPhotoTitle] = useState('');
-  const [photoFile, setPhotoFile] = useState(null);
-  const [photoUploadLoading, setPhotoUploadLoading] = useState(false);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
@@ -378,13 +371,6 @@ export default function StaffDashboard() {
       } else if (tab === 'bookings') {
         const bookingsRes = await getCached('/api/bookings/', { params: { limit: 500 } }, { force });
         setStaffBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
-      } else if (tab === 'photos') {
-        const [bookingsRes, photosRes] = await Promise.all([
-          getCached('/api/bookings/', { params: { limit: 500 } }, { force }),
-          getCached('/api/gallery/customer-photos/', {}, { force }),
-        ]);
-        setPhotoBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
-        setCustomerPhotos(Array.isArray(photosRes.data) ? photosRes.data : []);
       } else if (tab === 'inventory') {
         await loadStaticInventoryOptions(force);
         const [ingredientsRes, productSalesRes] = await Promise.all([
@@ -741,26 +727,6 @@ export default function StaffDashboard() {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
     } finally {
       setVerifyingPaymentId(null);
-    }
-  };
-
-  const handleCustomerPhotoUpload = async (event) => {
-    event.preventDefault();
-    if (!photoBookingId || !photoFile || photoUploadLoading) return;
-    setPhotoUploadLoading(true);
-    try {
-      const formData = new FormData();
-      formData.append('booking', photoBookingId);
-      formData.append('title', photoTitle.trim());
-      formData.append('image', photoFile);
-      await client.post('/api/gallery/customer-photos/', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setPhotoTitle(''); setPhotoFile(null);
-      event.target.reset();
-      await loadTabData('photos', true);
-    } catch (error) {
-      alert(getApiErrorMessage(error, 'Customer photo upload failed.'));
-    } finally {
-      setPhotoUploadLoading(false);
     }
   };
 
@@ -1346,11 +1312,9 @@ export default function StaffDashboard() {
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
     { key: 'catalog', label: 'Catalog & Purchasing', icon: ClipboardList, active: activeTab === 'catalog', onClick: () => setActiveTab('catalog') },
     { key: 'sales', label: 'Daily Sales Logs', icon: DollarSign, active: activeTab === 'sales', onClick: () => setActiveTab('sales') },
-    { key: 'gallery', label: 'Photo Gallery', icon: Camera, active: activeTab === 'gallery', onClick: () => setActiveTab('gallery') },
-    { key: 'photos', label: 'Customer Photos', icon: Download, active: activeTab === 'photos', onClick: () => setActiveTab('photos') },
   ];
 
-  const pageTitles = { pos: 'POS Terminal', bookings: 'Bookings', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs', gallery: 'Photo Gallery', photos: 'Customer Photos' };
+  const pageTitles = { pos: 'POS Terminal', bookings: 'Bookings', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs' };
   const pagedStaffBookings = paginateRows(sortRows(staffBookings, { key: 'scheduled_date', dir: 'desc', accessor: row => `${row.scheduled_date || ''} ${row.scheduled_time || ''}` }), bookingsPage, TABLE_PAGE_SIZE);
   const isCurrentTabLoading = !!loadingResources[activeTab];
   const toggleSort = (current, setter, key, column = {}) => {
@@ -1478,32 +1442,6 @@ export default function StaffDashboard() {
             <div className="mb-4 flex items-center gap-3 rounded-xl border border-gold/20 bg-gold/10 px-4 py-3" role="status">
               <LoadingSpinner size="sm" className="text-gold-dark" label={`Loading ${pageTitles[activeTab]}`} />
               <span className="text-xs font-bold text-espresso">Loading {pageTitles[activeTab]}...</span>
-            </div>
-          )}
-
-          {activeTab === 'gallery' && <GalleryManager />}
-
-          {activeTab === 'photos' && (
-            <div className="space-y-5 animate-in-up" key="customer-photos">
-              <div><h1 className="heading-page text-espresso">Customer Photo Delivery</h1><p className="mt-1 text-xs text-espresso/50">Upload finished photos to the matching booking. Customers only see photos linked to their own account.</p></div>
-              <Card>
-                <CardHeader title="Deliver a photo" subtitle="Upload one JPG, PNG, or WEBP image at a time. The file is stored in private persistent storage." />
-                <form onSubmit={handleCustomerPhotoUpload} className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <label className="text-xs font-bold text-espresso">Booking
-                    <select value={photoBookingId} onChange={event => setPhotoBookingId(event.target.value)} required className="mt-1 block w-full rounded-xl border border-espresso/15 bg-white px-3 py-2.5 text-sm">
-                      <option value="">Select booking</option>
-                      {photoBookings.map(booking => <option key={booking.id} value={booking.id}>#{booking.id} · {booking.customer?.username || booking.customer?.email || 'Customer'} · {booking.package_details?.name || 'Session'}</option>)}
-                    </select>
-                  </label>
-                  <Input label="Photo title (optional)" value={photoTitle} onChange={event => setPhotoTitle(event.target.value)} maxLength={160} />
-                  <Input label="Photo file" type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setPhotoFile(event.target.files?.[0] || null)} required />
-                  <div className="flex items-end"><Button type="submit" variant="gold" loading={photoUploadLoading} disabled={photoUploadLoading || !photoFile || !photoBookingId}>Upload and deliver</Button></div>
-                </form>
-              </Card>
-              <Card>
-                <CardHeader title="Recent delivered photos" />
-                {customerPhotos.length ? <div className="divide-y divide-espresso/[0.06]">{customerPhotos.map(photo => <div key={photo.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"><span className="font-bold text-espresso">{photo.title || `Photo · Booking #${photo.booking_id}`}</span><span className="text-xs text-espresso/50">Booking #{photo.booking_id} · {formatManilaDateTime(photo.created_at)}</span></div>)}</div> : <EmptyState icon={Camera} title="No customer photos delivered" description="Uploaded images will be listed here." />}
-              </Card>
             </div>
           )}
 
