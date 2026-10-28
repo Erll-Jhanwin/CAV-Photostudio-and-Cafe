@@ -11,6 +11,10 @@ const roleOptions = [
   { value: 'STAFF', label: 'Staff' }, { value: 'CUSTOMER', label: 'Customer' },
   { value: 'SYSTEM', label: 'System' },
 ];
+const kindOptions = [
+  { value: '', label: 'All activity' },
+  { value: 'errors', label: 'Errors and issues' },
+];
 const moduleOptions = [
   { value: '', label: 'All modules' }, { value: 'auth', label: 'Authentication' },
   { value: 'bookings', label: 'Bookings' }, { value: 'inventory', label: 'Inventory' },
@@ -24,6 +28,7 @@ export default function AuditLogsPage() {
   const [role, setRole] = useState('');
   const [module, setModule] = useState('');
   const [action, setAction] = useState('');
+  const [kind, setKind] = useState('');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [page, setPage] = useState(1);
@@ -37,17 +42,17 @@ export default function AuditLogsPage() {
     let active = true;
     setLoading(true);
     const timer = window.setTimeout(() => {
-      client.get('/api/audit/logs/', { params: { search, role, module, action, start, end, page, page_size: pageSize } })
+      client.get('/api/audit/logs/', { params: { search, role, module, action, kind, start, end, page, page_size: pageSize } })
         .then(response => { if (active) { setPayload(response.data); setError(''); } })
         .catch(err => { if (active) setError(getApiErrorMessage(err, 'Could not load audit logs.')); })
         .finally(() => { if (active) setLoading(false); });
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [search, role, module, action, start, end, page, pageSize, refreshKey]);
+  }, [search, role, module, action, kind, start, end, page, pageSize, refreshKey]);
 
   const setFilter = (setter) => (event) => { setter(event.target.value); setPage(1); };
   const totalPages = Math.max(1, Math.ceil((payload.count || 0) / pageSize));
-  const clearFilters = () => { setSearch(''); setRole(''); setModule(''); setAction(''); setStart(''); setEnd(''); setPage(1); };
+  const clearFilters = () => { setSearch(''); setRole(''); setModule(''); setAction(''); setKind(''); setStart(''); setEnd(''); setPage(1); };
 
   return (
     <div className="w-full space-y-5 animate-in-up">
@@ -58,13 +63,14 @@ export default function AuditLogsPage() {
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
         </div>
-        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
           <div className="relative sm:col-span-2">
             <Search className="absolute left-3 top-3 h-4 w-4 text-espresso/40" />
             <Input aria-label="Search audit logs" placeholder="Search person, action, record…" value={search} onChange={setFilter(setSearch)} className="pl-9" />
           </div>
           <Select aria-label="Filter by role" value={role} onChange={setFilter(setRole)} options={roleOptions} />
           <Select aria-label="Filter by module" value={module} onChange={setFilter(setModule)} options={moduleOptions} />
+          <Select aria-label="Filter activity type" value={kind} onChange={setFilter(setKind)} options={kindOptions} />
           <Input aria-label="Filter by action" placeholder="Action (e.g. BOOKING_CREATE)" value={action} onChange={setFilter(setAction)} />
           <div className="flex gap-2">
             <Input aria-label="Start date" type="date" value={start} onChange={setFilter(setStart)} />

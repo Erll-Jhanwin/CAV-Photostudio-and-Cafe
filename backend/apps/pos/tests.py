@@ -175,3 +175,68 @@ class PosIdempotencyTests(TestCase):
         self.assertEqual(Payment.objects.filter(payment_type=Payment.POS).count(), 1)
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_level, 3)
+
+    def test_item_discount_and_order_discount_are_recorded_separately_in_total(self):
+        response = self.client.post('/api/pos/orders/', {
+            'items': [{'product_id': self.product.id, 'quantity': 2, 'discount': {'type': 'PERCENT', 'value': 10}}],
+            'discount': {'type': 'PERCENT', 'value': 10},
+            'payment': {'amount': '202.50', 'method': 'CASH'},
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        order = Order.objects.get(pk=response.data['id'])
+        self.assertEqual(order.subtotal, Decimal('250.00'))
+        self.assertEqual(order.discount_amount, Decimal('47.50'))
+        self.assertEqual(order.total, Decimal('202.50'))
+        self.assertEqual(order.line_items[0]['discount_amount'], '47.50')
+        self.assertEqual(order.line_items[0]['net_subtotal'], '202.50')
+
+    def test_wasted_return_changes_sold_revenue_but_does_not_restore_stock(self):
+        created = self.client.post('/api/pos/orders/', {
+            'items': [{'product_id': self.product.id, 'quantity': 3}],
+            'payment': {'amount': '375.00', 'method': 'CASH'},
+        }, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        order_id = created.data['id']
+        returned = self.client.post(f'/api/pos/orders/{order_id}/returns/', {
+            'product_id': self.product.id, 'quantity': 1, 'disposition': 'WASTED',
+        }, format='json')
+        self.assertEqual(returned.status_code, 200, returned.data)
+        self.assertEqual(returned.data['returned_amount'], '125.00')
+        self.assertEqual(returned.data['items'][0]['returned_quantity'], 1)
+        self.assertEqual(returned.data['items'][0]['wasted_quantity'], 1)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_level, 2)
+
+        inventory = self.client.get('/api/inventory/product-sales/')
+        row = next(item for item in inventory.data if item['product_id'] == self.product.id)
+        self.assertEqual(row['beginning_stock'], 5)
+        self.assertEqual(row['quantity_sold'], 2)
+        self.assertEqual(row['wastage'], 1)
+        self.assertEqual(row['ending_stock'], 2)
+        self.assertEqual(row['revenue'], '250.00')
+
+        too_many = self.client.post(f'/api/pos/orders/{order_id}/returns/', {
+            'product_id': self.product.id, 'quantity': 3, 'disposition': 'WASTED',
+        }, format='json')
+        self.assertEqual(too_many.status_code, 400)
+
+    def test_restocked_return_restores_stock_without_double_counting_the_ending_stock(self):
+        created = self.client.post('/api/pos/orders/', {
+            'items': [{'product_id': self.product.id, 'quantity': 3}],
+            'payment': {'amount': '375.00', 'method': 'CASH'},
+        }, format='json')
+        self.assertEqual(created.status_code, 201, created.data)
+        returned = self.client.post(f"/api/pos/orders/{created.data['id']}/returns/", {
+            'product_id': self.product.id, 'quantity': 1, 'disposition': 'RESTOCKED',
+        }, format='json')
+        self.assertEqual(returned.status_code, 200, returned.data)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_level, 3)
+
+        inventory = self.client.get('/api/inventory/product-sales/')
+        row = next(item for item in inventory.data if item['product_id'] == self.product.id)
+        self.assertEqual(row['beginning_stock'], 5)
+        self.assertEqual(row['quantity_sold'], 2)
+        self.assertEqual(row['wastage'], 0)
+        self.assertEqual(row['ending_stock'], 3)
+        self.assertEqual(row['revenue'], '250.00')

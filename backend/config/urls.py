@@ -33,7 +33,7 @@ from users.views import (
 from booking.views import (
     ServiceListView, PackageListView, BookingListCreateView, BookingDetailUpdateView,
     BookingPaymentListCreateView, BookingPaymentVerifyView, BookingAvailabilityView,
-    BookingPaymentOcrView, BookingPaymentReferenceCheckView,
+    BookingPaymentReferenceCheckView,
     BookingPaymentMethodsView, BookingPaymentReceiptView,
     StudioUnavailableDateListCreateView, StudioUnavailableDateDetailView,
     BookingReviewCreateView, BookingReviewListView,
@@ -41,14 +41,14 @@ from booking.views import (
 from inventory.views import (
     ProductListCreateView, ProductDetailUpdateView, StockMovementListView, 
     CategoryListCreateView, CategoryDetailView, SupplierListCreateView, SupplierDetailView, PurchaseOrderListCreateView,
-    PurchaseOrderDetailUpdateView, IngredientListCreateView, IngredientDetailUpdateView,
+    PurchaseOrderDetailUpdateView, IngredientListCreateView, IngredientDetailUpdateView, ProductSalesInventoryView,
     RecipeIngredientListCreateView, IngredientStockMovementListView, GenerateRecipeIngredientsView
 )
-from pos.views import OrderListCreateView, OrderDetailView, PaymentCreateView, EndOfDayReportListCreateView, EndOfDayReportReprintView, EndOfDayReportMarkPrintedView, EndOfDayReportSummaryView
+from pos.views import OrderListCreateView, OrderDetailView, OrderReturnView, PaymentCreateView, EndOfDayReportListCreateView, EndOfDayReportReprintView, EndOfDayReportMarkPrintedView, EndOfDayReportSummaryView
 from chatbot.views import ChatbotQueryView, FAQListCreateView, FAQDetailUpdateView
 from dashboard.views import DashboardAnalyticsView
 from forecasting.views import ForecastingDataView, SalesHistoryImportView
-from gallery.views import GalleryImageDetailView, GalleryImageListView
+from gallery.views import CustomerPhotoDownloadView, CustomerPhotoListCreateView, GalleryImageDetailView, GalleryImageListView
 from audit.views import AuditLogListView, ClientRuntimeErrorView
 from config.health import health_check
 from notifications.views import (
@@ -100,7 +100,6 @@ urlpatterns = [
     path('api/bookings/reviews/all/', BookingReviewListView.as_view(), name='booking_review_list'),
     path('api/bookings/payments/', BookingPaymentListCreateView.as_view(), name='booking_payment_list_create'),
     path('api/bookings/payments/<int:pk>/receipt/', BookingPaymentReceiptView.as_view(), name='booking_payment_receipt'),
-    path('api/bookings/payments/ocr/', BookingPaymentOcrView.as_view(), name='booking_payment_ocr'),
     path('api/bookings/payments/reference-check/', BookingPaymentReferenceCheckView.as_view(), name='booking_payment_reference_check'),
     path('api/bookings/payments/<int:pk>/verify/', BookingPaymentVerifyView.as_view(), name='booking_payment_verify'),
     
@@ -108,6 +107,7 @@ urlpatterns = [
     path('api/inventory/products/', ProductListCreateView.as_view(), name='product_list_create'),
     path('api/inventory/products/<int:pk>/', ProductDetailUpdateView.as_view(), name='product_detail_update'),
     path('api/inventory/ingredients/', IngredientListCreateView.as_view(), name='ingredient_list_create'),
+    path('api/inventory/product-sales/', ProductSalesInventoryView.as_view(), name='inventory_product_sales'),
     path('api/inventory/ingredients/<int:pk>/', IngredientDetailUpdateView.as_view(), name='ingredient_detail_update'),
     path('api/inventory/ingredient-movements/', IngredientStockMovementListView.as_view(), name='ingredient_movement_list'),
     path('api/inventory/recipes/', RecipeIngredientListCreateView.as_view(), name='recipe_ingredient_list_create'),
@@ -123,6 +123,7 @@ urlpatterns = [
     # POS endpoints
     path('api/pos/orders/', OrderListCreateView.as_view(), name='pos_orders'),
     path('api/pos/orders/<int:pk>/', OrderDetailView.as_view(), name='pos_order_detail'),
+    path('api/pos/orders/<int:pk>/returns/', OrderReturnView.as_view(), name='pos_order_return'),
     path('api/pos/payments/', PaymentCreateView.as_view(), name='pos_payments'),
     path('api/pos/end-of-day-summary/', EndOfDayReportSummaryView.as_view(), name='pos_end_of_day_summary'),
     path('api/pos/end-of-day-reports/', EndOfDayReportListCreateView.as_view(), name='pos_end_of_day_reports'),
@@ -152,6 +153,8 @@ urlpatterns = [
     # Landing gallery
     path('api/gallery/images/', GalleryImageListView.as_view(), name='gallery_image_list'),
     path('api/gallery/images/<int:pk>/', GalleryImageDetailView.as_view(), name='gallery_image_detail'),
+    path('api/gallery/customer-photos/', CustomerPhotoListCreateView.as_view(), name='customer_photo_list_create'),
+    path('api/gallery/customer-photos/<int:pk>/download/', CustomerPhotoDownloadView.as_view(), name='customer_photo_download'),
 ]
 
 if settings.DEBUG:

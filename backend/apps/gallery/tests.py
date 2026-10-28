@@ -10,7 +10,8 @@ from rest_framework.test import APIClient
 
 from payment.storage import SupabaseStorageError
 
-from .models import GalleryImage
+from booking.models import Booking, Package, Service
+from .models import CustomerPhoto, GalleryImage
 from .serializers import GalleryImageSerializer
 from .storage import SupabaseGalleryStorage
 
@@ -29,6 +30,35 @@ class GalleryImageAPITests(TestCase):
         self.staff = User.objects.create_user('gallery-staff', password='Staff123!', role='STAFF')
         self.admin = User.objects.create_user('gallery-admin', password='Admin123!', role='ADMIN')
         self.client = APIClient()
+
+    def create_booking(self, customer, name):
+        service = Service.objects.create(name=f'{name} Studio', base_price='1000.00')
+        package = Package.objects.create(service=service, name=f'{name} Package', price='1000.00', inclusions='Digital photos')
+        from django.utils import timezone
+        from datetime import timedelta
+        return Booking.objects.create(customer=customer, package=package, scheduled_date=timezone.localdate() + timedelta(days=2), scheduled_time='09:00')
+
+    def test_customer_photo_delivery_is_private_to_booking_owner(self):
+        booking = self.create_booking(self.customer, 'PhotoOwner')
+        self.client.force_authenticate(self.staff)
+        created = self.client.post('/api/gallery/customer-photos/', {
+            'booking': booking.pk, 'title': 'Edited portrait', 'image': png_upload('portrait.png'),
+        }, format='multipart')
+        self.assertEqual(created.status_code, 201, created.data)
+        photo = CustomerPhoto.objects.get(pk=created.data['id'])
+        self.assertTrue(photo.image.name.startswith(f'customer_photos/booking_{booking.pk}/'))
+
+        self.client.force_authenticate(self.customer)
+        listed = self.client.get('/api/gallery/customer-photos/')
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual([row['id'] for row in listed.data], [photo.pk])
+        downloaded = self.client.get(created.data['download_url'])
+        self.assertEqual(downloaded.status_code, 200)
+
+        other = get_user_model().objects.create_user('photo-other-customer', role='CUSTOMER')
+        self.client.force_authenticate(other)
+        self.assertEqual(self.client.get('/api/gallery/customer-photos/').data, [])
+        self.assertEqual(self.client.get(created.data['download_url']).status_code, 404)
 
     def test_public_list_shows_only_featured_images_and_filters_categories(self):
         GalleryImage.objects.create(title='Studio feature', category='STUDIO', image=png_upload())

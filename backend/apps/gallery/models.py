@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db import models
 
 from users.uploads import safe_image_extension
+from .storage import SupabaseCustomerPhotoStorage
 
 
 def gallery_image_upload_path(instance, filename):
@@ -45,3 +46,21 @@ class GalleryImage(models.Model):
 
     def __str__(self):
         return self.title
+
+
+def customer_photo_upload_path(instance, filename):
+    return f'customer_photos/booking_{instance.booking_id or "new"}/{uuid4().hex}{safe_image_extension(filename)}'
+
+
+class CustomerPhoto(models.Model):
+    booking = models.ForeignKey('booking.Booking', on_delete=models.CASCADE, related_name='delivered_photos')
+    title = models.CharField(max_length=160, blank=True)
+    image = models.FileField(upload_to=customer_photo_upload_path, storage=SupabaseCustomerPhotoStorage())
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return self.title or f'Photo for booking #{self.booking_id}'

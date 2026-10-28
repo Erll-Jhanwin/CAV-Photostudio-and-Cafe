@@ -65,11 +65,9 @@ test('shows the customer dashboard while the supplemental profile refresh is sti
 
 async function fillPayment(container) {
   fireEvent.change(screen.getByLabelText('GCash Reference No.'), { target: { value: 'GCASH-TEST-001' } });
+  fireEvent.change(screen.getByLabelText('Amount Paid'), { target: { value: '500' } });
   fireEvent.change(screen.getByLabelText('Payment Date'), { target: { value: '2026-10-18' } });
   fireEvent.change(screen.getByLabelText('Payment Time'), { target: { value: '12:30' } });
-  fireEvent.change(screen.getByLabelText('Payment proof image'), {
-    target: { files: [new File(['test proof'], 'receipt.png', { type: 'image/png' })] },
-  });
 }
 
 async function completeWizard() {
@@ -97,10 +95,39 @@ test('available slot completes the wizard and sends Manila payment timestamp and
   expect(client.post).toHaveBeenCalledTimes(2);
   expect(client.post.mock.calls[0][1]).toMatchObject({ scheduled_date: date, scheduled_time: '09:00', idempotency_key: expect.any(String) });
   const payment = client.post.mock.calls[1][1];
-  expect(payment.get('booking')).toBe('42');
-  expect(payment.get('paid_at')).toBe('2026-10-18T04:30:00.000Z');
-  expect(payment.get('method')).toBe('GCASH');
-  expect(payment.get('idempotency_key')).toBeTruthy();
+  expect(payment).toMatchObject({
+    booking: 42,
+    reference_number: 'GCASH-TEST-001',
+    amount: '500.00',
+    paid_at: '2026-10-18T04:30:00.000Z',
+    method: 'GCASH',
+    idempotency_key: expect.any(String),
+  });
+  expect(payment).not.toHaveProperty('receipt');
+});
+
+test('selected payment proof is sent as multipart data for private storage', async () => {
+  client.post.mockImplementation(async url => ({ data: url === '/api/bookings/' ? booking : { id: 7, status: 'PENDING_VERIFICATION' } }));
+  const container = await completeWizard();
+  const proof = new File(['proof bytes'], 'transfer.png', { type: 'image/png' });
+  fireEvent.change(screen.getByLabelText(/Payment Proof/), { target: { files: [proof] } });
+  fireEvent.click(screen.getByRole('button', { name: 'Reserve Your Session' }));
+  await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Booking submitted successfully.'));
+  const request = client.post.mock.calls.find(([url]) => url === '/api/bookings/payments/')[1];
+  expect(request).toBeInstanceOf(FormData);
+  expect(request.get('receipt')).toBe(proof);
+  expect(request.get('reference_number')).toBe('GCASH-TEST-001');
+  expect(container.querySelector('input[type="file"]')).toBeTruthy();
+});
+
+test('booking submission rejects a missing payment reference or amount before saving a booking', async () => {
+  const container = await completeWizard();
+  fireEvent.change(screen.getByLabelText('GCash Reference No.'), { target: { value: '' } });
+  fireEvent.change(screen.getByLabelText('Amount Paid'), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Reserve Your Session' }));
+  await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Please enter the payment method, reference number, amount, date, and time.'));
+  expect(client.post).not.toHaveBeenCalled();
+  expect(container.querySelector('input[type="file"][aria-label="Payment proof image"]')).toBeNull();
 });
 
 test('lost payment response keeps the saved booking and retries only payment with the same key', async () => {
@@ -125,8 +152,8 @@ test('lost payment response keeps the saved booking and retries only payment wit
   const payments = client.post.mock.calls.filter(([url]) => url === '/api/bookings/payments/').map(([, body]) => body);
   expect(bookingCalls).toHaveLength(1);
   expect(payments).toHaveLength(2);
-  expect(payments[0].get('idempotency_key')).toBe(payments[1].get('idempotency_key'));
-  expect(payments[1].get('booking')).toBe('42');
+  expect(payments[0].idempotency_key).toBe(payments[1].idempotency_key);
+  expect(payments[1].booking).toBe(42);
 });
 
 test('a genuine backend slot conflict is shown and never submits payment', async () => {
@@ -152,13 +179,13 @@ test('booking history resumes a saved booking without creating another reservati
   }));
   client.post.mockResolvedValue({ data: { id: 7, status: 'PENDING_VERIFICATION' } });
   const { container } = render(<CustomerDashboard />);
-  fireEvent.click(await screen.findByRole('button', { name: /Submit Payment Proof for/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /Submit Payment Reference for/ }));
   await fillPayment(container);
   fireEvent.click(screen.getByRole('button', { name: 'Reserve Your Session' }));
   await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Booking submitted successfully.'));
   expect(client.post).toHaveBeenCalledTimes(1);
   expect(client.post.mock.calls[0][0]).toBe('/api/bookings/payments/');
-  expect(client.post.mock.calls[0][1].get('booking')).toBe('42');
+  expect(client.post.mock.calls[0][1].booking).toBe(42);
 });
 
 test('booking history filters canonical statuses and shows matching status counts', async () => {

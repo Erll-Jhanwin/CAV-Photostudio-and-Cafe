@@ -80,26 +80,25 @@ class SupabasePaymentProofStorageTests(TestCase):
 @override_settings(
     IS_TESTING=False,
     DEBUG=False,
-    SUPABASE_URL='https://demo-project.supabase.co',
-    SUPABASE_SERVICE_ROLE_KEY='test-only-server-secret',
-    SUPABASE_PAYMENT_PROOFS_BUCKET='payment-proofs',
+    SUPABASE_URL='',
+    SUPABASE_SERVICE_ROLE_KEY='',
     EMAIL_DELIVERY_ENABLED=False,
     SMS_DELIVERY_ENABLED=False,
     PUSH_DELIVERY_ENABLED=False,
 )
-class BookingPaymentProofFlowTests(TestCase):
+class BookingPaymentReferenceFlowTests(TestCase):
     def setUp(self):
         self.customer = get_user_model().objects.create_user(
-            username='proof-customer', email='proof-customer@example.com', password='Customer123!',
+            username='reference-customer', email='reference-customer@example.com', password='Customer123!',
         )
         self.admin = get_user_model().objects.create_user(
-            username='proof-admin', email='proof-admin@example.com', password='Admin123!', role='ADMIN',
+            username='reference-admin', email='reference-admin@example.com', password='Admin123!', role='ADMIN',
         )
         service = Service.objects.create(
-            name='Proof Flow Service', description='Test', duration_minutes=60, base_price='1000.00',
+            name='Reference Flow Service', description='Test', duration_minutes=60, base_price='1000.00',
         )
         self.package = Package.objects.create(
-            service=service, name='Proof Flow Package', description='Test',
+            service=service, name='Reference Flow Package', description='Test',
             price='1000.00', inclusions='Test session',
         )
         self.client = APIClient()
@@ -112,134 +111,102 @@ class BookingPaymentProofFlowTests(TestCase):
             scheduled_date=timezone.localdate() + timedelta(days=offset_days),
             scheduled_time='09:00',
             status='PENDING',
-            idempotency_key=f'proof-booking-{suffix}',
+            idempotency_key=f'reference-booking-{suffix}',
         )
 
     def submit_payment(self, booking, suffix):
         return self.client.post('/api/bookings/payments/', {
             'booking': booking.pk,
-            'reference_number': f'PROOF-REF-{suffix}',
+            'reference_number': f'PAY-REF-{suffix}',
             'amount': '500.00',
             'method': 'GCASH',
             'paid_at': timezone.now().isoformat(),
-            # Deliberately mismatched name suffix: the stored suffix follows
-            # verified image bytes, not a user-controlled filename.
-            'receipt': receipt_image(f'customer-{suffix}.jpg'),
-            'idempotency_key': f'proof-payment-{suffix}',
-        }, format='multipart')
+            'idempotency_key': f'reference-payment-{suffix}',
+        }, format='json')
 
-    @patch('payment.storage.requests.get')
-    @patch('payment.storage.requests.post')
-    def test_upload_private_review_approve_and_reject_update_existing_booking(self, storage_post, storage_get):
-        storage_post.return_value = Mock(status_code=200)
-        storage_get.return_value = Mock(status_code=200, content=b'PNG receipt bytes')
-
-        approved_booking = self.create_booking(21, 'approved')
-        submitted = self.submit_payment(approved_booking, 'APPROVED')
+    def test_reference_only_payment_saves_without_supabase_and_verifies_booking(self):
+        booking = self.create_booking(21, 'approved')
+        submitted = self.submit_payment(booking, 'APPROVED')
         self.assertEqual(submitted.status_code, 201, submitted.data)
         payment = Payment.objects.get(pk=submitted.data['id'])
-        self.assertEqual(payment.status, 'PENDING_VERIFICATION')
-        self.assertEqual(submitted.data['method'], 'GCASH')
-        self.assertEqual(submitted.data['method_label'], 'GCash')
-        self.assertEqual(submitted.data['booking_details']['id'], approved_booking.pk)
-        self.assertEqual(submitted.data['booking_details']['package_name'], self.package.name)
-        self.assertTrue(payment.receipt.name.startswith('booking_receipts/'))
-        self.assertTrue(payment.receipt.name.endswith('.png'))
-        self.assertNotIn('demo-project.supabase.co', submitted.data['receipt_url'])
-        self.assertEqual(storage_post.call_count, 1)
-
-        other_customer = get_user_model().objects.create_user(
-            username='proof-other', email='proof-other@example.com', password='Customer123!',
-        )
-        self.client.force_authenticate(other_customer)
-        self.assertEqual(self.client.get(submitted.data['receipt_url']).status_code, 404)
+        self.assertEqual(payment.reference_number, 'PAY-REF-APPROVED')
+        self.assertEqual(str(payment.amount), '500.00')
+        self.assertEqual(payment.method, 'GCASH')
+        self.assertIsNone(payment.receipt.name if payment.receipt else None)
+        self.assertIsNone(submitted.data['receipt_url'])
 
         self.client.force_authenticate(self.admin)
-        receipt_response = self.client.get(submitted.data['receipt_url'])
-        self.assertEqual(receipt_response.status_code, 200)
-        self.assertEqual(b''.join(receipt_response.streaming_content), b'PNG receipt bytes')
-        self.assertEqual(receipt_response['Cache-Control'], 'private, no-store')
-        self.assertEqual(receipt_response['X-Content-Type-Options'], 'nosniff')
-
         approved = self.client.patch(
             f'/api/bookings/payments/{payment.pk}/verify/', {'status': 'APPROVED'}, format='json',
         )
         self.assertEqual(approved.status_code, 200, approved.data)
         payment.refresh_from_db()
-        approved_booking.refresh_from_db()
+        booking.refresh_from_db()
         self.assertEqual(payment.status, 'APPROVED')
         self.assertEqual(payment.verified_by_id, self.admin.pk)
-        self.assertEqual(approved_booking.status, 'CONFIRMED_DP')
+        self.assertEqual(booking.status, 'CONFIRMED_DP')
 
-        rejected_booking = self.create_booking(22, 'rejected')
-        self.client.force_authenticate(self.customer)
-        rejected_submission = self.submit_payment(rejected_booking, 'REJECTED')
-        self.assertEqual(rejected_submission.status_code, 201, rejected_submission.data)
-        rejected_payment = Payment.objects.get(pk=rejected_submission.data['id'])
-        self.client.force_authenticate(self.admin)
-        rejected = self.client.patch(
-            f'/api/bookings/payments/{rejected_payment.pk}/verify/', {'status': 'REJECTED'}, format='json',
-        )
-        self.assertEqual(rejected.status_code, 200, rejected.data)
-        rejected_payment.refresh_from_db()
-        rejected_booking.refresh_from_db()
-        self.assertEqual(rejected_payment.status, 'REJECTED')
-        self.assertEqual(rejected_booking.status, 'PENDING')
-
-    @patch('payment.storage.requests.post')
-    def test_storage_failure_does_not_create_payment_or_expose_provider_details(self, storage_post):
-        storage_post.return_value = Mock(status_code=500, text='sensitive-provider-response')
-        booking = self.create_booking(23, 'storage-failure')
-        response = self.submit_payment(booking, 'FAILURE')
-        self.assertEqual(response.status_code, 503)
-        self.assertNotIn('sensitive-provider-response', str(response.data))
+    def test_reference_and_amount_are_required_while_method_and_time_keep_legacy_defaults(self):
+        booking = self.create_booking(22, 'required')
+        payload = {
+            'booking': booking.pk, 'reference_number': 'PAY-REF-REQUIRED',
+            'amount': '500.00', 'method': 'GCASH', 'paid_at': timezone.now().isoformat(),
+        }
+        for field in ('reference_number', 'amount'):
+            incomplete = dict(payload)
+            incomplete.pop(field)
+            response = self.client.post('/api/bookings/payments/', incomplete, format='json')
+            self.assertEqual(response.status_code, 400, (field, response.data))
+            self.assertIn(field, response.data)
         self.assertFalse(Payment.objects.filter(booking=booking).exists())
 
-    @patch('payment.storage.requests.get')
-    @patch('payment.storage.requests.post')
-    def test_receipt_endpoint_distinguishes_missing_object_from_storage_failure(self, storage_post, storage_get):
-        storage_post.return_value = Mock(status_code=200)
-        booking = self.create_booking(26, 'receipt-retrieval-errors')
-        submitted = self.submit_payment(booking, 'RETRIEVAL')
-        self.assertEqual(submitted.status_code, 201, submitted.data)
-
-        storage_get.return_value = Mock(status_code=500)
-        unavailable = self.client.get(submitted.data['receipt_url'])
-        self.assertEqual(unavailable.status_code, 503)
-        self.assertEqual(unavailable.data['detail'], 'Payment proof storage is temporarily unavailable.')
-
-        storage_get.return_value = Mock(status_code=404)
-        missing = self.client.get(submitted.data['receipt_url'])
-        self.assertEqual(missing.status_code, 404)
-        self.assertEqual(missing.data['detail'], 'Payment proof not found.')
-
-    def test_declared_image_type_must_match_file_contents(self):
-        booking = self.create_booking(24, 'invalid-type')
+    @override_settings(IS_TESTING=True, DEBUG=True)
+    def test_payment_proof_uploads_and_retrieval_are_private_to_the_booking_customer(self):
+        booking = self.create_booking(26, 'with-proof')
         response = self.client.post('/api/bookings/payments/', {
             'booking': booking.pk,
-            'reference_number': 'PROOF-REF-MISMATCH',
+            'reference_number': 'PAY-REF-WITH-PROOF',
             'amount': '500.00',
             'method': 'GCASH',
-            'receipt': receipt_image(content_type='image/jpeg'),
+            'paid_at': timezone.now().isoformat(),
+            'receipt': receipt_image(),
         }, format='multipart')
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('receipt', response.data)
-        self.assertFalse(Payment.objects.filter(booking=booking).exists())
+        self.assertEqual(response.status_code, 201, response.data)
+        payment = Payment.objects.get(pk=response.data['id'])
+        self.assertTrue(payment.receipt.name)
+        self.assertEqual(response.data['receipt_url'], f'http://testserver/api/bookings/payments/{payment.pk}/receipt/')
+        own_download = self.client.get(f'/api/bookings/payments/{payment.pk}/receipt/')
+        self.assertEqual(own_download.status_code, 200)
+        self.assertTrue(own_download['Content-Type'].startswith('image/'))
 
-    def test_oversized_receipt_is_rejected_before_storage(self):
-        booking = self.create_booking(25, 'oversized')
-        oversized = SimpleUploadedFile(
-            'large.png', b'\x89PNG\r\n\x1a\n' + b'0' * (5 * 1024 * 1024),
-            content_type='image/png',
-        )
-        with patch('payment.storage.requests.post') as storage_post:
-            response = self.client.post('/api/bookings/payments/', {
-                'booking': booking.pk,
-                'reference_number': 'PROOF-REF-TOO-LARGE',
-                'amount': '500.00',
-                'method': 'GCASH',
-                'receipt': oversized,
-            }, format='multipart')
-        self.assertEqual(response.status_code, 400)
-        storage_post.assert_not_called()
-        self.assertFalse(Payment.objects.filter(booking=booking).exists())
+        other_customer = get_user_model().objects.create_user(username='other-customer', role='CUSTOMER')
+        self.client.force_authenticate(other_customer)
+        denied = self.client.get(f'/api/bookings/payments/{payment.pk}/receipt/')
+        self.assertEqual(denied.status_code, 404)
+
+    def test_duplicate_booking_reference_is_rejected_case_insensitively(self):
+        first_booking = self.create_booking(23, 'first')
+        first = self.submit_payment(first_booking, 'DUPLICATE')
+        self.assertEqual(first.status_code, 201, first.data)
+        second_booking = self.create_booking(24, 'second')
+        second = self.client.post('/api/bookings/payments/', {
+            'booking': second_booking.pk,
+            'reference_number': 'pay-ref-duplicate',
+            'amount': '500.00',
+            'method': 'GCASH',
+            'paid_at': timezone.now().isoformat(),
+        }, format='json')
+        self.assertEqual(second.status_code, 400, second.data)
+        self.assertFalse(Payment.objects.filter(booking=second_booking).exists())
+
+    def test_idempotent_payment_retry_returns_existing_reference_record(self):
+        booking = self.create_booking(25, 'retry')
+        first = self.submit_payment(booking, 'RETRY')
+        self.assertEqual(first.status_code, 201, first.data)
+        replay = self.client.post('/api/bookings/payments/', {
+            'booking': booking.pk,
+            'idempotency_key': 'reference-payment-RETRY',
+        }, format='json')
+        self.assertEqual(replay.status_code, 200, replay.data)
+        self.assertEqual(replay.data['id'], first.data['id'])
+        self.assertEqual(Payment.objects.filter(booking=booking).count(), 1)

@@ -14,6 +14,20 @@ set name = excluded.name,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'customer-photos',
+  'customer-photos',
+  false,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp']::text[]
+)
+on conflict (id) do update
+set name = excluded.name,
+    public = false,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
 -- Prevent anon/authenticated users from reaching this bucket even if another
 -- permissive policy is later added for a different bucket. The Django backend
 -- uses the server-only service role key and enforces booking ownership/RBAC.
@@ -23,5 +37,5 @@ on storage.objects
 as restrictive
 for all
 to anon, authenticated
-using (bucket_id <> 'payment-proofs')
-with check (bucket_id <> 'payment-proofs');
+using (bucket_id not in ('payment-proofs', 'customer-photos'))
+with check (bucket_id not in ('payment-proofs', 'customer-photos'));

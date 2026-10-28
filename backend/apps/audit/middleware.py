@@ -55,7 +55,24 @@ class AuditActivityMiddleware:
                         # emit an operational signal so logging failures are visible to operators.
                         logger.exception('Audit activity could not be persisted for %s %s', request.method, path)
             return response
-        except Exception:
+        except Exception as exc:
+            user = getattr(request, 'user', None)
+            try:
+                record_activity(
+                    user=user if user and getattr(user, 'is_authenticated', False) else None,
+                    action='API_SERVER_ERROR',
+                    description=f'Unexpected API error during {request.method} {request.path[:220]}.',
+                    module=module_for_path(request.path),
+                    record_reference=(re.search(r'/(\d+)(?:/|$)', request.path).group(1) if re.search(r'/(\d+)(?:/|$)', request.path) else ''),
+                    metadata={
+                        'issue': type(exc).__name__,
+                        'method': request.method,
+                        'path': request.path[:220],
+                    },
+                    ip_address=request.META.get('REMOTE_ADDR'),
+                )
+            except Exception:
+                logger.exception('API error log could not be persisted for %s %s', request.method, request.path)
             raise
         finally:
             _request_audit_events.reset(token)

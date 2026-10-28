@@ -116,6 +116,7 @@ export function DataTable({
   onSort,
   renderCell,
   renderActions,
+  onRowClick,
   actionLabel = 'Actions',
   emptyIcon = BarChart2,
   emptyTitle = 'No records found',
@@ -169,7 +170,7 @@ export function DataTable({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={row.id || i} className="border-b border-espresso/[0.04] hover:bg-cream/45 transition-colors">
+            <tr key={row.id || i} onClick={onRowClick ? () => onRowClick(row) : undefined} onKeyDown={onRowClick ? event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onRowClick(row); } } : undefined} tabIndex={onRowClick ? 0 : undefined} className={`border-b border-espresso/[0.04] hover:bg-cream/45 transition-colors ${onRowClick ? 'cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold' : ''}`}>
               {normalizedColumns.map((column, index) => {
                 const alignClass = column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left';
                 return (

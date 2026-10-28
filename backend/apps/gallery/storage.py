@@ -8,6 +8,20 @@ from django.conf import settings
 from payment.storage import SupabaseStorageError, SupabasePaymentProofStorage
 
 
+class SupabaseCustomerPhotoStorage(SupabasePaymentProofStorage):
+    """Private persistent storage for photos delivered to a specific customer."""
+
+    def _config(self):
+        base_url, api_key, _ = super()._config()
+        bucket = str(getattr(settings, 'SUPABASE_CUSTOMER_PHOTOS_BUCKET', 'customer-photos') or '').strip()
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', bucket):
+            raise SupabaseStorageError('Supabase customer photo bucket configuration is invalid.')
+        return base_url, api_key, bucket
+
+    def url(self, name):
+        raise ValueError('Customer photos are private; use the authenticated customer photo endpoint.')
+
+
 class SupabaseGalleryStorage(SupabasePaymentProofStorage):
     """Store gallery images in a public Supabase bucket using server credentials.
 

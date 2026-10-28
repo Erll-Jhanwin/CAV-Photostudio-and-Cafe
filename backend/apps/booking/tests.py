@@ -1,15 +1,12 @@
 from datetime import timedelta
-from io import BytesIO
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
-from PIL import Image
 
 from booking.availability import get_available_slots, is_slot_available
 from booking.models import Booking, BookingDateLock, BookingReview, Package, Service, StudioUnavailableDate
@@ -215,16 +212,6 @@ class BookingEndToEndApiTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.customer)
 
-    @staticmethod
-    def receipt_upload():
-        content = BytesIO()
-        Image.new('RGB', (12, 12), 'white').save(content, format='JPEG')
-        return SimpleUploadedFile(
-            'gcash-receipt.jpg',
-            content.getvalue(),
-            content_type='image/jpeg',
-        )
-
     def booking_payload(self, scheduled_date, scheduled_time='09:00', idempotency_key='booking-e2e-1'):
         return {
             'package': self.package.id,
@@ -279,26 +266,21 @@ class BookingEndToEndApiTests(TestCase):
                 'method': 'MAYA',
                 'amount': '500.00',
                 'paid_at': '2026-10-18T08:00:00+08:00',
-                'receipt': self.receipt_upload(),
                 'idempotency_key': 'payment-e2e-1',
             },
-            format='multipart',
+            format='json',
         )
 
         self.assertEqual(payment_response.status_code, 201)
         self.assertEqual(payment_response.data['method'], 'MAYA')
         self.assertEqual(Payment.objects.filter(booking_id=booking_id).count(), 1)
         payment = Payment.objects.get(booking_id=booking_id)
-        self.assertTrue(payment.receipt)
-        self.assertIn(f'/api/bookings/payments/{payment.id}/receipt/', payment_response.data['receipt_url'])
-        receipt_response = self.client.get(payment_response.data['receipt_url'].replace('http://testserver', ''))
-        self.assertEqual(receipt_response.status_code, 200)
-        self.assertEqual(b''.join(receipt_response.streaming_content)[:2], b'\xff\xd8')
+        self.assertEqual(payment.reference_number, 'E2E-REF-001')
+        self.assertFalse(payment.receipt)
         other_customer = get_user_model().objects.create_user(
             username='booking-e2e-other', email='booking-e2e-other@example.com', password='Customer123!',
         )
         self.client.force_authenticate(other_customer)
-        self.assertEqual(self.client.get(f'/api/bookings/payments/{payment.id}/receipt/').status_code, 404)
         self.client.force_authenticate(self.customer)
         replay_response = self.client.post(
             '/api/bookings/payments/',

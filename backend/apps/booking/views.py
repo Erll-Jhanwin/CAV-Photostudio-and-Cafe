@@ -35,15 +35,13 @@ from booking.availability import (
     is_slot_available,
     parse_date_value,
 )
-from booking.payment_ocr import analyze_gcash_receipt
 from payment.models import Payment
-from payment.storage import SupabasePaymentProofStorage, SupabaseStorageError
+from payment.storage import SupabaseStorageError
 from audit.models import AuditLog
 from notifications.booking_events import (
     notify_booking_created, notify_booking_status, notify_booking_updated, notify_booking_payment,
 )
 from users.permissions import IsAdmin, IsStaffOrAdmin
-from users.uploads import validate_receipt_image
 
 User = get_user_model()
 
@@ -52,19 +50,6 @@ OBSOLETE_SERVICE_NAMES = ['Self-Shoot Studio', 'Boutique Portrait']
 
 logger = logging.getLogger(__name__)
 
-
-def cleanup_uncommitted_payment_receipt(payment):
-    """Best-effort removal when remote upload succeeded but its DB txn rolled back."""
-    if not payment or not payment.receipt:
-        return
-    try:
-        payment.receipt.storage.delete(payment.receipt.name)
-    except Exception as exc:
-        logger.error(
-            'Payment receipt cleanup failed after database rollback: payment_id=%s exception_type=%s',
-            payment.pk,
-            type(exc).__name__,
-        )
 
 
 def get_idempotency_key(request):
@@ -633,14 +618,6 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
         return apply_limit(queryset.filter(booking__customer=user), self.request, default=100)
 
     def create(self, request, *args, **kwargs):
-        request_metadata = {
-            'user_id': request.user.id,
-            'idempotency_present': bool(get_idempotency_key(request)),
-            'reference_length': len(str(request.data.get('reference_number') or '').strip()),
-            'receipt_present': bool(request.FILES.get('receipt')),
-            'receipt_content_type': str(getattr(request.FILES.get('receipt'), 'content_type', '') or '')[:80],
-            'receipt_size': getattr(request.FILES.get('receipt'), 'size', 0) or 0,
-        }
         idempotency_key = get_idempotency_key(request)
         payment_queryset = Payment.objects.filter(payment_type=Payment.BOOKING)
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -659,7 +636,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             with transaction.atomic():
                 booking = Booking.objects.select_for_update().get(pk=serializer.validated_data['booking'].id)
                 if booking.status in {'CANCELLED', 'COMPLETED'}:
-                    raise ValidationError({'booking': 'Payment proof cannot be submitted for a cancelled or completed booking.'})
+                    raise ValidationError({'booking': 'A payment reference cannot be submitted for a cancelled or completed booking.'})
                 payment = serializer.save(
                     booking=booking,
                     payment_type=Payment.BOOKING,
@@ -672,7 +649,11 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                                         description=f'Submitted payment #{payment.id} for booking #{booking.id}.')
                 notify_booking_payment(payment)
         except IntegrityError as exc:
-            cleanup_uncommitted_payment_receipt(payment)
+            if payment and payment.receipt:
+                try:
+                    payment.receipt.storage.delete(payment.receipt.name)
+                except OSError:
+                    logger.exception('Payment proof cleanup failed for payment_id=%s', payment.pk)
             if idempotency_key:
                 existing_payment = payment_queryset.filter(idempotency_key=idempotency_key).select_related(
                     'booking', 'booking__customer', 'booking__package', 'booking__package__service', 'verified_by'
@@ -687,26 +668,25 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                 status=status.HTTP_409_CONFLICT
             )
         except OSError as exc:
-            cleanup_uncommitted_payment_receipt(payment)
-            booking_id = serializer.validated_data.get('booking').id if serializer.validated_data.get('booking') else None
-            logger.error(
-                'Payment receipt storage failed: booking_id=%s metadata=%s exception_type=%s storage_error=%s',
-                booking_id,
-                request_metadata,
-                type(exc).__name__,
-                str(exc) if isinstance(exc, SupabaseStorageError) else '',
+            if payment and payment.receipt:
+                try:
+                    payment.receipt.storage.delete(payment.receipt.name)
+                except OSError:
+                    logger.exception('Payment proof cleanup failed for payment_id=%s', payment.pk)
+            logger.exception('Payment proof upload failed for booking_id=%s', serializer.validated_data.get('booking').id)
+            AuditLog.objects.create(
+                user=request.user,
+                action='PAYMENT_PROOF_STORAGE_ERROR',
+                description='Payment proof upload failed; the booking remains available for retry.',
+                metadata={'booking_id': serializer.validated_data.get('booking').id, 'issue': type(exc).__name__},
             )
-            return Response(
-                {
-                    'detail': (
-                        'Payment proof could not be saved. Your booking is still reserved; '
-                        'please retry the payment submission.'
-                    )
-                },
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+            return Response({'detail': 'Payment proof could not be saved. The booking remains reserved; please retry.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception:
-            cleanup_uncommitted_payment_receipt(payment)
+            if payment and payment.receipt:
+                try:
+                    payment.receipt.storage.delete(payment.receipt.name)
+                except OSError:
+                    logger.exception('Payment proof cleanup failed for payment_id=%s', payment.pk)
             raise
 
         return Response(self.get_serializer(payment).data, status=status.HTTP_201_CREATED)
@@ -755,16 +735,14 @@ class BookingPaymentReceiptView(views.APIView):
         except FileNotFoundError:
             return Response({'detail': 'Payment proof not found.'}, status=status.HTTP_404_NOT_FOUND)
         except (SupabaseStorageError, OSError, ValueError) as exc:
-            logger.error(
-                'Payment receipt retrieval failed: payment_id=%s exception_type=%s storage_error=%s',
-                payment.pk,
-                type(exc).__name__,
-                str(exc) if isinstance(exc, SupabaseStorageError) else '',
+            logger.exception('Payment proof retrieval failed for payment_id=%s', payment.pk)
+            AuditLog.objects.create(
+                user=request.user,
+                action='PAYMENT_PROOF_STORAGE_ERROR',
+                description=f'Payment proof for payment #{payment.pk} could not be retrieved.',
+                metadata={'payment_id': payment.pk, 'issue': type(exc).__name__},
             )
-            return Response(
-                {'detail': 'Payment proof storage is temporarily unavailable.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+            return Response({'detail': 'Payment proof storage is temporarily unavailable.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         filename = payment.receipt.name.rsplit('/', 1)[-1].replace('"', '')
         content_type = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
         response = FileResponse(receipt_file, content_type=content_type)
@@ -772,6 +750,7 @@ class BookingPaymentReceiptView(views.APIView):
         response['X-Content-Type-Options'] = 'nosniff'
         response['Cache-Control'] = 'private, no-store'
         return response
+
 
 class BookingPaymentReferenceCheckView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -783,42 +762,12 @@ class BookingPaymentReferenceCheckView(views.APIView):
         if len(reference_number) > 100:
             return Response({"reference_number": "Reference number is too long."}, status=status.HTTP_400_BAD_REQUEST)
         payments = Payment.objects.filter(payment_type=Payment.BOOKING, reference_number__iexact=reference_number)
-        if request.user.role not in ['STAFF', 'ADMIN']:
-            payments = payments.filter(booking__customer=request.user)
         exists = payments.exists()
         return Response({
             "exists": exists,
             "reference_number": reference_number,
             "message": "This payment reference number has already been submitted." if exists else ""
         })
-
-class BookingPaymentOcrView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-    throttle_scope = 'ocr'
-
-    def post(self, request):
-        receipt = request.FILES.get('receipt')
-        if not receipt:
-            return Response({"receipt": "Upload a GCash screenshot."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            validate_receipt_image(receipt)
-        except ValidationError as exc:
-            return Response({"receipt": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            result = analyze_gcash_receipt(receipt)
-        except Exception:
-            return Response({"detail": "Could not read this receipt image."}, status=status.HTTP_400_BAD_REQUEST)
-        result.pop('raw_text', None)
-        reference_number = result.get('fields', {}).get('reference_number', {}).get('value')
-        if reference_number:
-            duplicate_exists = Payment.objects.filter(payment_type=Payment.BOOKING, reference_number__iexact=reference_number).exists()
-            result['duplicate_reference'] = duplicate_exists
-            if duplicate_exists:
-                result.setdefault('warnings', []).append('This GCash reference number has already been submitted.')
-        else:
-            result['duplicate_reference'] = False
-        return Response(result)
 
 class BookingPaymentVerifyView(generics.UpdateAPIView):
     serializer_class = BookingPaymentSerializer
@@ -862,6 +811,8 @@ class BookingPaymentVerifyView(generics.UpdateAPIView):
                     booking.status = 'PENDING'
                     booking.save(update_fields=['status'])
                 action = "BOOKING_PAYMENT_REJECTED"
+                if previous_status == 'APPROVED':
+                    action = 'BOOKING_PAYMENT_VERIFICATION_ISSUE'
 
             if previous_status != new_status:
                 notify_booking_payment(payment)
@@ -869,7 +820,19 @@ class BookingPaymentVerifyView(generics.UpdateAPIView):
         AuditLog.objects.create(
             user=request.user,
             action=action,
-            description=f"{new_status.title()} payment #{payment.id} for booking #{payment.booking.id}."
+            description=(
+                f"{new_status.title()} payment #{payment.id} for booking #{payment.booking.id}."
+                + (' This reverses an earlier approval and is recorded as a possible incorrect staff verification.' if previous_status == 'APPROVED' and new_status == 'REJECTED' else '')
+                + (f" Verification issue recorded: {payment.admin_note}" if new_status == 'REJECTED' and payment.admin_note else '')
+            ),
+            metadata={
+                'payment_id': payment.id,
+                'booking_id': booking.id,
+                'previous_status': previous_status,
+                'new_status': new_status,
+                'admin_note': payment.admin_note,
+                'verification_issue': new_status == 'REJECTED',
+            },
         )
 
         return Response(self.get_serializer(payment).data)

@@ -83,6 +83,22 @@ class ClientRuntimeErrorViewTests(TestCase):
         self.client.force_authenticate(customer)
         self.assertEqual(self.client.get('/api/audit/logs/').status_code, 403)
 
+    def test_admin_error_filter_includes_payment_verification_issues(self):
+        issue = AuditLog.objects.create(
+            user=self.admin,
+            action='BOOKING_PAYMENT_REJECTED',
+            description='A previously approved payment was rejected after review.',
+            metadata={'payment_id': 5, 'booking_id': 7, 'verification_issue': True},
+        )
+        AuditLog.objects.create(user=self.admin, action='BOOKING_CREATE', description='Booking created.')
+        response = self.client.get('/api/audit/logs/?kind=errors')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row['id'] for row in response.data['results']], [issue.id])
+
+        staff = get_user_model().objects.create_user(username='audit-staff', role='STAFF')
+        self.client.force_authenticate(staff)
+        self.assertEqual(self.client.get('/api/audit/logs/?kind=errors').status_code, 403)
+
     def test_change_details_never_include_sensitive_fields_or_values(self):
         details = safe_change_details({'status': 'CONFIRMED', 'password': 'secret', 'otp_code': '123456', 'payment_reference': 'ABC'})
         self.assertEqual(details, {'changed_fields': ['payment_reference', 'status']})

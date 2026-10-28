@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
-import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Download, Hourglass, BadgeCheck, Ban, Upload, ReceiptText, Phone, Mail, Star } from 'lucide-react';
+import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Hourglass, BadgeCheck, Ban, ReceiptText, Phone, Mail, Star, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -151,9 +151,6 @@ const getStatusMeta = (status) => {
 const getBookingActions = (booking) => {
   const status = booking?.status;
   const editAction = booking?.can_edit ? [{ key: 'edit', label: 'Refine Booking', icon: RotateCcw }] : [];
-  const receiptAction = booking?.payments?.some(payment => payment.receipt_url)
-    ? [{ key: 'receipt', label: 'Save Receipt', icon: Download }]
-    : [];
   switch (status) {
     case 'CONFIRMED':
     case 'CONFIRMED_DP':
@@ -165,7 +162,6 @@ const getBookingActions = (booking) => {
       return [
         { key: 'details', label: 'Review Details', icon: Eye, primary: true },
         { key: 'review', label: booking?.review ? 'View Review' : 'Leave a Review', icon: Star },
-        ...receiptAction,
       ];
     case 'CANCELLED':
       return [
@@ -176,7 +172,7 @@ const getBookingActions = (booking) => {
       return [
         { key: 'details', label: 'Review Details', icon: Eye, primary: true },
         ...(!booking?.payments?.some(payment => ['PENDING_VERIFICATION', 'APPROVED'].includes(payment.status))
-          ? [{ key: 'pay', label: 'Submit Payment Proof', icon: ReceiptText }] : []),
+          ? [{ key: 'pay', label: 'Submit Payment Reference', icon: ReceiptText }] : []),
         ...editAction,
         { key: 'cancel', label: 'Cancel Session', icon: XCircle, danger: true },
       ];
@@ -194,8 +190,6 @@ const createIdempotencyKey = (prefix) => {
 };
 
 const DOWN_PAYMENT_RATE = 0.5;
-const PAYMENT_RECEIPT_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const PAYMENT_RECEIPT_MAX_SIZE = 5 * 1024 * 1024;
 const calculateDownPayment = (price) => Number(price || 0) * DOWN_PAYMENT_RATE;
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 const isValidPhone = (value) => String(value || '').replace(/[^\d+]/g, '').replace(/^\+/, '').length >= 7;
@@ -379,8 +373,7 @@ export default function CustomerDashboard() {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(getDateInputValue());
   const [paymentTime, setPaymentTime] = useState(getTimeInputValue());
-  const [paymentReceipt, setPaymentReceipt] = useState(null);
-  const [paymentReceiptPreview, setPaymentReceiptPreview] = useState('');
+  const [paymentProof, setPaymentProof] = useState(null);
   const [paymentReferenceStatus, setPaymentReferenceStatus] = useState({ checking: false, exists: false, message: '' });
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(getMonthValue());
@@ -390,6 +383,9 @@ export default function CustomerDashboard() {
   const [slotLoading, setSlotLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState('');
   const [galleryImages, setGalleryImages] = useState([]);
+  const [customerPhotos, setCustomerPhotos] = useState([]);
+  const [customerPhotosLoading, setCustomerPhotosLoading] = useState(false);
+  const [customerPhotosError, setCustomerPhotosError] = useState('');
   const bookingSubmitInFlightRef = useRef(false);
   const bookingSubmitClickRef = useRef(0);
   const bookingIdempotencyKeyRef = useRef('');
@@ -490,12 +486,6 @@ export default function CustomerDashboard() {
       setPaymentAmount(calculateDownPayment(selectedPackage.price).toFixed(2));
     }
   }, [selectedPackage]);
-
-  useEffect(() => {
-    return () => {
-      if (paymentReceiptPreview) URL.revokeObjectURL(paymentReceiptPreview);
-    };
-  }, [paymentReceiptPreview]);
 
   useEffect(() => {
     return () => {
@@ -962,7 +952,7 @@ export default function CustomerDashboard() {
       setPaymentReferenceStatus({
         checking: false,
         exists,
-        message: exists ? res.data.message || 'This GCash reference number has already been submitted.' : '',
+        message: exists ? res.data.message || 'This payment reference number has already been submitted.' : '',
       });
       return exists;
     } catch {
@@ -986,23 +976,6 @@ export default function CustomerDashboard() {
     }, 450);
     return () => window.clearTimeout(timer);
   }, [paymentReference, checkPaymentReferenceDuplicate]);
-
-  const handlePaymentReceiptUpload = (file) => {
-    if (file && !PAYMENT_RECEIPT_ALLOWED_TYPES.includes(file.type)) {
-      alert('Payment proof must be a JPG, PNG, or WEBP image.');
-      file = null;
-    }
-    if (file && file.size > PAYMENT_RECEIPT_MAX_SIZE) {
-      alert('Payment proof must be 5MB or smaller.');
-      file = null;
-    }
-    setPaymentReceipt(file || null);
-    setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
-    setPaymentReceiptPreview(current => {
-      if (current) URL.revokeObjectURL(current);
-      return file ? URL.createObjectURL(file) : '';
-    });
-  };
 
   const getPackageById = useCallback((packageId) => (
     allPackages.find(pkg => String(pkg.id) === String(packageId))
@@ -1152,6 +1125,17 @@ export default function CustomerDashboard() {
   }, [fetchMonthAvailability]);
 
   useEffect(() => {
+    if (activeTab !== 'photos') return undefined;
+    let active = true;
+    setCustomerPhotosLoading(true);
+    client.get('/api/gallery/customer-photos/')
+      .then(response => { if (active) { setCustomerPhotos(Array.isArray(response.data) ? response.data : []); setCustomerPhotosError(''); } })
+      .catch(error => { if (active) setCustomerPhotosError(getApiErrorMessage(error, 'Your photos could not be loaded.')); })
+      .finally(() => { if (active) setCustomerPhotosLoading(false); });
+    return () => { active = false; };
+  }, [activeTab]);
+
+  useEffect(() => {
     if (selectedDate) {
       fetchDayAvailability(selectedDate);
     }
@@ -1174,8 +1158,8 @@ export default function CustomerDashboard() {
     }
     const requiredDownPayment = calculateDownPayment(selectedPackage.price);
     const paidAmount = Number(paymentAmount);
-    if (!paymentReference.trim() || !paymentDate || !paymentTime || !paymentReceipt) {
-      alert('Please enter the payment details and upload your payment proof image.');
+    if (!paymentMethod || !paymentReference.trim() || !paymentAmount || !paymentDate || !paymentTime) {
+      alert('Please enter the payment method, reference number, amount, date, and time.');
       return;
     }
     if (!isValidPaymentReference(paymentReference)) {
@@ -1191,7 +1175,7 @@ export default function CustomerDashboard() {
       return;
     }
     if (paymentReferenceStatus.exists && !paymentRequestStartedRef.current) {
-      alert('This payment reference number has already been submitted. Please upload the correct receipt or enter a different reference number.');
+      alert('This payment reference number has already been submitted. Please enter a different reference number.');
       return;
     }
     bookingSubmitInFlightRef.current = true;
@@ -1218,7 +1202,7 @@ export default function CustomerDashboard() {
       }
       const duplicateReference = await checkPaymentReferenceDuplicate(paymentReference);
       if (duplicateReference) {
-        alert('This payment reference number has already been submitted. Please upload the correct receipt or enter a different reference number.');
+        alert('This payment reference number has already been submitted. Please enter a different reference number.');
         setPaymentSubmitting(false);
         return;
       }
@@ -1256,14 +1240,20 @@ export default function CustomerDashboard() {
         setPendingPaymentBookingId(bookingId);
         setBookings(current => normalizeBookings([createdBooking, ...current.filter(booking => booking.id !== bookingId)]));
       }
-      const paymentData = new FormData();
-      paymentData.append('booking', bookingId);
-      paymentData.append('reference_number', paymentReference.trim());
-      paymentData.append('amount', paidAmount.toFixed(2));
-      paymentData.append('method', paymentMethod);
-      paymentData.append('paid_at', paidAt);
-      if (paymentReceipt) paymentData.append('receipt', paymentReceipt);
-      paymentData.append('idempotency_key', paymentIdempotencyKeyRef.current);
+      const paymentValues = {
+        booking: bookingId,
+        reference_number: paymentReference.trim(),
+        amount: paidAmount.toFixed(2),
+        method: paymentMethod,
+        paid_at: paidAt,
+        idempotency_key: paymentIdempotencyKeyRef.current,
+      };
+      let paymentData = paymentValues;
+      if (paymentProof) {
+        paymentData = new FormData();
+        Object.entries(paymentValues).forEach(([key, value]) => paymentData.append(key, value));
+        paymentData.append('receipt', paymentProof);
+      }
       paymentRequestStartedRef.current = true;
       const paymentRes = await client.post('/api/bookings/payments/', paymentData);
       if (createdBooking) {
@@ -1287,8 +1277,7 @@ export default function CustomerDashboard() {
       setPaymentAmount('');
       setPaymentDate(getDateInputValue());
       setPaymentTime(getTimeInputValue());
-      setPaymentReceipt(null);
-      setPaymentReceiptPreview('');
+      setPaymentProof(null);
       setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
       resetPendingBooking();
       setCurrentStep(1);
@@ -1392,8 +1381,6 @@ export default function CustomerDashboard() {
       setSelectedTime(booking.scheduled_time);
       setNotes(booking.notes || '');
       setPaymentReference('');
-      setPaymentReceipt(null);
-      setPaymentReceiptPreview('');
       setPaymentReferenceStatus({ checking: false, exists: false, message: '' });
       setCurrentStep(4);
       setActiveTab('book');
@@ -1414,12 +1401,6 @@ export default function CustomerDashboard() {
       return;
     }
 
-    if (action.key === 'receipt') {
-      const receiptUrl = booking.payments?.find(payment => payment.receipt_url)?.receipt_url;
-      if (receiptUrl) window.open(receiptUrl, '_blank', 'noopener,noreferrer');
-      else setSelectedBookingDetails(booking);
-      return;
-    }
 
     if (action.key !== 'cancel') return;
     if (cancellingBookingId === booking.id) return;
@@ -1488,12 +1469,13 @@ export default function CustomerDashboard() {
   const navItems = [
     { key: 'book', label: 'Book a Session', icon: Plus, active: activeTab === 'book', onClick: () => setActiveTab('book') },
     { key: 'history', label: 'Booking History', icon: Clock, active: activeTab === 'history', onClick: () => setActiveTab('history') },
+    { key: 'photos', label: 'My Photos', icon: Camera, active: activeTab === 'photos', onClick: () => setActiveTab('photos') },
     { key: 'profile', label: 'My Profile', icon: User, active: activeTab === 'profile', onClick: () => setActiveTab('profile') },
     { key: 'notifications', label: 'Notifications', icon: Bell, active: activeTab === 'notifications', onClick: () => setActiveTab('notifications'),
       badge: notifications.filter(notification => !notification.is_read).length },
   ];
 
-  const pageTitles = { book: 'Book a Session', history: 'Booking History', profile: 'My Profile', notifications: 'Notifications' };
+  const pageTitles = { book: 'Book a Session', history: 'Booking History', photos: 'My Photos', profile: 'My Profile', notifications: 'Notifications' };
 
   const customerFullName = `${firstName} ${lastName}`.trim();
   const profileAvatarUser = {
@@ -2327,7 +2309,7 @@ export default function CustomerDashboard() {
                                   <span className="font-black text-gold-dark">{formatPeso(requiredDownPayment)}</span>
                                 </div>
                                 <p className="text-[11px] text-espresso/55 leading-relaxed">
-                                  Upload an image of your payment proof, then manually enter the reference number, amount, date, and time. Staff will verify the payment before confirming the booking.
+                                  Enter the payment reference number, amount, date, and time shown by your payment provider. Staff will verify the reference before confirming the booking.
                                 </p>
                               </div>
 
@@ -2373,6 +2355,13 @@ export default function CustomerDashboard() {
                                   disabled={paymentSubmitting}
                                   required
                                 />
+                                <Input
+                                  label="Payment Proof (optional · JPG, PNG, WEBP, or PDF)"
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                                  onChange={e => setPaymentProof(e.target.files?.[0] || null)}
+                                  disabled={paymentSubmitting}
+                                />
                               </div>
                               {selectedPaymentMethod?.configured && selectedPaymentMethod?.qr_url ? (
                                 <div className="rounded-xl border border-espresso/10 bg-white p-3 text-center">
@@ -2391,35 +2380,6 @@ export default function CustomerDashboard() {
                                 </div>
                               )}
 
-                              <div>
-                                <span className="text-xs font-bold uppercase tracking-[0.16em] block text-espresso/70 mb-2">Payment Proof Image</span>
-                                <div className="rounded-2xl border border-dashed border-espresso/15 bg-cream/35 p-3 grid grid-cols-1 sm:grid-cols-[112px_1fr] gap-3">
-                                  <div className="h-28 rounded-xl bg-white text-gold-dark flex items-center justify-center border border-espresso/5 overflow-hidden">
-                                    {paymentReceiptPreview ? (
-                                      <img src={paymentReceiptPreview} alt="GCash receipt preview" className="h-full w-full object-cover" />
-                                    ) : (
-                                      <Upload className="w-5 h-5" />
-                                    )}
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <input
-                                      type="file"
-                                      accept="image/jpeg,image/png,image/webp"
-                                      aria-label="Payment proof image"
-                                      onChange={e => handlePaymentReceiptUpload(e.target.files?.[0] || null)}
-                                      disabled={paymentSubmitting}
-                                      className="block w-full text-xs text-espresso file:mr-3 file:rounded-xl file:border-0 file:bg-espresso file:px-3 file:py-2 file:text-xs file:font-bold file:text-gold disabled:opacity-60"
-                                      required
-                                    />
-                                    <p className="text-[10px] text-espresso/45 mt-1 truncate">
-                                      {paymentReceipt ? paymentReceipt.name : 'Upload a clear image of your payment proof.'}
-                                    </p>
-                                    <p className="mt-2 rounded-xl border border-espresso/5 bg-white/75 p-2 text-[10px] leading-relaxed text-espresso/55">
-                                      JPG, PNG, or WEBP only, up to 5MB. Enter the payment details manually using the fields above.
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
                             </div>
                           </div>
                         </div>
@@ -2459,7 +2419,7 @@ export default function CustomerDashboard() {
                           disabled={paymentSubmitting || !paymentMethod || !selectedPaymentMethod?.configured || !selectedPaymentMethod?.qr_url || paymentQrFailed || (!paymentRequestStartedRef.current && (paymentReferenceStatus.checking || paymentReferenceStatus.exists))}
                           className="px-6 text-xs bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white"
                         >
-                          {paymentSubmitting ? 'Uploading Proof & Reserving...' : 'Reserve Your Session'}
+                          {paymentSubmitting ? 'Saving Payment & Reserving...' : 'Reserve Your Session'}
                         </Button>
                       )}
                     </div>
@@ -2716,6 +2676,39 @@ export default function CustomerDashboard() {
                   <p className="text-sm text-espresso/55 mt-2 max-w-md mx-auto">{bookings.length ? 'Choose another status filter to see your bookings.' : 'Reserve your first studio session and your booking timeline will appear here.'}</p>
                   {!bookings.length && <Button variant="gold" size="lg" className="mt-6 rounded-2xl" onClick={() => setActiveTab('book')}>Book Your First Session</Button>}
                 </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'photos' && (
+            <div className="space-y-5 animate-in-up" key="photos">
+              <div>
+                <h1 className="heading-page text-espresso">My Photos</h1>
+                <p className="text-xs text-espresso/50 mt-1">Download the finished digital photos delivered for your bookings.</p>
+              </div>
+              {customerPhotosError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{customerPhotosError}</div>}
+              {customerPhotosLoading ? (
+                <Card className="flex min-h-48 items-center justify-center gap-2"><LoadingSpinner size="sm" /> Loading your photos…</Card>
+              ) : customerPhotos.length ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {customerPhotos.map(photo => (
+                    <Card key={photo.id} className="flex items-center justify-between gap-3">
+                      <div className="min-w-0"><p className="truncate font-black text-espresso">{photo.title || `Photo set · Booking #${photo.booking_id}`}</p><p className="mt-1 text-xs text-espresso/50">Delivered {formatManilaDateTime(photo.created_at)}</p></div>
+                      <Button variant="gold" size="sm" icon={Download} onClick={async () => {
+                        try {
+                          const response = await client.get(photo.download_url, { responseType: 'blob' });
+                          const url = URL.createObjectURL(response.data);
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = `cav-photo-${photo.booking_id}-${photo.id}.jpg`;
+                          document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+                        } catch (error) { setCustomerPhotosError(getApiErrorMessage(error, 'Photo download failed.')); }
+                      }}>Download</Button>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState icon={Camera} title="No delivered photos yet" description="Your finished digital copies will appear here when the studio delivers them." />
               )}
             </div>
           )}
@@ -3087,9 +3080,9 @@ export default function CustomerDashboard() {
               <CheckCircle className="w-7 h-7" />
             </div>
             <div className="space-y-2">
-              <p className="text-sm font-bold text-espresso">Your reservation and GCash proof were submitted.</p>
+              <p className="text-sm font-bold text-espresso">Your reservation and payment reference were submitted.</p>
               <p className="text-xs text-espresso/60 leading-relaxed">
-                Your payment is pending verification. Staff will confirm the booking after checking the GCash merchant app.
+                Your payment is pending verification. Staff will confirm the booking after checking the selected payment provider.
               </p>
             </div>
             {bookingConfirmation && (
@@ -3103,7 +3096,7 @@ export default function CustomerDashboard() {
                   <span className="font-semibold text-espresso text-right">{bookingConfirmation.date} at {bookingConfirmation.time}</span>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <span className="text-espresso/45 font-bold uppercase tracking-wider">GCash Ref</span>
+                  <span className="text-espresso/45 font-bold uppercase tracking-wider">Payment Ref</span>
                   <span className="font-semibold text-espresso text-right">{bookingConfirmation.paymentReference}</span>
                 </div>
                 <div className="flex justify-between gap-3">
@@ -3544,17 +3537,11 @@ export default function CustomerDashboard() {
                           <span>{formatManilaDateTime(payment.paid_at)}</span>
                           <span className="font-bold">{formatStatusLabel(payment.status)}</span>
                         </div>
-                        {payment.receipt_url && (
-                          <a href={payment.receipt_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-[11px] font-black text-espresso hover:text-gold-dark">
-                            <ReceiptText className="w-3.5 h-3.5" />
-                            Open Payment Receipt
-                          </a>
-                        )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-espresso/45 font-semibold">No payment proof submitted.</p>
+                  <p className="text-espresso/45 font-semibold">No payment reference submitted.</p>
                 )}
               </div>
 

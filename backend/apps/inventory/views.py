@@ -1,12 +1,15 @@
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 
 from audit.models import AuditLog
 from inventory.models import Category, InventoryEvent, Product, Supplier
 from inventory.recipe_defaults import ensure_default_ingredients_and_recipes
+from pos.models import Order
 from inventory.serializers import (
     CategorySerializer,
     IngredientSerializer,
@@ -244,6 +247,86 @@ class IngredientListCreateView(generics.ListCreateAPIView):
                 )
             AuditLog.objects.create(user=request.user, action='INGREDIENT_CREATE', description=f"Created ingredient {ingredient.name} with stock {ingredient.stock_quantity} {ingredient.get_base_unit_display()}.")
         return Response(IngredientSerializer(ingredient).data, status=status.HTTP_201_CREATED)
+
+
+class ProductSalesInventoryView(views.APIView):
+    permission_classes = [IsStaffOrAdmin]
+
+    def get(self, request):
+        raw_date = request.query_params.get('date')
+        day = parse_date(raw_date) if raw_date else timezone.localdate()
+        if not day:
+            return Response({'date': 'Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+        products = list(Product.objects.filter(item_type=Product.PRODUCT, is_active=True).order_by('name'))
+        product_ids = [row.id for row in products]
+        sales = {}
+        for order in Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(payment_status='PAID', created_at__date=day).order_by('created_at', 'id'):
+            for line in order.line_items or []:
+                product_id = int(line.get('product') or 0)
+                if product_id not in product_ids:
+                    continue
+                entry = sales.setdefault(product_id, {
+                    'beginning_stock': line.get('beginning_stock'),
+                    'quantity_sold': 0,
+                    'wastage': 0,
+                    'restocked': 0,
+                    'revenue': Decimal('0.00'),
+                    'cost': Decimal('0.00'),
+                })
+                quantity = int(line.get('quantity') or 0)
+                returned = int(line.get('returned_quantity') or 0)
+                wasted = int(line.get('wasted_quantity') or 0)
+                restocked = sum(int(event.get('quantity') or 0) for event in line.get('returns', []) if event.get('disposition') == 'RESTOCKED')
+                entry['quantity_sold'] += max(quantity - returned, 0)
+                entry['wastage'] += wasted
+                entry['restocked'] += restocked
+                line_revenue = Decimal(str(line.get('net_subtotal') or line.get('subtotal') or '0'))
+                refunded = Decimal(str(line.get('refunded_amount') or '0'))
+                entry['revenue'] += max(line_revenue - refunded, Decimal('0.00'))
+                entry['cost'] += Decimal(str(line.get('cost') or '0')) * max(quantity - restocked, 0)
+        ingredient_ids = {int(row.get('ingredient')) for product in products for row in (product.recipe_data or []) if row.get('ingredient')}
+        ingredients = {row.id: row for row in Product.objects.filter(id__in=ingredient_ids, item_type=Product.INGREDIENT)}
+        result = []
+        for product in products:
+            entry = sales.get(product.id, {})
+            if entry.get('beginning_stock') is None:
+                serving_counts = []
+                for recipe_item in product.recipe_data or []:
+                    ingredient = ingredients.get(int(recipe_item.get('ingredient') or 0))
+                    required = Decimal(str(recipe_item.get('quantity') or '0'))
+                    if ingredient and required > 0:
+                        serving_counts.append(int(ingredient.stock_quantity // required))
+                beginning = min(serving_counts) if serving_counts else product.stock_level
+            else:
+                beginning = int(entry['beginning_stock'])
+            sold = int(entry.get('quantity_sold') or 0)
+            wasted = int(entry.get('wastage') or 0)
+            restocked = int(entry.get('restocked') or 0)
+            current_servings = []
+            for recipe_item in product.recipe_data or []:
+                ingredient = ingredients.get(int(recipe_item.get('ingredient') or 0))
+                required = Decimal(str(recipe_item.get('quantity') or '0'))
+                if ingredient and required > 0:
+                    current_servings.append(int(ingredient.stock_quantity // required))
+            live_ending = min(current_servings) if current_servings else product.stock_level
+            # quantity_sold already excludes all returned units. A RESTOCKED
+            # return therefore must not be added back a second time here.
+            ending = live_ending if day == timezone.localdate() else max(beginning - sold - wasted, 0)
+            revenue = entry.get('revenue') or Decimal('0.00')
+            cost = entry.get('cost') or Decimal('0.00')
+            result.append({
+                'product_id': product.id,
+                'product_name': product.name,
+                'date': day.isoformat(),
+                'beginning_stock': beginning,
+                'quantity_sold': sold,
+                'wastage': wasted,
+                'ending_stock': ending,
+                'revenue': str(revenue.quantize(Decimal('0.01'))),
+                'cost': str(cost.quantize(Decimal('0.01'))),
+                'profit_loss': str((revenue - cost).quantize(Decimal('0.01'))),
+            })
+        return Response(result)
 
 
 class IngredientDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):

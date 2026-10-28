@@ -107,6 +107,19 @@ def item_quantity_total(order):
     return sum(int(item.get('quantity') or 0) for item in order.line_items or [])
 
 
+def order_revenue_by_payment_method(order, method):
+    payments = [payment for payment in order.payments.all() if payment.method == method]
+    if not payments:
+        return Decimal('0.00')
+    all_payments = list(order.payments.all())
+    payment_total = sum((payment.amount for payment in all_payments), Decimal('0.00'))
+    net_total = max(order.total - order.returned_amount, Decimal('0.00'))
+    if payment_total <= 0:
+        return Decimal('0.00')
+    method_amount = sum((payment.amount for payment in payments), Decimal('0.00'))
+    return net_total * method_amount / payment_total
+
+
 def build_receipt_payload(order, payment, staff_username, amount_received=None):
     paid_amount = amount_received if amount_received is not None else (payment.amount if payment else order.total)
     change_amount = max(Decimal(str(paid_amount)) - order.total, Decimal('0.00'))
@@ -233,6 +246,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
             for product_id, qty in item_quantities.items():
                 product = products_by_id[product_id]
                 recipe_items = product.recipe_data or []
+                beginning_stock = product.stock_level
                 if recipe_items:
                     for recipe_item in recipe_items:
                         ingredient_id = int(recipe_item.get('ingredient'))
@@ -247,12 +261,33 @@ class OrderListCreateView(generics.ListCreateAPIView):
                 price = product.price
                 subtotal = price * qty
                 total_amount += subtotal
+                if recipe_items:
+                    ingredient_serving_counts = []
+                    for recipe_item in recipe_items:
+                        ingredient = ingredients_by_id.get(int(recipe_item.get('ingredient') or 0))
+                        recipe_quantity = Decimal(str(recipe_item.get('quantity') or '0'))
+                        if ingredient and recipe_quantity > 0:
+                            ingredient_serving_counts.append(int(ingredient.stock_quantity // recipe_quantity))
+                    beginning_stock = min(ingredient_serving_counts) if ingredient_serving_counts else 0
+                line_discount_data = item.get('discount') or {}
+                line_discount, line_discount_error = calculate_discount(subtotal, line_discount_data)
+                if line_discount_error:
+                    return Response({'items': f"{product.name}: {line_discount_error.data.get('discount', 'Invalid item discount.')}"}, status=status.HTTP_400_BAD_REQUEST)
                 order_items.append({
                     "id": len(order_items) + 1,
                     "product": product.id,
                     "quantity": qty,
                     "price": str(price),
                     "subtotal": str(subtotal),
+                    "discount_type": line_discount['type'],
+                    "discount_value": str(line_discount['value']),
+                    "discount_amount": str(line_discount['amount']),
+                    "net_subtotal": str(line_discount['total']),
+                    "returned_quantity": 0,
+                    "wasted_quantity": 0,
+                    "cost": str(product.cost),
+                    "beginning_stock": beginning_stock,
+                    "recipe": [dict(row) for row in recipe_items],
                     "product_details": {
                         "id": product.id,
                         "name": product.name,
@@ -271,10 +306,22 @@ class OrderListCreateView(generics.ListCreateAPIView):
                 ingredient_movements.append((ingredient, required_quantity))
 
             subtotal_amount = money(total_amount)
-            discount, discount_error = calculate_discount(subtotal_amount, discount_data)
+            item_discount_total = sum((Decimal(row['discount_amount']) for row in order_items), Decimal('0.00'))
+            discountable_subtotal = max(subtotal_amount - item_discount_total, Decimal('0.00'))
+            discount, discount_error = calculate_discount(discountable_subtotal, discount_data)
             if discount_error:
                 return discount_error
             final_total = discount["total"]
+            for line in order_items:
+                before_order_discount = Decimal(str(line['net_subtotal']))
+                global_share = (
+                    discount['amount'] * before_order_discount / discountable_subtotal
+                    if discountable_subtotal > 0 else Decimal('0.00')
+                ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                line['item_discount_amount'] = line['discount_amount']
+                line['order_discount_amount'] = str(global_share)
+                line['discount_amount'] = str(Decimal(line['discount_amount']) + global_share)
+                line['net_subtotal'] = str(max(before_order_discount - global_share, Decimal('0.00')))
 
             amount_paid = None
             method = None
@@ -299,7 +346,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
                 subtotal=subtotal_amount,
                 discount_type=discount["type"],
                 discount_value=discount["value"],
-                discount_amount=discount["amount"],
+                discount_amount=item_discount_total + discount["amount"],
                 total=final_total,
                 order_type=order_type,
                 payment_status=payment_status_value,
@@ -353,6 +400,89 @@ class OrderDetailView(generics.RetrieveAPIView):
         if self.request.user.role in ['STAFF', 'ADMIN']:
             return queryset
         return queryset.filter(booking__customer=self.request.user)
+
+
+class OrderReturnView(APIView):
+    permission_classes = [IsStaffOrAdmin]
+
+    def post(self, request, pk):
+        if request.user.role not in {'STAFF', 'ADMIN'}:
+            return Response({'detail': 'Staff access required.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            product_id = int(request.data.get('product_id'))
+            quantity = int(request.data.get('quantity', 1))
+        except (TypeError, ValueError):
+            return Response({'detail': 'Product and whole-number quantity are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        disposition = str(request.data.get('disposition') or 'WASTED').upper()
+        if disposition not in {'WASTED', 'RESTOCKED'} or quantity <= 0:
+            return Response({'detail': 'Use a positive quantity and WASTED or RESTOCKED disposition.'}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            try:
+                order = Order.objects.select_for_update().get(pk=pk)
+            except Order.DoesNotExist:
+                return Response({'detail': 'Transaction not found.'}, status=status.HTTP_404_NOT_FOUND)
+            if order.payment_status != 'PAID':
+                return Response({'detail': 'Only paid transactions can have returns.'}, status=status.HTTP_409_CONFLICT)
+            items = [dict(row) for row in (order.line_items or [])]
+            line = next((row for row in items if int(row.get('product') or 0) == product_id), None)
+            if not line:
+                return Response({'detail': 'This product is not part of the transaction.'}, status=status.HTTP_404_NOT_FOUND)
+            sold_quantity = int(line.get('quantity') or 0)
+            returned_quantity = int(line.get('returned_quantity') or 0)
+            if quantity > sold_quantity - returned_quantity:
+                return Response({'detail': 'Return quantity exceeds the unreturned quantity.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            product = Product.objects.select_for_update().filter(pk=product_id, item_type=Product.PRODUCT).first()
+            if not product:
+                return Response({'detail': 'The sold product no longer exists in inventory.'}, status=status.HTTP_409_CONFLICT)
+            if disposition == 'RESTOCKED':
+                recipe = line.get('recipe') or []
+                if recipe:
+                    recipe_ids = [int(row.get('ingredient')) for row in recipe if row.get('ingredient')]
+                    ingredients = list(Product.objects.select_for_update().filter(pk__in=recipe_ids, item_type=Product.INGREDIENT))
+                    by_id = {row.pk: row for row in ingredients}
+                    for recipe_row in recipe:
+                        ingredient = by_id.get(int(recipe_row.get('ingredient') or 0))
+                        if ingredient:
+                            ingredient.stock_quantity += Decimal(str(recipe_row.get('quantity') or 0)) * quantity
+                    if ingredients:
+                        Product.objects.bulk_update(ingredients, ['stock_quantity'])
+                else:
+                    product.stock_level += quantity
+                    product.save(update_fields=['stock_level', 'updated_at'])
+
+            raw_line_total = Decimal(str(line.get('net_subtotal') or line.get('subtotal') or 0))
+            previously_refunded = Decimal(str(line.get('refunded_amount') or '0.00'))
+            cumulative_refund = (
+                raw_line_total * (returned_quantity + quantity) / max(sold_quantity, 1)
+            ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            refund = cumulative_refund - previously_refunded
+            line['returned_quantity'] = returned_quantity + quantity
+            line['wasted_quantity'] = int(line.get('wasted_quantity') or 0) + (quantity if disposition == 'WASTED' else 0)
+            line_returns = list(line.get('returns') or [])
+            event = {
+                'quantity': quantity,
+                'disposition': disposition,
+                'refund_amount': str(refund),
+                'loss_at_cost': str((Decimal(str(line.get('cost') or 0)) * quantity).quantize(Decimal('0.01')) if disposition == 'WASTED' else Decimal('0.00')),
+                'reason': str(request.data.get('reason') or '').strip()[:300],
+                'staff_id': request.user.pk,
+                'timestamp': timezone.now().isoformat(),
+            }
+            line_returns.append(event)
+            line['returns'] = line_returns
+            line['refunded_amount'] = str((Decimal(str(line.get('refunded_amount') or 0)) + refund).quantize(Decimal('0.01')))
+            order.line_items = items
+            order.returned_amount += refund
+            order.return_events = [*(order.return_events or []), {'product_id': product_id, **event}]
+            order.save(update_fields=['line_items', 'returned_amount', 'return_events'])
+            AuditLog.objects.create(
+                user=request.user,
+                action=f'POS_RETURN_{disposition}',
+                description=f'Recorded {quantity} returned {product.name} as {disposition.lower()} for transaction {order.transaction_id or order.pk}.',
+                metadata={'order_id': order.pk, 'product_id': product_id, 'quantity': quantity, 'disposition': disposition, 'refund_amount': str(refund), 'loss_at_cost': event['loss_at_cost']},
+            )
+        return Response(OrderSerializer(order).data)
 
 
 class PaymentCreateView(generics.CreateAPIView):
@@ -427,22 +557,24 @@ def build_end_of_day_report_data(user, report_date, actual_cash, opening_cash=De
     paid_orders = list(Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(payment_status='PAID', created_at__range=(start, end)).prefetch_related('payments'))
     booking_payments = list(Payment.objects.filter(payment_type=Payment.BOOKING, status='APPROVED', paid_at__range=(start, end)))
 
-    cash_sales = sum((order.total for order in paid_orders if any(payment.method == 'CASH' for payment in order.payments.all())), Decimal('0.00'))
-    gcash_pos_sales = sum((order.total for order in paid_orders if any(payment.method == 'GCASH' for payment in order.payments.all())), Decimal('0.00'))
+    cash_sales = sum((order_revenue_by_payment_method(order, 'CASH') for order in paid_orders), Decimal('0.00'))
+    gcash_pos_sales = sum((order_revenue_by_payment_method(order, 'GCASH') for order in paid_orders), Decimal('0.00'))
     booking_payment_income = sum((payment.amount for payment in booking_payments), Decimal('0.00'))
     subtotal_sales = sum((order.subtotal for order in paid_orders), Decimal('0.00'))
     discounts = sum((order.discount_amount for order in paid_orders), Decimal('0.00'))
     booking_linked_income = sum((order.total for order in paid_orders if order.order_type == 'BOOKING_LINKED'), Decimal('0.00'))
     cafe_pos_income = sum((order.total for order in paid_orders if order.order_type == 'WALK_IN'), Decimal('0.00'))
-    total_items_sold = sum(item_quantity_total(order) for order in paid_orders)
+    total_items_sold = sum(sum(max(int(item.get('quantity') or 0) - int(item.get('returned_quantity') or 0), 0) for item in order.line_items or []) for order in paid_orders)
     cancelled_count = Order.objects.filter(created_at__range=(start, end), payment_status='CANCELLED').count()
 
     product_totals = defaultdict(lambda: {'quantity': 0, 'total': Decimal('0.00')})
     for order in paid_orders:
         for item in order.line_items or []:
             name = item.get('product_details', {}).get('name') or 'Item'
-            product_totals[name]['quantity'] += int(item.get('quantity') or 0)
-            product_totals[name]['total'] += Decimal(str(item.get('subtotal') or '0'))
+            sold_quantity = max(int(item.get('quantity') or 0) - int(item.get('returned_quantity') or 0), 0)
+            product_totals[name]['quantity'] += sold_quantity
+            item_total = Decimal(str(item.get('net_subtotal') or item.get('subtotal') or '0'))
+            product_totals[name]['total'] += item_total * Decimal(sold_quantity) / max(int(item.get('quantity') or 1), 1)
     best_items = [
         {'name': name, 'quantity': values['quantity'], 'total': str(values['total'])}
         for name, values in sorted(product_totals.items(), key=lambda row: (-row[1]['quantity'], -row[1]['total']))[:5]
@@ -462,9 +594,9 @@ def build_end_of_day_report_data(user, report_date, actual_cash, opening_cash=De
         'closing_time': closing_time,
         'staff_name': user.get_full_name() or user.username,
         'total_transactions': len(paid_orders) + len(booking_payments),
-        'gross_sales': subtotal_sales + booking_payment_income,
+    'gross_sales': subtotal_sales + booking_payment_income,
         'discounts': discounts,
-        'refunds': Decimal('0.00'),
+    'refunds': sum((order.returned_amount for order in paid_orders), Decimal('0.00')),
         'opening_cash': opening_cash,
         'cash_sales': cash_sales,
         'gcash_sales': gcash_pos_sales + booking_payment_income,

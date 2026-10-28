@@ -5,7 +5,7 @@ import {
   ShoppingBag, Package, DollarSign, Search, Plus,
   Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
   PackageCheck, Clock, CalendarOff, Archive, Printer, ClipboardList, Settings2,
-  Trash2, Truck, Save, Camera
+  Trash2, Truck, Save, Camera, Download, Calendar
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -17,6 +17,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { LoadingSpinner, Skeleton, SkeletonTable, SkeletonProfileCard } from '../components/ui/Skeleton';
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
+import PaymentProofPreview from '../components/PaymentProofPreview';
 import { DataTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
@@ -211,18 +212,27 @@ export default function StaffDashboard() {
   const navigate = useNavigate();
   const confirm = useStyledConfirm();
   const [activeTab, setActiveTab] = useState('pos');
+  const [staffBookings, setStaffBookings] = useState([]);
+  const [bookingsPage, setBookingsPage] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
 
   const [products, setProducts] = useState([]);
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [ingredients, setIngredients] = useState([]);
+  const [productSalesInventory, setProductSalesInventory] = useState([]);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [catalogCategories, setCatalogCategories] = useState([]);
   const [catalogSuppliers, setCatalogSuppliers] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
+  const [photoBookings, setPhotoBookings] = useState([]);
+  const [customerPhotos, setCustomerPhotos] = useState([]);
+  const [photoBookingId, setPhotoBookingId] = useState('');
+  const [photoTitle, setPhotoTitle] = useState('');
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoUploadLoading, setPhotoUploadLoading] = useState(false);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
@@ -238,6 +248,7 @@ export default function StaffDashboard() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [showCheckoutLoading, setShowCheckoutLoading] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState(null);
+  const [returningProductId, setReturningProductId] = useState(null);
   const [receiptPrintError, setReceiptPrintError] = useState('');
   const [receiptPrintFallbackOrder, setReceiptPrintFallbackOrder] = useState(null);
   const [localPrintingEnabled, setLocalPrintingEnabled] = useState(() => localStorage.getItem(LOCAL_PRINTING_ENABLED_KEY) === 'true');
@@ -364,10 +375,24 @@ export default function StaffDashboard() {
       } else if (tab === 'payments') {
         const paymentsRes = await getCached('/api/bookings/payments/', { params: { limit: 100 } }, { force });
         setBookingPayments(normalizePayments(paymentsRes.data));
+      } else if (tab === 'bookings') {
+        const bookingsRes = await getCached('/api/bookings/', { params: { limit: 500 } }, { force });
+        setStaffBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
+      } else if (tab === 'photos') {
+        const [bookingsRes, photosRes] = await Promise.all([
+          getCached('/api/bookings/', { params: { limit: 500 } }, { force }),
+          getCached('/api/gallery/customer-photos/', {}, { force }),
+        ]);
+        setPhotoBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
+        setCustomerPhotos(Array.isArray(photosRes.data) ? photosRes.data : []);
       } else if (tab === 'inventory') {
         await loadStaticInventoryOptions(force);
-        const ingredientsRes = await getCached('/api/inventory/ingredients/', { params: { limit: 300 } }, { force });
+        const [ingredientsRes, productSalesRes] = await Promise.all([
+          getCached('/api/inventory/ingredients/', { params: { limit: 300 } }, { force }),
+          getCached('/api/inventory/product-sales/', {}, { force }),
+        ]);
         setIngredients(normalizeRowsById(ingredientsRes.data, row => row?.name));
+        setProductSalesInventory(Array.isArray(productSalesRes.data) ? productSalesRes.data : []);
       } else if (tab === 'catalog') {
         const [catalogProductsRes, catalogCategoriesRes, catalogSuppliersRes, purchaseOrdersRes] = await Promise.all([
           getCached('/api/inventory/products/', { params: { limit: 300, include_inactive: true } }, { force }),
@@ -413,7 +438,7 @@ export default function StaffDashboard() {
     const refresh = () => {
       if (!document.hidden) loadTabData(activeTab, true);
     };
-    const intervalId = window.setInterval(refresh, 45000);
+    const intervalId = window.setInterval(refresh, ['payments', 'bookings'].includes(activeTab) ? 5000 : 45000);
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => {
@@ -433,6 +458,8 @@ export default function StaffDashboard() {
         void Promise.all(['pos', 'inventory', 'catalog'].map(tab => loadTabData(tab, true)));
       } else if (url.includes('/api/bookings/payments/')) {
         void loadTabData('payments', true);
+      } else if (url.includes('/api/bookings/')) {
+        void loadTabData('bookings', true);
       }
     };
     window.addEventListener(DATA_CHANGED_EVENT, refreshChangedData);
@@ -441,6 +468,7 @@ export default function StaffDashboard() {
 
   useEffect(() => { setProductPage(1); }, [posSearch]);
   useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
+  useEffect(() => { setBookingsPage(1); }, [staffBookings.length]);
   useEffect(() => { setInventoryPage(1); }, [invSearch, inventoryFilter]);
   useEffect(() => { setSalesPage(1); }, [salesPaymentFilter, salesStartDate, salesEndDate]);
   useEffect(() => { setCatalogPage(1); }, [catalogSearch, catalogStatusFilter]);
@@ -479,14 +507,19 @@ export default function StaffDashboard() {
     }
   };
 
-  const getCartSubtotal = () => cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
+  const roundMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+  const getCartSubtotal = () => roundMoney(cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0));
   const getCartDiscountAmount = () => {
     const subtotal = getCartSubtotal();
     const value = Number(discountValue || 0);
-    if (!Number.isFinite(value) || value <= 0) return 0;
-    return Math.min(subtotal * Math.min(value, 100) / 100, subtotal);
+    const lineDiscount = roundMoney(cart.reduce((sum, item) => sum + roundMoney(Number(item.price || 0) * item.quantity * Number(item.discountValue || 0) / 100), 0));
+    const remainingSubtotal = Math.max(subtotal - lineDiscount, 0);
+    const orderDiscount = Number.isFinite(value) && value > 0
+      ? Math.min(roundMoney(remainingSubtotal * Math.min(value, 100) / 100), remainingSubtotal)
+      : 0;
+    return roundMoney(lineDiscount + orderDiscount);
   };
-  const getCartTotal = () => Math.max(getCartSubtotal() - getCartDiscountAmount(), 0);
+  const getCartTotal = () => Math.max(roundMoney(getCartSubtotal() - getCartDiscountAmount()), 0);
   const getReceiptPayment = (order) => order?.payments?.[0] || null;
   const getReceiptAmountReceived = (order) => Number(getReceiptPayment(order)?.amount || order?.amount_received || order?.total || 0);
   const getReceiptChange = (order) => Number(order?.change_amount ?? Math.max(getReceiptAmountReceived(order) - Number(order?.total || 0), 0));
@@ -630,7 +663,7 @@ export default function StaffDashboard() {
         checkoutIdempotencyKeyRef.current = createIdempotencyKey('pos-order');
       }
       const payload = {
-        items: cart.map(item => ({ product_id: item.id, quantity: item.quantity })),
+        items: cart.map(item => ({ product_id: item.id, quantity: item.quantity, discount: { type: 'PERCENT', value: Number(item.discountValue || 0) } })),
         order_type: 'WALK_IN',
         print_receipt: false,
         discount: { type: 'PERCENT', value: discountNumber },
@@ -708,6 +741,45 @@ export default function StaffDashboard() {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
     } finally {
       setVerifyingPaymentId(null);
+    }
+  };
+
+  const handleCustomerPhotoUpload = async (event) => {
+    event.preventDefault();
+    if (!photoBookingId || !photoFile || photoUploadLoading) return;
+    setPhotoUploadLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('booking', photoBookingId);
+      formData.append('title', photoTitle.trim());
+      formData.append('image', photoFile);
+      await client.post('/api/gallery/customer-photos/', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setPhotoTitle(''); setPhotoFile(null);
+      event.target.reset();
+      await loadTabData('photos', true);
+    } catch (error) {
+      alert(getApiErrorMessage(error, 'Customer photo upload failed.'));
+    } finally {
+      setPhotoUploadLoading(false);
+    }
+  };
+
+  const handleReturnItem = async (order, item) => {
+    if (returningProductId) return;
+    setReturningProductId(item.product);
+    try {
+      const response = await client.post(`/api/pos/orders/${order.id}/returns/`, {
+        product_id: item.product,
+        quantity: 1,
+        disposition: 'WASTED',
+        reason: 'Returned beverage marked as wastage',
+      });
+      setOrders(current => current.map(row => row.id === response.data.id ? response.data : row));
+      setReceiptOrder(response.data);
+    } catch (error) {
+      alert(getApiErrorMessage(error, 'The return could not be recorded.'));
+    } finally {
+      setReturningProductId(null);
     }
   };
 
@@ -1269,14 +1341,17 @@ export default function StaffDashboard() {
 
   const navItems = [
     { key: 'pos', label: 'POS Terminal', icon: ShoppingBag, active: activeTab === 'pos', onClick: () => setActiveTab('pos') },
+    { key: 'bookings', label: 'Bookings', icon: Calendar, active: activeTab === 'bookings', onClick: () => setActiveTab('bookings') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
     { key: 'catalog', label: 'Catalog & Purchasing', icon: ClipboardList, active: activeTab === 'catalog', onClick: () => setActiveTab('catalog') },
     { key: 'sales', label: 'Daily Sales Logs', icon: DollarSign, active: activeTab === 'sales', onClick: () => setActiveTab('sales') },
     { key: 'gallery', label: 'Photo Gallery', icon: Camera, active: activeTab === 'gallery', onClick: () => setActiveTab('gallery') },
+    { key: 'photos', label: 'Customer Photos', icon: Download, active: activeTab === 'photos', onClick: () => setActiveTab('photos') },
   ];
 
-  const pageTitles = { pos: 'POS Terminal', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs', gallery: 'Photo Gallery' };
+  const pageTitles = { pos: 'POS Terminal', bookings: 'Bookings', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs', gallery: 'Photo Gallery', photos: 'Customer Photos' };
+  const pagedStaffBookings = paginateRows(sortRows(staffBookings, { key: 'scheduled_date', dir: 'desc', accessor: row => `${row.scheduled_date || ''} ${row.scheduled_time || ''}` }), bookingsPage, TABLE_PAGE_SIZE);
   const isCurrentTabLoading = !!loadingResources[activeTab];
   const toggleSort = (current, setter, key, column = {}) => {
     setter(current.key === key
@@ -1407,6 +1482,30 @@ export default function StaffDashboard() {
           )}
 
           {activeTab === 'gallery' && <GalleryManager />}
+
+          {activeTab === 'photos' && (
+            <div className="space-y-5 animate-in-up" key="customer-photos">
+              <div><h1 className="heading-page text-espresso">Customer Photo Delivery</h1><p className="mt-1 text-xs text-espresso/50">Upload finished photos to the matching booking. Customers only see photos linked to their own account.</p></div>
+              <Card>
+                <CardHeader title="Deliver a photo" subtitle="Upload one JPG, PNG, or WEBP image at a time. The file is stored in private persistent storage." />
+                <form onSubmit={handleCustomerPhotoUpload} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <label className="text-xs font-bold text-espresso">Booking
+                    <select value={photoBookingId} onChange={event => setPhotoBookingId(event.target.value)} required className="mt-1 block w-full rounded-xl border border-espresso/15 bg-white px-3 py-2.5 text-sm">
+                      <option value="">Select booking</option>
+                      {photoBookings.map(booking => <option key={booking.id} value={booking.id}>#{booking.id} · {booking.customer?.username || booking.customer?.email || 'Customer'} · {booking.package_details?.name || 'Session'}</option>)}
+                    </select>
+                  </label>
+                  <Input label="Photo title (optional)" value={photoTitle} onChange={event => setPhotoTitle(event.target.value)} maxLength={160} />
+                  <Input label="Photo file" type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setPhotoFile(event.target.files?.[0] || null)} required />
+                  <div className="flex items-end"><Button type="submit" variant="gold" loading={photoUploadLoading} disabled={photoUploadLoading || !photoFile || !photoBookingId}>Upload and deliver</Button></div>
+                </form>
+              </Card>
+              <Card>
+                <CardHeader title="Recent delivered photos" />
+                {customerPhotos.length ? <div className="divide-y divide-espresso/[0.06]">{customerPhotos.map(photo => <div key={photo.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"><span className="font-bold text-espresso">{photo.title || `Photo · Booking #${photo.booking_id}`}</span><span className="text-xs text-espresso/50">Booking #{photo.booking_id} · {formatManilaDateTime(photo.created_at)}</span></div>)}</div> : <EmptyState icon={Camera} title="No customer photos delivered" description="Uploaded images will be listed here." />}
+              </Card>
+            </div>
+          )}
 
           {/* POS */}
           {activeTab === 'pos' && (
@@ -1560,6 +1659,11 @@ export default function StaffDashboard() {
                             <div className="min-w-0 flex-1 pr-2">
                               <p className="font-bold text-espresso truncate">{item.name}</p>
                               <p className="text-espresso/50 mt-0.5">PHP {item.price} each</p>
+                              <label className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-espresso/55">Item discount
+                                <select aria-label={`${item.name} discount`} value={item.discountValue || 0} onChange={event => setCart(current => current.map(row => row.id === item.id ? { ...row, discountValue: Number(event.target.value) } : row))} className="rounded-md border border-espresso/10 bg-white px-1.5 py-1 text-[10px] text-espresso">
+                                  <option value={0}>None</option>{DISCOUNT_OPTIONS.map(value => <option key={value} value={value}>{value}%</option>)}
+                                </select>
+                              </label>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
                               <button onClick={() => updateCartQty(item.id, -1)} className="bg-white border border-espresso/10 p-1 rounded-lg hover:bg-espresso/5 transition-colors"><Minus className="w-3 h-3" /></button>
@@ -1691,12 +1795,39 @@ export default function StaffDashboard() {
           )}
 
           {/* PAYMENT BOOKING VERIFICATION */}
+          {activeTab === 'bookings' && (
+            <div className="space-y-5 animate-in-up" key="bookings">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div><h1 className="heading-page text-espresso">Bookings</h1><p className="mt-1 text-xs text-espresso/50">Live studio and event reservations across customer accounts.</p></div>
+                <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData('bookings', true)} loading={!!loadingResources.bookings}>Refresh bookings</Button>
+              </div>
+              <Card>
+                <DataTable
+                  columns={[
+                    { key: 'id', label: 'Booking', render: booking => `#${booking.id}` },
+                    { key: 'customer.username', label: 'Customer', render: booking => <><span>{booking.customer?.first_name || ''} {booking.customer?.last_name || ''}</span><span className="block text-[10px] text-espresso/45">{booking.customer?.email || booking.customer?.username || 'Customer'}</span></> },
+                    { key: 'package_details.name', label: 'Package', render: booking => booking.package_details?.name || `Package #${booking.package}` },
+                    { key: 'scheduled_date', label: 'Schedule', render: booking => `${booking.scheduled_date} · ${booking.scheduled_time}` },
+                    { key: 'status', label: 'Booking status', render: booking => <StatusBadge status={booking.status} /> },
+                    { key: 'payments', label: 'Payment', render: booking => booking.payments?.length ? booking.payments.map(payment => payment.status).join(', ') : 'No payment submitted' },
+                  ]}
+                  rows={pagedStaffBookings}
+                  emptyIcon={Calendar}
+                  emptyTitle="No bookings yet"
+                  emptyDescription="Customer reservations will appear here as soon as they are saved."
+                  minWidth={950}
+                />
+                <PaginationControls page={bookingsPage} setPage={setBookingsPage} total={staffBookings.length} pageSize={TABLE_PAGE_SIZE} />
+              </Card>
+            </div>
+          )}
+
           {activeTab === 'payments' && (
             <div className="space-y-6 animate-in-up" key="payments">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <h1 className="heading-page text-espresso">Payment Booking Verification</h1>
-                  <p className="text-xs text-espresso/50 mt-1">Review each receipt and match its reference and amount with the selected payment provider before approval.</p>
+                  <p className="text-xs text-espresso/50 mt-1">Match each payment reference and amount with the selected payment provider before approval.</p>
                 </div>
                 <div className="w-full sm:w-64">
                   <Select
@@ -1750,20 +1881,13 @@ export default function StaffDashboard() {
                               <p className="text-espresso/45 font-black uppercase tracking-wider">Paid At</p>
                               <p className="font-black text-espresso">{formatManilaDateTime(payment.paid_at)}</p>
                             </div>
+                            <div className="bg-cream p-3 rounded-xl border border-espresso/5 col-span-2">
+                              <p className="text-espresso/45 font-black uppercase tracking-wider">Payment Proof</p>
+                              <PaymentProofPreview payment={payment} />
+                            </div>
                           </div>
 
                           <div className="flex flex-col sm:flex-row xl:flex-col gap-2">
-                            {payment.receipt_url && (
-                              <a
-                                href={payment.receipt_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center justify-center gap-2 rounded-[20px] bg-white border border-espresso/10 px-4 py-2 text-xs font-black text-espresso hover:bg-cream-dark transition-all"
-                              >
-                                <Eye className="w-4 h-4" />
-                                Review Receipt Proof
-                              </a>
-                            )}
                             {isPending ? (
                               <>
                                 <Button
@@ -1802,7 +1926,7 @@ export default function StaffDashboard() {
                   <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={TABLE_PAGE_SIZE} />
                 </div>
               ) : (
-                <EmptyState icon={CreditCard} title="No payments found" description="Booking payments will appear here once customers submit proof." />
+                <EmptyState icon={CreditCard} title="No payments found" description="Booking payments will appear here when customers submit their reference numbers." />
               )}
             </div>
           )}
@@ -1819,6 +1943,26 @@ export default function StaffDashboard() {
                   Add Stock Item
                 </Button>
               </div>
+
+              <Card>
+                <CardHeader title="Today’s Product Sales, Returns & Wastage" subtitle="Serving counts reconcile to the beginning stock snapshot. A returned wasted drink remains consumed stock while its sale is removed from net sold and revenue." />
+                <DataTable
+                  columns={[
+                    { key: 'product_name', label: 'Product' },
+                    { key: 'beginning_stock', label: 'Beginning', align: 'right' },
+                    { key: 'quantity_sold', label: 'Sold', align: 'right' },
+                    { key: 'wastage', label: 'Wastage', align: 'right' },
+                    { key: 'ending_stock', label: 'Ending', align: 'right' },
+                    { key: 'revenue', label: 'Net revenue', align: 'right', render: row => formatCurrency(row.revenue) },
+                    { key: 'profit_loss', label: 'Profit / loss', align: 'right', render: row => <span className={Number(row.profit_loss) < 0 ? 'text-red-700' : 'text-emerald-700'}>{formatCurrency(row.profit_loss)}</span> },
+                  ]}
+                  rows={productSalesInventory}
+                  emptyIcon={Package}
+                  emptyTitle="No active products"
+                  emptyDescription="Add café or studio products to track serving counts."
+                  minWidth={900}
+                />
+              </Card>
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {inventoryStatuses.filter(status => status.key !== 'ALL').map(status => {
@@ -2180,6 +2324,7 @@ export default function StaffDashboard() {
                     },
                   ]}
                   rows={pagedOrders}
+                  onRowClick={setReceiptOrder}
                   sort={salesSort}
                   onSort={(key, column) => toggleSort(salesSort, setSalesSort, key, column)}
                   renderActions={order => (
@@ -2516,7 +2661,7 @@ export default function StaffDashboard() {
       </Modal>
 
       {/* Receipt Modal */}
-      <Modal open={!!receiptOrder} onClose={() => setReceiptOrder(null)} title="Receipt Preview" size="md">
+      <Modal open={!!receiptOrder} onClose={() => setReceiptOrder(null)} title="Transaction Details & Receipt" size="lg">
         {receiptOrder && (() => {
           const business = getReceiptBusiness(receiptOrder);
           return (
@@ -2623,6 +2768,31 @@ export default function StaffDashboard() {
             </div>
           );
         })()}
+        {receiptOrder && (
+          <div className="mt-4 space-y-3 rounded-2xl border border-espresso/[0.08] bg-cream/45 p-4 text-xs">
+            <h3 className="font-black text-espresso">Transaction breakdown</h3>
+            <div className="space-y-2">
+              {(receiptOrder.items || []).map((item, index) => {
+                const returned = Number(item.returned_quantity || 0);
+                const quantity = Number(item.quantity || 0);
+                const remaining = Math.max(quantity - returned, 0);
+                const netRevenue = Math.max(Number(item.net_subtotal || item.subtotal || 0) - Number(item.refunded_amount || 0), 0);
+                const estimatedProfitLoss = netRevenue - Number(item.cost || 0) * quantity;
+                return <div key={item.id || `${item.product}-${index}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-espresso/[0.06] pb-2">
+                  <div className="min-w-0"><p className="font-bold text-espresso">{item.product_details?.name || 'Item'} × {quantity}</p><p className="text-espresso/55">Unit {formatReceiptCurrency(item.price)} · Item discount {formatReceiptCurrency(item.discount_amount || 0)} · Returned {returned} · Wasted {item.wasted_quantity || 0}</p><p className="text-espresso/55">Net sales {formatReceiptCurrency(netRevenue)} · Estimated profit / loss {formatReceiptCurrency(estimatedProfitLoss)}</p></div>
+                  {remaining > 0 && receiptOrder.payment_status === 'PAID' && <Button variant="outline" size="xs" loading={returningProductId === item.product} disabled={returningProductId !== null} onClick={() => handleReturnItem(receiptOrder, item)}>Return 1 and mark wasted</Button>}
+                </div>;
+              })}
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div><span className="text-espresso/50">Subtotal</span><p className="font-black">{formatReceiptCurrency(receiptOrder.subtotal)}</p></div>
+              <div><span className="text-espresso/50">Discounts</span><p className="font-black">−{formatReceiptCurrency(receiptOrder.discount_amount)}</p></div>
+              <div><span className="text-espresso/50">Refunds</span><p className="font-black">−{formatReceiptCurrency(receiptOrder.returned_amount || 0)}</p></div>
+              <div><span className="text-espresso/50">Net revenue</span><p className="font-black">{formatReceiptCurrency(Number(receiptOrder.total || 0) - Number(receiptOrder.returned_amount || 0))}</p></div>
+            </div>
+            <div className="border-t border-espresso/[0.06] pt-2"><p className="font-bold text-espresso">Payments</p>{(receiptOrder.payments || []).length ? receiptOrder.payments.map(payment => <p key={payment.id} className="mt-1 text-espresso/65">{payment.method} · {formatReceiptCurrency(payment.amount)}{payment.transaction_id ? ` · Ref ${payment.transaction_id}` : ''} · {formatManilaDateTime(payment.timestamp)}</p>) : <p className="mt-1 text-espresso/55">No payment record is attached.</p>}</div>
+          </div>
+        )}
         <div className="flex flex-col gap-3 mt-4 sm:flex-row">
           <Button variant="gold" className="flex-1" icon={Printer} onClick={handleBrowserPrintReceipt}>
             Print Receipt

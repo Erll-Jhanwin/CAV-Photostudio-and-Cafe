@@ -5,7 +5,7 @@ import {
   TrendingUp, BarChart2, Users, MessageSquare, Play, Package,
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
   X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
-  ArrowDownRight, Eye, Camera, Printer, Upload, ChevronLeft, ChevronRight,
+  ArrowDownRight, Camera, Printer, Upload, ChevronLeft, ChevronRight,
   Star, Quote, ThumbsUp, ThumbsDown, Minus, ClipboardList
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -21,6 +21,7 @@ import { Modal } from '../components/ui/Modal';
 import { EmptyState } from '../components/ui/EmptyState';
 import { LoadingSpinner, Skeleton, SkeletonChart, SkeletonStatsCard, SkeletonTable, SkeletonProfileCard } from '../components/ui/Skeleton';
 import { Sidebar } from '../components/ui/Sidebar';
+import PaymentProofPreview from '../components/PaymentProofPreview';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { DataTable as DashboardTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
@@ -507,7 +508,8 @@ export default function AdminDashboard() {
       fetchData({ background: true });
       loadAdminTabData(activeTab, { force: true });
     };
-    const intervalId = window.setInterval(refresh, 30000);
+    const refreshInterval = activeTab === 'calendar' || activeTab === 'payments' ? 5000 : 30000;
+    const intervalId = window.setInterval(refresh, refreshInterval);
     window.addEventListener('focus', refresh);
 
     const handleVisibilityChange = () => {
@@ -2100,7 +2102,7 @@ export default function AdminDashboard() {
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
                   <CardHeader
                     title="Booking Payment Verification"
-                    subtitle="Review the booking details and receipt, then match its reference and amount with the selected payment provider before approving."
+                    subtitle="Review the booking details, then match the reference number and amount with the selected payment provider before approving."
                     className="mb-0"
                   />
                   <div className="w-full md:w-64">
@@ -2174,20 +2176,13 @@ export default function AdminDashboard() {
                                 <p className="text-espresso/45 font-black uppercase tracking-wider">Paid At</p>
                                 <p className="font-black text-espresso">{formatManilaDateTime(payment.paid_at)}</p>
                               </div>
+                              <div className="col-span-2 rounded-2xl border border-espresso/[0.04] bg-cream/70 p-3">
+                                <p className="text-espresso/45 font-black uppercase tracking-wider">Payment Proof</p>
+                                <PaymentProofPreview payment={payment} />
+                              </div>
                             </div>
 
                             <div className="flex flex-col gap-2 min-w-44">
-                              {payment.receipt_url && (
-                                <a
-                                  href={payment.receipt_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center justify-center gap-2 rounded-[20px] bg-white/80 border border-espresso/10 px-4 py-2 text-xs font-black text-espresso hover:bg-cream-dark transition-all"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                  Review Receipt Proof
-                                </a>
-                              )}
                               {isPending ? (
                                 <>
                                   <Button

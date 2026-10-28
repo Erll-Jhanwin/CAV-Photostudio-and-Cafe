@@ -1,15 +1,17 @@
 from decimal import Decimal
 import logging
 import re
+from django.utils import timezone
 from rest_framework import serializers
 from booking.models import Service, Package, Booking, BookingReview, StudioUnavailableDate
 from booking.availability import is_slot_available
 from payment.models import Payment
 from users.serializers import UserSerializer, validate_unique_email, validate_unique_phone_number
 from users.phone_numbers import normalize_philippine_mobile_number
+from users.uploads import receipt_upload_path, validate_receipt_upload
 
 logger = logging.getLogger(__name__)
-from users.uploads import receipt_upload_path, validate_receipt_upload
+
 
 class PackageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -45,7 +47,8 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     booking_details = serializers.SerializerMethodField()
     receipt_url = serializers.SerializerMethodField()
     method_label = serializers.SerializerMethodField()
-    method = serializers.ChoiceField(choices=[('GCASH', 'GCash'), ('MAYA', 'Maya'), ('MARIBANK', 'MariBank')], required=False)
+    method = serializers.ChoiceField(choices=[('GCASH', 'GCash'), ('MAYA', 'Maya'), ('MARIBANK', 'MariBank')], required=False, default='GCASH')
+    paid_at = serializers.DateTimeField(required=False, default=timezone.now)
     verified_by_details = UserSerializer(source='verified_by', read_only=True)
     required_down_payment = serializers.SerializerMethodField()
     idempotency_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -66,29 +69,18 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         receipt_upload = validated_data.pop('receipt', None)
         stored_name = None
-        receipt_storage = Payment._meta.get_field('receipt').storage
+        storage = Payment._meta.get_field('receipt').storage
         if receipt_upload:
-            # Store the object first and persist only its opaque path in the
-            # existing Payment.receipt column. No local media copy is created.
-            stored_name = receipt_storage.save(
-                receipt_upload_path(None, receipt_upload.name),
-                receipt_upload,
-            )
+            stored_name = storage.save(receipt_upload_path(None, receipt_upload.name), receipt_upload)
             validated_data['receipt'] = stored_name
         try:
             return super().create(validated_data)
         except Exception:
             if stored_name:
                 try:
-                    receipt_storage.delete(stored_name)
+                    storage.delete(stored_name)
                 except Exception as cleanup_error:
-                    # Preserve the database error; failed remote cleanup can
-                    # be reconciled from the orphaned UUID path if necessary.
-                    logger.warning(
-                        'Payment receipt cleanup failed after database write error; '
-                        'exception_type=%s',
-                        type(cleanup_error).__name__,
-                    )
+                    logger.warning('Payment proof cleanup failed after database write error; exception_type=%s', type(cleanup_error).__name__)
             raise
 
     def get_booking_details(self, obj):
@@ -120,6 +112,9 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     def get_required_down_payment(self, obj):
         return obj.booking.package.price * Decimal('0.50')
 
+    def validate_receipt(self, value):
+        return validate_receipt_upload(value)
+
     def validate(self, attrs):
         booking = attrs.get('booking') or getattr(self.instance, 'booking', None)
         amount = attrs.get('amount', getattr(self.instance, 'amount', None))
@@ -130,7 +125,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'booking': 'You can only submit payments for your own bookings.'})
 
         if self.instance is None and booking and booking.status in {'CANCELLED', 'COMPLETED'}:
-            raise serializers.ValidationError({'booking': 'Payment proof cannot be submitted for a cancelled or completed booking.'})
+            raise serializers.ValidationError({'booking': 'A payment reference cannot be submitted for a cancelled or completed booking.'})
 
         if reference_number:
             normalized_reference = str(reference_number).strip()
@@ -143,7 +138,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
                 duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
             if duplicate_qs.exists():
                 raise serializers.ValidationError({
-                    'reference_number': 'This GCash reference number has already been submitted.'
+                    'reference_number': 'This payment reference number has already been submitted.'
                 })
             attrs['reference_number'] = normalized_reference
 
@@ -158,8 +153,6 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
 
         return attrs
 
-    def validate_receipt(self, value):
-        return validate_receipt_upload(value)
 
 
 class BookingReviewSerializer(serializers.ModelSerializer):

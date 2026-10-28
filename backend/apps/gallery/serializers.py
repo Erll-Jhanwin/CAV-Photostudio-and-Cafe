@@ -7,7 +7,7 @@ from rest_framework import serializers
 from users.uploads import validated_image_format
 from payment.storage import SupabaseStorageError
 
-from .models import GalleryImage
+from .models import CustomerPhoto, GalleryImage
 
 
 logger = logging.getLogger(__name__)
@@ -115,3 +115,18 @@ class GalleryImageSerializer(serializers.ModelSerializer):
 
             transaction.on_commit(remove_replaced_image)
         return updated
+
+
+class CustomerPhotoSerializer(serializers.ModelSerializer):
+    download_url = serializers.SerializerMethodField()
+    booking_id = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = CustomerPhoto
+        fields = ('id', 'booking_id', 'title', 'download_url', 'created_at')
+
+    def get_download_url(self, obj):
+        from django.urls import reverse
+        request = self.context.get('request')
+        url = reverse('customer_photo_download', kwargs={'pk': obj.pk})
+        return request.build_absolute_uri(url) if request else url

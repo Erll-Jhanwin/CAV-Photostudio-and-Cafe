@@ -78,6 +78,12 @@ class AuditLogListView(APIView):
 
     def get(self, request):
         records = AuditLog.objects.select_related('user').all()
+        if str(request.query_params.get('kind', '')).strip().lower() == 'errors':
+            from django.db.models import Q
+            records = records.filter(
+                Q(action__icontains='ERROR') | Q(action__icontains='ISSUE') |
+                Q(metadata__verification_issue=True)
+            )
         query = str(request.query_params.get('search', '')).strip()[:120]
         if query:
             from django.db.models import Q

@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from django.db.models import Count, Prefetch, Sum
+from django.db.models import Count, F, Prefetch, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from rest_framework import views
@@ -77,14 +77,14 @@ class DashboardAnalyticsView(views.APIView):
 
         paid_orders = Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(
             payment_status='PAID', created_at__range=(start_dt, end_dt)
-        )
+        ).annotate(net_revenue=F('total') - F('returned_amount'))
         paid_order_totals = {
             row['order_type']: row
-            for row in paid_orders.values('order_type').annotate(revenue=Sum('total'), count=Count('id'))
+            for row in paid_orders.values('order_type').annotate(revenue=Sum('net_revenue'), count=Count('id'))
         }
         previous_order_revenue = Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(
             payment_status='PAID', created_at__range=(prev_start_dt, prev_end_dt)
-        ).aggregate(revenue=Sum('total'))['revenue'] or Decimal('0.00')
+        ).aggregate(revenue=Sum(F('total') - F('returned_amount')))['revenue'] or Decimal('0.00')
         approved_booking_payments = Payment.objects.filter(
             payment_type=Payment.BOOKING,
             status='APPROVED',
@@ -110,11 +110,12 @@ class DashboardAnalyticsView(views.APIView):
         product_totals = defaultdict(lambda: {'quantity_sold': 0, 'revenue': Decimal('0.00')})
         for line_items in paid_pos_line_items:
             for item in line_items or []:
-                quantity = int(item.get('quantity') or 0)
+                quantity = max(int(item.get('quantity') or 0) - int(item.get('returned_quantity') or 0), 0)
                 total_items_sold += quantity
                 name = item.get('product_details', {}).get('name') or 'Item'
                 product_totals[name]['quantity_sold'] += quantity
-                product_totals[name]['revenue'] += Decimal(str(item.get('subtotal') or '0'))
+                line_subtotal = Decimal(str(item.get('net_subtotal') or item.get('subtotal') or '0'))
+                product_totals[name]['revenue'] += line_subtotal * quantity / max(int(item.get('quantity') or 1), 1)
         avg_transaction = money(pos_rev) / total_tx if total_tx else 0
 
         bookings_in_range = Booking.objects.filter(created_at__range=(start_dt, end_dt))
@@ -133,7 +134,7 @@ class DashboardAnalyticsView(views.APIView):
         buckets = {}
         daily_order_revenue = paid_orders.annotate(
             local_date=TruncDate('created_at', tzinfo=timezone.get_current_timezone())
-        ).values('local_date', 'order_type').annotate(revenue=Sum('total')).order_by('local_date', 'order_type')
+        ).values('local_date', 'order_type').annotate(revenue=Sum('net_revenue')).order_by('local_date', 'order_type')
         for row in daily_order_revenue:
             key = bucket_key_for_date(row['local_date'], grain)
             buckets.setdefault(key, {'date': key, 'pos_revenue': 0, 'booking_revenue': 0, 'total_revenue': 0})
@@ -207,7 +208,7 @@ class DashboardAnalyticsView(views.APIView):
             'transaction_id': order.transaction_id or f'POS-{order.id}',
             'cashier': order.staff.username if order.staff else 'N/A',
             'date': timezone.localtime(order.created_at).strftime('%Y-%m-%d %H:%M'),
-            'total': money(order.total),
+            'total': money(order.total - order.returned_amount),
             'payment_method': order.dashboard_payments[0].method if order.dashboard_payments else 'N/A',
         } for order in recent_paid_pos_orders]
 

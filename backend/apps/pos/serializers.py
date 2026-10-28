@@ -30,12 +30,12 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'staff', 'staff_name', 'booking', 'booking_customer_name',
             'subtotal', 'discount_type', 'discount_value', 'discount_amount',
-            'total', 'transaction_id', 'completed_at', 'payment_status',
+            'total', 'returned_amount', 'return_events', 'transaction_id', 'completed_at', 'payment_status',
             'order_type', 'created_at', 'items', 'payments'
         ]
         read_only_fields = [
             'subtotal', 'discount_type', 'discount_value', 'discount_amount',
-            'total', 'transaction_id', 'completed_at', 'payment_status', 'created_at'
+            'total', 'returned_amount', 'return_events', 'transaction_id', 'completed_at', 'payment_status', 'created_at'
         ]
 
 

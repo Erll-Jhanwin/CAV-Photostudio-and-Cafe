@@ -194,8 +194,7 @@ PAYMENT_QR_GCASH_URL = os.environ.get('PAYMENT_QR_GCASH_URL', '').strip()
 PAYMENT_QR_MAYA_URL = os.environ.get('PAYMENT_QR_MAYA_URL', '').strip()
 PAYMENT_QR_MARIBANK_URL = os.environ.get('PAYMENT_QR_MARIBANK_URL', '').strip()
 
-# Booking payment proofs use a private Supabase Storage bucket. The secret is
-# server-only; file access remains behind the authenticated Django receipt API.
+# Shared Supabase connection settings support the existing gallery storage.
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().rstrip('/')
 SUPABASE_SECRET_KEY = os.environ.get('SUPABASE_SECRET_KEY', '').strip()
 # Prefer Supabase's current secret-key format; retain the legacy variable name
@@ -204,6 +203,7 @@ SUPABASE_SERVICE_ROLE_KEY = (
     SUPABASE_SECRET_KEY or os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '').strip()
 )
 SUPABASE_PAYMENT_PROOFS_BUCKET = os.environ.get('SUPABASE_PAYMENT_PROOFS_BUCKET', 'payment-proofs').strip()
+SUPABASE_CUSTOMER_PHOTOS_BUCKET = os.environ.get('SUPABASE_CUSTOMER_PHOTOS_BUCKET', 'customer-photos').strip()
 SUPABASE_GALLERY_BUCKET = os.environ.get('SUPABASE_GALLERY_BUCKET', 'gallery').strip()
 GALLERY_STORAGE_BACKEND = os.environ.get(
     'GALLERY_STORAGE_BACKEND', 'local' if DEBUG else 'supabase'

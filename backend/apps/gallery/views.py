@@ -1,6 +1,8 @@
 import logging
+import mimetypes
 
 from django.db import transaction
+from django.http import FileResponse
 from rest_framework import permissions, status, views
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -8,9 +10,11 @@ from rest_framework.response import Response
 from audit.models import AuditLog
 from users.permissions import IsStaffOrAdmin
 from payment.storage import SupabaseStorageError
+from booking.models import Booking
+from users.uploads import validate_receipt_image
 
-from .models import GalleryImage
-from .serializers import GalleryImageSerializer
+from .models import CustomerPhoto, GalleryImage
+from .serializers import CustomerPhotoSerializer, GalleryImageSerializer
 
 
 logger = logging.getLogger(__name__)
@@ -158,3 +162,73 @@ class GalleryImageDetailView(views.APIView):
             metadata={'record_id': image_id},
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CustomerPhotoListCreateView(views.APIView):
+    parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = 'sensitive'
+
+    def get(self, request):
+        if not request.user.is_authenticated:
+            return Response({'detail': 'Authentication required.'}, status=status.HTTP_401_UNAUTHORIZED)
+        photos = CustomerPhoto.objects.select_related('booking', 'booking__customer', 'uploaded_by')
+        if request.user.role in {'STAFF', 'ADMIN'}:
+            booking_id = request.query_params.get('booking')
+            if booking_id:
+                photos = photos.filter(booking_id=booking_id)
+        else:
+            photos = photos.filter(booking__customer=request.user)
+        return Response(CustomerPhotoSerializer(photos[:300], many=True, context={'request': request}).data)
+
+    def post(self, request):
+        if not request.user.is_authenticated or request.user.role not in {'STAFF', 'ADMIN'}:
+            return Response({'detail': 'Staff access required.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            booking = Booking.objects.select_related('customer').get(pk=request.data.get('booking'))
+        except (Booking.DoesNotExist, TypeError, ValueError):
+            return Response({'booking': 'Select a valid booking.'}, status=status.HTTP_400_BAD_REQUEST)
+        upload = request.FILES.get('image')
+        if not upload:
+            return Response({'image': 'Upload a customer photo.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            validate_receipt_image(upload)
+            photo = CustomerPhoto.objects.create(
+                booking=booking,
+                title=str(request.data.get('title') or '').strip()[:160],
+                image=upload,
+                uploaded_by=request.user,
+            )
+        except SupabaseStorageError as exc:
+            return storage_error_response('customer_photo_upload', exc)
+        AuditLog.objects.create(
+            user=request.user,
+            action='CUSTOMER_PHOTO_UPLOAD',
+            description=f'Uploaded a customer photo for booking #{booking.pk}.',
+            metadata={'photo_id': photo.pk, 'booking_id': booking.pk, 'customer_id': booking.customer_id},
+        )
+        return Response(CustomerPhotoSerializer(photo, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
+class CustomerPhotoDownloadView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        photos = CustomerPhoto.objects.filter(pk=pk).select_related('booking__customer')
+        if request.user.role not in {'STAFF', 'ADMIN'}:
+            photos = photos.filter(booking__customer=request.user)
+        photo = photos.first()
+        if not photo:
+            return Response({'detail': 'Photo not found.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            image = photo.image.open('rb')
+        except FileNotFoundError:
+            return Response({'detail': 'Photo file not found.'}, status=status.HTTP_404_NOT_FOUND)
+        except (SupabaseStorageError, OSError, ValueError) as exc:
+            logger.exception('Customer photo retrieval failed for photo_id=%s', photo.pk)
+            AuditLog.objects.create(user=request.user, action='CUSTOMER_PHOTO_STORAGE_ERROR', description=f'Customer photo #{photo.pk} could not be retrieved.', metadata={'photo_id': photo.pk, 'issue': type(exc).__name__})
+            return Response({'detail': 'Photo storage is temporarily unavailable.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        filename = photo.image.name.rsplit('/', 1)[-1]
+        response = FileResponse(image, content_type=mimetypes.guess_type(filename)[0] or 'application/octet-stream', as_attachment=True, filename=filename)
+        response['X-Content-Type-Options'] = 'nosniff'
+        response['Cache-Control'] = 'private, no-store'
+        return response
