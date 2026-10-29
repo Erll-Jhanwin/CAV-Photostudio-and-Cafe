@@ -7,9 +7,9 @@ from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from inventory.models import Product
+from inventory.models import InventoryEvent, Product
 from payment.models import Payment
-from pos.models import Order
+from pos.models import Order, POSStockAction
 from pos.receipt_printing import RECEIPT_WIDTH, _end_of_day_text, _escpos_receipt_bytes, _receipt_text
 from pos.views import json_safe_report_data
 
@@ -342,3 +342,231 @@ class PosIdempotencyTests(TestCase):
         self.assertEqual(row['wastage'], 0)
         self.assertEqual(row['ending_stock'], 3)
         self.assertEqual(row['revenue'], '250.00')
+
+
+class POSStockActionApiTests(TestCase):
+    def setUp(self):
+        self.staff = get_user_model().objects.create_user(
+            username='stock-action-staff',
+            email='stock-action-staff@example.com',
+            password='Staff123!pass',
+            role='STAFF',
+        )
+        self.customer = get_user_model().objects.create_user(
+            username='stock-action-customer',
+            email='stock-action-customer@example.com',
+            password='Customer123!pass',
+            role='CUSTOMER',
+        )
+        self.product = Product.objects.create(
+            name='Action Test Americano',
+            sku='ACTION-AMERICANO',
+            item_type=Product.PRODUCT,
+            price=Decimal('125.00'),
+            stock_level=10,
+            reorder_point=1,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.staff)
+
+    def create_sale(self, quantity=2, product=None):
+        product = product or self.product
+        response = self.client.post('/api/pos/orders/', {
+            'items': [{'product_id': product.id, 'quantity': quantity}],
+            'payment': {'amount': str(Decimal('125.00') * quantity), 'method': 'CASH'},
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        return response.data
+
+    def action_payload(self, order, action_type, quantity=1, disposition=None, key='stock-action-idempotency-001'):
+        item = {'product_id': self.product.id, 'quantity': quantity}
+        if disposition:
+            item['disposition'] = disposition
+        return {
+            'action_type': action_type,
+            'transaction_id': order['transaction_id'],
+            'reason': 'Recorded from the test POS modal',
+            'idempotency_key': key,
+            'items': [item],
+        }
+
+    def test_wastage_is_an_additional_inventory_loss_without_refunding_the_sale(self):
+        sale = self.create_sale(quantity=2)
+        response = self.client.post('/api/pos/stock-actions/', self.action_payload(sale, 'WASTAGE'), format='json')
+
+        self.assertEqual(response.status_code, 201, response.data)
+        order = Order.objects.get(pk=sale['id'])
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_level, 7)
+        self.assertEqual(order.returned_amount, Decimal('0.00'))
+        self.assertEqual(order.line_items[0]['quantity'] - order.line_items[0]['returned_quantity'], 2)
+        self.assertEqual(order.line_items[0]['wasted_quantity'], 1)
+        self.assertEqual(order.line_items[0]['wastage_events'][0]['staff_id'], self.staff.id)
+        self.assertEqual(POSStockAction.objects.count(), 1)
+        movement = InventoryEvent.objects.get(event_type=InventoryEvent.STOCK_MOVEMENT, reason__startswith='POS WASTAGE')
+        self.assertEqual(movement.movement_type, 'OUT')
+        self.assertEqual(movement.quantity, Decimal('1'))
+        self.assertEqual(movement.user, self.staff)
+
+        inventory = self.client.get('/api/inventory/product-sales/')
+        row = next(item for item in inventory.data if item['product_id'] == self.product.id)
+        self.assertEqual(row['quantity_sold'], 2)
+        self.assertEqual(row['wastage'], 1)
+        self.assertEqual(row['ending_stock'], 7)
+        self.assertEqual(row['revenue'], '250.00')
+
+    def test_refund_without_restock_reduces_sales_but_does_not_deduct_stock_again(self):
+        sale = self.create_sale(quantity=4)
+        payload = self.action_payload(sale, 'REFUND', quantity=1, disposition='WASTED')
+        first = self.client.post('/api/pos/stock-actions/', payload, format='json')
+        repeated = self.client.post('/api/pos/stock-actions/', payload, format='json')
+
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(repeated.status_code, 200, repeated.data)
+        self.assertEqual(first.data['action_id'], repeated.data['action_id'])
+        order = Order.objects.get(pk=sale['id'])
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_level, 6)
+        self.assertEqual(order.returned_amount, Decimal('125.00'))
+        self.assertEqual(order.line_items[0]['returned_quantity'], 1)
+        self.assertEqual(order.line_items[0]['wasted_quantity'], 1)
+        self.assertEqual(POSStockAction.objects.count(), 1)
+        self.assertEqual(InventoryEvent.objects.filter(product=self.product, reason__startswith='POS REFUND').count(), 0)
+
+        inventory = self.client.get('/api/inventory/product-sales/')
+        row = next(item for item in inventory.data if item['product_id'] == self.product.id)
+        self.assertEqual(row['quantity_sold'], 3)
+        self.assertEqual(row['wastage'], 1)
+        self.assertEqual(row['ending_stock'], 6)
+        self.assertEqual(row['revenue'], '375.00')
+
+    def test_restocked_refund_restores_stock_once_and_requires_explicit_disposition(self):
+        sale = self.create_sale(quantity=4)
+        missing_disposition = self.action_payload(sale, 'REFUND', disposition=None)
+        missing_disposition['items'][0].pop('disposition', None)
+        rejected = self.client.post('/api/pos/stock-actions/', missing_disposition, format='json')
+        self.assertEqual(rejected.status_code, 400)
+
+        payload = self.action_payload(sale, 'REFUND', disposition='RESTOCKED')
+        first = self.client.post('/api/pos/stock-actions/', payload, format='json')
+        repeated = self.client.post('/api/pos/stock-actions/', payload, format='json')
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(repeated.status_code, 200, repeated.data)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_level, 7)
+        self.assertEqual(InventoryEvent.objects.filter(product=self.product, reason__startswith='POS REFUND').count(), 1)
+
+        inventory = self.client.get('/api/inventory/product-sales/')
+        row = next(item for item in inventory.data if item['product_id'] == self.product.id)
+        self.assertEqual(row['quantity_sold'], 3)
+        self.assertEqual(row['wastage'], 0)
+        self.assertEqual(row['ending_stock'], 7)
+
+    def test_reason_transaction_quantity_and_transaction_membership_are_validated(self):
+        sale = self.create_sale(quantity=1)
+        payload = self.action_payload(sale, 'WASTAGE')
+        payload['reason'] = ' '
+        self.assertEqual(self.client.post('/api/pos/stock-actions/', payload, format='json').status_code, 400)
+
+        payload = self.action_payload(sale, 'WASTAGE')
+        payload['transaction_id'] = 'NOT-A-TRANSACTION'
+        self.assertEqual(self.client.post('/api/pos/stock-actions/', payload, format='json').status_code, 404)
+
+        payload = self.action_payload(sale, 'REFUND', quantity=2, disposition='WASTED')
+        self.assertEqual(self.client.post('/api/pos/stock-actions/', payload, format='json').status_code, 400)
+
+        other_product = Product.objects.create(name='Not Sold Product', sku='NOT-SOLD', item_type=Product.PRODUCT, price=1, stock_level=3)
+        payload = self.action_payload(sale, 'WASTAGE')
+        payload['items'][0]['product_id'] = other_product.id
+        self.assertEqual(self.client.post('/api/pos/stock-actions/', payload, format='json').status_code, 400)
+        self.assertEqual(POSStockAction.objects.count(), 0)
+
+    def test_insufficient_stock_does_not_partially_record_wastage(self):
+        sale = self.create_sale(quantity=2)
+        payload = self.action_payload(sale, 'WASTAGE', quantity=9)
+        response = self.client.post('/api/pos/stock-actions/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.product.refresh_from_db()
+        order = Order.objects.get(pk=sale['id'])
+        self.assertEqual(self.product.stock_level, 8)
+        self.assertEqual(order.line_items[0]['wasted_quantity'], 0)
+        self.assertEqual(POSStockAction.objects.count(), 0)
+        self.assertEqual(InventoryEvent.objects.filter(product=self.product, reason__startswith='POS WASTAGE').count(), 0)
+
+    def test_multi_product_failure_rolls_back_every_inventory_and_order_change(self):
+        second = Product.objects.create(name='Action Test Matcha', sku='ACTION-MATCHA', item_type=Product.PRODUCT, price=50, stock_level=2)
+        sale = self.client.post('/api/pos/orders/', {
+            'items': [{'product_id': self.product.id, 'quantity': 1}, {'product_id': second.id, 'quantity': 1}],
+            'payment': {'amount': '175.00', 'method': 'CASH'},
+        }, format='json')
+        self.assertEqual(sale.status_code, 201, sale.data)
+        self.product.refresh_from_db()
+        second.refresh_from_db()
+        before_first = self.product.stock_level
+        before_second = second.stock_level
+        response = self.client.post('/api/pos/stock-actions/', {
+            'action_type': 'WASTAGE',
+            'transaction_id': sale.data['transaction_id'],
+            'reason': 'Multiple products with second line invalid',
+            'idempotency_key': 'stock-action-atomic-rollback-001',
+            'items': [
+                {'product_id': self.product.id, 'quantity': 1},
+                {'product_id': second.id, 'quantity': 2},
+            ],
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.product.refresh_from_db()
+        second.refresh_from_db()
+        order = Order.objects.get(pk=sale.data['id'])
+        self.assertEqual(self.product.stock_level, before_first)
+        self.assertEqual(second.stock_level, before_second)
+        self.assertEqual([line['wasted_quantity'] for line in order.line_items], [0, 0])
+        self.assertEqual(POSStockAction.objects.count(), 0)
+        self.assertFalse(InventoryEvent.objects.filter(reason__startswith='POS WASTAGE').exists())
+
+    def test_reusing_an_idempotency_key_for_a_different_action_is_rejected(self):
+        sale = self.create_sale(quantity=2)
+        payload = self.action_payload(sale, 'WASTAGE')
+        first = self.client.post('/api/pos/stock-actions/', payload, format='json')
+        self.assertEqual(first.status_code, 201, first.data)
+        changed = dict(payload, reason='Different action with the same idempotency key')
+        second = self.client.post('/api/pos/stock-actions/', changed, format='json')
+        self.assertEqual(second.status_code, 409)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_level, 7)
+        self.assertEqual(POSStockAction.objects.count(), 1)
+
+    def test_recipe_product_wastage_uses_existing_recipe_stock_movements(self):
+        ingredient = Product.objects.create(
+            name='Action Test Espresso',
+            sku='ACTION-ESPRESSO',
+            item_type=Product.INGREDIENT,
+            base_unit='ML',
+            stock_quantity=Decimal('100.00'),
+        )
+        drink = Product.objects.create(
+            name='Action Test Recipe Americano',
+            sku='ACTION-RECIPE-AMERICANO',
+            item_type=Product.PRODUCT,
+            price=Decimal('125.00'),
+            recipe_data=[{'ingredient': ingredient.id, 'quantity': '10.00'}],
+        )
+        sale = self.create_sale(quantity=2, product=drink)
+        ingredient.refresh_from_db()
+        self.assertEqual(ingredient.stock_quantity, Decimal('80.00'))
+
+        payload = self.action_payload(sale, 'WASTAGE')
+        payload['items'][0]['product_id'] = drink.id
+        response = self.client.post('/api/pos/stock-actions/', payload, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        ingredient.refresh_from_db()
+        self.assertEqual(ingredient.stock_quantity, Decimal('70.00'))
+        movement = InventoryEvent.objects.get(product=ingredient, reason__startswith='POS WASTAGE')
+        self.assertEqual(movement.movement_type, 'OUT')
+        self.assertEqual(movement.quantity, Decimal('10.00'))
+
+    def test_customer_cannot_record_stock_actions(self):
+        sale = self.create_sale(quantity=1)
+        self.client.force_authenticate(self.customer)
+        response = self.client.post('/api/pos/stock-actions/', self.action_payload(sale, 'WASTAGE'), format='json')
+        self.assertEqual(response.status_code, 403)

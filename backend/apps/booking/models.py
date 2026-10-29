@@ -52,8 +52,14 @@ class Booking(models.Model):
         ('COMPLETED', 'Completed'),
         ('CANCELLED', 'Cancelled'),
     )
-    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bookings')
+    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='bookings')
     package = models.ForeignKey(Package, on_delete=models.CASCADE, related_name='bookings')
+    is_walk_in = models.BooleanField(default=False, db_index=True)
+    contact_name = models.CharField(max_length=200, blank=True, default='')
+    contact_email = models.EmailField(max_length=254, blank=True, default='')
+    contact_phone = models.CharField(max_length=30, blank=True, default='')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_bookings')
+    walk_in_idempotency_key = models.CharField(max_length=100, blank=True, null=True)
     scheduled_date = models.DateField()
     scheduled_time = models.TimeField()
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='PENDING')
@@ -69,6 +75,11 @@ class Booking(models.Model):
                 fields=['scheduled_date', 'scheduled_time'],
                 condition=models.Q(status__in=['PENDING', 'CONFIRMED', 'CONFIRMED_DP']),
                 name='booking_active_slot_unique',
+            ),
+            models.UniqueConstraint(
+                fields=['walk_in_idempotency_key'],
+                condition=models.Q(walk_in_idempotency_key__isnull=False) & ~models.Q(walk_in_idempotency_key=''),
+                name='booking_walkin_idempotency_unique',
             ),
             models.UniqueConstraint(
                 fields=['customer', 'idempotency_key'],
@@ -114,7 +125,8 @@ class Booking(models.Model):
         return ''
 
     def __str__(self):
-        return f"Booking {self.id}: {self.customer.username} - {self.package.name} on {self.scheduled_date} at {self.scheduled_time}"
+        customer_name = self.contact_name or (self.customer.username if self.customer_id else 'Walk-in')
+        return f"Booking {self.id}: {customer_name} - {self.package.name} on {self.scheduled_date} at {self.scheduled_time}"
 
 
 class BookingReview(models.Model):

@@ -23,6 +23,7 @@ from booking.serializers import (
     PackageSerializer,
     BookingSerializer,
     BookingPaymentSerializer,
+    WalkInBookingCreateSerializer,
     BookingReviewSerializer,
     StudioUnavailableDateSerializer,
 )
@@ -390,6 +391,80 @@ class BookingListCreateView(generics.ListCreateAPIView):
 
         return Response(BookingSerializer(booking, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
+
+class WalkInBookingCreateView(views.APIView):
+    permission_classes = [IsStaffOrAdmin]
+
+    def post(self, request, *args, **kwargs):
+        serializer = WalkInBookingCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        idempotency_key = str(data.get('idempotency_key') or get_idempotency_key(request) or '').strip()
+        if idempotency_key:
+            existing = Booking.objects.filter(walk_in_idempotency_key=idempotency_key).select_related(
+                'customer', 'created_by', 'package', 'package__service'
+            ).prefetch_related('payments').first()
+            if existing:
+                return Response(BookingSerializer(existing, context={'request': request}).data, status=status.HTTP_200_OK)
+        try:
+            with transaction.atomic():
+                lock_booking_date(data['scheduled_date'])
+                if idempotency_key:
+                    existing = Booking.objects.filter(walk_in_idempotency_key=idempotency_key).select_related(
+                        'customer', 'created_by', 'package', 'package__service'
+                    ).prefetch_related('payments').first()
+                    if existing:
+                        return Response(BookingSerializer(existing, context={'request': request}).data, status=status.HTTP_200_OK)
+                if not is_slot_available(data['package'].id, data['scheduled_date'], data['scheduled_time']):
+                    return Response({'scheduled_time': 'This schedule was just booked. Please select another available time slot.'}, status=status.HTTP_409_CONFLICT)
+                booking = Booking.objects.create(
+                    customer=None,
+                    package=data['package'],
+                    scheduled_date=data['scheduled_date'],
+                    scheduled_time=data['scheduled_time'],
+                    notes=data.get('notes', ''),
+                    is_walk_in=True,
+                    contact_name=data['customer_name'],
+                    contact_email=data.get('customer_email', ''),
+                    contact_phone=data['customer_phone'],
+                    created_by=request.user,
+                    walk_in_idempotency_key=idempotency_key or None,
+                )
+                AuditLog.objects.create(
+                    user=request.user,
+                    action='WALK_IN_BOOKING_CREATE',
+                    description=f'Created walk-in booking #{booking.id} for {booking.contact_name}.',
+                    metadata={'booking_id': booking.id, 'package_id': booking.package_id, 'scheduled_date': booking.scheduled_date.isoformat(), 'scheduled_time': booking.scheduled_time.isoformat()},
+                )
+                if data.get('payment_amount') is not None:
+                    method = data['payment_method']
+                    Payment.objects.create(
+                        payment_type=Payment.BOOKING,
+                        booking=booking,
+                        amount=data['payment_amount'],
+                        method=method,
+                        reference_number=(data.get('payment_reference') or '').strip() or None,
+                        status='PAID' if method == 'CASH' else 'PENDING_VERIFICATION',
+                        paid_at=timezone.now(),
+                        idempotency_key=f'{idempotency_key}-payment'[:100] if idempotency_key else None,
+                    )
+                    AuditLog.objects.create(
+                        user=request.user,
+                        action='BOOKING_PAYMENT_SUBMIT',
+                        description=f'Recorded {method.lower()} payment for walk-in booking #{booking.id}.',
+                        metadata={'booking_id': booking.id, 'amount': str(data['payment_amount']), 'method': method},
+                    )
+        except IntegrityError:
+            if idempotency_key:
+                existing = Booking.objects.filter(walk_in_idempotency_key=idempotency_key).select_related(
+                    'customer', 'created_by', 'package', 'package__service'
+                ).prefetch_related('payments').first()
+                if existing:
+                    return Response(BookingSerializer(existing, context={'request': request}).data, status=status.HTTP_200_OK)
+            return Response({'detail': 'The slot or payment reference was just claimed. Refresh and try again.'}, status=status.HTTP_409_CONFLICT)
+        booking = Booking.objects.select_related('customer', 'created_by', 'package', 'package__service').prefetch_related('payments').get(pk=booking.pk)
+        return Response(BookingSerializer(booking, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
 class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = BookingSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -454,7 +529,15 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
             old_values[field] = str(value) if value is not None else ''
         if requested_customer_fields:
             for field in requested_customer_fields:
-                old_values[field] = getattr(booking.customer, field, '') or ''
+                if booking.is_walk_in:
+                    old_values[field] = {
+                        'first_name': booking.contact_name,
+                        'last_name': '',
+                        'email': booking.contact_email,
+                        'phone_number': booking.contact_phone,
+                    }.get(field, '')
+                else:
+                    old_values[field] = getattr(booking.customer, field, '') or ''
         if 'total_price' in requested_edit_fields or 'package' in requested_edit_fields:
             old_values['total_price'] = str(booking.package.price)
 
@@ -499,7 +582,15 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                 new_values[field] = str(value) if value is not None else ''
             if requested_customer_fields:
                 for field in requested_customer_fields:
-                    new_values[field] = getattr(updated_booking.customer, field, '') or ''
+                    if updated_booking.is_walk_in:
+                        new_values[field] = {
+                            'first_name': updated_booking.contact_name,
+                            'last_name': '',
+                            'email': updated_booking.contact_email,
+                            'phone_number': updated_booking.contact_phone,
+                        }.get(field, '')
+                    else:
+                        new_values[field] = getattr(updated_booking.customer, field, '') or ''
             if 'package' in requested_edit_fields:
                 new_values['total_price'] = str(updated_booking.package.price)
 
@@ -529,9 +620,9 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                     description=f"Updated booking #{updated_booking.id}: {', '.join(sorted(changed_values.keys()))}."
                 )
 
-            if status_changed:
+            if status_changed and updated_booking.customer_id:
                 notify_booking_status(updated_booking)
-            elif changed_values:
+            elif changed_values and updated_booking.customer_id:
                 notify_booking_updated(updated_booking)
 
         updated_booking = Booking.objects.select_related('customer', 'package', 'package__service').prefetch_related(
@@ -647,7 +738,8 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                 )
                 AuditLog.objects.create(user=request.user, action='BOOKING_PAYMENT_SUBMIT',
                                         description=f'Submitted payment #{payment.id} for booking #{booking.id}.')
-                notify_booking_payment(payment)
+                if payment.booking.customer_id:
+                    notify_booking_payment(payment)
         except IntegrityError as exc:
             if payment and payment.receipt:
                 try:
@@ -814,7 +906,7 @@ class BookingPaymentVerifyView(generics.UpdateAPIView):
                 if previous_status == 'APPROVED':
                     action = 'BOOKING_PAYMENT_VERIFICATION_ISSUE'
 
-            if previous_status != new_status:
+            if previous_status != new_status and payment.booking.customer_id:
                 notify_booking_payment(payment)
 
         AuditLog.objects.create(

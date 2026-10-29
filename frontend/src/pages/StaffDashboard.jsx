@@ -1,4 +1,4 @@
-  import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
 import {
@@ -18,6 +18,8 @@ import { LoadingSpinner, Skeleton, SkeletonTable, SkeletonProfileCard } from '..
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import PaymentProofPreview from '../components/PaymentProofPreview';
+import PosStockActionModal from './PosStockActionModal';
+import WalkInBookingModal from './WalkInBookingModal';
 import { DataTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
@@ -25,6 +27,7 @@ import { getLocalPrinters, getLocalPrintingSetupMessage, isLocalStaffConsole, op
 import { brandAssets } from '../utils/cavAssets';
 import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
+import { calculateSalesRowsPerPage } from './salesLogLayout';
 
 export function StaffSkeleton() {
   return (
@@ -212,6 +215,7 @@ export default function StaffDashboard() {
   const confirm = useStyledConfirm();
   const [activeTab, setActiveTab] = useState('pos');
   const [staffBookings, setStaffBookings] = useState([]);
+  const [walkInBookingOpen, setWalkInBookingOpen] = useState(false);
   const [bookingsPage, setBookingsPage] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
@@ -241,7 +245,12 @@ export default function StaffDashboard() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [showCheckoutLoading, setShowCheckoutLoading] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState(null);
-  const [returningProductId, setReturningProductId] = useState(null);
+  const [stockActionType, setStockActionType] = useState(null);
+  const [stockActionPrefill, setStockActionPrefill] = useState(null);
+  const [stockActionProducts, setStockActionProducts] = useState([]);
+  const [stockActionProductsLoading, setStockActionProductsLoading] = useState(false);
+  const [stockActionSubmitting, setStockActionSubmitting] = useState(false);
+  const [stockActionError, setStockActionError] = useState('');
   const [receiptPrintError, setReceiptPrintError] = useState('');
   const [receiptPrintFallbackOrder, setReceiptPrintFallbackOrder] = useState(null);
   const [localPrintingEnabled, setLocalPrintingEnabled] = useState(() => localStorage.getItem(LOCAL_PRINTING_ENABLED_KEY) === 'true');
@@ -251,6 +260,7 @@ export default function StaffDashboard() {
   const [localPrinterLoading, setLocalPrinterLoading] = useState(false);
   const checkoutInFlightRef = useRef(false);
   const checkoutIdempotencyKeyRef = useRef('');
+  const stockActionInFlightRef = useRef(false);
 
   const [posSearch, setPosSearch] = useState('');
   const [invSearch, setInvSearch] = useState('');
@@ -275,6 +285,8 @@ export default function StaffDashboard() {
   const [paymentPage, setPaymentPage] = useState(1);
   const [inventoryPage, setInventoryPage] = useState(1);
   const [salesPage, setSalesPage] = useState(1);
+  const [salesRowsPerPage, setSalesRowsPerPage] = useState(TABLE_PAGE_SIZE);
+  const salesTableAreaRef = useRef(null);
   const [catalogPage, setCatalogPage] = useState(1);
   const [purchaseOrderPage, setPurchaseOrderPage] = useState(1);
   const [inventorySort, setInventorySort] = useState({ key: 'name', dir: 'asc' });
@@ -730,22 +742,60 @@ export default function StaffDashboard() {
     }
   };
 
-  const handleReturnItem = async (order, item) => {
-    if (returningProductId) return;
-    setReturningProductId(item.product);
+  const loadStockActionProducts = async () => {
+    setStockActionProductsLoading(true);
     try {
-      const response = await client.post(`/api/pos/orders/${order.id}/returns/`, {
-        product_id: item.product,
-        quantity: 1,
-        disposition: 'WASTED',
-        reason: 'Returned beverage marked as wastage',
-      });
-      setOrders(current => current.map(row => row.id === response.data.id ? response.data : row));
-      setReceiptOrder(response.data);
-    } catch (error) {
-      alert(getApiErrorMessage(error, 'The return could not be recorded.'));
+      const allProducts = [];
+      let offset = 0;
+      while (true) {
+        const response = await client.get('/api/inventory/products/', { params: { limit: 200, offset } });
+        const page = Array.isArray(response.data) ? response.data : [];
+        allProducts.push(...page);
+        if (page.length < 200) break;
+        offset += page.length;
+      }
+      setStockActionProducts(normalizeRowsById(allProducts, row => row?.name)
+        .filter(product => product.item_type === 'PRODUCT' && product.is_active !== false));
+    } catch {
+      setStockActionProducts(products.filter(product => product.item_type === 'PRODUCT' && product.is_active !== false));
     } finally {
-      setReturningProductId(null);
+      setStockActionProductsLoading(false);
+    }
+  };
+
+  const openStockAction = (actionType, prefill = null) => {
+    setStockActionError('');
+    setStockActionProducts(products.filter(product => product.item_type === 'PRODUCT' && product.is_active !== false));
+    setStockActionPrefill(prefill);
+    setStockActionType(actionType);
+    void loadStockActionProducts();
+  };
+
+  const openRefundForOrderItem = (order, item) => {
+    setReceiptOrder(null);
+    openStockAction('REFUND', {
+      transactionId: order.transaction_id || '',
+      productId: item.product,
+      productName: item.product_details?.name || 'Product',
+      quantity: 1,
+    });
+  };
+
+  const handleStockActionSubmit = async (payload) => {
+    if (stockActionInFlightRef.current) return;
+    stockActionInFlightRef.current = true;
+    setStockActionSubmitting(true);
+    setStockActionError('');
+    try {
+      const response = await client.post('/api/pos/stock-actions/', payload);
+      setStockActionType(null);
+      await Promise.all(['pos', 'inventory', 'catalog', 'sales'].map(tab => loadTabData(tab, true)));
+      alert(`${payload.action_type === 'REFUND' ? 'Refund' : 'Wastage'} recorded for ${response.data.transaction_id}.`);
+    } catch (actionError) {
+      setStockActionError(getApiErrorMessage(actionError, 'Could not save this stock action. Check the transaction and quantities, then try again.'));
+    } finally {
+      stockActionInFlightRef.current = false;
+      setStockActionSubmitting(false);
     }
   };
 
@@ -1350,7 +1400,35 @@ export default function StaffDashboard() {
     return isCompletedSale && matchesPayment && matchesStart && matchesEnd;
   });
   const sortedOrders = sortRows(filteredOrders, salesSort);
-  const pagedOrders = paginateRows(sortedOrders, salesPage, TABLE_PAGE_SIZE);
+  const pagedOrders = paginateRows(sortedOrders, salesPage, salesRowsPerPage);
+
+  useLayoutEffect(() => {
+    if (activeTab !== 'sales') return undefined;
+    const tableArea = salesTableAreaRef.current;
+    if (!tableArea) return undefined;
+
+    const measureRows = () => {
+      const table = tableArea.querySelector('table');
+      const headerHeight = table?.querySelector('thead')?.getBoundingClientRect().height || 0;
+      const rowHeights = Array.from(table?.querySelectorAll('tbody tr') || [])
+        .map(row => row.getBoundingClientRect().height);
+      const nextPageSize = calculateSalesRowsPerPage({
+        availableHeight: tableArea.clientHeight,
+        headerHeight,
+        rowHeights,
+      });
+      setSalesRowsPerPage(current => (current === nextPageSize ? current : nextPageSize));
+    };
+
+    measureRows();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureRows) : null;
+    observer?.observe(tableArea);
+    window.addEventListener('resize', measureRows);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measureRows);
+    };
+  }, [activeTab, salesPage, salesRowsPerPage, filteredOrders.length]);
   const filteredBookingPayments = bookingPayments.filter(payment => (
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
   ));
@@ -1375,13 +1453,14 @@ export default function StaffDashboard() {
       value: product.id,
       label: `${product.name}${product.sku ? ` · ${product.sku}` : ''}${product.is_active === false ? ' · Inactive (existing order)' : ''}`,
     }));
+  const isSalesTab = activeTab === 'sales';
 
   if (!initialDataReady && (loading || isCurrentTabLoading)) {
     return <StaffSkeleton />;
   }
 
   return (
-    <div className="min-h-screen bg-cream flex flex-col md:flex-row" aria-busy={loading}>
+    <div className={`${isSalesTab ? 'h-dvh overflow-hidden' : 'min-h-screen'} bg-cream flex flex-col md:flex-row`} aria-busy={loading}>
       <Sidebar
         brand="CAV Terminal"
         brandSubtitle="Staff Console"
@@ -1396,10 +1475,10 @@ export default function StaffDashboard() {
         onSignOutConfirm={handleLogout}
       />
 
-      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
+      <div className={`flex-1 flex flex-col overflow-hidden ${isSalesTab ? 'h-dvh min-h-0' : 'min-h-screen'}`}>
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
+        <main className={`flex-1 p-4 md:p-6 lg:p-8 ${isSalesTab ? 'flex min-h-0 flex-col overflow-hidden' : 'overflow-y-auto scrollbar-thin'}`}>
           {error && (
             <div className="bg-red-50 border border-red-100 text-red-800 p-5 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
               <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5" />
@@ -1727,6 +1806,24 @@ export default function StaffDashboard() {
                         </div>
                       </div>
                   )}
+                  <div className="mt-3 grid grid-cols-2 gap-2 border-t border-espresso/5 pt-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full border-orange-200 text-orange-800 hover:bg-orange-50"
+                      onClick={() => openStockAction('WASTAGE')}
+                    >
+                      Wastage
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full border-red-200 text-red-700 hover:bg-red-50"
+                      onClick={() => openStockAction('REFUND')}
+                    >
+                      Refund
+                    </Button>
+                  </div>
                 </Card>
               </div>
             </div>
@@ -1736,14 +1833,17 @@ export default function StaffDashboard() {
           {activeTab === 'bookings' && (
             <div className="space-y-5 animate-in-up" key="bookings">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div><h1 className="heading-page text-espresso">Bookings</h1><p className="mt-1 text-xs text-espresso/50">Live studio and event reservations across customer accounts.</p></div>
-                <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData('bookings', true)} loading={!!loadingResources.bookings}>Refresh bookings</Button>
+                <div><h1 className="heading-page text-espresso">Bookings</h1><p className="mt-1 text-xs text-espresso/50">Live reservations, including customer and walk-in bookings.</p></div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" icon={Plus} onClick={() => setWalkInBookingOpen(true)}>Walk-in Booking</Button>
+                  <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData('bookings', true)} loading={!!loadingResources.bookings}>Refresh bookings</Button>
+                </div>
               </div>
               <Card>
                 <DataTable
                   columns={[
                     { key: 'id', label: 'Booking', render: booking => `#${booking.id}` },
-                    { key: 'customer.username', label: 'Customer', render: booking => <><span>{booking.customer?.first_name || ''} {booking.customer?.last_name || ''}</span><span className="block text-[10px] text-espresso/45">{booking.customer?.email || booking.customer?.username || 'Customer'}</span></> },
+                    { key: 'customer.username', label: 'Customer', render: booking => <><span>{booking.customer_name || `${booking.customer?.first_name || ''} ${booking.customer?.last_name || ''}`.trim() || 'Customer'}</span><span className="block text-[10px] text-espresso/45">{booking.customer_email || booking.customer?.email || booking.customer?.username || booking.customer_phone || 'No account'}</span>{booking.is_walk_in && <span className="mt-1 inline-flex rounded-full bg-gold/15 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-gold-dark">Walk-in · {booking.created_by_name || 'Staff'}</span>}</> },
                     { key: 'package_details.name', label: 'Package', render: booking => booking.package_details?.name || `Package #${booking.package}` },
                     { key: 'scheduled_date', label: 'Schedule', render: booking => `${booking.scheduled_date} · ${booking.scheduled_time}` },
                     { key: 'status', label: 'Booking status', render: booking => <StatusBadge status={booking.status} /> },
@@ -1757,6 +1857,7 @@ export default function StaffDashboard() {
                 />
                 <PaginationControls page={bookingsPage} setPage={setBookingsPage} total={staffBookings.length} pageSize={TABLE_PAGE_SIZE} />
               </Card>
+              <WalkInBookingModal open={walkInBookingOpen} onClose={() => setWalkInBookingOpen(false)} onCreated={() => loadTabData('bookings', true)} />
             </div>
           )}
 
@@ -2192,17 +2293,18 @@ export default function StaffDashboard() {
 
           {/* SALES LOGS */}
           {activeTab === 'sales' && (
-            <div className="space-y-6 animate-in-up" key="sales">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 animate-in-up" key="sales">
+              <div className="flex shrink-0 flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                 <div>
                   <h1 className="heading-page text-espresso">Daily Sales Logs</h1>
-                  <p className="text-xs text-espresso/50 mt-1">Review historical transactions and receipt details.</p>
+                  <p className="mt-1 hidden text-xs text-espresso/50 sm:block">Review historical transactions and receipt details.</p>
                 </div>
-                <div className="w-full sm:w-auto flex flex-col lg:flex-row lg:items-end gap-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-[minmax(140px,1fr)_minmax(140px,1fr)_auto] gap-2">
+                <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-end sm:gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
                     <Input
                       label="From"
                       type="date"
+                      className="min-w-0 !px-2 !py-2 text-xs"
                       value={salesStartDate}
                       max={salesEndDate || undefined}
                       onChange={e => setSalesStartDate(e.target.value)}
@@ -2210,6 +2312,7 @@ export default function StaffDashboard() {
                     <Input
                       label="To"
                       type="date"
+                      className="min-w-0 !px-2 !py-2 text-xs"
                       value={salesEndDate}
                       min={salesStartDate || undefined}
                       onChange={e => setSalesEndDate(e.target.value)}
@@ -2218,12 +2321,12 @@ export default function StaffDashboard() {
                       type="button"
                       onClick={() => { setSalesStartDate(''); setSalesEndDate(''); }}
                       disabled={!salesStartDate && !salesEndDate}
-                      className="self-end rounded-[18px] border border-espresso/10 bg-white/90 px-4 py-3 text-xs font-black text-espresso/60 shadow-[0_10px_26px_rgba(46,26,17,0.04)] transition-all hover:text-espresso disabled:opacity-40"
+                      className="self-end rounded-xl border border-espresso/10 bg-white/90 px-3 py-2.5 text-xs font-black text-espresso/60 shadow-sm transition-all hover:text-espresso disabled:opacity-40"
                     >
                       Clear
                     </button>
                   </div>
-                  <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
+                  <div className="flex w-fit bg-white border border-espresso/10 rounded-xl p-1 text-xs">
                     {[
                       ['ALL', 'All'],
                       ['CASH', 'Cash'],
@@ -2242,7 +2345,8 @@ export default function StaffDashboard() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
+              <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-espresso/5 bg-white p-3 shadow-sm">
+                <div ref={salesTableAreaRef} className="min-h-0 flex-1">
                 <DataTable
                   columns={[
                     { key: 'transaction_id', label: 'Transaction ID', render: order => order.transaction_id || 'Transaction pending' },
@@ -2279,8 +2383,18 @@ export default function StaffDashboard() {
                   emptyTitle="No transactions"
                   emptyDescription="No sales match the selected payment method or date range."
                   minWidth={700}
+                  containerClassName="h-full"
+                  emptyStateClassName="h-full !py-4"
                 />
-                <PaginationControls page={salesPage} setPage={setSalesPage} total={filteredOrders.length} pageSize={TABLE_PAGE_SIZE} />
+                </div>
+                <PaginationControls
+                  page={salesPage}
+                  setPage={setSalesPage}
+                  total={filteredOrders.length}
+                  pageSize={salesRowsPerPage}
+                  alwaysVisible
+                  compact
+                />
               </div>
             </div>
           )}
@@ -2717,7 +2831,7 @@ export default function StaffDashboard() {
                 const estimatedProfitLoss = netRevenue - Number(item.cost || 0) * quantity;
                 return <div key={item.id || `${item.product}-${index}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-espresso/[0.06] pb-2">
                   <div className="min-w-0"><p className="font-bold text-espresso">{item.product_details?.name || 'Item'} × {quantity}</p><p className="text-espresso/55">Unit {formatReceiptCurrency(item.price)} · Item discount {formatReceiptCurrency(item.discount_amount || 0)} · Returned {returned} · Wasted {item.wasted_quantity || 0}</p><p className="text-espresso/55">Net sales {formatReceiptCurrency(netRevenue)} · Estimated profit / loss {formatReceiptCurrency(estimatedProfitLoss)}</p></div>
-                  {remaining > 0 && receiptOrder.payment_status === 'PAID' && <Button variant="outline" size="xs" loading={returningProductId === item.product} disabled={returningProductId !== null} onClick={() => handleReturnItem(receiptOrder, item)}>Return 1 and mark wasted</Button>}
+                  {remaining > 0 && receiptOrder.payment_status === 'PAID' && <Button variant="outline" size="xs" onClick={() => openRefundForOrderItem(receiptOrder, item)}>Refund 1</Button>}
                 </div>;
               })}
             </div>
@@ -2737,6 +2851,18 @@ export default function StaffDashboard() {
           <Button variant="outline" className="flex-1" onClick={() => setReceiptOrder(null)}>Back to Sales Log</Button>
         </div>
       </Modal>
+
+      <PosStockActionModal
+        open={Boolean(stockActionType)}
+        actionType={stockActionType}
+        products={stockActionProducts}
+        loadingProducts={stockActionProductsLoading}
+        initialValues={stockActionPrefill}
+        submitting={stockActionSubmitting}
+        error={stockActionError}
+        onClose={() => { if (!stockActionSubmitting) setStockActionType(null); }}
+        onSubmit={handleStockActionSubmit}
+      />
     </div>
   );
 }

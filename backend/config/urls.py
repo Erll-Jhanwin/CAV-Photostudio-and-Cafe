@@ -31,7 +31,7 @@ from users.views import (
     PrivacyExportView,
 )
 from booking.views import (
-    ServiceListView, PackageListView, BookingListCreateView, BookingDetailUpdateView,
+    ServiceListView, PackageListView, BookingListCreateView, WalkInBookingCreateView, BookingDetailUpdateView,
     BookingPaymentListCreateView, BookingPaymentVerifyView, BookingAvailabilityView,
     BookingPaymentReferenceCheckView,
     BookingPaymentMethodsView, BookingPaymentReceiptView,
@@ -44,7 +44,7 @@ from inventory.views import (
     PurchaseOrderDetailUpdateView, IngredientListCreateView, IngredientDetailUpdateView, ProductSalesInventoryView,
     RecipeIngredientListCreateView, IngredientStockMovementListView, GenerateRecipeIngredientsView
 )
-from pos.views import OrderListCreateView, OrderDetailView, OrderReturnView, PaymentCreateView, EndOfDayReportListCreateView, EndOfDayReportDetailView, EndOfDayReportReprintView, EndOfDayReportMarkPrintedView, EndOfDayReportSummaryView
+from pos.views import OrderListCreateView, OrderDetailView, OrderReturnView, POSStockActionView, PaymentCreateView, EndOfDayReportListCreateView, EndOfDayReportDetailView, EndOfDayReportReprintView, EndOfDayReportMarkPrintedView, EndOfDayReportSummaryView
 from chatbot.views import ChatbotQueryView, FAQListCreateView, FAQDetailUpdateView
 from dashboard.views import DashboardAnalyticsView
 from forecasting.views import ForecastingDataView, SalesHistoryImportView
@@ -95,6 +95,7 @@ urlpatterns = [
     path('api/bookings/studio-unavailable-dates/', StudioUnavailableDateListCreateView.as_view(), name='studio_unavailable_date_list_create'),
     path('api/bookings/studio-unavailable-dates/<int:pk>/', StudioUnavailableDateDetailView.as_view(), name='studio_unavailable_date_detail'),
     path('api/bookings/', BookingListCreateView.as_view(), name='booking_list_create'),
+    path('api/bookings/walk-in/', WalkInBookingCreateView.as_view(), name='booking_walk_in_create'),
     path('api/bookings/<int:pk>/', BookingDetailUpdateView.as_view(), name='booking_detail_update'),
     path('api/bookings/reviews/', BookingReviewCreateView.as_view(), name='booking_review_create'),
     path('api/bookings/reviews/all/', BookingReviewListView.as_view(), name='booking_review_list'),
@@ -124,6 +125,7 @@ urlpatterns = [
     path('api/pos/orders/', OrderListCreateView.as_view(), name='pos_orders'),
     path('api/pos/orders/<int:pk>/', OrderDetailView.as_view(), name='pos_order_detail'),
     path('api/pos/orders/<int:pk>/returns/', OrderReturnView.as_view(), name='pos_order_return'),
+    path('api/pos/stock-actions/', POSStockActionView.as_view(), name='pos_stock_action'),
     path('api/pos/payments/', PaymentCreateView.as_view(), name='pos_payments'),
     path('api/pos/end-of-day-summary/', EndOfDayReportSummaryView.as_view(), name='pos_end_of_day_summary'),
     path('api/pos/end-of-day-reports/', EndOfDayReportListCreateView.as_view(), name='pos_end_of_day_reports'),

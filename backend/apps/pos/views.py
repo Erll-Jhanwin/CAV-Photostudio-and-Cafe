@@ -1,13 +1,15 @@
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import hashlib
 import json
 
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import generics, permissions, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -15,7 +17,7 @@ from audit.models import AuditLog
 from booking.models import Booking
 from payment.models import Payment
 from inventory.models import InventoryEvent, Product
-from pos.models import Order
+from pos.models import Order, POSStockAction
 from pos.receipt_printing import print_end_of_day_report, print_receipt
 from pos.serializers import EndOfDayReportSerializer, OrderSerializer
 from users.permissions import IsAdmin, IsStaffOrAdmin
@@ -483,6 +485,268 @@ class OrderReturnView(APIView):
                 metadata={'order_id': order.pk, 'product_id': product_id, 'quantity': quantity, 'disposition': disposition, 'refund_amount': str(refund), 'loss_at_cost': event['loss_at_cost']},
             )
         return Response(OrderSerializer(order).data)
+
+
+class POSStockActionView(APIView):
+    """Record product wastage or refunds against a paid POS transaction."""
+    permission_classes = [IsStaffOrAdmin]
+
+    @staticmethod
+    def response_for(action):
+        return {
+            'action_id': action.pk,
+            'action_type': action.action_type,
+            'transaction_id': action.transaction_id,
+            'reason': action.reason,
+            'staff_name': action.staff_name,
+            'items': action.items,
+            'recorded_at': action.created_at.isoformat(),
+        }
+
+    def post(self, request):
+        if request.user.role not in {'STAFF', 'ADMIN'}:
+            return Response({'detail': 'Staff access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        action_type = str(request.data.get('action_type') or '').strip().upper()
+        transaction_id = str(request.data.get('transaction_id') or '').strip()
+        reason = str(request.data.get('reason') or '').strip()
+        idempotency_key = str(request.data.get('idempotency_key') or '').strip()
+        raw_items = request.data.get('items')
+        if action_type not in {POSStockAction.WASTAGE, POSStockAction.REFUND}:
+            return Response({'action_type': 'Choose WASTAGE or REFUND.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not transaction_id:
+            return Response({'transaction_id': 'Transaction ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(transaction_id) > 24:
+            return Response({'transaction_id': 'Transaction ID is invalid.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not reason:
+            return Response({'reason': 'A reason is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(reason) > 300:
+            return Response({'reason': 'Reason must be 300 characters or fewer.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not 8 <= len(idempotency_key) <= 100:
+            return Response({'idempotency_key': 'A valid idempotency key is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(raw_items, list) or not raw_items:
+            return Response({'items': 'Select at least one product.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        items = []
+        seen_product_ids = set()
+        for raw in raw_items:
+            if not isinstance(raw, dict):
+                return Response({'items': 'Each selected item must be an object.'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                product_id = int(raw.get('product_id'))
+                quantity_value = raw.get('quantity')
+                if isinstance(quantity_value, bool) or str(quantity_value).strip() != str(int(quantity_value)):
+                    raise ValueError
+                quantity = int(quantity_value)
+            except (TypeError, ValueError, OverflowError):
+                return Response({'items': 'Product and whole-number quantity are required.'}, status=status.HTTP_400_BAD_REQUEST)
+            if product_id <= 0 or quantity <= 0:
+                return Response({'items': 'Product and quantity must be greater than zero.'}, status=status.HTTP_400_BAD_REQUEST)
+            if product_id in seen_product_ids:
+                return Response({'items': 'A product can only be selected once per action.'}, status=status.HTTP_400_BAD_REQUEST)
+            seen_product_ids.add(product_id)
+            normalized = {'product_id': product_id, 'quantity': quantity}
+            if action_type == POSStockAction.REFUND:
+                disposition = str(raw.get('disposition') or '').strip().upper()
+                if disposition not in {'WASTED', 'RESTOCKED'}:
+                    return Response({'items': 'Choose whether each refunded product is WASTED or RESTOCKED.'}, status=status.HTTP_400_BAD_REQUEST)
+                normalized['disposition'] = disposition
+            items.append(normalized)
+
+        fingerprint_payload = {
+            'action_type': action_type,
+            'transaction_id': transaction_id,
+            'reason': reason,
+            'items': sorted(items, key=lambda item: item['product_id']),
+        }
+        fingerprint = hashlib.sha256(json.dumps(fingerprint_payload, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
+
+        try:
+            with transaction.atomic():
+                existing = POSStockAction.objects.filter(staff=request.user, idempotency_key=idempotency_key).first()
+                if existing:
+                    if existing.request_fingerprint != fingerprint:
+                        return Response({'detail': 'This submission key was already used for a different action.'}, status=status.HTTP_409_CONFLICT)
+                    return Response(self.response_for(existing), status=status.HTTP_200_OK)
+
+                try:
+                    order = Order.objects.select_for_update().get(transaction_id=transaction_id)
+                except Order.DoesNotExist:
+                    return Response({'transaction_id': 'Transaction was not found.'}, status=status.HTTP_404_NOT_FOUND)
+                if order.order_type == 'END_OF_DAY_REPORT' or order.payment_status != 'PAID':
+                    return Response({'transaction_id': 'Only completed, paid transactions can be used.'}, status=status.HTTP_409_CONFLICT)
+
+                lines = [dict(row) for row in (order.line_items or [])]
+                products = {
+                    product.pk: product for product in Product.objects.select_for_update().filter(
+                        pk__in=seen_product_ids, item_type=Product.PRODUCT,
+                    )
+                }
+                normalized_events = []
+                product_movements = []
+                ingredient_movements = []
+                for item in items:
+                    product_id = item['product_id']
+                    product = products.get(product_id)
+                    if not product:
+                        raise ValidationError({'items': f"Product {product_id} was not found."})
+                    line = next((row for row in lines if int(row.get('product') or 0) == product_id), None)
+                    if not line:
+                        raise ValidationError({'items': f"{product.name} is not part of this transaction."})
+                    quantity = item['quantity']
+                    sold_quantity = int(line.get('quantity') or 0)
+                    returned_quantity = int(line.get('returned_quantity') or 0)
+                    if action_type == POSStockAction.REFUND and quantity > sold_quantity - returned_quantity:
+                        raise ValidationError({'items': f"Refund quantity for {product.name} exceeds the unreturned quantity."})
+
+                    disposition = item.get('disposition', 'WASTED')
+                    changes_stock = action_type == POSStockAction.WASTAGE or (action_type == POSStockAction.REFUND and disposition == 'RESTOCKED')
+                    direction = 'OUT' if action_type == POSStockAction.WASTAGE else 'IN'
+                    before = None
+                    after = None
+                    item_stock_movements = []
+                    if changes_stock:
+                        recipe = list(line.get('recipe') or [])
+                        if recipe:
+                            recipe_requirements = defaultdict(Decimal)
+                            for recipe_row in recipe:
+                                try:
+                                    ingredient_id = int(recipe_row.get('ingredient') or 0)
+                                    per_item = Decimal(str(recipe_row.get('quantity') or 0))
+                                except (TypeError, ValueError, InvalidOperation):
+                                    raise ValidationError({'items': f"The saved recipe for {product.name} is invalid."})
+                                if ingredient_id > 0 and per_item > 0:
+                                    recipe_requirements[ingredient_id] += per_item * quantity
+                            locked_ingredients = {
+                                ingredient.pk: ingredient for ingredient in Product.objects.select_for_update().filter(
+                                    pk__in=recipe_requirements, item_type=Product.INGREDIENT,
+                                )
+                            }
+                            if set(locked_ingredients) != set(recipe_requirements):
+                                raise ValidationError({'items': f"The saved recipe ingredients for {product.name} are unavailable."})
+                            for ingredient_id, amount in recipe_requirements.items():
+                                ingredient = locked_ingredients[ingredient_id]
+                                ingredient_before = ingredient.stock_quantity
+                                if direction == 'OUT' and ingredient_before < amount:
+                                    raise ValidationError({'items': f"Insufficient {ingredient.name} for this wastage."})
+                                ingredient.stock_quantity += amount if direction == 'IN' else -amount
+                                ingredient_movements.append((ingredient, direction, amount, ingredient_before, ingredient.stock_quantity, product.name))
+                                item_stock_movements.append({
+                                    'inventory_product_id': ingredient.pk,
+                                    'product_name': ingredient.name,
+                                    'movement_type': direction,
+                                    'quantity': str(amount),
+                                    'before': str(ingredient_before),
+                                    'after': str(ingredient.stock_quantity),
+                                })
+                            Product.objects.bulk_update(locked_ingredients.values(), ['stock_quantity'])
+                        else:
+                            before = product.stock_level
+                            if direction == 'OUT' and before < quantity:
+                                raise ValidationError({'items': f"Insufficient stock for {product.name}. Current stock: {before}."})
+                            product.stock_level += quantity if direction == 'IN' else -quantity
+                            after = product.stock_level
+                            product.save(update_fields=['stock_level', 'updated_at'])
+                            product_movements.append((product, direction, quantity, before, after))
+                            item_stock_movements.append({
+                                'inventory_product_id': product.pk,
+                                'product_name': product.name,
+                                'movement_type': direction,
+                                'quantity': quantity,
+                                'before': before,
+                                'after': after,
+                            })
+
+                    refund_amount = Decimal('0.00')
+                    event = {
+                        'quantity': quantity,
+                        'disposition': disposition,
+                        'reason': reason,
+                        'staff_id': request.user.pk,
+                        'staff_name': request.user.get_full_name() or request.user.username,
+                        'transaction_id': order.transaction_id,
+                        'timestamp': timezone.now().isoformat(),
+                    }
+                    if action_type == POSStockAction.REFUND:
+                        raw_line_total = Decimal(str(line.get('net_subtotal') or line.get('subtotal') or 0))
+                        previously_refunded = Decimal(str(line.get('refunded_amount') or '0.00'))
+                        cumulative_refund = (raw_line_total * (returned_quantity + quantity) / max(sold_quantity, 1)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                        refund_amount = cumulative_refund - previously_refunded
+                        line['returned_quantity'] = returned_quantity + quantity
+                        if disposition == 'WASTED':
+                            line['wasted_quantity'] = int(line.get('wasted_quantity') or 0) + quantity
+                        line['refunded_amount'] = str((previously_refunded + refund_amount).quantize(Decimal('0.01')))
+                        event['refund_amount'] = str(refund_amount)
+                        line['returns'] = [*(line.get('returns') or []), event]
+                        order.returned_amount += refund_amount
+                        order.return_events = [*(order.return_events or []), {'product_id': product_id, 'action_type': 'REFUND', **event}]
+                    else:
+                        line['wasted_quantity'] = int(line.get('wasted_quantity') or 0) + quantity
+                        line['wastage_events'] = [*(line.get('wastage_events') or []), event]
+                        order.return_events = [*(order.return_events or []), {'product_id': product_id, 'action_type': 'WASTAGE', **event}]
+                    normalized_events.append({
+                        'product_id': product_id,
+                        'product_name': product.name,
+                        'quantity': quantity,
+                        'disposition': disposition if action_type == POSStockAction.REFUND else None,
+                        'refund_amount': str(refund_amount),
+                        'stock_before': before,
+                        'stock_after': after,
+                        'stock_movements': item_stock_movements,
+                    })
+
+                action = POSStockAction.objects.create(
+                    order=order,
+                    staff=request.user,
+                    staff_name=request.user.get_full_name() or request.user.username,
+                    action_type=action_type,
+                    transaction_id=order.transaction_id,
+                    reason=reason,
+                    idempotency_key=idempotency_key,
+                    request_fingerprint=fingerprint,
+                    items=normalized_events,
+                )
+                order.line_items = lines
+                order.save(update_fields=['line_items', 'return_events', 'returned_amount'])
+                for product, movement_type, quantity, before, after in product_movements:
+                    InventoryEvent.objects.create(
+                        event_type=InventoryEvent.STOCK_MOVEMENT,
+                        product=product,
+                        user=request.user,
+                        movement_type=movement_type,
+                        quantity=quantity,
+                        reason=f"POS {action_type} {order.transaction_id}: {reason}"[:150],
+                        notes=f"Stock before: {before}; after: {after}; action #{action.pk}",
+                        payload={'stock_action_id': action.pk, 'transaction_id': order.transaction_id, 'before': before, 'after': after},
+                    )
+                for ingredient, movement_type, quantity, before, after, product_name in ingredient_movements:
+                    InventoryEvent.objects.create(
+                        event_type=InventoryEvent.INGREDIENT_MOVEMENT,
+                        product=ingredient,
+                        user=request.user,
+                        movement_type=movement_type,
+                        quantity=quantity,
+                        input_quantity=quantity,
+                        input_unit=ingredient.base_unit,
+                        reason=f"POS {action_type} {product_name} {order.transaction_id}"[:150],
+                        notes=f"Reason: {reason}; before: {before}; after: {after}; action #{action.pk}",
+                        payload={'stock_action_id': action.pk, 'transaction_id': order.transaction_id, 'related_product': product_name, 'before': str(before), 'after': str(after)},
+                    )
+                AuditLog.objects.create(
+                    user=request.user,
+                    action=f'POS_{action_type}',
+                    description=f"Recorded {action_type.lower()} for transaction {order.transaction_id}: {reason}",
+                    metadata={'stock_action_id': action.pk, 'order_id': order.pk, 'transaction_id': order.transaction_id, 'items': normalized_events, 'reason': reason},
+                )
+                response_data = self.response_for(action)
+            return Response(response_data, status=status.HTTP_201_CREATED)
+        except IntegrityError:
+            existing = POSStockAction.objects.filter(staff=request.user, idempotency_key=idempotency_key).first()
+            if existing and existing.request_fingerprint == fingerprint:
+                return Response(self.response_for(existing), status=status.HTTP_200_OK)
+            if existing:
+                return Response({'detail': 'This submission key was already used for a different action.'}, status=status.HTTP_409_CONFLICT)
+            raise
 
 
 class PaymentCreateView(generics.CreateAPIView):

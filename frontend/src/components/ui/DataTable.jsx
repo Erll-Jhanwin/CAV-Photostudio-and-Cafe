@@ -50,10 +50,13 @@ export function PaginationControls({
   total,
   pageSize,
   setPageSize,
+  alwaysVisible = false,
+  compact = false,
+  className = '',
   pageSizeOptions = [5, 10, 25, 50],
 }) {
   const pages = Math.max(Math.ceil(total / pageSize), 1);
-  if (pages <= 1 && !setPageSize) return null;
+  if (pages <= 1 && !setPageSize && !alwaysVisible) return null;
 
   const safePage = Math.min(Math.max(page, 1), pages);
   const start = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
@@ -62,7 +65,7 @@ export function PaginationControls({
   const visiblePages = Array.from({ length: Math.min(5, pages) }, (_, i) => firstPage + i).filter(value => value <= pages);
 
   return (
-    <div className="mt-3 flex flex-col gap-3 border-t border-espresso/[0.06] pt-3 text-xs text-espresso/60 sm:flex-row sm:items-center sm:justify-between">
+    <div className={`${compact ? 'mt-0 gap-2 pt-2' : 'mt-3 gap-3 pt-3'} flex shrink-0 flex-col border-t border-espresso/[0.06] text-xs text-espresso/60 sm:flex-row sm:items-center sm:justify-between ${className}`}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-bold text-espresso/70">
           Showing {start}-{end} of {total}
@@ -123,11 +126,13 @@ export function DataTable({
   emptyDescription = 'No data matches the current filters.',
   minWidth = 760,
   actionWidth = 'w-[132px]',
+  containerClassName = '',
+  emptyStateClassName = '',
 }) {
   const normalizedColumns = columns.map(normalizeColumn);
 
   if (!rows?.length) {
-    return <EmptyState icon={emptyIcon} title={emptyTitle} description={emptyDescription} />;
+    return <EmptyState icon={emptyIcon} title={emptyTitle} description={emptyDescription} className={emptyStateClassName} />;
   }
 
   const handleSort = (column) => {
@@ -136,7 +141,7 @@ export function DataTable({
   };
 
   return (
-    <div className="w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/80 scrollbar-thin">
+    <div className={`w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/80 scrollbar-thin ${containerClassName}`}>
       <table className="w-full table-fixed text-xs" style={{ minWidth }}>
         <thead className="sticky top-0 z-10 bg-cream">
           <tr className="border-b border-espresso/[0.08] text-espresso/55 uppercase tracking-wider">

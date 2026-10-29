@@ -3,6 +3,7 @@ import logging
 import re
 from django.utils import timezone
 from rest_framework import serializers
+from booking.availability import parse_time_value
 from booking.models import Service, Package, Booking, BookingReview, StudioUnavailableDate
 from booking.availability import is_slot_available
 from payment.models import Payment
@@ -30,6 +31,59 @@ class BookingItemSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=100)
     price = serializers.DecimalField(max_digits=10, decimal_places=2)
     quantity = serializers.IntegerField()
+
+
+class WalkInBookingCreateSerializer(serializers.Serializer):
+    package = serializers.PrimaryKeyRelatedField(queryset=Package.objects.select_related('service').all())
+    scheduled_date = serializers.DateField()
+    scheduled_time = serializers.TimeField()
+    customer_name = serializers.CharField(max_length=200)
+    customer_email = serializers.EmailField(max_length=254, required=False, allow_blank=True)
+    customer_phone = serializers.CharField(max_length=30)
+    notes = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+    idempotency_key = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    payment_method = serializers.ChoiceField(choices=Payment.METHOD_CHOICES, required=False)
+    payment_amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    payment_reference = serializers.CharField(max_length=100, required=False, allow_blank=True)
+
+    def validate_customer_name(self, value):
+        value = ' '.join(value.split())
+        if not value:
+            raise serializers.ValidationError('Customer name is required.')
+        return value
+
+    def validate_customer_phone(self, value):
+        value = value.strip()
+        if len(''.join(ch for ch in value if ch.isdigit())) < 7:
+            raise serializers.ValidationError('Enter a valid contact number.')
+        return value
+
+    def validate_scheduled_time(self, value):
+        try:
+            return parse_time_value(value)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError('Choose an available time slot.')
+
+    def validate(self, attrs):
+        has_amount = attrs.get('payment_amount') is not None
+        has_method = bool(attrs.get('payment_method'))
+        has_reference = bool((attrs.get('payment_reference') or '').strip())
+        if has_amount != has_method or (has_amount and attrs.get('payment_method') != 'CASH' and not has_reference):
+            raise serializers.ValidationError({'payment_amount': 'Choose a payment method and amount; non-cash payments also need a reference.'})
+        if attrs.get('payment_amount') is not None:
+            amount = attrs['payment_amount']
+            price = attrs['package'].price
+            minimum = price * Decimal('0.50')
+            if amount < minimum or amount > price:
+                raise serializers.ValidationError({'payment_amount': f'Payment must be between PHP {minimum} and PHP {price}.'})
+            if attrs.get('payment_method') != 'CASH':
+                reference = attrs['payment_reference'].strip()
+                if not re.fullmatch(r'[A-Za-z0-9\- ]{6,100}', reference):
+                    raise serializers.ValidationError({'payment_reference': 'Reference must be 6-100 letters, numbers, spaces, or hyphens.'})
+                if Payment.objects.filter(payment_type=Payment.BOOKING, reference_number__iexact=reference).exists():
+                    raise serializers.ValidationError({'payment_reference': 'This payment reference has already been submitted.'})
+                attrs['payment_reference'] = reference
+        return attrs
 
 class BookingChangeLogSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
@@ -90,9 +144,9 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             'status': booking.status,
             'scheduled_date': booking.scheduled_date,
             'scheduled_time': booking.scheduled_time,
-            'customer_name': booking.customer.get_full_name() or booking.customer.username,
-            'customer_email': booking.customer.email,
-            'customer_profile_picture_url': UserSerializer(booking.customer, context=self.context).data.get('profile_picture_url', ''),
+            'customer_name': booking.contact_name or (booking.customer.get_full_name() or booking.customer.username if booking.customer_id else 'Walk-in customer'),
+            'customer_email': booking.contact_email or (booking.customer.email if booking.customer_id else ''),
+            'customer_profile_picture_url': UserSerializer(booking.customer, context=self.context).data.get('profile_picture_url', '') if booking.customer_id else '',
             'package_name': booking.package.name,
             'package_price': booking.package.price,
             'service_name': booking.package.service.name,
@@ -231,6 +285,11 @@ class BookingReviewSerializer(serializers.ModelSerializer):
 
 class BookingSerializer(serializers.ModelSerializer):
     customer = UserSerializer(read_only=True)
+    customer_name = serializers.SerializerMethodField()
+    customer_email = serializers.SerializerMethodField()
+    customer_phone = serializers.SerializerMethodField()
+    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True, default='')
+    booking_type = serializers.SerializerMethodField()
     package_details = PackageSerializer(source='package', read_only=True)
     items = serializers.JSONField(read_only=True)
     payments = BookingPaymentSerializer(many=True, read_only=True)
@@ -251,6 +310,8 @@ class BookingSerializer(serializers.ModelSerializer):
         model = Booking
         fields = [
             'id', 'customer', 'package', 'package_details', 'scheduled_date', 
+            'is_walk_in', 'contact_name', 'contact_email', 'contact_phone', 'created_by',
+            'created_by_name', 'booking_type', 'customer_name', 'customer_email', 'customer_phone',
             'scheduled_time', 'status', 'notes', 'created_at', 'items',
             'payments', 'required_down_payment', 'change_history',
             'review',
@@ -258,7 +319,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'first_name', 'last_name', 'email', 'phone_number', 'address',
             'idempotency_key'
         ]
-        read_only_fields = ['customer', 'status', 'created_at']
+        read_only_fields = ['customer', 'status', 'created_at', 'is_walk_in', 'contact_name', 'contact_email', 'contact_phone', 'created_by', 'created_by_name', 'booking_type', 'customer_name', 'customer_email', 'customer_phone']
         # Availability is status-aware and is checked in validate() while the
         # create view also rechecks under the date lock. DRF's generated
         # UniqueTogetherValidator would otherwise replace that useful field
@@ -268,18 +329,38 @@ class BookingSerializer(serializers.ModelSerializer):
     def get_required_down_payment(self, obj):
         return obj.package.price * Decimal('0.50')
 
+    def get_customer_name(self, obj):
+        if obj.contact_name:
+            return obj.contact_name
+        if not obj.customer_id:
+            return 'Walk-in customer'
+        return obj.customer.get_full_name() or obj.customer.username
+
+    def get_customer_email(self, obj):
+        return obj.contact_email or (obj.customer.email if obj.customer_id else '')
+
+    def get_customer_phone(self, obj):
+        return obj.contact_phone or (obj.customer.phone_number if obj.customer_id else '')
+
+    def get_booking_type(self, obj):
+        return 'Walk-in' if obj.is_walk_in else 'Online'
+
     def get_review(self, obj):
         review = getattr(obj, 'review', None)
         return BookingReviewSerializer(review, context=self.context).data if review else None
 
     def validate_email(self, value):
-        customer = self.instance.customer if self.instance else self.context['request'].user
+        customer = self.instance.customer if self.instance and self.instance.customer_id else (self.context['request'].user if not self.instance else None)
+        if self.instance and self.instance.is_walk_in:
+            return value
         return validate_unique_email(value, customer, required=True)
 
     def validate_phone_number(self, value):
-        customer = self.instance.customer if self.instance else self.context['request'].user
+        customer = self.instance.customer if self.instance and self.instance.customer_id else (self.context['request'].user if not self.instance else None)
         if not normalize_philippine_mobile_number(value):
             raise serializers.ValidationError('Enter a valid Philippine mobile number (09xxxxxxxxx or +639xxxxxxxxx).')
+        if self.instance and self.instance.is_walk_in:
+            return value
         return validate_unique_phone_number(value, customer)
 
     def validate(self, attrs):
@@ -341,7 +422,16 @@ class BookingSerializer(serializers.ModelSerializer):
             for field in ['first_name', 'last_name', 'email', 'phone_number', 'address']
             if field in validated_data
         }
-        if customer_data:
+        if customer_data and instance.is_walk_in:
+            instance.contact_name = ' '.join(f"{customer_data.get('first_name', instance.contact_name)} {customer_data.get('last_name', '')}".split())
+            instance.contact_email = customer_data.get('email', instance.contact_email)
+            instance.contact_phone = customer_data.get('phone_number', instance.contact_phone)
+            validated_data.update({
+                'contact_name': instance.contact_name,
+                'contact_email': instance.contact_email,
+                'contact_phone': instance.contact_phone,
+            })
+        elif customer_data:
             self._update_customer(instance.customer, customer_data)
         return super().update(instance, validated_data)
 

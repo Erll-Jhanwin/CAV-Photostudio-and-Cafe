@@ -51,3 +51,28 @@ class Order(models.Model):
 
     def __str__(self):
         return f"Order #{self.id} - Total: PHP {self.total} ({self.get_payment_status_display()})"
+
+
+class POSStockAction(models.Model):
+    WASTAGE = 'WASTAGE'
+    REFUND = 'REFUND'
+    ACTION_TYPES = ((WASTAGE, 'Wastage'), (REFUND, 'Refund'))
+
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name='stock_actions')
+    staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='pos_stock_actions')
+    staff_name = models.CharField(max_length=150)
+    action_type = models.CharField(max_length=10, choices=ACTION_TYPES)
+    transaction_id = models.CharField(max_length=24)
+    reason = models.CharField(max_length=300)
+    idempotency_key = models.CharField(max_length=100)
+    request_fingerprint = models.CharField(max_length=64)
+    items = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['order', '-created_at'], name='pos_stockact_order_time_idx')]
+        constraints = [models.UniqueConstraint(fields=['staff', 'idempotency_key'], name='pos_stockact_staff_key_unique')]
+
+    def __str__(self):
+        return f"{self.get_action_type_display()} for {self.transaction_id}"
