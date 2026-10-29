@@ -1761,7 +1761,7 @@ export default function StaffDashboard() {
           )}
 
           {activeTab === 'payments' && (
-            <div className="space-y-6 animate-in-up" key="payments">
+              <div className="space-y-4 animate-in-up" key="payments">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <h1 className="heading-page text-espresso">Payment Booking Verification</h1>
@@ -1783,49 +1783,46 @@ export default function StaffDashboard() {
               </div>
 
               {filteredBookingPayments.length > 0 ? (
-                <div className="space-y-4">
+                <div className="space-y-2">
                   {pagedBookingPayments.map((payment, i) => {
                     const details = payment.booking_details || {};
                     const isPending = payment.status === 'PENDING_VERIFICATION';
                     return (
-                      <div key={payment.id} className="bg-white p-5 md:p-6 rounded-2xl border border-espresso/5 shadow-sm hover:shadow-md transition-all duration-200 animate-in-up" style={{ animationDelay: `${i * 40}ms` }}>
-                        <div className="grid grid-cols-1 xl:grid-cols-[1.1fr_1fr_auto] gap-4 items-start">
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3 flex-wrap">
-                              <Avatar user={{ username: details.customer_name, profile_picture_url: details.customer_profile_picture_url }} size="sm" />
-                              <span className="font-sans text-lg font-extrabold text-espresso">{details.customer_name || 'N/A'}</span>
-                              <StatusBadge status={payment.status} />
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-espresso/60">
-                              <span>Booking: <strong className="text-espresso">#{payment.booking}</strong></span>
-                              <span>Payment method: <strong className="text-espresso">{payment.method_label || payment.method || 'Unknown'}</strong></span>
-                              <span>Service: <strong className="text-espresso">{details.service_name || 'N/A'}</strong></span>
-                              <span>Package: <strong className="text-espresso">{details.package_name || 'N/A'}</strong></span>
-                              <span>Schedule: <strong className="text-espresso">{details.scheduled_date} {details.scheduled_time}</strong></span>
-                              <span>Reference: <strong className="text-espresso break-all">{payment.reference_number}</strong></span>
-                            </div>
+                      <div key={payment.id} className="overflow-hidden rounded-2xl border border-espresso/10 bg-white shadow-sm transition-shadow duration-200 hover:shadow-md animate-in-up" style={{ animationDelay: `${i * 40}ms` }}>
+                        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-espresso/[0.07] bg-cream/35 px-3 py-2.5 md:px-4">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                            <Avatar user={{ username: details.customer_name, profile_picture_url: details.customer_profile_picture_url }} size="sm" />
+                            <span className="min-w-0 font-sans font-extrabold text-espresso">{details.customer_name || 'N/A'}</span>
+                            <StatusBadge status={payment.status} />
                           </div>
+                          <p className="text-xs font-black uppercase tracking-wide text-espresso/65">Booking <span className="text-espresso">#{payment.booking}</span></p>
+                        </div>
 
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className="bg-cream p-3 rounded-xl border border-espresso/5">
-                              <p className="text-espresso/45 font-black uppercase tracking-wider">Amount</p>
-                              <p className="font-black text-gold-dark">{formatCurrency(payment.amount)}</p>
-                            </div>
-                            <div className="bg-cream p-3 rounded-xl border border-espresso/5">
-                              <p className="text-espresso/45 font-black uppercase tracking-wider">Required DP</p>
-                              <p className="font-black text-espresso">{formatCurrency(payment.required_down_payment)}</p>
-                            </div>
-                            <div className="bg-cream p-3 rounded-xl border border-espresso/5 col-span-2">
-                              <p className="text-espresso/45 font-black uppercase tracking-wider">Paid At</p>
-                              <p className="font-black text-espresso">{formatManilaDateTime(payment.paid_at)}</p>
-                            </div>
-                            <div className="bg-cream p-3 rounded-xl border border-espresso/5 col-span-2">
-                              <p className="text-espresso/45 font-black uppercase tracking-wider">Payment Proof</p>
-                              <PaymentProofPreview payment={payment} />
-                            </div>
-                          </div>
+                        <div className="grid grid-cols-1 gap-3 px-3 py-3 text-xs sm:grid-cols-2 md:grid-cols-3 md:gap-0 md:px-4">
+                          <section className="min-w-0 md:pr-4">
+                            <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Booking Details</h3>
+                            <dl className="space-y-1.5">
+                              <div><dt className="inline text-espresso/50">Service: </dt><dd className="inline font-bold text-espresso">{details.service_name || 'N/A'}</dd></div>
+                              <div><dt className="inline text-espresso/50">Package: </dt><dd className="inline font-bold text-espresso">{details.package_name || details.package_details?.name || 'N/A'}</dd></div>
+                              <div><dt className="inline text-espresso/50">Schedule: </dt><dd className="inline font-bold text-espresso">{details.scheduled_date} · {details.scheduled_time}</dd></div>
+                            </dl>
+                          </section>
 
-                          <div className="flex flex-col sm:flex-row xl:flex-col gap-2">
+                          <section className="min-w-0 border-t border-espresso/10 pt-3 sm:border-t-0 sm:pt-0 md:border-l md:border-t-0 md:px-4 md:pt-0">
+                            <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Payment Details</h3>
+                            <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                              <div className="min-w-0"><dt className="text-espresso/50">Method</dt><dd className="break-words font-bold text-espresso">{payment.method_label || payment.method || 'Unknown'}</dd></div>
+                              <div className="min-w-0"><dt className="text-espresso/50">Reference</dt><dd className="break-all font-bold text-espresso">{payment.reference_number}</dd></div>
+                              <div><dt className="text-espresso/50">Amount Paid</dt><dd className="font-black text-gold-dark">{formatCurrency(payment.amount)}</dd></div>
+                              <div><dt className="text-espresso/50">Required DP</dt><dd className="font-bold text-espresso">{formatCurrency(payment.required_down_payment)}</dd></div>
+                              <div className="col-span-2"><dt className="inline text-espresso/50">Paid At: </dt><dd className="inline font-bold text-espresso">{formatManilaDateTime(payment.paid_at)}</dd></div>
+                              <div className="col-span-2 pt-0.5"><PaymentProofPreview payment={payment} /></div>
+                            </dl>
+                          </section>
+
+                          <section className="min-w-0 border-t border-espresso/10 pt-3 sm:col-span-2 md:col-span-1 md:border-l md:border-t-0 md:px-4 md:pt-0">
+                            <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Verification</h3>
+                            <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
                             {isPending ? (
                               <>
                                 <Button
@@ -1848,20 +1845,22 @@ export default function StaffDashboard() {
                                 </Button>
                               </>
                             ) : (
-                              <div className="rounded-xl bg-cream border border-espresso/5 p-3 text-xs text-espresso/60">
+                              <div className="text-xs text-espresso/60">
                                 <p className="font-black text-espresso">Verified by</p>
-                                <div className="mt-2 flex items-center gap-2">
+                                <div className="mt-1.5 flex items-center gap-2">
                                   <Avatar user={payment.verified_by_details} size="xs" />
                                   <p>{payment.verified_by_details?.username || 'N/A'}</p>
                                 </div>
+                                <p>{payment.verified_at ? formatManilaDateTime(payment.verified_at) : 'No timestamp'}</p>
                               </div>
                             )}
+                            </div>
+                          </section>
                           </div>
-                        </div>
                       </div>
                     );
                   })}
-                  <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={TABLE_PAGE_SIZE} />
+                  <div className="pt-1"><PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={TABLE_PAGE_SIZE} /></div>
                 </div>
               ) : (
                 <EmptyState icon={CreditCard} title="No payments found" description="Booking payments will appear here when customers submit their reference numbers." />
