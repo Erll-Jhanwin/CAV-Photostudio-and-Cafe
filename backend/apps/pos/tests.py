@@ -7,7 +7,7 @@ from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from inventory.models import InventoryEvent, Product
+from inventory.models import Product
 from payment.models import Payment
 from pos.models import Order
 from pos.receipt_printing import RECEIPT_WIDTH, _end_of_day_text, _escpos_receipt_bytes, _receipt_text
@@ -278,27 +278,6 @@ class PosIdempotencyTests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_level, 3)
 
-    def test_recipe_sale_and_restocked_refund_update_product_stock_ledger(self):
-        ingredient = Product.objects.create(name='Recipe test powder', sku='RECIPE-POWDER', item_type=Product.INGREDIENT, stock_quantity=10, base_unit='G')
-        self.product.recipe_data = [{'ingredient': ingredient.id, 'quantity': '1'}]
-        self.product.save(update_fields=['recipe_data'])
-        created = self.client.post('/api/pos/orders/', {
-            'items': [{'product_id': self.product.id, 'quantity': 2}],
-            'payment': {'amount': '250.00', 'method': 'CASH'},
-        }, format='json')
-        self.assertEqual(created.status_code, 201, created.data)
-        self.product.refresh_from_db()
-        ingredient.refresh_from_db()
-        self.assertEqual((self.product.stock_level, ingredient.stock_quantity), (3, Decimal('8.00')))
-        self.assertTrue(InventoryEvent.objects.filter(product=self.product, movement_type='OUT', reason__startswith='POS Transaction').exists())
-        returned = self.client.post(f"/api/pos/orders/{created.data['id']}/returns/", {
-            'product_id': self.product.id, 'quantity': 1, 'disposition': 'RESTOCKED', 'idempotency_key': 'recipe-refund-1',
-        }, format='json')
-        self.assertEqual(returned.status_code, 200, returned.data)
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.stock_level, 4)
-        self.assertTrue(InventoryEvent.objects.filter(product=self.product, movement_type='IN', reason__startswith='Refund restock').exists())
-
     def test_item_discount_and_order_discount_are_recorded_separately_in_total(self):
         response = self.client.post('/api/pos/orders/', {
             'items': [{'product_id': self.product.id, 'quantity': 2, 'discount': {'type': 'PERCENT', 'value': 10}}],
@@ -321,7 +300,7 @@ class PosIdempotencyTests(TestCase):
         self.assertEqual(created.status_code, 201, created.data)
         order_id = created.data['id']
         returned = self.client.post(f'/api/pos/orders/{order_id}/returns/', {
-            'product_id': self.product.id, 'quantity': 1, 'disposition': 'WASTED', 'idempotency_key': 'return-wasted-1',
+            'product_id': self.product.id, 'quantity': 1, 'disposition': 'WASTED',
         }, format='json')
         self.assertEqual(returned.status_code, 200, returned.data)
         self.assertEqual(returned.data['returned_amount'], '125.00')
@@ -329,13 +308,6 @@ class PosIdempotencyTests(TestCase):
         self.assertEqual(returned.data['items'][0]['wasted_quantity'], 1)
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_level, 2)
-
-        duplicate = self.client.post(f'/api/pos/orders/{order_id}/returns/', {
-            'product_id': self.product.id, 'quantity': 1, 'disposition': 'WASTED',
-            'reason': 'Returned beverage marked as wastage', 'idempotency_key': 'return-wasted-1',
-        }, format='json')
-        self.assertEqual(duplicate.status_code, 200)
-        self.assertEqual(duplicate.data['returned_amount'], '125.00')
 
         inventory = self.client.get('/api/inventory/product-sales/')
         row = next(item for item in inventory.data if item['product_id'] == self.product.id)
@@ -357,7 +329,7 @@ class PosIdempotencyTests(TestCase):
         }, format='json')
         self.assertEqual(created.status_code, 201, created.data)
         returned = self.client.post(f"/api/pos/orders/{created.data['id']}/returns/", {
-            'product_id': self.product.id, 'quantity': 1, 'disposition': 'RESTOCKED', 'idempotency_key': 'return-restock-1',
+            'product_id': self.product.id, 'quantity': 1, 'disposition': 'RESTOCKED',
         }, format='json')
         self.assertEqual(returned.status_code, 200, returned.data)
         self.product.refresh_from_db()

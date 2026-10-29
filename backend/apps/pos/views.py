@@ -247,16 +247,16 @@ class OrderListCreateView(generics.ListCreateAPIView):
                 product = products_by_id[product_id]
                 recipe_items = product.recipe_data or []
                 beginning_stock = product.stock_level
-                product_beginning_stock = product.stock_level
-                if product.stock_level < qty:
-                    return Response({"detail": f"Insufficient stock for {product.name}. Current stock: {product.stock_level}"}, status=status.HTTP_400_BAD_REQUEST)
-                product.stock_level -= qty
-                product_movements.append((product, qty))
                 if recipe_items:
                     for recipe_item in recipe_items:
                         ingredient_id = int(recipe_item.get('ingredient'))
                         required_quantity = Decimal(str(recipe_item.get('quantity') or '0')) * qty
                         ingredient_requirements[ingredient_id] += required_quantity
+                else:
+                    if product.stock_level < qty:
+                        return Response({"detail": f"Insufficient stock for {product.name}. Current stock: {product.stock_level}"}, status=status.HTTP_400_BAD_REQUEST)
+                    product.stock_level -= qty
+                    product_movements.append((product, qty))
 
                 price = product.price
                 subtotal = price * qty
@@ -287,7 +287,6 @@ class OrderListCreateView(generics.ListCreateAPIView):
                     "wasted_quantity": 0,
                     "cost": str(product.cost),
                     "beginning_stock": beginning_stock,
-                    "inventory_beginning_stock": product_beginning_stock,
                     "recipe": [dict(row) for row in recipe_items],
                     "product_details": {
                         "id": product.id,
@@ -414,12 +413,9 @@ class OrderReturnView(APIView):
             quantity = int(request.data.get('quantity', 1))
         except (TypeError, ValueError):
             return Response({'detail': 'Product and whole-number quantity are required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if not request.data.get('disposition'):
-            return Response({'disposition': 'Choose RESTOCKED or WASTED for each refund.'}, status=status.HTTP_400_BAD_REQUEST)
-        disposition = str(request.data.get('disposition')).upper()
-        idempotency_key = str(request.data.get('idempotency_key') or '').strip()[:100]
-        if disposition not in {'WASTED', 'RESTOCKED'} or quantity <= 0 or not idempotency_key:
-            return Response({'detail': 'Use a positive quantity, an idempotency key, and WASTED or RESTOCKED disposition.'}, status=status.HTTP_400_BAD_REQUEST)
+        disposition = str(request.data.get('disposition') or 'WASTED').upper()
+        if disposition not in {'WASTED', 'RESTOCKED'} or quantity <= 0:
+            return Response({'detail': 'Use a positive quantity and WASTED or RESTOCKED disposition.'}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
             try:
                 order = Order.objects.select_for_update().get(pk=pk)
@@ -427,8 +423,6 @@ class OrderReturnView(APIView):
                 return Response({'detail': 'Transaction not found.'}, status=status.HTTP_404_NOT_FOUND)
             if order.payment_status != 'PAID':
                 return Response({'detail': 'Only paid transactions can have returns.'}, status=status.HTTP_409_CONFLICT)
-            if idempotency_key and any(event.get('idempotency_key') == idempotency_key for event in (order.return_events or [])):
-                return Response(OrderSerializer(order).data)
             items = [dict(row) for row in (order.line_items or [])]
             line = next((row for row in items if int(row.get('product') or 0) == product_id), None)
             if not line:
@@ -441,7 +435,6 @@ class OrderReturnView(APIView):
             product = Product.objects.select_for_update().filter(pk=product_id, item_type=Product.PRODUCT).first()
             if not product:
                 return Response({'detail': 'The sold product no longer exists in inventory.'}, status=status.HTTP_409_CONFLICT)
-            product_stock_before = product.stock_level
             if disposition == 'RESTOCKED':
                 recipe = line.get('recipe') or []
                 if recipe:
@@ -454,13 +447,9 @@ class OrderReturnView(APIView):
                             ingredient.stock_quantity += Decimal(str(recipe_row.get('quantity') or 0)) * quantity
                     if ingredients:
                         Product.objects.bulk_update(ingredients, ['stock_quantity'])
-                product.stock_level += quantity
-                product.save(update_fields=['stock_level', 'updated_at'])
-                InventoryEvent.objects.create(
-                    event_type=InventoryEvent.STOCK_MOVEMENT, product=product, user=request.user,
-                    movement_type='IN', quantity=quantity,
-                    reason=f'Refund restock Order #{order.pk}',
-                )
+                else:
+                    product.stock_level += quantity
+                    product.save(update_fields=['stock_level', 'updated_at'])
 
             raw_line_total = Decimal(str(line.get('net_subtotal') or line.get('subtotal') or 0))
             previously_refunded = Decimal(str(line.get('refunded_amount') or '0.00'))
@@ -479,7 +468,6 @@ class OrderReturnView(APIView):
                 'reason': str(request.data.get('reason') or '').strip()[:300],
                 'staff_id': request.user.pk,
                 'timestamp': timezone.now().isoformat(),
-                'idempotency_key': idempotency_key,
             }
             line_returns.append(event)
             line['returns'] = line_returns
@@ -492,7 +480,7 @@ class OrderReturnView(APIView):
                 user=request.user,
                 action=f'POS_RETURN_{disposition}',
                 description=f'Recorded {quantity} returned {product.name} as {disposition.lower()} for transaction {order.transaction_id or order.pk}.',
-                metadata={'order_id': order.pk, 'product_id': product_id, 'quantity': quantity, 'disposition': disposition, 'refund_amount': str(refund), 'loss_at_cost': event['loss_at_cost'], 'stock_before': product_stock_before, 'stock_after': product.stock_level},
+                metadata={'order_id': order.pk, 'product_id': product_id, 'quantity': quantity, 'disposition': disposition, 'refund_amount': str(refund), 'loss_at_cost': event['loss_at_cost']},
             )
         return Response(OrderSerializer(order).data)
 
