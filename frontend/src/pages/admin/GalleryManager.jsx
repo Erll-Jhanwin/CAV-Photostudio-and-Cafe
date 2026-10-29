@@ -37,7 +37,8 @@ export default function GalleryManager() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [file, setFile] = useState(null);
-  const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [notice, setNotice] = useState('');
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [previewIndex, setPreviewIndex] = useState(null);
@@ -48,7 +49,7 @@ export default function GalleryManager() {
 
   const loadImages = useCallback(async () => {
     setLoading(true);
-    setError('');
+    setLoadError('');
     try {
       const response = await client.get('/api/gallery/images/', {
         params: { include_unfeatured: 'true' },
@@ -56,7 +57,7 @@ export default function GalleryManager() {
       setImages(Array.isArray(response.data) ? response.data : []);
       setBrokenImageIds(new Set());
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Could not load gallery images.'));
+      setLoadError(getApiErrorMessage(requestError, 'Could not load gallery images.'));
     } finally {
       setLoading(false);
     }
@@ -87,7 +88,7 @@ export default function GalleryManager() {
           currentObserver.unobserve(entry.target);
         }
       });
-    }, { rootMargin: '0px 0px -48px 0px', threshold: 0.08 });
+    }, { root, rootMargin: '0px 0px -48px 0px', threshold: 0.08 });
     cards.forEach(card => observer.observe(card));
     return () => observer.disconnect();
   }, [filteredImages, loading]);
@@ -136,7 +137,7 @@ export default function GalleryManager() {
 
   const updateForm = (key, value) => {
     setForm(current => ({ ...current, [key]: value }));
-    setError('');
+    setFormError('');
     setNotice('');
   };
 
@@ -157,7 +158,7 @@ export default function GalleryManager() {
       is_featured: Boolean(image.is_featured),
     });
     setFile(null);
-    setError('');
+    setFormError('');
     setNotice('');
     const formElement = document.querySelector('[aria-label="Gallery image form"]');
     if (formElement?.scrollIntoView) {
@@ -169,7 +170,7 @@ export default function GalleryManager() {
   const submit = async event => {
     event.preventDefault();
     if (!editingId && !file) {
-      setError('Choose an image file to upload.');
+      setFormError('Choose an image file to upload.');
       return;
     }
     const body = new FormData();
@@ -182,7 +183,7 @@ export default function GalleryManager() {
     if (file) body.append('image', file);
 
     setSaving(true);
-    setError('');
+    setFormError('');
     setNotice('');
     try {
       if (editingId) {
@@ -195,7 +196,7 @@ export default function GalleryManager() {
       resetForm();
       await loadImages();
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Could not save the gallery image.'));
+      setFormError(getApiErrorMessage(requestError, 'Could not save the gallery image.'));
     } finally {
       setSaving(false);
     }
@@ -204,7 +205,7 @@ export default function GalleryManager() {
   const deleteImage = async image => {
     if (!window.confirm(`Delete “${image.title}” from the gallery?`)) return;
     setDeletingId(image.id);
-    setError('');
+    setFormError('');
     setNotice('');
     try {
       await client.delete(`/api/gallery/images/${image.id}/`);
@@ -212,7 +213,7 @@ export default function GalleryManager() {
       setNotice('Gallery image deleted.');
       await loadImages();
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Could not delete the gallery image.'));
+      setFormError(getApiErrorMessage(requestError, 'Could not delete the gallery image.'));
     } finally {
       setDeletingId(null);
     }
@@ -238,8 +239,8 @@ export default function GalleryManager() {
   });
 
   return (
-    <section className="gallery-manager space-y-6" aria-labelledby="gallery-manager-title">
-      <header className="gallery-manager-hero relative overflow-hidden rounded-[28px] border border-gold/15 bg-gradient-to-br from-white via-cream/85 to-gold/10 p-5 shadow-[0_18px_55px_rgba(46,26,17,0.07)] md:p-7">
+    <section className="gallery-manager flex min-h-0 flex-1 flex-col gap-4" aria-labelledby="gallery-manager-title">
+      <header className="gallery-manager-hero relative shrink-0 overflow-hidden rounded-[28px] border border-gold/15 bg-gradient-to-br from-white via-cream/85 to-gold/10 p-5 shadow-[0_18px_55px_rgba(46,26,17,0.07)] md:p-7">
         <div className="relative z-10 flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-2xl">
             <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-gold/20 bg-white/75 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-gold-dark">
@@ -268,15 +269,17 @@ export default function GalleryManager() {
         <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full bg-gold/10 blur-3xl" />
       </header>
 
-      <div className="grid items-start gap-5 2xl:grid-cols-[minmax(290px,0.78fr)_minmax(0,1.6fr)]">
-        <Card className="gallery-form-card !overflow-hidden !p-0 2xl:sticky 2xl:top-5">
-          <div className="border-b border-espresso/[0.06] bg-cream/45 px-4 py-4 md:px-5">
+      <div className="grid min-h-0 flex-1 grid-rows-2 gap-4 xl:grid-cols-[minmax(290px,0.78fr)_minmax(0,1.6fr)] xl:grid-rows-1">
+        <Card className="gallery-form-card flex min-h-0 flex-col !overflow-hidden !p-0">
+          <div className="shrink-0 border-b border-espresso/[0.06] bg-cream/45 px-4 py-4 md:px-5">
             <CardHeader
               title={editingId ? 'Edit Gallery Image' : 'Add to Gallery'}
               subtitle="Upload a validated JPG, PNG, or WEBP image (maximum 5 MB)."
+              className="mb-0"
             />
           </div>
-          <form onSubmit={submit} className="space-y-4 p-4 md:p-5" aria-label="Gallery image form">
+          <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="Gallery image form">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 md:p-5 scrollbar-thin">
             <Input label="Title" required maxLength={160} value={form.title} onChange={event => updateForm('title', event.target.value)} disabled={saving} />
             <Select label="Category" options={CATEGORY_OPTIONS} value={form.category} onChange={event => updateForm('category', event.target.value)} disabled={saving} />
             <Input
@@ -296,9 +299,10 @@ export default function GalleryManager() {
                 Show on public gallery
               </label>
             </div>
-            {error && <p role="alert" className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+            {formError && <p role="alert" className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">{formError}</p>}
             {notice && <p role="status" className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
-            <div className="flex flex-wrap gap-2 border-t border-espresso/[0.06] pt-4">
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2 border-t border-espresso/[0.06] bg-white px-4 py-3 md:px-5">
               <Button type="submit" variant="gold" icon={editingId ? Save : ImagePlus} loading={saving} disabled={saving || !form.title.trim()}>
                 {editingId ? 'Save Changes' : 'Upload Image'}
               </Button>
@@ -307,15 +311,15 @@ export default function GalleryManager() {
           </form>
         </Card>
 
-        <Card className="gallery-collection-card !p-4 md:!p-5 xl:!p-6">
-          <div className="flex flex-col gap-4 border-b border-espresso/[0.06] pb-4 sm:flex-row sm:items-start sm:justify-between">
-            <CardHeader title="Managed Gallery" subtitle="Select an image to preview it. Changes here update the gallery catalog." />
+        <Card className="gallery-collection-card flex min-h-0 flex-col !overflow-hidden !p-4 md:!p-5 xl:!p-6">
+          <div className="flex shrink-0 flex-col gap-4 border-b border-espresso/[0.06] pb-4 sm:flex-row sm:items-start sm:justify-between">
+            <CardHeader title="Managed Gallery" subtitle="Select an image to preview it. Changes here update the gallery catalog." className="mb-0" />
             <Button type="button" variant="outline" size="sm" icon={RefreshCw} onClick={loadImages} loading={loading} disabled={loading}>
               Refresh
             </Button>
           </div>
 
-          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 py-4 scrollbar-thin" aria-label="Filter gallery by category">
+          <div className="-mx-1 flex shrink-0 gap-2 overflow-x-auto px-1 py-4 scrollbar-thin" aria-label="Filter gallery by category">
             {FILTER_OPTIONS.map(option => {
               const count = option.value === 'ALL' ? images.length : images.filter(image => getCategory(image) === option.value).length;
               return (
@@ -332,12 +336,13 @@ export default function GalleryManager() {
             })}
           </div>
 
+          <div ref={revealRootRef} className="min-h-0 flex-1 overflow-y-auto px-1 scrollbar-thin">
           {loading ? (
-            <div role="status" className="grid grid-cols-1 gap-4 sm:grid-cols-2 min-[1400px]:grid-cols-3" aria-label="Loading gallery images">
+            <div role="status" className="grid grid-cols-1 gap-4 py-1 sm:grid-cols-2 min-[1400px]:grid-cols-3" aria-label="Loading gallery images">
               {Array.from({ length: 3 }, (_, index) => <div key={index} className="aspect-[4/3] animate-pulse rounded-2xl bg-cream" />)}
             </div>
           ) : filteredImages.length ? (
-            <div ref={revealRootRef} className="grid grid-cols-1 gap-4 sm:grid-cols-2 min-[1400px]:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 py-1 sm:grid-cols-2 min-[1400px]:grid-cols-3">
               {filteredImages.map((image, index) => {
                 const broken = brokenImageIds.has(image.id);
                 const hasImage = image.image_url && !broken;
@@ -398,8 +403,8 @@ export default function GalleryManager() {
                 );
               })}
             </div>
-          ) : error ? (
-            <EmptyState icon={Camera} title="Gallery unavailable" description={error} />
+          ) : loadError ? (
+            <EmptyState icon={Camera} title="Gallery unavailable" description={loadError} />
           ) : images.length ? (
             <div className="rounded-2xl border border-dashed border-espresso/15 bg-cream/35 px-5 py-12 text-center">
               <Camera className="mx-auto h-8 w-8 text-gold-dark/70" />
@@ -409,6 +414,7 @@ export default function GalleryManager() {
           ) : (
             <EmptyState icon={Camera} title="No managed images yet" description="Upload your first image to begin building the gallery." />
           )}
+          </div>
         </Card>
       </div>
 

@@ -33,6 +33,7 @@ def storage_error_response(operation, error, image_id=None):
     return Response(
         {'detail': 'Gallery image storage is temporarily unavailable. Please try again shortly.'},
         status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        headers={'Retry-After': '1'},
     )
 
 
@@ -85,7 +86,7 @@ class GalleryImageListView(views.APIView):
                     description=f'Created gallery image #{image.pk}.',
                     metadata={'record_id': image.pk, 'category': image.category},
                 )
-        except SupabaseStorageError as exc:
+        except OSError as exc:
             return storage_error_response('upload', exc)
         return Response(
             GalleryImageSerializer(image, context={'request': request}).data,
@@ -131,7 +132,7 @@ class GalleryImageDetailView(views.APIView):
                     description=f'Updated gallery image #{updated.pk}.',
                     metadata={'record_id': updated.pk, 'category': updated.category},
                 )
-        except SupabaseStorageError as exc:
+        except OSError as exc:
             return storage_error_response('update', exc, image_id=image.pk)
         return Response(GalleryImageSerializer(updated, context={'request': request}).data)
 

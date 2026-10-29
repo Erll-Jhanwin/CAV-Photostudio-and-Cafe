@@ -147,6 +147,7 @@ class GalleryImageAPITests(TestCase):
         }, format='multipart')
 
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.headers['Retry-After'], '1')
         self.assertEqual(
             response.data['detail'],
             'Gallery image storage is temporarily unavailable. Please try again shortly.',
@@ -201,12 +202,34 @@ class SupabaseGalleryStorageTests(TestCase):
             'https://project.example.test/storage/v1/object/gallery-public/gallery/example.png',
         )
         self.assertEqual(mocked_post.call_args.kwargs['timeout'], 30)
+        self.assertEqual(mocked_post.call_args.kwargs['headers']['x-upsert'], 'true')
         public_url = storage.url(saved)
         self.assertEqual(
             public_url,
             'https://project.example.test/storage/v1/object/public/gallery-public/gallery/example.png',
         )
         self.assertNotIn('test-only-secret', public_url)
+
+    @override_settings(
+        DEBUG=False,
+        SUPABASE_URL='https://project.example.test',
+        SUPABASE_SERVICE_ROLE_KEY='test-only-secret',
+        SUPABASE_GALLERY_BUCKET='gallery-public',
+        IS_TESTING=False,
+    )
+    @patch('payment.storage.time.sleep')
+    @patch('payment.storage.requests.post')
+    def test_upload_retries_a_temporary_storage_error_with_same_object_path(self, mocked_post, _sleep):
+        mocked_post.side_effect = [Mock(status_code=503), Mock(status_code=201)]
+
+        saved = SupabaseGalleryStorage().save(
+            'gallery/retry-safe.png', ContentFile(b'image-bytes', name='retry-safe.png')
+        )
+
+        self.assertEqual(saved, 'gallery/retry-safe.png')
+        self.assertEqual(mocked_post.call_count, 2)
+        self.assertEqual(mocked_post.call_args_list[0].args[0], mocked_post.call_args_list[1].args[0])
+        self.assertEqual(mocked_post.call_args_list[0].kwargs['data'], mocked_post.call_args_list[1].kwargs['data'])
 
     @override_settings(
         DEBUG=False,

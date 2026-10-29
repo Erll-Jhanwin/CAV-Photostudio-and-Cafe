@@ -1507,7 +1507,7 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-cream flex flex-col md:flex-row">
+    <div className={`min-h-screen bg-cream flex flex-col md:flex-row ${['faq', 'gallery'].includes(activeTab) ? 'h-screen overflow-hidden' : ''}`}>
       <Sidebar
         brand="CAV Admin"
         brandSubtitle="Management Console"
@@ -1522,10 +1522,10 @@ export default function AdminDashboard() {
         onSignOutConfirm={handleLogout}
       />
 
-      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
+      <div className={`flex-1 flex flex-col overflow-hidden ${['faq', 'gallery'].includes(activeTab) ? 'h-full min-h-0' : 'min-h-screen'}`}>
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
-        <main className={`flex-1 min-h-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${['reports', 'faq'].includes(activeTab) ? 'overflow-hidden' : 'overflow-y-auto'} ${activeTab === 'faq' ? 'flex flex-col' : ''}`}>
+        <main className={`flex-1 min-h-0 min-w-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${['reports', 'faq', 'gallery'].includes(activeTab) ? 'overflow-hidden' : 'overflow-y-auto'} ${['faq', 'gallery'].includes(activeTab) ? 'flex flex-col' : ''}`}>
           {['payments', 'staff', 'faq'].includes(activeTab) && (
             <h1 className="heading-page mb-4 shrink-0 text-espresso">{pageTitles[activeTab]}</h1>
           )}

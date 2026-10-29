@@ -10,8 +10,10 @@ delete them.
 ## Storage setup
 
 Local development uses Django file storage under `MEDIA_ROOT`. Production
-defaults to `GALLERY_STORAGE_BACKEND=supabase`, using `SUPABASE_URL` and a
-server-only Supabase key. Current `sb_secret_...` keys can be configured as
+defaults to `GALLERY_STORAGE_BACKEND=supabase`. In the Render **backend web
+service** environment, set `SUPABASE_URL`, a server-only `SUPABASE_SECRET_KEY`
+or legacy `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_GALLERY_BUCKET` to the
+exact ID of the existing public bucket. Current `sb_secret_...` keys can be configured as
 `SUPABASE_SECRET_KEY`; legacy service-role JWT keys remain supported through
 `SUPABASE_SERVICE_ROLE_KEY`. Set `SUPABASE_GALLERY_BUCKET` to an existing
 Supabase Storage bucket configured as public. Public access lets browsers read
@@ -19,7 +21,9 @@ image objects; uploads and deletes still use the backend credential. Do not add
 anonymous insert, update, or delete policies to `storage.objects` and never
 expose either key in frontend configuration.
 
-The catalog is queried through Django's database connection and role-checked
+Uploads retry transient Supabase errors against the same unique object path, so
+a timeout after a successful object write does not leave the gallery save in an
+ambiguous state. The catalog is queried through Django's database connection and role-checked
 API. The browser never queries the Supabase database directly. Uploads use the
 server key, which bypasses Storage RLS; public reads use the bucket's
 public-object behavior. Keep catalog mutations behind staff/admin API

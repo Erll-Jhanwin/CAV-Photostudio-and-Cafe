@@ -339,8 +339,9 @@ describe('AdminDashboard', () => {
       answer: `FAQ Answer ${index + 1}`,
       tags: 'help',
     }));
+    let resolveFaqs;
     getCached.mockImplementation(url => {
-      if (url.includes('/api/chatbot/faqs/')) return Promise.resolve({ data: faqRows });
+      if (url.includes('/api/chatbot/faqs/')) return new Promise(resolve => { resolveFaqs = resolve; });
       if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
       return Promise.resolve({ data: {
         metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
@@ -355,9 +356,15 @@ describe('AdminDashboard', () => {
 
     expect(await screen.findByRole('heading', { name: 'Knowledge Base FAQs' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Add FAQ Entry' })).toBeInTheDocument();
+    await waitFor(() => expect(resolveFaqs).toEqual(expect.any(Function)));
+    expect(container.firstChild).toHaveClass('h-screen', 'overflow-hidden');
+    expect(container.querySelector('main')).toHaveClass('overflow-hidden', 'flex', 'flex-col');
     const faqLayout = screen.getByRole('heading', { name: 'Knowledge Base FAQs' }).closest('.grid');
     expect(faqLayout).toHaveClass('flex-1', 'min-h-0', 'grid-rows-2', 'xl:grid-rows-1');
-    expect(container.querySelector('main')).toHaveClass('overflow-hidden', 'flex', 'flex-col');
+    expect(faqLayout.parentElement.parentElement).toHaveClass('h-full', 'min-h-0');
+    resolveFaqs({ data: faqRows });
+    expect(await screen.findByText('FAQ Question 1')).toBeInTheDocument();
+    expect(faqLayout).toHaveClass('flex-1', 'min-h-0', 'grid-rows-2', 'xl:grid-rows-1');
 
     const answerField = screen.getByRole('textbox', { name: 'Answer' });
     expect(answerField).toHaveClass('flex-1', 'min-h-[5rem]');
@@ -368,5 +375,6 @@ describe('AdminDashboard', () => {
     const faqScrollPanel = firstFaqRow.parentElement;
     expect(faqScrollPanel).toHaveClass('flex-1', 'min-h-0', 'overflow-y-auto');
     expect(faqScrollPanel).not.toContainElement(fixedFaqHeading);
+    expect(faqLayout.children[1].firstChild).toHaveClass('h-full', 'min-h-0', 'flex-col', 'overflow-hidden');
   });
 });

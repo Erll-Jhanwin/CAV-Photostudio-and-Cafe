@@ -43,6 +43,27 @@ describe('GalleryManager', () => {
     });
   });
 
+  test('keeps the edit form and gallery in equal viewport panels with independent scroll regions', async () => {
+    const { container } = render(<GalleryManager />);
+    await screen.findByText('Studio portrait');
+
+    const manager = container.querySelector('.gallery-manager');
+    const layout = manager.children[1];
+    const panels = layout.children;
+    const form = screen.getByRole('form', { name: 'Gallery image form' });
+    const gallery = container.querySelector('.gallery-collection-card');
+
+    expect(manager).toHaveClass('min-h-0', 'flex-1');
+    expect(layout).toHaveClass('grid-rows-2', 'xl:grid-rows-1');
+    expect(panels).toHaveLength(2);
+    expect(panels[0]).toHaveClass('flex', 'min-h-0', 'flex-col');
+    expect(panels[1]).toHaveClass('flex', 'min-h-0', 'flex-col');
+    expect(form).toHaveClass('overflow-hidden');
+    expect(form.querySelector('.overflow-y-auto')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upload Image' })).toBeVisible();
+    expect(gallery.querySelector('.min-h-0.flex-1.overflow-y-auto')).toBeInTheDocument();
+  });
+
   test('edits a gallery entry and reloads the list', async () => {
     client.patch.mockResolvedValue({ data: { ...galleryRecord, title: 'New studio title' } });
     render(<GalleryManager />);
@@ -80,6 +101,29 @@ describe('GalleryManager', () => {
     const formData = client.post.mock.calls[0][1];
     expect(formData.get('title')).toBe('Uploaded image');
     expect(formData.get('image')).toBe(upload);
+  });
+
+  test('keeps the selected image and form values available for retry after a failed upload', async () => {
+    client.post
+      .mockRejectedValueOnce(new Error('Storage temporarily unavailable'))
+      .mockResolvedValueOnce({ data: galleryRecord });
+    render(<GalleryManager />);
+    await screen.findByText('Studio portrait');
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Retryable upload' } });
+    const upload = new File(['png-bytes'], 'retry.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Image file'), { target: { files: [upload] } });
+
+    fireEvent.submit(screen.getByRole('form', { name: 'Gallery image form' }));
+    await waitFor(() => expect(client.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Upload Image' })).toBeEnabled());
+    expect(screen.getByLabelText('Title')).toHaveValue('Retryable upload');
+    expect(screen.getByLabelText('Image file').files[0]).toBe(upload);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upload Image' }));
+    await waitFor(() => expect(client.post).toHaveBeenCalledTimes(2));
+    expect(client.post.mock.calls[0][1].get('image')).toBe(upload);
+    expect(client.post.mock.calls[1][1].get('image')).toBe(upload);
+    expect(await screen.findByText('Gallery image uploaded.')).toBeInTheDocument();
   });
 
   test('shows a replacement prompt when a stored image URL cannot be loaded', async () => {

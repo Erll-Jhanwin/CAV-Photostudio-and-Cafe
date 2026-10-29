@@ -35,9 +35,9 @@ class SupabaseGalleryStorage(SupabasePaymentProofStorage):
     """
 
     timeout = 30
-    upload_attempts = 1
+    upload_attempts = 3
     upload_timeout = 30
-    upload_upsert = False
+    upload_upsert = True
 
     def _config(self):
         base_url = str(getattr(settings, 'SUPABASE_URL', '') or '').strip().rstrip('/')
