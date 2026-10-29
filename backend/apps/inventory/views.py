@@ -1,5 +1,7 @@
 from decimal import Decimal, InvalidOperation
+from datetime import timedelta
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -7,7 +9,8 @@ from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 
 from audit.models import AuditLog
-from inventory.models import Category, InventoryEvent, Product, Supplier
+from inventory.models import (BusinessDay, DailyProductBalance, InventoryCorrection, ProductLossEvent,
+    Category, InventoryEvent, Product, Supplier)
 from inventory.recipe_defaults import ensure_default_ingredients_and_recipes
 from pos.models import Order
 from inventory.serializers import (
@@ -327,6 +330,354 @@ class ProductSalesInventoryView(views.APIView):
                 'profit_loss': str((revenue - cost).quantize(Decimal('0.01'))),
             })
         return Response(result)
+
+
+def _daily_report(day, actor=None):
+    """Build the open-day view from POS records and the existing product ledger."""
+    from django.utils.timezone import localtime
+    products = list(Product.objects.filter(item_type=Product.PRODUCT, is_active=True).order_by('name'))
+    balances = {b.product_id: b for b in DailyProductBalance.objects.filter(day=day).select_related('product')}
+    if not day.is_closed and len(balances) < len(products):
+        previous = BusinessDay.objects.filter(is_closed=True, business_date__lt=day.business_date).order_by('-business_date').first()
+        may_carry_forward = previous and previous.business_date + timedelta(days=1) == day.business_date
+        may_open_first_day = day.business_date == timezone.localdate() and not BusinessDay.objects.filter(is_closed=True).exists()
+        if not (may_carry_forward or may_open_first_day):
+            previous = None
+        else:
+            prev_balances = {b.product_id: (b.corrected_ending_quantity if b.corrected_ending_quantity is not None else b.actual_ending_quantity) for b in previous.balances.all()} if previous else {}
+            first_sale_openings = {}
+            opening_movement_deltas = {}
+            if not previous:
+                for movement in InventoryEvent.objects.filter(event_type=InventoryEvent.STOCK_MOVEMENT, product__in=products):
+                    if localtime(movement.created_at).date() == day.business_date:
+                        delta = int(movement.quantity) * (1 if movement.movement_type == 'IN' else -1)
+                        opening_movement_deltas[movement.product_id] = opening_movement_deltas.get(movement.product_id, 0) + delta
+                for order in Order.objects.filter(payment_status='PAID').exclude(order_type='END_OF_DAY_REPORT').order_by('completed_at', 'created_at', 'id'):
+                    if localtime(order.completed_at or order.created_at).date() != day.business_date:
+                        continue
+                    for line in order.line_items or []:
+                        product_id = int(line.get('product') or 0)
+                        recorded_opening = line.get('inventory_beginning_stock', line.get('beginning_stock'))
+                        if product_id and recorded_opening is not None:
+                            first_sale_openings.setdefault(product_id, int(recorded_opening))
+            # First tracked day reconstructs midnight stock from the product ledger when possible.
+            for product in products:
+                if product.id not in balances:
+                    opening = prev_balances.get(product.id)
+                    opening_source = 'previous_finalized_close'
+                    if opening is None:
+                        if product.id in opening_movement_deltas:
+                            opening = product.stock_level - opening_movement_deltas[product.id]
+                            opening_source = 'product_ledger_reconstruction'
+                        elif localtime(product.created_at).date() == day.business_date:
+                            opening = 0
+                            opening_source = 'created_on_business_date'
+                        else:
+                            opening = first_sale_openings.get(product.id, product.stock_level)
+                            opening_source = 'first_transaction_snapshot' if product.id in first_sale_openings else 'authorized_initial_snapshot'
+                    balance, balance_created = DailyProductBalance.objects.get_or_create(day=day, product=product, defaults={'beginning_quantity': opening})
+                    balances[product.id] = balance
+                    if balance_created:
+                        AuditLog.objects.create(user=day.opened_by or actor, action='INVENTORY_OPENING_BALANCE',
+                            description=f'Opening inventory for {product.name} on {day.business_date}: {opening} {product.unit}.',
+                            metadata={'product_id': product.id, 'quantity': opening, 'source': opening_source})
+    rows = []
+    orders = Order.objects.filter(payment_status='PAID').exclude(order_type='END_OF_DAY_REPORT').select_related('staff')
+    refund_losses = {}
+    later_waste_corrections = {}
+    for order in orders:
+        sale_day = localtime(order.completed_at or order.created_at).date()
+        for event in order.return_events or []:
+            try:
+                product_id = int(event.get('product_id') or 0)
+                quantity = int(event.get('quantity') or 0)
+                return_day = localtime(timezone.datetime.fromisoformat(event.get('timestamp'))).date()
+            except (TypeError, ValueError):
+                continue
+            if return_day != day.business_date or quantity <= 0:
+                continue
+            if event.get('disposition') == 'WASTED':
+                return_actor = get_user_model().objects.filter(pk=event.get('staff_id')).first()
+                refund_losses.setdefault(product_id, []).append({
+                    'id': f'refund-{order.pk}-{event.get("timestamp")}-{product_id}', 'product_name': '',
+                    'transaction_number': order.transaction_id or f'#{order.pk}', 'created_at': event.get('timestamp'),
+                    'loss_type': 'Refunded', 'quantity': quantity, 'remarks': event.get('reason') or 'Refunded item was not restocked',
+                    'staff_member': return_actor.get_full_name() or return_actor.username if return_actor else 'Unknown',
+                    'restock_disposition': 'Not restocked', 'related_reference': order.transaction_id or f'#{order.pk}',
+                })
+                if sale_day != return_day:
+                    later_waste_corrections[product_id] = later_waste_corrections.get(product_id, 0) - quantity
+    for product in products:
+        balance = balances.get(product.id)
+        beginning = balance.beginning_quantity if balance else 0
+        sold = 0
+        returned_waste = 0
+        for order in orders:
+            moment = order.completed_at or order.created_at
+            if localtime(moment).date() != day.business_date:
+                continue
+            for line in order.line_items or []:
+                if int(line.get('product') or 0) == product.id:
+                    returned_on_day = sum(int(event.get('quantity') or 0) for event in line.get('returns', [])
+                        if event.get('timestamp') and localtime(timezone.datetime.fromisoformat(event['timestamp'])).date() == day.business_date)
+                    sold += max(int(line.get('quantity') or 0) - returned_on_day, 0)
+        sold += later_waste_corrections.get(product.id, 0)
+        losses = list(ProductLossEvent.objects.filter(day=day, product=product).select_related('actor', 'related_order'))
+        refund_detail = refund_losses.get(product.id, [])
+        loss_qty = sum(loss.quantity for loss in losses) + sum(item['quantity'] for item in refund_detail)
+        movement_events = list(InventoryEvent.objects.filter(event_type=InventoryEvent.STOCK_MOVEMENT, product=product))
+        movement_total = 0
+        restocks = 0
+        adjustments = 0
+        for movement in movement_events:
+            if localtime(movement.created_at).date() != day.business_date:
+                continue
+            # POS outflows are represented by Net Sold. Closing adjustments are the explicit variance correction.
+            if movement.reason.startswith(('POS Transaction', 'Day close reconciliation', 'Wastage:')):
+                continue
+            if movement.reason.startswith('Refund restock'):
+                try:
+                    returned_order_id = int(movement.reason.rsplit('#', 1)[-1])
+                    returned_order = next(o for o in orders if o.pk == returned_order_id)
+                    if localtime(returned_order.completed_at or returned_order.created_at).date() == day.business_date:
+                        continue
+                except (ValueError, StopIteration):
+                    pass
+            delta = int(movement.quantity) * (1 if movement.movement_type == 'IN' else -1)
+            movement_total += delta
+            if delta > 0:
+                restocks += delta
+            else:
+                adjustments += delta
+        expected = beginning + movement_total - sold - loss_qty
+        actual = balance.actual_ending_quantity if balance else None
+        variance = actual - expected if actual is not None else None
+        status_label = 'Not Counted' if actual is None else ('Tally' if variance == 0 else (f'Short by {abs(variance)}' if variance < 0 else f'Over by {variance}'))
+        rows.append({
+            'product_id': product.id, 'product_name': product.name, 'unit': product.unit,
+            'beginning_inventory': beginning, 'restocks': restocks, 'net_stock_adjustments': adjustments,
+            'net_sold': sold, 'loss_qty': loss_qty, 'expected_ending': expected,
+            'actual_ending': actual, 'variance': variance, 'tally_status': status_label,
+            'losses': [{'id': e.id, 'product_name': product.name,
+                'transaction_number': (e.related_order.transaction_id or f'#{e.related_order_id}') if e.related_order_id else None,
+                'created_at': e.created_at.isoformat(), 'loss_type': e.get_loss_type_display(), 'quantity': e.quantity,
+                'remarks': e.reason, 'staff_member': e.actor.get_full_name() or e.actor.username if e.actor else 'Unknown',
+                'related_reference': e.related_order.transaction_id if e.related_order_id else None} for e in losses] + [dict(item, product_name=product.name) for item in refund_detail],
+            'movements': [{'id': m.id, 'type': m.movement_type, 'quantity': int(m.quantity), 'reason': m.reason,
+                'created_at': m.created_at.isoformat(), 'actor': m.user.get_full_name() or m.user.username if m.user else 'Unknown'}
+                for m in movement_events if localtime(m.created_at).date() == day.business_date],
+        })
+    return {'date': day.business_date.isoformat(), 'is_closed': day.is_closed,
+        'closed_by': day.closed_by.get_full_name() or day.closed_by.username if day.closed_by else None,
+        'closed_at': day.closed_at.isoformat() if day.closed_at else None,
+        'discrepancy_remarks': day.discrepancy_remarks, 'rows': rows,
+        'report': day.report_data if day.is_closed else None}
+
+
+class DailyInventoryView(views.APIView):
+    permission_classes = [IsStaffOrAdmin]
+
+    def get(self, request):
+        day_value = request.query_params.get('date') or timezone.localdate().isoformat()
+        business_date = parse_date(day_value)
+        if not business_date:
+            return Response({'date': 'Use YYYY-MM-DD.'}, status=400)
+        day = BusinessDay.objects.filter(business_date=business_date).first()
+        if day is None:
+            previous = BusinessDay.objects.filter(is_closed=True, business_date__lt=business_date).order_by('-business_date').first()
+            can_start = business_date == timezone.localdate() and not BusinessDay.objects.filter(is_closed=True).exists()
+            can_carry = previous and previous.business_date + timedelta(days=1) == business_date
+            if not (can_start or can_carry):
+                return Response({'detail': 'No saved reconciliation exists for this date. Historical counts are not inferred.'}, status=404)
+            day, created = BusinessDay.objects.get_or_create(business_date=business_date, defaults={'opened_by': request.user})
+        else:
+            created = False
+        if created:
+            AuditLog.objects.create(user=request.user, action='INVENTORY_DAY_OPEN', description=f'Opened product inventory reconciliation for {business_date}.')
+        if day.is_closed:
+            return Response({**day.report_data, 'corrections': self._corrections(day)})
+        report = _daily_report(day, request.user)
+        if day.balances.count() < len(report['rows']):
+            return Response({'detail': 'Opening balances are unavailable for this historical date; no counts were inferred.'}, status=404)
+        return Response(report)
+
+    @staticmethod
+    def _corrections(day):
+        return [{'id': correction.id, 'product_name': correction.product.name,
+            'previous_quantity': correction.previous_quantity, 'corrected_quantity': correction.corrected_quantity,
+            'reason': correction.reason, 'actor': correction.actor.get_full_name() or correction.actor.username if correction.actor else 'Unknown',
+            'created_at': correction.created_at.isoformat()} for correction in day.corrections.select_related('product', 'actor')]
+
+    def post(self, request):
+        if request.user.role not in {'STAFF', 'ADMIN'}:
+            return Response({'detail': 'Staff access required.'}, status=403)
+        action = str(request.data.get('action') or '').upper()
+        day_value = str(request.data.get('date') or timezone.localdate().isoformat())
+        business_date = parse_date(day_value)
+        if not business_date:
+            return Response({'date': 'Use YYYY-MM-DD.'}, status=400)
+        if action == 'CORRECTION':
+            if request.user.role != 'ADMIN':
+                return Response({'detail': 'Admin access required to correct finalized inventory.'}, status=403)
+            try:
+                product_id = int(request.data.get('product_id'))
+                corrected_quantity = int(request.data.get('quantity'))
+            except (TypeError, ValueError):
+                return Response({'detail': 'Product and whole-number corrected quantity are required.'}, status=400)
+            reason = str(request.data.get('reason') or '').strip()
+            idempotency_key = str(request.data.get('idempotency_key') or '').strip()[:100]
+            if corrected_quantity < 0 or not reason or not idempotency_key:
+                return Response({'detail': 'A non-negative quantity, explanation, and idempotency key are required.'}, status=400)
+            with transaction.atomic():
+                day = BusinessDay.objects.select_for_update().filter(business_date=business_date).first()
+                if not day or not day.is_closed:
+                    return Response({'detail': 'Corrections apply only to finalized business days.'}, status=409)
+                duplicate = InventoryCorrection.objects.filter(day=day, idempotency_key=idempotency_key).first()
+                if duplicate:
+                    return Response({**day.report_data, 'corrections': self._corrections(day)})
+                if BusinessDay.objects.filter(is_closed=True, business_date__gt=business_date).exists():
+                    return Response({'detail': 'Correct finalized days in chronological order so later saved reports remain intact.'}, status=409)
+                try:
+                    balance = DailyProductBalance.objects.select_for_update().get(day=day, product_id=product_id)
+                except DailyProductBalance.DoesNotExist:
+                    return Response({'detail': 'Product was not part of the finalized report.'}, status=404)
+                previous_quantity = balance.corrected_ending_quantity if balance.corrected_ending_quantity is not None else balance.actual_ending_quantity
+                if previous_quantity is None:
+                    return Response({'detail': 'The finalized report has no physical count to correct.'}, status=409)
+                delta = corrected_quantity - previous_quantity
+                product = Product.objects.select_for_update().get(pk=product_id)
+                if product.stock_level + delta < 0:
+                    return Response({'detail': 'This correction would make current product stock negative.'}, status=400)
+                later_balances = list(DailyProductBalance.objects.select_for_update().filter(day__is_closed=False, day__business_date__gt=business_date, product_id=product_id).select_related('day'))
+                if any(balance.beginning_quantity + delta < 0 for balance in later_balances):
+                    return Response({'detail': 'This correction would make a later open-day opening balance negative.'}, status=400)
+                product.stock_level += delta
+                product.save(update_fields=['stock_level', 'updated_at'])
+                balance.corrected_ending_quantity = corrected_quantity
+                balance.save(update_fields=['corrected_ending_quantity'])
+                for later_balance in later_balances:
+                    before = later_balance.beginning_quantity
+                    later_balance.beginning_quantity += delta
+                    later_balance.save(update_fields=['beginning_quantity'])
+                    AuditLog.objects.create(user=request.user, action='INVENTORY_OPENING_CORRECT', description=f'Adjusted opening balance for {product.name} on {later_balance.day.business_date} from {before} to {later_balance.beginning_quantity}.', metadata={'product_id': product_id, 'before': before, 'after': later_balance.beginning_quantity, 'correction_day': business_date.isoformat()})
+                if delta:
+                    InventoryEvent.objects.create(event_type=InventoryEvent.STOCK_MOVEMENT, product=product, user=request.user,
+                        movement_type='IN' if delta > 0 else 'OUT', quantity=abs(delta),
+                        reason=f'Authorized inventory correction {business_date}: {reason[:90]}')
+                InventoryCorrection.objects.create(day=day, product=product, previous_quantity=previous_quantity,
+                    corrected_quantity=corrected_quantity, reason=reason, actor=request.user, idempotency_key=idempotency_key)
+                AuditLog.objects.create(user=request.user, action='INVENTORY_FINAL_CORRECTION', description=f'Corrected finalized {business_date} count for {product.name} from {previous_quantity} to {corrected_quantity}: {reason}.', metadata={'product_id': product_id, 'before': previous_quantity, 'after': corrected_quantity})
+            return Response({**day.report_data, 'corrections': self._corrections(day)})
+        if action in {'LOSS', 'COUNT'} and not BusinessDay.objects.filter(business_date=business_date).exists():
+            previous = BusinessDay.objects.filter(is_closed=True, business_date__lt=business_date).order_by('-business_date').first()
+            can_start = business_date == timezone.localdate() and not BusinessDay.objects.filter(is_closed=True).exists()
+            can_carry = previous and previous.business_date + timedelta(days=1) == business_date
+            if not (can_start or can_carry):
+                return Response({'detail': 'No open business day exists for this date.'}, status=404)
+        if action == 'LOSS':
+            try:
+                product_id, quantity = int(request.data.get('product_id')), int(request.data.get('quantity'))
+            except (TypeError, ValueError):
+                return Response({'detail': 'Product and whole number quantity are required.'}, status=400)
+            reason = str(request.data.get('reason') or '').strip()
+            idempotency_key = str(request.data.get('idempotency_key') or '').strip()[:100]
+            if quantity <= 0 or not reason:
+                return Response({'detail': 'Quantity must be positive and a reason is required.'}, status=400)
+            if not idempotency_key:
+                return Response({'detail': 'An idempotency key is required for wastage records.'}, status=400)
+            with transaction.atomic():
+                day, _ = BusinessDay.objects.select_for_update().get_or_create(business_date=business_date, defaults={'opened_by': request.user})
+                if day.is_closed:
+                    return Response({'detail': 'Closed days cannot be edited.'}, status=409)
+                report = _daily_report(day, request.user)
+                if day.balances.count() < len(report['rows']):
+                    return Response({'detail': 'Opening balances are unavailable for this date.'}, status=409)
+                duplicate = ProductLossEvent.objects.filter(day=day, idempotency_key=idempotency_key).first()
+                if duplicate:
+                    return Response(_daily_report(day, request.user))
+                try:
+                    product = Product.objects.select_for_update().get(pk=product_id, item_type=Product.PRODUCT, is_active=True)
+                except Product.DoesNotExist:
+                    return Response({'detail': 'Product not found.'}, status=404)
+                if product.stock_level < quantity:
+                    return Response({'detail': f'Insufficient available stock ({product.stock_level}).'}, status=400)
+                product.stock_level -= quantity
+                product.save(update_fields=['stock_level', 'updated_at'])
+                movement = InventoryEvent.objects.create(event_type=InventoryEvent.STOCK_MOVEMENT, product=product, user=request.user,
+                    movement_type='OUT', quantity=quantity, reason=f'Wastage: {reason[:110]}')
+                ProductLossEvent.objects.create(day=day, product=product, quantity=quantity, reason=reason, actor=request.user, inventory_event=movement, idempotency_key=idempotency_key)
+                AuditLog.objects.create(user=request.user, action='PRODUCT_WASTAGE', description=f'Recorded waste of {quantity} {product.name} on {business_date}: {reason}.', metadata={'product_id': product.id, 'quantity': quantity, 'before': product.stock_level + quantity, 'after': product.stock_level})
+            return Response(_daily_report(day, request.user), status=201)
+        if action == 'COUNT':
+            try:
+                product_id, quantity = int(request.data.get('product_id')), int(request.data.get('quantity'))
+            except (TypeError, ValueError):
+                return Response({'detail': 'Product and whole number quantity are required.'}, status=400)
+            if quantity < 0:
+                return Response({'detail': 'Count cannot be negative.'}, status=400)
+            with transaction.atomic():
+                day = BusinessDay.objects.select_for_update().get(business_date=business_date)
+                if day.is_closed:
+                    return Response({'detail': 'Closed days cannot be edited.'}, status=409)
+                report = _daily_report(day, request.user)
+                if day.balances.count() < len(report['rows']):
+                    return Response({'detail': 'Opening balances are unavailable for this date.'}, status=409)
+                balance = DailyProductBalance.objects.select_for_update().get(day=day, product_id=product_id)
+                previous = balance.actual_ending_quantity
+                balance.actual_ending_quantity = quantity
+                balance.counted_by = request.user
+                balance.counted_at = timezone.now()
+                balance.save(update_fields=['actual_ending_quantity', 'counted_by', 'counted_at'])
+                AuditLog.objects.create(user=request.user, action='INVENTORY_COUNT', description=f'Counted product {balance.product.name} for {business_date}: {previous} to {quantity}.', metadata={'product_id': product_id, 'before': previous, 'after': quantity})
+            return Response(_daily_report(day, request.user))
+        if action == 'CLOSE':
+            with transaction.atomic():
+                day = BusinessDay.objects.select_for_update().get(business_date=business_date)
+                if day.is_closed:
+                    return Response(day.report_data)
+                report = _daily_report(day, request.user)
+                if day.balances.count() < len(report['rows']):
+                    return Response({'detail': 'Opening balances are unavailable for this date.'}, status=409)
+                if any(row['actual_ending'] is None for row in report['rows']):
+                    return Response({'detail': 'Count every active product before closing.'}, status=400)
+                discrepant = [row for row in report['rows'] if row['variance']]
+                remarks = str(request.data.get('remarks') or '').strip()
+                if discrepant and (request.user.role != 'ADMIN' or not remarks):
+                    return Response({'detail': 'An admin and discrepancy explanation are required to close with variances.'}, status=403 if request.user.role != 'ADMIN' else 400)
+                # An incomplete paid/refund/pending transaction must not be silently rolled into a closed report.
+                from django.utils.timezone import localtime
+                unresolved = [o.pk for o in Order.objects.filter(payment_status='PENDING') if localtime(o.created_at).date() == business_date]
+                if unresolved:
+                    return Response({'detail': 'Resolve pending transactions before closing.', 'orders': unresolved}, status=409)
+                report['discrepancy_remarks'] = remarks
+                report['closed_by'] = request.user.get_full_name() or request.user.username
+                report['closed_at'] = timezone.now().isoformat()
+                report['is_closed'] = True
+                for row in report['rows']:
+                    product = Product.objects.select_for_update().get(pk=row['product_id'])
+                    before = product.stock_level
+                    counted = row['actual_ending']
+                    if before != counted:
+                        diff = counted - before
+                        product.stock_level = counted
+                        product.save(update_fields=['stock_level', 'updated_at'])
+                        adjustment = InventoryEvent.objects.create(event_type=InventoryEvent.STOCK_MOVEMENT, product=product, user=request.user,
+                            movement_type='IN' if diff > 0 else 'OUT', quantity=abs(diff), reason=f'Day close reconciliation {business_date}: {remarks[:80]}')
+                        row['ledger_before'] = before
+                        row['closing_reconciliation_adjustment'] = {'movement_id': adjustment.id, 'type': adjustment.movement_type,
+                            'quantity': int(adjustment.quantity), 'reason': adjustment.reason, 'created_at': adjustment.created_at.isoformat(),
+                            'actor': request.user.get_full_name() or request.user.username}
+                        row['movements'].append(row['closing_reconciliation_adjustment'])
+                    row['tally_status'] = 'Tally' if row['variance'] == 0 else (f'Short by {abs(row["variance"])}' if row['variance'] < 0 else f'Over by {row["variance"]}')
+                day.is_closed = True
+                day.closed_by = request.user
+                day.closed_at = timezone.now()
+                day.discrepancy_remarks = remarks
+                day.report_data = report
+                day.save(update_fields=['is_closed', 'closed_by', 'closed_at', 'discrepancy_remarks', 'report_data'])
+                AuditLog.objects.create(user=request.user, action='INVENTORY_DAY_CLOSE', description=f'Closed inventory day {business_date}.', metadata={'discrepancies': len(discrepant), 'remarks': remarks})
+            return Response(day.report_data)
+        return Response({'action': 'Use COUNT, LOSS, or CLOSE.'}, status=400)
 
 
 class IngredientDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):

@@ -30,6 +30,7 @@ import { PasswordStrength } from '../components/ui/PasswordStrength';
 import AuditLogsPage from './admin/AuditLogsPage';
 import GalleryManager from './admin/GalleryManager';
 import IngredientStatusModal from '../components/admin/IngredientStatusModal';
+import DailyInventoryBoard from '../components/inventory/DailyInventoryBoard';
 import {
   getEmailError,
   getPasswordError,
@@ -1356,6 +1357,7 @@ export default function AdminDashboard() {
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
     { key: 'calendar', label: 'Booking Calendar', icon: Calendar, active: activeTab === 'calendar', onClick: () => setActiveTab('calendar') },
     { key: 'reports', label: 'End-of-Day Reports', icon: Printer, active: activeTab === 'reports', onClick: () => setActiveTab('reports') },
+    { key: 'inventory', label: 'Product Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'staff', label: 'Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
@@ -1364,7 +1366,7 @@ export default function AdminDashboard() {
     { key: 'audit', label: 'Audit Logs', icon: ClipboardList, active: activeTab === 'audit', onClick: () => setActiveTab('audit') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', gallery: 'Photo Gallery', audit: 'Audit Logs' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', inventory: 'Product Inventory', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', gallery: 'Photo Gallery', audit: 'Audit Logs' };
   const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
   const metrics = asRecord(analytics?.metrics);
   const statusData = [
@@ -1556,6 +1558,8 @@ export default function AdminDashboard() {
               <span className="text-xs font-bold text-espresso/60">Loading {pageTitles[activeTab]}...</span>
             </div>
           )}
+
+          {activeTab === 'inventory' && <DailyInventoryBoard user={user} />}
 
           {/* INSIGHTHUB DASHBOARD */}
           {activeTab === 'analytics' && (

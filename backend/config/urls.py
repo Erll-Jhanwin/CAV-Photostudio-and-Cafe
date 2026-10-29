@@ -42,6 +42,7 @@ from inventory.views import (
     ProductListCreateView, ProductDetailUpdateView, StockMovementListView, 
     CategoryListCreateView, CategoryDetailView, SupplierListCreateView, SupplierDetailView, PurchaseOrderListCreateView,
     PurchaseOrderDetailUpdateView, IngredientListCreateView, IngredientDetailUpdateView, ProductSalesInventoryView,
+    DailyInventoryView,
     RecipeIngredientListCreateView, IngredientStockMovementListView, GenerateRecipeIngredientsView
 )
 from pos.views import OrderListCreateView, OrderDetailView, OrderReturnView, PaymentCreateView, EndOfDayReportListCreateView, EndOfDayReportDetailView, EndOfDayReportReprintView, EndOfDayReportMarkPrintedView, EndOfDayReportSummaryView
@@ -108,6 +109,7 @@ urlpatterns = [
     path('api/inventory/products/<int:pk>/', ProductDetailUpdateView.as_view(), name='product_detail_update'),
     path('api/inventory/ingredients/', IngredientListCreateView.as_view(), name='ingredient_list_create'),
     path('api/inventory/product-sales/', ProductSalesInventoryView.as_view(), name='inventory_product_sales'),
+    path('api/inventory/daily-reconciliation/', DailyInventoryView.as_view(), name='inventory_daily_reconciliation'),
     path('api/inventory/ingredients/<int:pk>/', IngredientDetailUpdateView.as_view(), name='ingredient_detail_update'),
     path('api/inventory/ingredient-movements/', IngredientStockMovementListView.as_view(), name='ingredient_movement_list'),
     path('api/inventory/recipes/', RecipeIngredientListCreateView.as_view(), name='recipe_ingredient_list_create'),

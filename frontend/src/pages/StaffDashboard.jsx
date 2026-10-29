@@ -25,6 +25,7 @@ import { getLocalPrinters, getLocalPrintingSetupMessage, isLocalStaffConsole, op
 import { brandAssets } from '../utils/cavAssets';
 import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
+import DailyInventoryBoard from '../components/inventory/DailyInventoryBoard';
 
 export function StaffSkeleton() {
   return (
@@ -185,7 +186,7 @@ const getProductAvailable = (product) => {
   const servings = product.recipe_items
     .filter(item => Number(item.quantity) > 0)
     .map(item => Math.floor(Number(item.ingredient_details?.stock_quantity || 0) / Number(item.quantity)));
-  return servings.length ? Math.min(...servings) : 0;
+  return servings.length ? Math.min(Number(product.stock_level || 0), ...servings) : 0;
 };
 
 const updateProductRecipeStock = (product, quantitySold) => {
@@ -202,7 +203,7 @@ const updateProductRecipeStock = (product, quantitySold) => {
       : item.ingredient_details;
     return { ...item, ingredient_details: ingredientDetails };
   });
-  const updatedProduct = { ...product, recipe_items: recipeItems };
+  const updatedProduct = { ...product, stock_level: Math.max(Number(product.stock_level || 0) - quantitySold, 0), recipe_items: recipeItems };
   return { ...updatedProduct, available_servings: getProductAvailable(updatedProduct) };
 };
 
@@ -219,7 +220,6 @@ export default function StaffDashboard() {
   const [products, setProducts] = useState([]);
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [ingredients, setIngredients] = useState([]);
-  const [productSalesInventory, setProductSalesInventory] = useState([]);
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [catalogCategories, setCatalogCategories] = useState([]);
@@ -373,12 +373,10 @@ export default function StaffDashboard() {
         setStaffBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
       } else if (tab === 'inventory') {
         await loadStaticInventoryOptions(force);
-        const [ingredientsRes, productSalesRes] = await Promise.all([
+        const [ingredientsRes] = await Promise.all([
           getCached('/api/inventory/ingredients/', { params: { limit: 300 } }, { force }),
-          getCached('/api/inventory/product-sales/', {}, { force }),
         ]);
         setIngredients(normalizeRowsById(ingredientsRes.data, row => row?.name));
-        setProductSalesInventory(Array.isArray(productSalesRes.data) ? productSalesRes.data : []);
       } else if (tab === 'catalog') {
         const [catalogProductsRes, catalogCategoriesRes, catalogSuppliersRes, purchaseOrdersRes] = await Promise.all([
           getCached('/api/inventory/products/', { params: { limit: 300, include_inactive: true } }, { force }),
@@ -730,15 +728,16 @@ export default function StaffDashboard() {
     }
   };
 
-  const handleReturnItem = async (order, item) => {
+  const handleReturnItem = async (order, item, disposition) => {
     if (returningProductId) return;
     setReturningProductId(item.product);
     try {
       const response = await client.post(`/api/pos/orders/${order.id}/returns/`, {
         product_id: item.product,
         quantity: 1,
-        disposition: 'WASTED',
-        reason: 'Returned beverage marked as wastage',
+        disposition,
+        reason: disposition === 'RESTOCKED' ? 'Returned item restored to usable stock' : 'Returned beverage marked as wastage',
+        idempotency_key: window.crypto?.randomUUID?.() || `${order.id}-${item.product}-${Date.now()}`,
       });
       setOrders(current => current.map(row => row.id === response.data.id ? response.data : row));
       setReceiptOrder(response.data);
@@ -1871,6 +1870,7 @@ export default function StaffDashboard() {
           {/* INVENTORY */}
           {activeTab === 'inventory' && (
             <div className="space-y-6 animate-in-up" key="inventory">
+              <DailyInventoryBoard user={user} />
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <h1 className="heading-page text-espresso">Live Inventory</h1>
@@ -1880,26 +1880,6 @@ export default function StaffDashboard() {
                   Add Stock Item
                 </Button>
               </div>
-
-              <Card>
-                <CardHeader title="Today’s Product Sales, Returns & Wastage" subtitle="Serving counts reconcile to the beginning stock snapshot. A returned wasted drink remains consumed stock while its sale is removed from net sold and revenue." />
-                <DataTable
-                  columns={[
-                    { key: 'product_name', label: 'Product' },
-                    { key: 'beginning_stock', label: 'Beginning', align: 'right' },
-                    { key: 'quantity_sold', label: 'Sold', align: 'right' },
-                    { key: 'wastage', label: 'Wastage', align: 'right' },
-                    { key: 'ending_stock', label: 'Ending', align: 'right' },
-                    { key: 'revenue', label: 'Net revenue', align: 'right', render: row => formatCurrency(row.revenue) },
-                    { key: 'profit_loss', label: 'Profit / loss', align: 'right', render: row => <span className={Number(row.profit_loss) < 0 ? 'text-red-700' : 'text-emerald-700'}>{formatCurrency(row.profit_loss)}</span> },
-                  ]}
-                  rows={productSalesInventory}
-                  emptyIcon={Package}
-                  emptyTitle="No active products"
-                  emptyDescription="Add café or studio products to track serving counts."
-                  minWidth={900}
-                />
-              </Card>
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {inventoryStatuses.filter(status => status.key !== 'ALL').map(status => {
@@ -2717,7 +2697,7 @@ export default function StaffDashboard() {
                 const estimatedProfitLoss = netRevenue - Number(item.cost || 0) * quantity;
                 return <div key={item.id || `${item.product}-${index}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-espresso/[0.06] pb-2">
                   <div className="min-w-0"><p className="font-bold text-espresso">{item.product_details?.name || 'Item'} × {quantity}</p><p className="text-espresso/55">Unit {formatReceiptCurrency(item.price)} · Item discount {formatReceiptCurrency(item.discount_amount || 0)} · Returned {returned} · Wasted {item.wasted_quantity || 0}</p><p className="text-espresso/55">Net sales {formatReceiptCurrency(netRevenue)} · Estimated profit / loss {formatReceiptCurrency(estimatedProfitLoss)}</p></div>
-                  {remaining > 0 && receiptOrder.payment_status === 'PAID' && <Button variant="outline" size="xs" loading={returningProductId === item.product} disabled={returningProductId !== null} onClick={() => handleReturnItem(receiptOrder, item)}>Return 1 and mark wasted</Button>}
+                  {remaining > 0 && receiptOrder.payment_status === 'PAID' && <div className="flex flex-wrap gap-1"><Button variant="outline" size="xs" loading={returningProductId === item.product} disabled={returningProductId !== null} onClick={() => handleReturnItem(receiptOrder, item, 'WASTED')}>Refund 1 · do not restock</Button><Button variant="outline" size="xs" loading={returningProductId === item.product} disabled={returningProductId !== null} onClick={() => handleReturnItem(receiptOrder, item, 'RESTOCKED')}>Refund 1 · restock</Button></div>}
                 </div>;
               })}
             </div>
