@@ -86,4 +86,63 @@ describe('AdminDashboard', () => {
     expect(getCached).toHaveBeenCalledWith('/api/dashboard/analytics/', expect.any(Object), expect.any(Object));
     await act(async () => resolveForecast({ data: { sales_forecast: [], reorder_recommendations: [] } }));
   });
+
+  it('opens the matching live ingredient list from each stock summary card', async () => {
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole('button', { name: /View \d+ in stock ingredients/ }));
+    expect(await screen.findByRole('dialog', { name: 'In Stock Ingredients' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: /View \d+ expired ingredients/ }));
+    expect(await screen.findByRole('dialog', { name: 'Expired Ingredients' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Search expired ingredients' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Sort expired ingredients' })).toBeInTheDocument();
+  });
+
+  it('shows full-width booking details in responsive columns on the calendar', async () => {
+    const bookingMonth = new Date().toISOString().slice(0, 7);
+    getCached.mockImplementation(url => {
+      if (url.includes('/api/bookings/studio-unavailable-dates/')) return Promise.resolve({ data: [] });
+      if (url === '/api/bookings/') {
+        return Promise.resolve({ data: [{
+          id: 48,
+          customer: { first_name: 'Jamie', last_name: 'Reyes', email: 'jamie@example.com', phone_number: '+639171234567' },
+          package_details: { name: 'Portrait Session', price: '2500.00', inclusions: 'One printed portrait' },
+          scheduled_date: `${bookingMonth}-15`,
+          scheduled_time: '10:30:00',
+          status: 'PENDING',
+          required_down_payment: '1250.00',
+          items: [{ name: 'Printed photo', quantity: 2, price: '150.00' }],
+          notes: 'Please call upon arrival.',
+          payments: [{ id: 11, amount: '1250.00', method_label: 'GCash', status: 'PENDING_VERIFICATION', reference_number: 'GC-48' }],
+        }] });
+      }
+      if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
+      return Promise.resolve({ data: {
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
+        top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
+        low_stock_alerts: [], inventory_alerts: [],
+      } });
+    });
+
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Booking Calendar' }));
+
+    expect(await screen.findByText('Live Bookings')).toBeInTheDocument();
+    expect(await screen.findByText('jamie@example.com')).toBeInTheDocument();
+    expect(screen.getByText('+639171234567')).toBeInTheDocument();
+    expect(screen.getByText('Down payment: PHP 1,250')).toBeInTheDocument();
+    expect(screen.getByText('Printed photo × 2 · PHP 150')).toBeInTheDocument();
+    expect(screen.getByText('Please call upon arrival.')).toBeInTheDocument();
+    expect(screen.getByText('Includes: One printed portrait')).toBeInTheDocument();
+    expect(screen.getByText('PHP 1,250 · GCash · PENDING VERIFICATION · Ref GC-48')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Booking 48 status' })).toBeInTheDocument();
+
+    const bookingCard = screen.getByText('Booking items').closest('.rounded-2xl');
+    expect(bookingCard).toHaveClass('min-w-0');
+    expect(bookingCard.querySelector('.grid')).toHaveClass('sm:grid-cols-2', 'xl:grid-cols-4');
+    expect(bookingCard.parentElement).toHaveClass('grid-cols-1');
+  });
 });

@@ -29,6 +29,7 @@ import { Avatar } from '../components/ui/Avatar';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
 import AuditLogsPage from './admin/AuditLogsPage';
 import GalleryManager from './admin/GalleryManager';
+import IngredientStatusModal from '../components/admin/IngredientStatusModal';
 import {
   getEmailError,
   getPasswordError,
@@ -305,6 +306,8 @@ export default function AdminDashboard() {
   const [calendarBookings, setCalendarBookings] = useState([]);
   const [studioUnavailableDates, setStudioUnavailableDates] = useState([]);
   const [endOfDayReports, setEndOfDayReports] = useState([]);
+  const [ingredientStatusOpen, setIngredientStatusOpen] = useState(false);
+  const [selectedInventoryStatus, setSelectedInventoryStatus] = useState({ key: 'EXPIRED', label: 'Expired' });
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
   const [dataError, setDataError] = useState('');
@@ -1374,15 +1377,28 @@ export default function AdminDashboard() {
                     <div className="p-5 md:p-6">
                       <CardHeader title="Ingredient Stock Management" subtitle="Raw ingredient health monitored from staff inventory activity" className="mb-4" />
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                        {inventorySummary.map(status => (
-                          <div key={status.key} className="rounded-2xl bg-cream/60 border border-espresso/[0.05] p-3">
+                        {inventorySummary.map(status => {
+                          const SummaryCard = 'button';
+                          return (
+                          <SummaryCard
+                            key={status.key}
+                            type="button"
+                            onClick={() => {
+                              setSelectedInventoryStatus({ key: status.key, label: status.label });
+                              setIngredientStatusOpen(true);
+                            }}
+                            aria-haspopup="dialog"
+                            aria-label={`View ${status.value} ${status.label.toLocaleLowerCase()} ingredients`}
+                            className="cursor-pointer rounded-2xl border border-espresso/[0.05] bg-cream/60 p-3 text-left transition hover:-translate-y-0.5 hover:border-gold/30 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gold/40"
+                          >
                             <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${status.className}`}>
                               {status.label}
                             </span>
                             <p className="font-sans text-2xl font-extrabold text-espresso mt-2">{status.value}</p>
                             <p className="text-[10px] text-espresso/45 uppercase font-black">ingredient{status.value === 1 ? '' : 's'}</p>
-                          </div>
-                        ))}
+                          </SummaryCard>
+                          );
+                        })}
                       </div>
                     </div>
                   </Card>
@@ -1765,8 +1781,8 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-[1.35fr_0.65fr] gap-4 items-start">
-                <div className="rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
+              <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.8fr)]">
+                <div className="min-w-0 rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
                   <div className="mb-2 hidden grid-cols-7 gap-1.5 text-center text-[10px] font-black uppercase tracking-wider text-espresso/40 sm:grid">
                     {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <span key={day}>{day}</span>)}
                   </div>
@@ -1877,31 +1893,7 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <form onSubmit={handleCreateStudioUnavailable} className="rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm space-y-3">
-                    <CardHeader title="Studio Unavailable" subtitle="Block all Studio Session slots for one date." className="mb-1" />
-                    <Input
-                      label="Date"
-                      type="date"
-                      value={studioUnavailableDate}
-                      onChange={e => {
-                        setStudioUnavailableDate(e.target.value);
-                        if (e.target.value) setBookingCalendarMonth(e.target.value.slice(0, 7));
-                      }}
-                    />
-                    <Textarea
-                      label="Reason"
-                      rows={3}
-                      value={studioUnavailableReason}
-                      onChange={e => setStudioUnavailableReason(e.target.value)}
-                      placeholder="Maintenance, private studio use, equipment setup..."
-                    />
-                    {studioCalendarError && <p className="text-[11px] font-bold text-red-600">{studioCalendarError}</p>}
-                    <Button type="submit" variant="primary" icon={Calendar} loading={studioUnavailableSaving} disabled={studioUnavailableSaving}>
-                      Mark Studio Unavailable
-                    </Button>
-                  </form>
-
+                <div className="flex min-w-0 flex-col gap-4">
                   <div className="rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
                     <CardHeader title="Manual Blocks" subtitle="Admin-created studio unavailable dates." className="mb-3" />
                     <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
@@ -1927,47 +1919,121 @@ export default function AdminDashboard() {
                       )}
                     </div>
                   </div>
+
+                  <form onSubmit={handleCreateStudioUnavailable} className="space-y-3 rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
+                    <CardHeader title="Studio Unavailable" subtitle="Block all Studio Session slots for one date." className="mb-1" />
+                    <Input
+                      label="Date"
+                      type="date"
+                      value={studioUnavailableDate}
+                      onChange={e => {
+                        setStudioUnavailableDate(e.target.value);
+                        if (e.target.value) setBookingCalendarMonth(e.target.value.slice(0, 7));
+                      }}
+                    />
+                    <Textarea
+                      label="Reason"
+                      rows={3}
+                      value={studioUnavailableReason}
+                      onChange={e => setStudioUnavailableReason(e.target.value)}
+                      placeholder="Maintenance, private studio use, equipment setup..."
+                    />
+                    {studioCalendarError && <p className="text-[11px] font-bold text-red-600">{studioCalendarError}</p>}
+                    <Button type="submit" variant="primary" icon={Calendar} loading={studioUnavailableSaving} disabled={studioUnavailableSaving}>
+                      Mark Studio Unavailable
+                    </Button>
+                  </form>
                 </div>
               </div>
 
-              <div className="rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
+              <div className="min-w-0 rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
                 <CardHeader title="Live Bookings" subtitle="Studio sessions and off-site event photoshoots for this month." className="mb-3" />
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div className="grid min-w-0 grid-cols-1 gap-3">
                   {calendarMonthBookings.length ? calendarMonthBookings.map(booking => (
-                    <div key={booking.id} className="rounded-2xl border border-espresso/10 bg-cream/40 p-3 text-xs">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${isEventBooking(booking) ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                              {isEventBooking(booking) ? 'Off-site Event' : 'Studio Session'}
-                            </span>
-                            <StatusBadge status={booking.status} />
+                    <div key={booking.id} className="min-w-0 rounded-2xl border border-espresso/10 bg-cream/40 p-4 text-xs sm:p-5">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="grid min-w-0 flex-1 grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
+                          <div className="min-w-0">
+                            <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Booking</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${isEventBooking(booking) ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                {isEventBooking(booking) ? 'Off-site Event' : 'Studio Session'}
+                              </span>
+                              <StatusBadge status={booking.status} />
+                            </div>
+                            <p className="mt-2 break-words font-black text-espresso">Booking #{booking.id}</p>
                           </div>
-                          <p className="mt-2 font-black text-espresso">{booking.package_details?.name || 'Booking'} #{booking.id}</p>
-                          <p className="mt-1 font-bold text-espresso/65">{getCalendarBookingName(booking)}</p>
-                          <p className="mt-1 font-bold text-espresso/55">{booking.scheduled_date} at {String(booking.scheduled_time || '').slice(0, 5)}</p>
+                          <div className="min-w-0">
+                            <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Customer</p>
+                            <p className="break-words font-bold text-espresso/75">{getCalendarBookingName(booking)}</p>
+                            {booking.customer?.email && <p className="mt-1 break-all text-espresso/60">{booking.customer.email}</p>}
+                            {booking.customer?.phone_number && <p className="mt-1 text-espresso/60">{booking.customer.phone_number}</p>}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Schedule</p>
+                            <p className="font-bold text-espresso/75">{booking.scheduled_date || 'Date not set'}</p>
+                            <p className="mt-1 font-bold text-espresso/60">{String(booking.scheduled_time || '').slice(0, 5) || 'Time not set'}</p>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Package</p>
+                            <p className="break-words font-bold text-espresso/75">{booking.package_details?.name || 'Booking package'}</p>
+                            {booking.package_details?.price != null && <p className="mt-1 font-bold text-espresso/60">{formatCurrency(booking.package_details.price)}</p>}
+                            {booking.required_down_payment != null && <p className="mt-1 text-espresso/55">Down payment: {formatCurrency(booking.required_down_payment)}</p>}
+                            {booking.package_details?.inclusions && <p className="mt-1 break-words leading-relaxed text-espresso/55">Includes: {booking.package_details.inclusions}</p>}
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteBooking({ ...booking, customer_name: getCalendarBookingName(booking) })}
-                          className="rounded-lg p-1.5 text-red-500 hover:bg-red-50"
-                          aria-label={`Delete booking ${booking.id}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <div className="flex shrink-0 items-center justify-between gap-3 sm:w-40 sm:flex-col sm:items-stretch">
+                          <select
+                            aria-label={`Booking ${booking.id} status`}
+                            value={booking.status}
+                            onChange={e => handleCalendarBookingStatus(booking, e.target.value)}
+                            className="min-w-0 flex-1 rounded-xl border border-espresso/10 bg-white px-3 py-2 text-xs font-bold text-espresso focus:outline-none focus:ring-4 focus:ring-gold/15 sm:w-full"
+                          >
+                            {calendarBookingStatusOptions.map(option => (
+                              <option key={option} value={option}>{option.replace('_', ' ')}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBooking({ ...booking, customer_name: getCalendarBookingName(booking) })}
+                            className="shrink-0 rounded-lg p-2 text-red-500 hover:bg-red-50"
+                            aria-label={`Delete booking ${booking.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                      <label className="mt-3 block">
-                        <span className="sr-only">Booking status</span>
-                        <select
-                          value={booking.status}
-                          onChange={e => handleCalendarBookingStatus(booking, e.target.value)}
-                          className="w-full rounded-xl border border-espresso/10 bg-white px-3 py-2 text-xs font-bold text-espresso focus:outline-none focus:ring-4 focus:ring-gold/15"
-                        >
-                          {calendarBookingStatusOptions.map(option => (
-                            <option key={option} value={option}>{option.replace('_', ' ')}</option>
-                          ))}
-                        </select>
-                      </label>
+                      {(booking.items?.length > 0 || booking.notes || booking.payments?.length > 0) && (
+                        <div className="mt-4 grid grid-cols-1 gap-3 border-t border-espresso/10 pt-3 md:grid-cols-2">
+                          {booking.items?.length > 0 && (
+                            <div className="min-w-0">
+                              <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Booking items</p>
+                              <p className="break-words font-bold leading-relaxed text-espresso/65">
+                                {booking.items.map(item => `${item.name || 'Item'}${item.quantity ? ` × ${item.quantity}` : ''}${item.price != null ? ` · ${formatCurrency(item.price)}` : ''}`).join(', ')}
+                              </p>
+                            </div>
+                          )}
+                          {booking.notes && (
+                            <div className="min-w-0">
+                              <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Notes</p>
+                              <p className="whitespace-pre-wrap break-words font-medium leading-relaxed text-espresso/65">{booking.notes}</p>
+                            </div>
+                          )}
+                          {booking.payments?.length > 0 && (
+                            <div className="min-w-0">
+                              <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Payment submissions</p>
+                              <div className="space-y-1">
+                                {booking.payments.map(payment => (
+                                  <p key={payment.id || payment.reference_number} className="break-words font-medium leading-relaxed text-espresso/65">
+                                    {formatCurrency(payment.amount)} · {payment.method_label || payment.method || 'Payment'} · {String(payment.status || 'Pending').replace(/_/g, ' ')}
+                                    {payment.reference_number ? ` · Ref ${payment.reference_number}` : ''}
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )) : (
                     <EmptyState icon={Calendar} title="No bookings this month" description="Studio and event bookings will appear here as they are created." />
@@ -2795,6 +2861,13 @@ export default function AdminDashboard() {
           </div>
         </div>
       </Modal>
+
+      <IngredientStatusModal
+        open={ingredientStatusOpen}
+        onClose={() => setIngredientStatusOpen(false)}
+        statusKey={selectedInventoryStatus.key}
+        statusLabel={selectedInventoryStatus.label}
+      />
     </div>
   );
 }

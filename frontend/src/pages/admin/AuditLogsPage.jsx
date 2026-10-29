@@ -55,31 +55,33 @@ export default function AuditLogsPage() {
   const clearFilters = () => { setSearch(''); setRole(''); setModule(''); setAction(''); setKind(''); setStart(''); setEnd(''); setPage(1); };
 
   return (
-    <div className="w-full space-y-5 animate-in-up">
-      <Card className="p-4 sm:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <CardHeader headingLevel={1} title="Audit Logs" subtitle="A searchable record of account, booking, payment, inventory, and system activity." />
+    <div className="w-full min-w-0 space-y-5 animate-in-up">
+      <Card className="w-full min-w-0 overflow-hidden p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <CardHeader headingLevel={1} title="Audit Logs" subtitle="A searchable record of account, booking, payment, inventory, and system activity." className="mb-0" />
+          </div>
           <button type="button" onClick={() => setRefreshKey(value => value + 1)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-espresso/10 bg-white px-3 py-2 text-xs font-bold text-espresso hover:bg-cream" aria-label="Refresh audit logs">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
         </div>
-        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
-          <div className="relative sm:col-span-2">
+        <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 2xl:grid-cols-8">
+          <div className="relative min-w-0 sm:col-span-2 lg:col-span-2">
             <Search className="absolute left-3 top-3 h-4 w-4 text-espresso/40" />
-            <Input aria-label="Search audit logs" placeholder="Search person, action, record…" value={search} onChange={setFilter(setSearch)} className="pl-9" />
+            <Input aria-label="Search audit logs" placeholder="Search person, action, record…" value={search} onChange={setFilter(setSearch)} className="min-w-0 pl-9" />
           </div>
-          <Select aria-label="Filter by role" value={role} onChange={setFilter(setRole)} options={roleOptions} />
-          <Select aria-label="Filter by module" value={module} onChange={setFilter(setModule)} options={moduleOptions} />
-          <Select aria-label="Filter activity type" value={kind} onChange={setFilter(setKind)} options={kindOptions} />
-          <Input aria-label="Filter by action" placeholder="Action (e.g. BOOKING_CREATE)" value={action} onChange={setFilter(setAction)} />
-          <div className="flex gap-2">
-            <Input aria-label="Start date" type="date" value={start} onChange={setFilter(setStart)} />
-            <Input aria-label="End date" type="date" value={end} onChange={setFilter(setEnd)} />
+          <div className="min-w-0"><Select aria-label="Filter by role" value={role} onChange={setFilter(setRole)} options={roleOptions} className="min-w-0" /></div>
+          <div className="min-w-0"><Select aria-label="Filter by module" value={module} onChange={setFilter(setModule)} options={moduleOptions} className="min-w-0" /></div>
+          <div className="min-w-0"><Select aria-label="Filter activity type" value={kind} onChange={setFilter(setKind)} options={kindOptions} className="min-w-0" /></div>
+          <div className="min-w-0"><Input aria-label="Filter by action" placeholder="Action (e.g. BOOKING_CREATE)" value={action} onChange={setFilter(setAction)} className="min-w-0" /></div>
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2 lg:col-span-2 2xl:col-span-2">
+            <Input aria-label="Start date" type="date" value={start} onChange={setFilter(setStart)} className="min-w-0" />
+            <Input aria-label="End date" type="date" value={end} onChange={setFilter(setEnd)} className="min-w-0" />
           </div>
         </div>
-        <div className="mt-3 flex items-center justify-between gap-3 text-xs text-espresso/55">
-          <span className="inline-flex items-center gap-1.5"><Filter className="h-3.5 w-3.5" /> {payload.count || 0} recorded activities</span>
-          <button type="button" onClick={clearFilters} className="font-bold text-gold-dark hover:underline">Clear filters</button>
+        <div className="mt-3 flex min-w-0 flex-col gap-2 text-xs text-espresso/55 sm:flex-row sm:items-center sm:justify-between">
+          <span className="inline-flex min-w-0 items-center gap-1.5"><Filter className="h-3.5 w-3.5 shrink-0" /> {payload.count || 0} recorded activities</span>
+          <button type="button" onClick={clearFilters} className="shrink-0 self-start font-bold text-gold-dark hover:underline sm:self-auto">Clear filters</button>
         </div>
       </Card>
 
