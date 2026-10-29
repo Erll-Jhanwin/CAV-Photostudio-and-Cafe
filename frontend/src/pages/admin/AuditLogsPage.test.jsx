@@ -47,10 +47,50 @@ test('shows all filters and applies then clears them through the existing query'
 
 test('uses wrapping grid tracks and constrained date inputs at responsive breakpoints', () => {
   const { container } = render(<AuditLogsPage />);
+  expect(container.firstChild).toHaveClass('h-full', 'min-h-0', 'flex-col');
   const filterGrid = container.querySelector('[class*="lg:grid-cols-5"]');
-  expect(filterGrid).toHaveClass('min-w-0', 'grid-cols-1', 'sm:grid-cols-2', 'lg:grid-cols-5', '2xl:grid-cols-8');
+  expect(filterGrid).toHaveClass('min-w-0', 'grid-cols-2', 'lg:grid-cols-5', '2xl:grid-cols-8');
   expect(screen.getByLabelText('Start date')).toHaveClass('min-w-0');
   expect(screen.getByLabelText('End date')).toHaveClass('min-w-0');
+  expect(screen.getByRole('button', { name: 'Refresh audit logs' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Audit Logs' })).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'Timestamp' })).toBeInTheDocument();
+  expect(screen.getByText(/Rows per page:/).parentElement).toHaveTextContent('25');
+  expect(container.querySelector('table').parentElement).toHaveClass('h-full', 'overflow-x-auto');
+});
+
+test('keeps the table frame, headers, and pager visible while loading and with no results', async () => {
+  let resolveRequest;
+  client.get.mockReturnValueOnce(new Promise(resolve => { resolveRequest = resolve; }));
+  const { container } = render(<AuditLogsPage />);
+
+  expect(await screen.findByText('Loading audit activity…')).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'Timestamp' })).toBeInTheDocument();
+  expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
+  expect(container.firstChild).toHaveClass('h-full', 'min-h-0');
+
+  resolveRequest({ data: { count: 0, results: [] } });
+  expect(await screen.findByText('No audit activity found')).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'Timestamp' })).toBeInTheDocument();
+  expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
+});
+
+test('resets to page one when server-side filters change after pagination', async () => {
+  client.get.mockResolvedValue({ data: { count: 62, results: [] } });
+  render(<AuditLogsPage />);
+
+  await waitFor(() => expect(client.get).toHaveBeenLastCalledWith('/api/audit/logs/', expect.objectContaining({
+    params: expect.objectContaining({ page: 1, page_size: 25 }),
+  })));
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  await waitFor(() => expect(client.get).toHaveBeenLastCalledWith('/api/audit/logs/', expect.objectContaining({
+    params: expect.objectContaining({ page: 2, page_size: 25 }),
+  })));
+
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter by role' }), { target: { value: 'STAFF' } });
+  await waitFor(() => expect(client.get).toHaveBeenLastCalledWith('/api/audit/logs/', expect.objectContaining({
+    params: expect.objectContaining({ role: 'STAFF', page: 1, page_size: 25 }),
+  })));
 });
 
 test('opens successful event details from a keyboard-accessible row and redacts sensitive metadata', async () => {

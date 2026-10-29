@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
 import {
@@ -27,9 +27,11 @@ import { DataTable as DashboardTable, PaginationControls, paginateRows, sortRows
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
+import { calculateSalesRowsPerPage } from './salesLogLayout';
 import AuditLogsPage from './admin/AuditLogsPage';
 import GalleryManager from './admin/GalleryManager';
 import IngredientStatusModal from '../components/admin/IngredientStatusModal';
+import LiveInventoryPage from './admin/LiveInventoryPage';
 import {
   getEmailError,
   getPasswordError,
@@ -504,6 +506,8 @@ export default function AdminDashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [staffList, setStaffList] = useState([]);
+  const [inventoryIngredients, setInventoryIngredients] = useState([]);
+  const [productSalesInventory, setProductSalesInventory] = useState([]);
   const [faqs, setFaqs] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
@@ -568,6 +572,7 @@ export default function AdminDashboard() {
   const [paymentPageSize, setPaymentPageSize] = useState(10);
   const [staffPage, setStaffPage] = useState(1);
   const [staffPageSize, setStaffPageSize] = useState(10);
+  const staffTableAreaRef = useRef(null);
   const [staffSearch, setStaffSearch] = useState('');
   const [staffRoleFilter, setStaffRoleFilter] = useState('ALL');
   const [faqPage, setFaqPage] = useState(1);
@@ -633,6 +638,13 @@ export default function AdminDashboard() {
       } else if (tab === 'reviews') {
         const response = await getCached('/api/bookings/reviews/all/', {}, { force });
         setReviews(normalizeRowsById(response.data, row => row?.id));
+      } else if (tab === 'inventory') {
+        const [ingredientsRes, productSalesRes] = await Promise.all([
+          getCached('/api/inventory/ingredients/', { params: { limit: 300 } }, { force }),
+          getCached('/api/inventory/product-sales/', {}, { force }),
+        ]);
+        setInventoryIngredients(normalizeRowsById(ingredientsRes.data, row => row?.id || row?.name));
+        setProductSalesInventory(normalizeRowsById(productSalesRes.data, row => row?.product_id || row?.product_name));
       }
     } catch (error) {
       setDataError(getApiErrorMessage(error, `Could not load ${tab} data.`));
@@ -1357,6 +1369,7 @@ export default function AdminDashboard() {
     { key: 'calendar', label: 'Booking Calendar', icon: Calendar, active: activeTab === 'calendar', onClick: () => setActiveTab('calendar') },
     { key: 'reports', label: 'End-of-Day Reports', icon: Printer, active: activeTab === 'reports', onClick: () => setActiveTab('reports') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
+    { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
     { key: 'staff', label: 'Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
     { key: 'reviews', label: 'Reviews & Feedback', icon: Star, active: activeTab === 'reviews', onClick: () => setActiveTab('reviews') },
@@ -1364,7 +1377,7 @@ export default function AdminDashboard() {
     { key: 'audit', label: 'Audit Logs', icon: ClipboardList, active: activeTab === 'audit', onClick: () => setActiveTab('audit') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', gallery: 'Photo Gallery', audit: 'Audit Logs' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', inventory: 'Live Inventory', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', gallery: 'Photo Gallery', audit: 'Audit Logs' };
   const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
   const metrics = asRecord(analytics?.metrics);
   const statusData = [
@@ -1460,6 +1473,37 @@ export default function AdminDashboard() {
   });
   const sortedStaffList = sortRows(filteredStaffList, staffSort);
   const staffPageRows = paginateRows(sortedStaffList, staffPage, staffPageSize);
+  useLayoutEffect(() => {
+    if (activeTab !== 'staff') return undefined;
+    const tableArea = staffTableAreaRef.current;
+    if (!tableArea || !tableArea.clientHeight) return undefined;
+
+    const measureRows = () => {
+      const availableHeight = tableArea.clientHeight;
+      if (!availableHeight) return;
+      const table = tableArea.querySelector('table');
+      const headerHeight = table?.querySelector('thead')?.getBoundingClientRect().height || 0;
+      const rowHeights = Array.from(table?.querySelectorAll('tbody tr') || [])
+        .map(row => row.getBoundingClientRect().height);
+      const nextPageSize = calculateSalesRowsPerPage({
+        availableHeight,
+        headerHeight,
+        rowHeights,
+        defaultRowHeight: 54,
+      });
+      setStaffPageSize(current => (current === nextPageSize ? current : nextPageSize));
+      setStaffPage(current => Math.min(Math.max(current, 1), Math.max(1, Math.ceil(filteredStaffList.length / nextPageSize))));
+    };
+
+    measureRows();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureRows) : null;
+    observer?.observe(tableArea);
+    window.addEventListener('resize', measureRows);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measureRows);
+    };
+  }, [activeTab, staffPage, staffPageSize, staffSort, staffList, staffSearch, staffRoleFilter, filteredStaffList.length]);
   const faqPageRows = paginateRows(faqs, faqPage, faqPageSize);
   const reviewPageRows = paginateRows(reviews, reviewPage, reviewPageSize);
   const reviewCounts = reviews.reduce((acc, review) => {
@@ -1507,7 +1551,7 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className={`min-h-screen bg-cream flex flex-col md:flex-row ${['faq', 'gallery'].includes(activeTab) ? 'h-screen overflow-hidden' : ''}`}>
+    <div className={`min-h-screen bg-cream flex flex-col md:flex-row ${['staff', 'faq', 'gallery', 'audit', 'inventory'].includes(activeTab) ? 'h-dvh overflow-hidden' : ''}`}>
       <Sidebar
         brand="CAV Admin"
         brandSubtitle="Management Console"
@@ -1522,10 +1566,10 @@ export default function AdminDashboard() {
         onSignOutConfirm={handleLogout}
       />
 
-      <div className={`flex-1 flex flex-col overflow-hidden ${['faq', 'gallery'].includes(activeTab) ? 'h-full min-h-0' : 'min-h-screen'}`}>
+      <div className={`flex-1 flex flex-col overflow-hidden ${['staff', 'faq', 'gallery', 'audit', 'inventory'].includes(activeTab) ? 'h-dvh min-h-0' : 'min-h-screen'}`}>
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
-        <main className={`flex-1 min-h-0 min-w-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${['reports', 'faq', 'gallery'].includes(activeTab) ? 'overflow-hidden' : 'overflow-y-auto'} ${['faq', 'gallery'].includes(activeTab) ? 'flex flex-col' : ''}`}>
+        <main className={`flex-1 min-h-0 min-w-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${['reports', 'staff', 'faq', 'gallery', 'audit', 'inventory'].includes(activeTab) ? 'overflow-hidden' : 'overflow-y-auto'} ${['staff', 'faq', 'gallery', 'audit', 'inventory'].includes(activeTab) ? 'flex flex-col' : ''}`}>
           {['payments', 'staff', 'faq'].includes(activeTab) && (
             <h1 className="heading-page mb-4 shrink-0 text-espresso">{pageTitles[activeTab]}</h1>
           )}
@@ -2563,7 +2607,7 @@ export default function AdminDashboard() {
 
           {/* ACCOUNTS */}
           {activeTab === 'staff' && (
-            <div className="w-full animate-in-up" key="staff">
+            <div className="flex min-h-0 w-full flex-1 flex-col animate-in-up" key="staff">
               <Modal
                 open={createAccountOpen}
                 onClose={() => {
@@ -2658,9 +2702,10 @@ export default function AdminDashboard() {
                   </form>
               </Modal>
 
-                <Card className="!p-4 md:!p-5 flex min-h-[540px] flex-col">
+                <Card className="!p-4 md:!p-5 flex h-full min-h-0 flex-1 flex-col overflow-hidden">
                   <CardHeader
                     title="Existing Accounts"
+                    className="mb-3 shrink-0"
                     action={(
                       <IconButton
                         icon={Plus}
@@ -2675,7 +2720,7 @@ export default function AdminDashboard() {
                       />
                     )}
                   />
-                  <div className="mb-4 flex flex-col gap-3">
+                  <div className="mb-3 flex shrink-0 flex-col gap-3">
                     <label className="relative block min-w-0">
                       <span className="sr-only">Search accounts</span>
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-espresso/40" aria-hidden="true" />
@@ -2713,8 +2758,8 @@ export default function AdminDashboard() {
                       })}
                     </div>
                   </div>
-                  {filteredStaffList.length > 0 ? (
-                    <div className="flex min-h-0 flex-1 flex-col">
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <div ref={staffTableAreaRef} className="min-h-0 flex-1">
                     <DashboardTable
                       columns={[
                         {
@@ -2781,15 +2826,14 @@ export default function AdminDashboard() {
                         </>
                       )}
                       minWidth={1080}
-                    />
-                    <PaginationControls page={staffPage} setPage={setStaffPage} total={filteredStaffList.length} pageSize={staffPageSize} setPageSize={setStaffPageSize} />
-                    </div>
-                  ) : staffList.length > 0 ? (
-                    <EmptyState
-                      icon={Users}
-                      title="No matching accounts"
-                      description="No accounts match the selected role and search. Adjust the filters or clear them to see all accounts."
-                      action={(
+                      containerClassName="h-full"
+                      emptyIcon={Users}
+                      emptyTitle={staffList.length > 0 ? 'No matching accounts' : 'No accounts found'}
+                      emptyDescription={staffList.length > 0
+                        ? 'No accounts match the selected role and search. Adjust the filters or clear them to see all accounts.'
+                        : 'Use the add account button to create the first account.'}
+                      emptyStateClassName="!py-4"
+                      emptyStateAction={staffList.length > 0 ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -2801,11 +2845,12 @@ export default function AdminDashboard() {
                         >
                           Clear filters
                         </Button>
-                      )}
+                      ) : null}
+                      showEmptyTable
                     />
-                  ) : (
-                    <EmptyState icon={Users} title="No accounts found" description="Use the add account button to create the first account." />
-                  )}
+                    </div>
+                    <PaginationControls page={staffPage} setPage={setStaffPage} total={filteredStaffList.length} pageSize={staffPageSize} alwaysVisible compact />
+                  </div>
                 </Card>
             </div>
           )}
@@ -2999,6 +3044,14 @@ export default function AdminDashboard() {
           {activeTab === 'gallery' && <GalleryManager />}
 
           {activeTab === 'audit' && <AuditLogsPage />}
+          {activeTab === 'inventory' && (
+            <LiveInventoryPage
+              ingredients={inventoryIngredients}
+              productSalesInventory={productSalesInventory}
+              loading={Boolean(tabLoading.inventory)}
+              onRefresh={() => loadAdminTabData('inventory', { force: true })}
+            />
+          )}
 
         </main>
       </div>

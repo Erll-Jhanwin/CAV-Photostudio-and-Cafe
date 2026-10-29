@@ -128,10 +128,12 @@ export function DataTable({
   actionWidth = 'w-[132px]',
   containerClassName = '',
   emptyStateClassName = '',
+  showEmptyTable = false,
+  emptyStateAction = null,
 }) {
   const normalizedColumns = columns.map(normalizeColumn);
 
-  if (!rows?.length) {
+  if (!rows?.length && !showEmptyTable) {
     return <EmptyState icon={emptyIcon} title={emptyTitle} description={emptyDescription} className={emptyStateClassName} />;
   }
 
@@ -142,7 +144,7 @@ export function DataTable({
 
   return (
     <div className={`w-full overflow-x-auto rounded-2xl border border-espresso/[0.06] bg-white/80 scrollbar-thin ${containerClassName}`}>
-      <table className="w-full table-fixed text-xs" style={{ minWidth }}>
+      <table className={`w-full table-fixed text-xs ${showEmptyTable && !rows?.length ? 'h-full' : ''}`} style={{ minWidth }}>
         <thead className="sticky top-0 z-10 bg-cream">
           <tr className="border-b border-espresso/[0.08] text-espresso/55 uppercase tracking-wider">
             {normalizedColumns.map((column, index) => {
@@ -174,7 +176,7 @@ export function DataTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
+          {rows?.length ? rows.map((row, i) => (
             <tr key={row.id || i} onClick={onRowClick ? () => onRowClick(row) : undefined} onKeyDown={onRowClick ? event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onRowClick(row); } } : undefined} tabIndex={onRowClick ? 0 : undefined} className={`border-b border-espresso/[0.04] hover:bg-cream/45 transition-colors ${onRowClick ? 'cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold' : ''}`}>
               {normalizedColumns.map((column, index) => {
                 const alignClass = column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left';
@@ -194,7 +196,13 @@ export function DataTable({
                 </td>
               )}
             </tr>
-          ))}
+          )) : (
+            <tr>
+              <td colSpan={normalizedColumns.length + (renderActions ? 1 : 0)} className="h-full p-0 align-top">
+                <EmptyState icon={emptyIcon} title={emptyTitle} description={emptyDescription} action={emptyStateAction} className={`h-full !py-6 ${emptyStateClassName}`} />
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

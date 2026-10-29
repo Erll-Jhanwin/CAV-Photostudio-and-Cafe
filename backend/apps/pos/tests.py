@@ -415,6 +415,42 @@ class POSStockActionApiTests(TestCase):
         self.assertEqual(row['ending_stock'], 7)
         self.assertEqual(row['revenue'], '250.00')
 
+        report_date = timezone.localdate().isoformat()
+        sales_records = self.client.get('/api/inventory/product-sales/transactions/', {
+            'product_id': self.product.id, 'date': report_date, 'type': 'sales',
+        })
+        self.assertEqual(sales_records.status_code, 200, sales_records.data)
+        self.assertEqual(len(sales_records.data), 1)
+        self.assertEqual(sales_records.data[0]['transaction_id'], sale['transaction_id'])
+        self.assertEqual(sales_records.data[0]['quantity'], 2)
+        self.assertEqual(sales_records.data[0]['sale_amount'], '250.00')
+        self.assertEqual(sales_records.data[0]['staff_name'], self.staff.username)
+
+        wastage_records = self.client.get('/api/inventory/product-sales/transactions/', {
+            'product_id': self.product.id, 'date': report_date, 'type': 'wastage',
+        })
+        self.assertEqual(wastage_records.status_code, 200, wastage_records.data)
+        self.assertEqual(len(wastage_records.data), 1)
+        self.assertEqual(wastage_records.data[0]['transaction_id'], sale['transaction_id'])
+        self.assertEqual(wastage_records.data[0]['quantity'], 1)
+        self.assertEqual(wastage_records.data[0]['staff_name'], self.staff.username)
+        self.assertEqual(wastage_records.data[0]['reason'], 'Recorded from the test POS modal')
+
+        other_date = self.client.get('/api/inventory/product-sales/transactions/', {
+            'product_id': self.product.id, 'date': '2000-01-01', 'type': 'sales',
+        })
+        self.assertEqual(other_date.status_code, 200)
+        self.assertEqual(other_date.data, [])
+        other_product = Product.objects.create(
+            name='Unrelated Inventory Product', sku='UNRELATED-DETAILS', item_type=Product.PRODUCT,
+            price=Decimal('50.00'), stock_level=5, reorder_point=1,
+        )
+        other_product_records = self.client.get('/api/inventory/product-sales/transactions/', {
+            'product_id': other_product.id, 'date': report_date, 'type': 'sales',
+        })
+        self.assertEqual(other_product_records.status_code, 200)
+        self.assertEqual(other_product_records.data, [])
+
     def test_refund_without_restock_reduces_sales_but_does_not_deduct_stock_again(self):
         sale = self.create_sale(quantity=4)
         payload = self.action_payload(sale, 'REFUND', quantity=1, disposition='WASTED')
@@ -440,6 +476,16 @@ class POSStockActionApiTests(TestCase):
         self.assertEqual(row['wastage'], 1)
         self.assertEqual(row['ending_stock'], 6)
         self.assertEqual(row['revenue'], '375.00')
+
+        wastage_records = self.client.get('/api/inventory/product-sales/transactions/', {
+            'product_id': self.product.id,
+            'date': timezone.localdate().isoformat(),
+            'type': 'wastage',
+        })
+        self.assertEqual(wastage_records.status_code, 200, wastage_records.data)
+        self.assertEqual(len(wastage_records.data), 1)
+        self.assertEqual(wastage_records.data[0]['quantity'], 1)
+        self.assertEqual(wastage_records.data[0]['reason'], 'Recorded from the test POS modal')
 
     def test_restocked_refund_restores_stock_once_and_requires_explicit_disposition(self):
         sale = self.create_sale(quantity=4)

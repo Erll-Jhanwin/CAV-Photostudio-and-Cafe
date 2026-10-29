@@ -20,6 +20,7 @@ import { MobileHeader } from '../components/ui/MobileHeader';
 import PaymentProofPreview from '../components/PaymentProofPreview';
 import PosStockActionModal from './PosStockActionModal';
 import WalkInBookingModal from './WalkInBookingModal';
+import ProductActivityModal from '../components/inventory/ProductActivityModal';
 import { DataTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
@@ -277,6 +278,7 @@ export default function StaffDashboard() {
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
   const [inventoryFilter, setInventoryFilter] = useState('ALL');
   const [inventorySection, setInventorySection] = useState('management');
+  const [selectedProductActivity, setSelectedProductActivity] = useState(null);
   const [salesPaymentFilter, setSalesPaymentFilter] = useState('ALL');
   const [salesStartDate, setSalesStartDate] = useState('');
   const [salesEndDate, setSalesEndDate] = useState('');
@@ -2245,8 +2247,8 @@ export default function StaffDashboard() {
                         columns={[
                           { key: 'product_name', label: 'Product' },
                           { key: 'beginning_stock', label: 'Beginning', align: 'right' },
-                          { key: 'quantity_sold', label: 'Sold', align: 'right' },
-                          { key: 'wastage', label: 'Wastage', align: 'right' },
+                          { key: 'quantity_sold', label: 'Sold', align: 'right', render: row => <button type="button" onClick={() => setSelectedProductActivity({ product: row, type: 'sales' })} aria-label={`View ${row.quantity_sold} sold transactions for ${row.product_name}`} className="rounded-lg px-2 py-1 font-black text-gold-dark underline decoration-gold/40 underline-offset-2 hover:bg-gold/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold">{row.quantity_sold}</button> },
+                          { key: 'wastage', label: 'Wastage', align: 'right', render: row => <button type="button" onClick={() => setSelectedProductActivity({ product: row, type: 'wastage' })} aria-label={`View ${row.wastage} wastage records for ${row.product_name}`} className="rounded-lg px-2 py-1 font-black text-amber-800 underline decoration-amber-400/50 underline-offset-2 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold">{row.wastage}</button> },
                           { key: 'ending_stock', label: 'Ending', align: 'right' },
                           { key: 'revenue', label: 'Net revenue', align: 'right', render: row => formatCurrency(row.revenue) },
                           { key: 'profit_loss', label: 'Profit / loss', align: 'right', render: row => <span className={Number(row.profit_loss) < 0 ? 'text-red-700' : 'text-emerald-700'}>{formatCurrency(row.profit_loss)}</span> },
@@ -2264,6 +2266,12 @@ export default function StaffDashboard() {
                   </Card>
                 </section>
               )}
+              <ProductActivityModal
+                product={selectedProductActivity?.product || null}
+                activityType={selectedProductActivity?.type || 'sales'}
+                reportDate={selectedProductActivity?.product?.date}
+                onClose={() => setSelectedProductActivity(null)}
+              />
             </div>
           )}
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Search, RefreshCw, ClipboardList, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import client, { getApiErrorMessage } from '../../api/client';
 import { Card, CardHeader } from '../../components/ui/Card';
@@ -6,6 +6,7 @@ import { Input, Select } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { LoadingSpinner } from '../../components/ui/Skeleton';
 import { formatManilaDateTime } from '../../utils/dateTime';
+import { calculateSalesRowsPerPage } from '../salesLogLayout';
 
 const sensitiveMetadataKey = /(password|passwd|otp|token|secret|authorization|cookie|credential|proof|file|image|base64|email|phone|mobile|address|ip_address|session|component_stack|stack|traceback|receipt|username|(^|_)name$)/i;
 const sensitiveMetadataValue = /(Bearer\s+\S+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/gi;
@@ -177,10 +178,12 @@ export default function AuditLogsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const tableAreaRef = useRef(null);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setError('');
     const timer = window.setTimeout(() => {
       client.get('/api/audit/logs/', { params: { search, role, module, action, kind, start, end, page, page_size: pageSize } })
         .then(response => { if (active) { setPayload(response.data); setError(''); } })
@@ -190,14 +193,50 @@ export default function AuditLogsPage() {
     return () => { active = false; window.clearTimeout(timer); };
   }, [search, role, module, action, kind, start, end, page, pageSize, refreshKey]);
 
+  useLayoutEffect(() => {
+    const tableArea = tableAreaRef.current;
+    if (!tableArea || !tableArea.clientHeight) return undefined;
+
+    const measureRows = () => {
+      const availableHeight = tableArea.clientHeight;
+      if (!availableHeight) return;
+      const table = tableArea.querySelector('table');
+      const headerHeight = table?.querySelector('thead')?.getBoundingClientRect().height || 0;
+      const rowHeights = Array.from(table?.querySelectorAll('tbody tr:not([data-audit-state])') || [])
+        .map(row => row.getBoundingClientRect().height);
+      const nextPageSize = calculateSalesRowsPerPage({
+        availableHeight,
+        headerHeight,
+        rowHeights,
+        defaultRowHeight: 64,
+        maxRows: 100,
+      });
+      const nextPage = Math.min(
+        Math.floor(((Math.max(page, 1) - 1) * pageSize) / nextPageSize) + 1,
+        Math.max(1, Math.ceil((payload.count || 0) / nextPageSize)),
+      );
+      setPageSize(current => (current === nextPageSize ? current : nextPageSize));
+      setPage(current => (current === page ? nextPage : current));
+    };
+
+    measureRows();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureRows) : null;
+    observer?.observe(tableArea);
+    window.addEventListener('resize', measureRows);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measureRows);
+    };
+  }, [page, pageSize, payload.count, payload.results, refreshKey]);
+
   const setFilter = (setter) => (event) => { setter(event.target.value); setPage(1); };
   const totalPages = Math.max(1, Math.ceil((payload.count || 0) / pageSize));
   const clearFilters = () => { setSearch(''); setRole(''); setModule(''); setAction(''); setKind(''); setStart(''); setEnd(''); setPage(1); };
 
   return (
-    <div className="w-full min-w-0 space-y-5 animate-in-up">
-      <Card className="w-full min-w-0 overflow-hidden p-4 sm:p-5">
-        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-3 animate-in-up">
+      <Card padding={false} className="w-full min-w-0 shrink-0 overflow-hidden p-4 sm:p-5">
+        <div className="flex min-w-0 flex-row items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <CardHeader headingLevel={1} title="Audit Logs" subtitle="A searchable record of account, booking, payment, inventory, and system activity." className="mb-0" />
           </div>
@@ -205,8 +244,8 @@ export default function AuditLogsPage() {
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </button>
         </div>
-        <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 2xl:grid-cols-8">
-          <div className="relative min-w-0 sm:col-span-2 lg:col-span-2">
+        <div className="mt-4 grid min-w-0 grid-cols-2 gap-2 sm:gap-2.5 lg:grid-cols-5 2xl:grid-cols-8">
+          <div className="relative col-span-2 min-w-0 lg:col-span-2">
             <Search className="absolute left-3 top-3 h-4 w-4 text-espresso/40" />
             <Input aria-label="Search audit logs" placeholder="Search person, action, record…" value={search} onChange={setFilter(setSearch)} className="min-w-0 pl-9" />
           </div>
@@ -214,7 +253,7 @@ export default function AuditLogsPage() {
           <div className="min-w-0"><Select aria-label="Filter by module" value={module} onChange={setFilter(setModule)} options={moduleOptions} className="min-w-0" /></div>
           <div className="min-w-0"><Select aria-label="Filter activity type" value={kind} onChange={setFilter(setKind)} options={kindOptions} className="min-w-0" /></div>
           <div className="min-w-0"><Input aria-label="Filter by action" placeholder="Action (e.g. BOOKING_CREATE)" value={action} onChange={setFilter(setAction)} className="min-w-0" /></div>
-          <div className="grid min-w-0 grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2 lg:col-span-2 2xl:col-span-2">
+          <div className="col-span-2 grid min-w-0 grid-cols-2 gap-2 lg:col-span-2 2xl:col-span-2">
             <Input aria-label="Start date" type="date" value={start} onChange={setFilter(setStart)} className="min-w-0" />
             <Input aria-label="End date" type="date" value={end} onChange={setFilter(setEnd)} className="min-w-0" />
           </div>
@@ -225,17 +264,21 @@ export default function AuditLogsPage() {
         </div>
       </Card>
 
-      <Card className="overflow-hidden p-0">
-        {error && <div role="alert" className="m-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</div>}
-        {loading ? <div className="flex min-h-56 items-center justify-center gap-2 text-sm font-semibold text-espresso/55"><LoadingSpinner size="sm" /> Loading audit activity…</div> : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1050px] text-left text-xs">
-                <thead className="bg-cream text-[10px] uppercase tracking-wider text-espresso/55"><tr>
-                  <th className="px-4 py-3">Timestamp</th><th className="px-4 py-3">Person</th><th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Action</th><th className="px-4 py-3">Module / record</th><th className="px-4 py-3">Change details</th>
-                </tr></thead>
-                <tbody>{(payload.results || []).map(row => (
+      <Card padding={false} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {error && <div role="alert" className="mx-4 mt-4 shrink-0 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</div>}
+        <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">
+          <div ref={tableAreaRef} className="h-full overflow-x-auto overflow-y-hidden scrollbar-thin">
+            <table className="w-full min-w-[1050px] text-left text-xs">
+              <thead className="sticky top-0 z-10 bg-cream text-[10px] uppercase tracking-wider text-espresso/55"><tr>
+                <th className="px-4 py-3">Timestamp</th><th className="px-4 py-3">Person</th><th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Action</th><th className="px-4 py-3">Module / record</th><th className="px-4 py-3">Change details</th>
+              </tr></thead>
+              <tbody>
+                {loading ? (
+                  <tr data-audit-state><td colSpan={6}><div className="flex min-h-24 items-center justify-center gap-2 text-sm font-semibold text-espresso/55"><LoadingSpinner size="sm" /> Loading audit activity…</div></td></tr>
+                ) : error ? (
+                  <tr data-audit-state><td colSpan={6}><div className="p-8 text-center text-xs font-semibold text-espresso/55">Audit rows are unavailable until the request succeeds.</div></td></tr>
+                ) : payload.results?.length ? payload.results.map(row => (
                   <tr
                     key={row.id}
                     tabIndex={0}
@@ -256,16 +299,17 @@ export default function AuditLogsPage() {
                     <td className="px-4 py-3.5"><div className="font-bold capitalize text-espresso/75">{String(row.module || '').replaceAll('_', ' ')}</div><div className="mt-1 text-espresso/50">{row.record_reference ? `#${row.record_reference}` : '—'}</div></td>
                     <td className="px-4 py-3.5 text-espresso/65">{row.details?.changed_fields?.length ? row.details.changed_fields.join(', ') : row.details?.change_summary || '—'}</td>
                   </tr>
-                ))}</tbody>
-              </table>
-            </div>
-            {!payload.results?.length && !error && <div className="p-10"><div className="mx-auto max-w-md text-center"><ClipboardList className="mx-auto h-8 w-8 text-espresso/25" /><p className="mt-2 font-black text-espresso">No audit activity found</p><p className="mt-1 text-xs text-espresso/55">Try changing or clearing the filters.</p></div></div>}
-            <div className="flex flex-col gap-3 border-t border-espresso/[0.06] px-4 py-3 text-xs text-espresso/60 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2"><span>Rows per page</span><select aria-label="Rows per page" value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }} className="rounded-lg border border-espresso/10 bg-white px-2 py-1"><option>10</option><option>25</option><option>50</option><option>100</option></select><span>Page {page} of {totalPages}</span></div>
-              <div className="flex gap-2"><button type="button" disabled={page <= 1} onClick={() => setPage(value => value - 1)} className="rounded-lg border border-espresso/10 p-2 disabled:opacity-40" aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button><button type="button" disabled={page >= totalPages} onClick={() => setPage(value => value + 1)} className="rounded-lg border border-espresso/10 p-2 disabled:opacity-40" aria-label="Next page"><ChevronRight className="h-4 w-4" /></button></div>
-            </div>
-          </>
-        )}
+                )) : (
+                  <tr data-audit-state><td colSpan={6}><div className="p-8 text-center"><ClipboardList className="mx-auto h-8 w-8 text-espresso/25" /><p className="mt-2 font-black text-espresso">No audit activity found</p><p className="mt-1 text-xs text-espresso/55">Try changing or clearing the filters.</p></div></td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col gap-3 border-t border-espresso/[0.06] px-4 py-3 text-xs text-espresso/60 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3"><span>Rows per page: <strong className="text-espresso">{pageSize}</strong></span><span>Page {page} of {totalPages}</span></div>
+          <div className="flex gap-2"><button type="button" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)} className="rounded-lg border border-espresso/10 p-2 disabled:opacity-40" aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button><button type="button" disabled={loading || page >= totalPages} onClick={() => setPage(value => value + 1)} className="rounded-lg border border-espresso/10 p-2 disabled:opacity-40" aria-label="Next page"><ChevronRight className="h-4 w-4" /></button></div>
+        </div>
       </Card>
       <AuditLogDetailsModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
     </div>

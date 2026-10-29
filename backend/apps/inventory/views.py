@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -327,6 +328,103 @@ class ProductSalesInventoryView(views.APIView):
                 'profit_loss': str((revenue - cost).quantize(Decimal('0.01'))),
             })
         return Response(result)
+
+
+class ProductSalesTransactionListView(views.APIView):
+    """Return item-level sale or wastage records matching the daily inventory summary."""
+    permission_classes = [IsStaffOrAdmin]
+
+    def get(self, request):
+        try:
+            product_id = int(request.query_params.get('product_id') or 0)
+        except (TypeError, ValueError):
+            return Response({'product_id': 'Use a valid product ID.'}, status=status.HTTP_400_BAD_REQUEST)
+        if product_id <= 0:
+            return Response({'product_id': 'A product ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_date = request.query_params.get('date')
+        day = parse_date(raw_date) if raw_date else timezone.localdate()
+        if not day:
+            return Response({'date': 'Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        record_type = str(request.query_params.get('type') or 'sales').strip().lower()
+        if record_type not in {'sales', 'wastage'}:
+            return Response({'type': 'Use sales or wastage.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not Product.objects.filter(pk=product_id, item_type=Product.PRODUCT).exists():
+            return Response({'detail': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        orders = Order.objects.filter(
+            payment_status='PAID',
+            created_at__date=day,
+        ).exclude(order_type='END_OF_DAY_REPORT').select_related('staff').order_by('created_at', 'id')
+        results = []
+        if record_type == 'sales':
+            for order in orders:
+                for line in order.line_items or []:
+                    try:
+                        line_product_id = int(line.get('product') or line.get('product_id') or 0)
+                        quantity = int(line.get('quantity') or 0)
+                        returned_quantity = int(line.get('returned_quantity') or 0)
+                    except (TypeError, ValueError, AttributeError):
+                        continue
+                    sold_quantity = max(quantity - returned_quantity, 0)
+                    if line_product_id != product_id or sold_quantity <= 0:
+                        continue
+                    try:
+                        line_revenue = Decimal(str(line.get('net_subtotal') or line.get('subtotal') or '0'))
+                        refunded_amount = Decimal(str(line.get('refunded_amount') or '0'))
+                    except (InvalidOperation, TypeError, ValueError):
+                        line_revenue = Decimal('0.00')
+                        refunded_amount = Decimal('0.00')
+                    results.append({
+                        'id': f'{order.pk}-{product_id}',
+                        'transaction_id': order.transaction_id or f'POS-{order.pk}',
+                        'date_time': order.created_at.isoformat(),
+                        'quantity': sold_quantity,
+                        'staff_name': (order.staff.get_full_name() or order.staff.username) if order.staff else 'Not recorded',
+                        'sale_amount': str(max(line_revenue - refunded_amount, Decimal('0.00')).quantize(Decimal('0.01'))),
+                    })
+            return Response(results)
+
+        staff_ids = set()
+        wastage_events = []
+        for order in orders:
+            for event in order.return_events or []:
+                try:
+                    event_product_id = int(event.get('product_id') or 0)
+                    quantity = int(event.get('quantity') or 0)
+                except (TypeError, ValueError, AttributeError):
+                    continue
+                action_type = str(event.get('action_type') or '').upper()
+                disposition = str(event.get('disposition') or '').upper()
+                is_wastage = action_type == 'WASTAGE' or disposition == 'WASTED'
+                if event_product_id != product_id or not is_wastage or quantity <= 0:
+                    continue
+                try:
+                    staff_id = int(event.get('staff_id') or 0)
+                except (TypeError, ValueError):
+                    staff_id = 0
+                if staff_id > 0:
+                    staff_ids.add(staff_id)
+                wastage_events.append((order, event, quantity, staff_id))
+
+        staff_model = get_user_model()
+        staff_names = {
+            staff.pk: staff.get_full_name() or staff.username
+            for staff in staff_model.objects.filter(pk__in=staff_ids)
+        }
+        for order, event, quantity, staff_id in wastage_events:
+            timestamp = event.get('timestamp') or order.created_at.isoformat()
+            results.append({
+                'id': f"{order.pk}-{event.get('timestamp') or len(results)}-{len(results)}",
+                'transaction_id': event.get('transaction_id') or order.transaction_id or f'POS-{order.pk}',
+                'date_time': timestamp,
+                'quantity': quantity,
+                'staff_name': event.get('staff_name') or staff_names.get(staff_id) or 'Not recorded',
+                'reason': str(event.get('reason') or '').strip(),
+            })
+        results.sort(key=lambda record: record['date_time'], reverse=True)
+        return Response(results)
 
 
 class IngredientDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):

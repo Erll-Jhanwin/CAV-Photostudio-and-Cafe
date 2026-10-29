@@ -578,6 +578,8 @@ class SecurityBoundaryTests(TestCase):
         for path in [
             '/api/auth/users/',
             '/api/inventory/ingredients/',
+            '/api/inventory/product-sales/',
+            '/api/inventory/product-sales/transactions/?product_id=1&type=sales',
             '/api/pos/orders/',
             '/api/pos/end-of-day-summary/',
             '/api/dashboard/analytics/',

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import client, { getCached } from '../api/client';
 
@@ -50,6 +50,91 @@ jest.mock('../api/client', () => ({
 import AdminDashboard from './AdminDashboard';
 
 describe('AdminDashboard', () => {
+  it('opens Live Inventory with staff inventory data and both paginated views', async () => {
+    const ingredient = {
+      id: 91,
+      name: 'Arabica Beans',
+      batch_number: 'B-091',
+      supplier_details: { name: 'CAV Supply' },
+      category_details: { name: 'Coffee' },
+      stock_quantity: '12.00',
+      base_unit: 'kg',
+      minimum_stock_level: '4.00',
+      maximum_stock_level: '30.00',
+      inventory_status: 'IN_STOCK',
+      inventory_status_label: 'In Stock',
+      suggested_action: 'Maintain stock',
+      expiration_date: null,
+      storage_location: 'Dry store',
+    };
+    const salesRow = {
+      product_id: 6,
+      product_name: 'Iced Latte',
+      beginning_stock: 20,
+      quantity_sold: 5,
+      wastage: 1,
+      ending_stock: 14,
+      date: '2026-10-30',
+      revenue: '450.00',
+      profit_loss: '210.00',
+    };
+    client.get.mockImplementation((_url, { params }) => Promise.resolve({ data: params.type === 'sales' ? [{
+      id: 'sale-6', transaction_id: 'POS-20261030-0006', date_time: '2026-10-30T02:15:00Z', quantity: 5, staff_name: 'Jamie Cashier', sale_amount: '450.00',
+    }, {
+      id: 'sale-7', transaction_id: 'POS-20261030-0007', date_time: '2026-10-30T03:15:00Z', quantity: 1, staff_name: 'Sam Cashier', sale_amount: '90.00',
+    }] : [{
+      id: 'waste-6', transaction_id: 'POS-20261030-0006', date_time: '2026-10-30T03:00:00Z', quantity: 1, staff_name: 'Jamie Cashier', reason: 'Spilled during preparation',
+    }] }));
+    getCached.mockImplementation(url => {
+      if (url === '/api/inventory/ingredients/') return Promise.resolve({ data: [ingredient] });
+      if (url === '/api/inventory/product-sales/') return Promise.resolve({ data: [salesRow] });
+      if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
+      return Promise.resolve({ data: {
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
+        top_selling_products: [], top_booked_packages: [], inventory_status_counts: {}, low_stock_alerts: [], inventory_alerts: [],
+      } });
+    });
+
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Live Inventory' }));
+
+    expect(document.querySelector('main')).toHaveClass('overflow-hidden', 'flex', 'flex-col');
+    expect(screen.getByTestId('admin-live-inventory')).toHaveClass('h-full', 'min-h-0', 'flex-col', 'overflow-hidden');
+    expect(screen.getByRole('tablist', { name: 'Live Inventory sections' })).toHaveClass('overflow-x-auto');
+    expect(await screen.findByRole('tab', { name: 'Inventory Management' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByText('Arabica Beans')).toBeInTheDocument();
+    expect(screen.getByText('12 kg')).toBeInTheDocument();
+    expect(getCached).toHaveBeenCalledWith('/api/inventory/ingredients/', { params: { limit: 300 } }, expect.any(Object));
+    expect(getCached).toHaveBeenCalledWith('/api/inventory/product-sales/', {}, expect.any(Object));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Product Sales, Returns & Wastage' }));
+    expect(await screen.findByText('Iced Latte')).toBeInTheDocument();
+    expect(screen.getByRole('tabpanel', { name: 'Product Sales, Returns & Wastage' })).toHaveClass('flex-1', 'overflow-hidden');
+    expect(screen.getByText('PHP 450')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Inventory' }));
+    await waitFor(() => expect(getCached).toHaveBeenCalledWith('/api/inventory/ingredients/', { params: { limit: 300 } }, { force: true }));
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View 5 sold transactions for Iced Latte' }));
+    const salesDialog = await screen.findByRole('dialog', { name: 'Iced Latte · Sales Records' });
+    expect(within(salesDialog).getByText('POS-20261030-0006')).toBeInTheDocument();
+    expect(within(salesDialog).getByText('Jamie Cashier')).toBeInTheDocument();
+    expect(within(salesDialog).getByText('PHP 450')).toBeInTheDocument();
+    expect(within(salesDialog).queryByText('POS-20261030-0007')).not.toBeInTheDocument();
+    fireEvent.click(within(salesDialog).getByRole('button', { name: 'Next page' }));
+    expect(await within(salesDialog).findByText('POS-20261030-0007')).toBeInTheDocument();
+    expect(client.get).toHaveBeenCalledWith('/api/inventory/product-sales/transactions/', {
+      params: { product_id: 6, date: '2026-10-30', type: 'sales' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'View 1 wastage records for Iced Latte' }));
+    const wastageDialog = await screen.findByRole('dialog', { name: 'Iced Latte · Wastage Records' });
+    expect(within(wastageDialog).getByText('Spilled during preparation')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close modal' })).toBeInTheDocument();
+  }, 20000);
+
   it('loads an Admin payment proof only after opening it and preserves verification actions', async () => {
     const payment = {
       id: 18,
@@ -349,6 +434,8 @@ describe('AdminDashboard', () => {
     render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Accounts' }));
     expect(await screen.findByText('admin.alpha')).toBeInTheDocument();
+    expect(document.querySelector('main')).toHaveClass('overflow-hidden', 'flex', 'flex-col');
+    expect(screen.getByText('Existing Accounts').closest('div.rounded-2xl')).toHaveClass('h-full', 'min-h-0', 'flex-col');
 
     fireEvent.click(screen.getByRole('button', { name: /^Admin/ }));
     expect(screen.getByText('admin.alpha')).toBeInTheDocument();
@@ -368,10 +455,12 @@ describe('AdminDashboard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /^Customers/ }));
     expect(screen.getByText('No matching accounts')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Username' })).toBeInTheDocument();
+    expect(screen.getByText('Showing 0-0 of 0')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(await screen.findByText('customer.one')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true');
-  });
+  }, 15000);
 
   it('keeps the FAQ panels viewport-sized with a fixed list heading and scrolling rows', async () => {
     const faqRows = Array.from({ length: 12 }, (_, index) => ({
@@ -398,11 +487,11 @@ describe('AdminDashboard', () => {
     expect(await screen.findByRole('heading', { name: 'Knowledge Base FAQs' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Add FAQ Entry' })).toBeInTheDocument();
     await waitFor(() => expect(resolveFaqs).toEqual(expect.any(Function)));
-    expect(container.firstChild).toHaveClass('h-screen', 'overflow-hidden');
+    expect(container.firstChild).toHaveClass('h-dvh', 'overflow-hidden');
     expect(container.querySelector('main')).toHaveClass('overflow-hidden', 'flex', 'flex-col');
     const faqLayout = screen.getByRole('heading', { name: 'Knowledge Base FAQs' }).closest('.grid');
     expect(faqLayout).toHaveClass('flex-1', 'min-h-0', 'grid-rows-2', 'xl:grid-rows-1');
-    expect(faqLayout.parentElement.parentElement).toHaveClass('h-full', 'min-h-0');
+    expect(faqLayout.parentElement.parentElement).toHaveClass('flex-1', 'min-h-0');
     resolveFaqs({ data: faqRows });
     expect(await screen.findByText('FAQ Question 1')).toBeInTheDocument();
     expect(faqLayout).toHaveClass('flex-1', 'min-h-0', 'grid-rows-2', 'xl:grid-rows-1');
