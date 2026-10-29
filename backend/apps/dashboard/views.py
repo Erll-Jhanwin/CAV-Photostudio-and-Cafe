@@ -184,8 +184,8 @@ class DashboardAnalyticsView(views.APIView):
         recent_bookings = Booking.objects.select_related('customer', 'package').order_by('-created_at', '-id')[:10]
         bookings_list = [{
             'id': b.id,
-            'customer_name': b.customer.get_full_name() or b.customer.username,
-            'customer_profile_picture_url': request.build_absolute_uri(b.customer.profile_picture.url) if b.customer.profile_picture else '',
+            'customer_name': b.contact_name or (b.customer.get_full_name() or b.customer.username if b.customer_id else 'Walk-in customer'),
+            'customer_profile_picture_url': request.build_absolute_uri(b.customer.profile_picture.url) if b.customer_id and b.customer.profile_picture else '',
             'package_name': b.package.name,
             'scheduled_date': b.scheduled_date.strftime('%Y-%m-%d'),
             'scheduled_time': b.scheduled_time.strftime('%H:%M'),

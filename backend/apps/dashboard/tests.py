@@ -77,6 +77,35 @@ class DashboardAnalyticsTests(TestCase):
         self.assertEqual(response.data['metrics']['total_bookings'], 0)
         self.assertEqual([row['id'] for row in response.data['recent_bookings']], [booking.id])
 
+    def test_recent_walk_in_bookings_without_customers_are_serialized_safely(self):
+        named_walk_in = Booking.objects.create(
+            customer=None,
+            is_walk_in=True,
+            contact_name='Walk-in Guest',
+            package=self.package,
+            scheduled_date=timezone.localdate() + timedelta(days=4),
+            scheduled_time='11:00',
+            status='PENDING',
+        )
+        unnamed_walk_in = Booking.objects.create(
+            customer=None,
+            is_walk_in=True,
+            contact_name='',
+            package=self.package,
+            scheduled_date=timezone.localdate() + timedelta(days=5),
+            scheduled_time='12:00',
+            status='PENDING',
+        )
+
+        response = self.client.get('/api/dashboard/analytics/')
+
+        self.assertEqual(response.status_code, 200)
+        recent_bookings = {row['id']: row for row in response.data['recent_bookings']}
+        self.assertEqual(recent_bookings[named_walk_in.id]['customer_name'], 'Walk-in Guest')
+        self.assertEqual(recent_bookings[named_walk_in.id]['customer_profile_picture_url'], '')
+        self.assertEqual(recent_bookings[unnamed_walk_in.id]['customer_name'], 'Walk-in customer')
+        self.assertEqual(recent_bookings[unnamed_walk_in.id]['customer_profile_picture_url'], '')
+
     def test_approved_booking_payment_is_included_in_booking_income(self):
         booking = Booking.objects.create(
             customer=self.customer,
