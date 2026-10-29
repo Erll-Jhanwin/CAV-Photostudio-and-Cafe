@@ -8,7 +8,7 @@
   
   Create a short, clear, and concise prompt about this. Also in the prompt it will say to maximize the codex power.
 
-  Booking #48 was saved, but we could not confirm the payment submission. Payment proof could not be saved. The booking remains reserved; please retry. You can retry the payment without creating another booking.
+  
 
 
   Prompt for checking the status of the system:

@@ -76,7 +76,7 @@ const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-P
   maximumFractionDigits: 2,
 })}`;
 const STAFF_CACHE_TTL_MS = 60 * 1000;
-const PRODUCT_PAGE_SIZE = 12;
+const PRODUCT_PAGE_SIZE = 6;
 const TABLE_PAGE_SIZE = 10;
 const DISCOUNT_OPTIONS = [10, 20, 30];
 const RECEIPT_BUSINESS = {
@@ -276,6 +276,7 @@ export default function StaffDashboard() {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
   const [inventoryFilter, setInventoryFilter] = useState('ALL');
+  const [inventorySection, setInventorySection] = useState('management');
   const [salesPaymentFilter, setSalesPaymentFilter] = useState('ALL');
   const [salesStartDate, setSalesStartDate] = useState('');
   const [salesEndDate, setSalesEndDate] = useState('');
@@ -285,10 +286,20 @@ export default function StaffDashboard() {
   const [productPage, setProductPage] = useState(1);
   const [paymentPage, setPaymentPage] = useState(1);
   const [inventoryPage, setInventoryPage] = useState(1);
+  const [productSalesPage, setProductSalesPage] = useState(1);
+  const [inventoryRowsPerPage, setInventoryRowsPerPage] = useState(TABLE_PAGE_SIZE);
+  const [productSalesRowsPerPage, setProductSalesRowsPerPage] = useState(TABLE_PAGE_SIZE);
+  const inventoryTableAreaRef = useRef(null);
+  const productSalesTableAreaRef = useRef(null);
   const [salesPage, setSalesPage] = useState(1);
   const [salesRowsPerPage, setSalesRowsPerPage] = useState(TABLE_PAGE_SIZE);
   const salesTableAreaRef = useRef(null);
   const [catalogPage, setCatalogPage] = useState(1);
+  const [catalogRowsPerPage, setCatalogRowsPerPage] = useState(TABLE_PAGE_SIZE);
+  const [purchaseOrderRowsPerPage, setPurchaseOrderRowsPerPage] = useState(TABLE_PAGE_SIZE);
+  const [catalogSection, setCatalogSection] = useState('overview');
+  const catalogTableAreaRef = useRef(null);
+  const purchaseOrderTableAreaRef = useRef(null);
   const [purchaseOrderPage, setPurchaseOrderPage] = useState(1);
   const [inventorySort, setInventorySort] = useState({ key: 'name', dir: 'asc' });
   const [salesSort, setSalesSort] = useState({ key: 'created_at', dir: 'desc' });
@@ -1393,7 +1404,8 @@ export default function StaffDashboard() {
     return matchesSearch && matchesStatus;
   });
   const sortedInventory = sortRows(visibleInventory, inventorySort);
-  const pagedInventory = paginateRows(sortedInventory, inventoryPage, TABLE_PAGE_SIZE);
+  const pagedInventory = paginateRows(sortedInventory, inventoryPage, inventoryRowsPerPage);
+  const pagedProductSalesInventory = paginateRows(productSalesInventory, productSalesPage, productSalesRowsPerPage);
   const inventoryCounts = inventoryStatuses.reduce((counts, status) => {
     if (status.key === 'ALL') {
       counts.ALL = ingredients.length;
@@ -1442,6 +1454,33 @@ export default function StaffDashboard() {
       window.removeEventListener('resize', measureRows);
     };
   }, [activeTab, salesPage, salesRowsPerPage, filteredOrders.length]);
+  useLayoutEffect(() => {
+    if (activeTab !== 'inventory') return undefined;
+    const isProductSales = inventorySection === 'product-sales';
+    const tableArea = isProductSales ? productSalesTableAreaRef.current : inventoryTableAreaRef.current;
+    if (!tableArea) return undefined;
+    const setRowsPerPage = isProductSales ? setProductSalesRowsPerPage : setInventoryRowsPerPage;
+    const measureRows = () => {
+      const table = tableArea.querySelector('table');
+      const headerHeight = table?.querySelector('thead')?.getBoundingClientRect().height || 0;
+      const rowHeights = Array.from(table?.querySelectorAll('tbody tr') || [])
+        .map(row => row.getBoundingClientRect().height);
+      const nextPageSize = calculateSalesRowsPerPage({
+        availableHeight: tableArea.clientHeight,
+        headerHeight,
+        rowHeights,
+      });
+      setRowsPerPage(current => (current === nextPageSize ? current : nextPageSize));
+    };
+    measureRows();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureRows) : null;
+    observer?.observe(tableArea);
+    window.addEventListener('resize', measureRows);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measureRows);
+    };
+  }, [activeTab, inventorySection, inventoryPage, productSalesPage, inventoryRowsPerPage, productSalesRowsPerPage, invSearch, inventoryFilter, inventorySort, visibleInventory.length, productSalesInventory]);
   const filteredBookingPayments = bookingPayments.filter(payment => (
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
   ));
@@ -1456,9 +1495,36 @@ export default function StaffDashboard() {
       || (catalogStatusFilter === 'INACTIVE' && product.is_active === false);
     return matchesSearch && matchesStatus;
   });
-  const pagedCatalogProducts = paginateRows(filteredCatalogProducts, catalogPage, TABLE_PAGE_SIZE);
+  const pagedCatalogProducts = paginateRows(filteredCatalogProducts, catalogPage, catalogRowsPerPage);
   const filteredPurchaseOrders = purchaseOrders.filter(order => purchaseOrderStatusFilter === 'ALL' || order.status === purchaseOrderStatusFilter);
-  const pagedPurchaseOrders = paginateRows(filteredPurchaseOrders, purchaseOrderPage, TABLE_PAGE_SIZE);
+  const pagedPurchaseOrders = paginateRows(filteredPurchaseOrders, purchaseOrderPage, purchaseOrderRowsPerPage);
+  useLayoutEffect(() => {
+    if (activeTab !== 'catalog' || catalogSection === 'overview') return undefined;
+    const isPurchaseOrders = catalogSection === 'purchase-orders';
+    const tableArea = isPurchaseOrders ? purchaseOrderTableAreaRef.current : catalogTableAreaRef.current;
+    if (!tableArea) return undefined;
+    const setRowsPerPage = isPurchaseOrders ? setPurchaseOrderRowsPerPage : setCatalogRowsPerPage;
+    const measureRows = () => {
+      const table = tableArea.querySelector('table');
+      const headerHeight = table?.querySelector('thead')?.getBoundingClientRect().height || 0;
+      const rowHeights = Array.from(table?.querySelectorAll('tbody tr') || [])
+        .map(row => row.getBoundingClientRect().height);
+      const nextPageSize = calculateSalesRowsPerPage({
+        availableHeight: tableArea.clientHeight,
+        headerHeight,
+        rowHeights,
+      });
+      setRowsPerPage(current => (current === nextPageSize ? current : nextPageSize));
+    };
+    measureRows();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureRows) : null;
+    observer?.observe(tableArea);
+    window.addEventListener('resize', measureRows);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measureRows);
+    };
+  }, [activeTab, catalogSection, catalogPage, purchaseOrderPage, catalogRowsPerPage, purchaseOrderRowsPerPage, catalogSearch, catalogStatusFilter, purchaseOrderStatusFilter, filteredCatalogProducts.length, filteredPurchaseOrders.length, catalogProducts, purchaseOrders]);
   const activeCatalogProducts = catalogProducts.filter(product => product.is_active !== false);
   const purchaseOrderProductOptions = catalogProducts
     .filter(product => product.is_active !== false || purchaseOrderForm.items.some(item => String(item.product_id) === String(product.id)))
@@ -1467,13 +1533,17 @@ export default function StaffDashboard() {
       label: `${product.name}${product.sku ? ` · ${product.sku}` : ''}${product.is_active === false ? ' · Inactive (existing order)' : ''}`,
     }));
   const isSalesTab = activeTab === 'sales';
+  const isPosTab = activeTab === 'pos';
+  const isInventoryTab = activeTab === 'inventory';
+  const isCatalogTab = activeTab === 'catalog';
+  const isViewportBoundTab = isSalesTab || isPosTab || isInventoryTab || isCatalogTab;
 
   if (!initialDataReady && (loading || isCurrentTabLoading)) {
     return <StaffSkeleton />;
   }
 
   return (
-    <div className={`${isSalesTab ? 'h-dvh overflow-hidden' : 'min-h-screen'} bg-cream flex flex-col md:flex-row`} aria-busy={loading}>
+    <div className={`${isViewportBoundTab ? 'h-dvh overflow-hidden' : 'min-h-screen'} bg-cream flex flex-col md:flex-row`} aria-busy={loading}>
       <Sidebar
         brand="CAV Terminal"
         brandSubtitle="Staff Console"
@@ -1488,10 +1558,10 @@ export default function StaffDashboard() {
         onSignOutConfirm={handleLogout}
       />
 
-      <div className={`flex-1 flex flex-col overflow-hidden ${isSalesTab ? 'h-dvh min-h-0' : 'min-h-screen'}`}>
+      <div className={`flex-1 flex flex-col overflow-hidden ${isViewportBoundTab ? 'h-dvh min-h-0' : 'min-h-screen'}`}>
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
-        <main className={`flex-1 p-4 md:p-6 lg:p-8 ${isSalesTab ? 'flex min-h-0 flex-col overflow-hidden' : 'overflow-y-auto scrollbar-thin'}`}>
+        <main className={`flex-1 p-4 md:p-6 lg:p-8 ${isSalesTab || isInventoryTab || isCatalogTab ? 'flex min-h-0 flex-col overflow-hidden' : isPosTab ? 'overflow-y-auto scrollbar-thin lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden' : 'overflow-y-auto scrollbar-thin'}`}>
           {error && (
             <div className="bg-red-50 border border-red-100 text-red-800 p-5 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
               <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5" />
@@ -1539,8 +1609,8 @@ export default function StaffDashboard() {
 
           {/* POS */}
           {activeTab === 'pos' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-in-up" key="pos">
-              <div className="lg:col-span-8 space-y-6">
+            <div className="animate-in-up lg:flex lg:min-h-0 lg:flex-1 lg:flex-col" key="pos">
+              <div className="mb-6 flex flex-col gap-6 lg:mb-4 lg:shrink-0">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <div>
                     <h1 className="heading-page text-espresso">POS Terminal</h1>
@@ -1605,7 +1675,10 @@ export default function StaffDashboard() {
                     </div>
                   </div>
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:items-stretch">
+                <section aria-label="Products" className="flex min-h-0 flex-col gap-4 lg:col-span-8">
                 <div className="relative">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-espresso/30" />
                   <input
@@ -1617,18 +1690,18 @@ export default function StaffDashboard() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
+                <div className="grid grid-cols-2 auto-rows-fr gap-3 sm:grid-cols-3 md:gap-4 xl:grid-cols-4 lg:min-h-0 lg:flex-1">
                   {pagedProducts.map((prod, i) => {
                     const availableServings = getProductAvailable(prod);
                     return (
                     <button
                       key={prod.id}
                       onClick={() => addToCart(prod)}
-                      className={`bg-white rounded-2xl border border-espresso/5 shadow-sm text-left flex flex-col overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group relative ${availableServings <= 0 && prod.is_cafe_item ? 'opacity-50 cursor-not-allowed' : ''} animate-in-up`}
+                      className={`h-full min-h-0 bg-white rounded-2xl border border-espresso/5 shadow-sm text-left flex flex-col overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group relative ${availableServings <= 0 && prod.is_cafe_item ? 'opacity-50 cursor-not-allowed' : ''} animate-in-up`}
                       style={{ animationDelay: `${i * 30}ms` }}
                     >
                       {/* Drink image */}
-                      <div className="relative w-full h-28 bg-cream overflow-hidden shrink-0">
+                      <div className="relative w-full h-20 sm:h-24 bg-cream overflow-hidden shrink-0">
                         {prod.image_url ? (
                           <img
                             src={prod.image_url}
@@ -1675,15 +1748,15 @@ export default function StaffDashboard() {
                     );
                   })}
                 </div>
-                <PaginationControls page={productPage} setPage={setProductPage} total={filteredProducts.length} pageSize={PRODUCT_PAGE_SIZE} />
-              </div>
+                <PaginationControls page={productPage} setPage={setProductPage} total={filteredProducts.length} pageSize={PRODUCT_PAGE_SIZE} alwaysVisible compact />
+                </section>
 
-              <div className="lg:col-span-4">
-                <Card>
-                  <CardHeader title="Active Cart" subtitle={`${cart.length} item${cart.length !== 1 ? 's' : ''}`} />
+              <div className="min-h-0 lg:col-span-4">
+                <Card className="lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:p-4">
+                  <CardHeader title="Active Cart" subtitle={`${cart.length} item${cart.length !== 1 ? 's' : ''}`} className="lg:mb-4 lg:shrink-0" />
                   {cart.length > 0 ? (
-                    <div className="space-y-4">
-                      <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-thin pr-1">
+                    <div className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+                      <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-thin pr-1 lg:max-h-none lg:min-h-0 lg:flex-1">
                         {cart.map(item => (
                           <div key={item.id} className="flex items-center justify-between bg-cream p-3 rounded-xl text-xs">
                             <div className="min-w-0 flex-1 pr-2">
@@ -1704,13 +1777,13 @@ export default function StaffDashboard() {
                         ))}
                       </div>
 
-                      <div className="border-t border-espresso/5 pt-4 space-y-4">
+                      <div className="border-t border-espresso/5 pt-4 space-y-4 lg:shrink-0 lg:space-y-2">
                         <div className="flex justify-between font-bold text-sm">
                           <span className="text-espresso/70">Total:</span>
                           <span className="font-sans text-lg text-espresso">{formatReceiptCurrency(getCartTotal())}</span>
                         </div>
 
-                        <div className="rounded-xl border border-espresso/5 bg-cream/70 p-3 space-y-2">
+                        <div className="rounded-xl border border-espresso/5 bg-cream/70 p-3 space-y-2 lg:p-2">
                           <div className="flex justify-between text-xs font-bold text-espresso/60">
                             <span>Subtotal</span>
                             <span>{formatReceiptCurrency(getCartSubtotal())}</span>
@@ -1838,6 +1911,7 @@ export default function StaffDashboard() {
                     </Button>
                   </div>
                 </Card>
+              </div>
               </div>
             </div>
           )}
@@ -1984,323 +2058,397 @@ export default function StaffDashboard() {
 
           {/* INVENTORY */}
           {activeTab === 'inventory' && (
-            <div className="space-y-6 animate-in-up" key="inventory">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden animate-in-up" key="inventory">
+              <div className="flex shrink-0 flex-col justify-between gap-3 sm:flex-row sm:items-center">
                 <div>
                   <h1 className="heading-page text-espresso">Live Inventory</h1>
-                  <p className="text-xs text-espresso/50 mt-1">Monitor stock levels, expiry risk, and purchasing actions.</p>
+                  <p className="mt-1 text-xs text-espresso/50">Monitor stock levels, expiry risk, and product sales, returns, and wastage.</p>
                 </div>
                 <Button variant="primary" size="sm" icon={Plus} onClick={() => setProductModalOpen(true)}>
                   Add Stock Item
                 </Button>
               </div>
 
-              <Card>
-                <CardHeader title="Today’s Product Sales, Returns & Wastage" subtitle="Serving counts reconcile to the beginning stock snapshot. A returned wasted drink remains consumed stock while its sale is removed from net sold and revenue." />
-                <DataTable
-                  columns={[
-                    { key: 'product_name', label: 'Product' },
-                    { key: 'beginning_stock', label: 'Beginning', align: 'right' },
-                    { key: 'quantity_sold', label: 'Sold', align: 'right' },
-                    { key: 'wastage', label: 'Wastage', align: 'right' },
-                    { key: 'ending_stock', label: 'Ending', align: 'right' },
-                    { key: 'revenue', label: 'Net revenue', align: 'right', render: row => formatCurrency(row.revenue) },
-                    { key: 'profit_loss', label: 'Profit / loss', align: 'right', render: row => <span className={Number(row.profit_loss) < 0 ? 'text-red-700' : 'text-emerald-700'}>{formatCurrency(row.profit_loss)}</span> },
-                  ]}
-                  rows={productSalesInventory}
-                  emptyIcon={Package}
-                  emptyTitle="No active products"
-                  emptyDescription="Add café or studio products to track serving counts."
-                  minWidth={900}
-                />
-              </Card>
-
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                {inventoryStatuses.filter(status => status.key !== 'ALL').map(status => {
-                  const Icon = status.icon;
-                  const isActive = inventoryFilter === status.key;
+              <div role="tablist" aria-label="Live Inventory sections" className="flex shrink-0 gap-2 border-b border-espresso/10">
+                {[
+                  ['management', 'Inventory Management'],
+                  ['product-sales', 'Product Sales, Returns & Wastage'],
+                ].map(([key, label]) => {
+                  const selected = inventorySection === key;
                   return (
                     <button
-                      key={status.key}
+                      key={key}
+                      id={`inventory-tab-${key}`}
                       type="button"
-                      onClick={() => setInventoryFilter(status.key)}
-                      className={`group rounded-2xl border p-3 text-left shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_46px_rgba(46,26,17,0.08)] ${
-                        isActive ? 'bg-espresso text-cream border-espresso' : 'bg-cream/60 border-espresso/[0.05] text-espresso hover:border-gold/40'
-                      }`}
+                      role="tab"
+                      aria-selected={selected}
+                      aria-controls={`inventory-panel-${key}`}
+                      onClick={() => setInventorySection(key)}
+                      className={`-mb-px border-b-2 px-3 py-2.5 text-left text-xs font-black transition-colors sm:px-4 ${selected ? 'border-gold text-espresso' : 'border-transparent text-espresso/50 hover:text-espresso'}`}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl transition-colors ${isActive ? 'bg-gold/15 text-gold' : status.iconClass}`}>
-                          <Icon className="h-6 w-6" />
-                        </span>
-                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${isActive ? 'border-gold/30 bg-gold/10 text-gold' : status.className}`}>
-                          {status.label}
-                        </span>
-                      </div>
-                      <p className={`font-sans text-2xl font-extrabold mt-3 leading-tight ${isActive ? 'text-white' : 'text-espresso'}`}>
-                        {inventoryCounts[status.key] || 0}
-                      </p>
-                      <p className={`text-[10px] uppercase font-black ${isActive ? 'text-cream/55' : 'text-espresso/45'}`}>
-                        ingredient{(inventoryCounts[status.key] || 0) === 1 ? '' : 's'}
-                      </p>
+                      {label}
                     </button>
                   );
                 })}
               </div>
 
-              <div className="flex flex-col lg:flex-row gap-3">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-espresso/30" />
-                  <input
-                    id="inv-search"
-                    type="text"
-                    value={invSearch}
-                    onChange={e => setInvSearch(e.target.value)}
-                    placeholder="Search ingredients..."
-                    className="w-full bg-white border border-espresso/10 rounded-xl py-2.5 pl-10 pr-4 text-xs focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/20 transition-all"
-                  />
-                </div>
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {inventoryStatuses.slice(1).map(status => (
-                    <button
-                      key={status.key}
-                      type="button"
-                      onClick={() => setInventoryFilter(status.key)}
-                      className={`whitespace-nowrap rounded-xl border px-3 py-2 text-[10px] font-black transition-all ${inventoryFilter === status.key ? 'bg-espresso text-cream border-espresso' : status.className}`}
-                    >
-                      {status.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setInventoryFilter('ALL')}
-                    className={`whitespace-nowrap rounded-xl border px-3 py-2 text-[10px] font-black transition-all ${inventoryFilter === 'ALL' ? 'bg-espresso text-cream border-espresso' : 'bg-white text-espresso border-espresso/10'}`}
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
+              {inventorySection === 'management' ? (
+                <section role="tabpanel" id="inventory-panel-management" aria-labelledby="inventory-tab-management" className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+                  <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-5">
+                    {inventoryStatuses.filter(status => status.key !== 'ALL').map(status => {
+                      const Icon = status.icon;
+                      const isActive = inventoryFilter === status.key;
+                      return (
+                        <button
+                          key={status.key}
+                          type="button"
+                          onClick={() => setInventoryFilter(status.key)}
+                          className={`group rounded-2xl border p-2.5 text-left shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_46px_rgba(46,26,17,0.08)] sm:p-3 ${
+                            isActive ? 'bg-espresso text-cream border-espresso' : 'bg-cream/60 border-espresso/[0.05] text-espresso hover:border-gold/40'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl transition-colors sm:h-11 sm:w-11 sm:rounded-2xl ${isActive ? 'bg-gold/15 text-gold' : status.iconClass}`}>
+                              <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
+                            </span>
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold sm:text-[10px] ${isActive ? 'border-gold/30 bg-gold/10 text-gold' : status.className}`}>
+                              {status.label}
+                            </span>
+                          </div>
+                          <p className={`mt-2 font-sans text-xl font-extrabold leading-tight sm:mt-3 sm:text-2xl ${isActive ? 'text-white' : 'text-espresso'}`}>
+                            {inventoryCounts[status.key] || 0}
+                          </p>
+                          <p className={`text-[9px] uppercase font-black sm:text-[10px] ${isActive ? 'text-cream/55' : 'text-espresso/45'}`}>
+                            ingredient{(inventoryCounts[status.key] || 0) === 1 ? '' : 's'}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-              <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
-                <DataTable
-                  columns={[
-                    {
-                      key: 'name',
-                      label: 'Ingredient',
-                      render: ingredient => (
-                        <>
-                          <p className="font-bold text-espresso">{ingredient.name}</p>
-                          <p className="text-[10px] text-espresso/45">Batch {ingredient.batch_number || 'N/A'} · {ingredient.supplier_details?.name || 'No supplier'}</p>
-                        </>
-                      ),
-                    },
-                    { key: 'category_details.name', label: 'Category', render: ingredient => ingredient.category_details?.name || '-' },
-                    { key: 'stock_quantity', label: 'Quantity', align: 'center', render: ingredient => `${Number(ingredient.stock_quantity).toLocaleString()} ${ingredient.base_unit}` },
-                    { key: 'minimum_stock_level', label: 'Min / Max', align: 'center', render: ingredient => `${ingredient.minimum_stock_level} / ${ingredient.maximum_stock_level}` },
-                    {
-                      key: 'inventory_status_label',
-                      label: 'Status',
-                      render: ingredient => {
-                        const meta = getInventoryStatusMeta(ingredient.inventory_status);
-                        return (
-                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${meta.className}`}>
-                            {ingredient.inventory_status_label}
-                          </span>
-                        );
-                      },
-                    },
-                    { key: 'suggested_action', label: 'Action' },
-                    {
-                      key: 'expiration_date',
-                      label: 'Expiry',
-                      render: ingredient => (
-                        <>
-                          {ingredient.expiration_date || 'N/A'}
-                          {ingredient.days_until_expiry !== null && ingredient.days_until_expiry !== undefined && (
-                            <span className="block text-[10px] text-espresso/40">{ingredient.days_until_expiry} day(s)</span>
-                          )}
-                        </>
-                      ),
-                    },
-                    { key: 'storage_location', label: 'Storage', render: ingredient => ingredient.storage_location || 'N/A' },
-                  ]}
-                  rows={pagedInventory}
-                  sort={inventorySort}
-                  onSort={(key, column) => toggleSort(inventorySort, setInventorySort, key, column)}
-                  renderActions={ingredient => (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        icon={Pencil}
-                        title={`Edit ${ingredient.name}`}
-                        aria-label={`Edit ${ingredient.name}`}
-                        onClick={() => openEditIngredientModal(ingredient)}
+                  <div className="flex shrink-0 flex-col gap-3 lg:flex-row">
+                    <div className="relative min-w-0 flex-1">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-espresso/30" />
+                      <input
+                        id="inv-search"
+                        type="text"
+                        value={invSearch}
+                        onChange={e => setInvSearch(e.target.value)}
+                        placeholder="Search ingredients..."
+                        className="w-full bg-white border border-espresso/10 rounded-xl py-2.5 pl-10 pr-4 text-xs focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/20 transition-all"
                       />
-                      <Button variant="ghost" size="xs" onClick={() => {
-                        setManualAdjIngredient(ingredient);
-                        setAdjQty(0);
-                        setAdjUnit(ingredient.base_unit);
-                        setAdjMovementType('IN');
-                      }}>Adjust Stock</Button>
-                    </>
-                  )}
-                  emptyIcon={Package}
-                  emptyTitle="No ingredients found"
-                  emptyDescription="Try a different search or status filter."
-                  minWidth={980}
-                  actionWidth="w-[176px]"
-                />
-                <PaginationControls page={inventoryPage} setPage={setInventoryPage} total={visibleInventory.length} pageSize={TABLE_PAGE_SIZE} />
-              </div>
+                    </div>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {inventoryStatuses.slice(1).map(status => (
+                        <button
+                          key={status.key}
+                          type="button"
+                          onClick={() => setInventoryFilter(status.key)}
+                          className={`whitespace-nowrap rounded-xl border px-3 py-2 text-[10px] font-black transition-all ${inventoryFilter === status.key ? 'bg-espresso text-cream border-espresso' : status.className}`}
+                        >
+                          {status.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setInventoryFilter('ALL')}
+                        className={`whitespace-nowrap rounded-xl border px-3 py-2 text-[10px] font-black transition-all ${inventoryFilter === 'ALL' ? 'bg-espresso text-cream border-espresso' : 'bg-white text-espresso border-espresso/10'}`}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-espresso/5 bg-white p-3 shadow-sm">
+                    <div ref={inventoryTableAreaRef} className="min-h-0 flex-1">
+                      <DataTable
+                        columns={[
+                          {
+                            key: 'name',
+                            label: 'Ingredient',
+                            render: ingredient => (
+                              <>
+                                <p className="font-bold text-espresso">{ingredient.name}</p>
+                                <p className="text-[10px] text-espresso/45">Batch {ingredient.batch_number || 'N/A'} · {ingredient.supplier_details?.name || 'No supplier'}</p>
+                              </>
+                            ),
+                          },
+                          { key: 'category_details.name', label: 'Category', render: ingredient => ingredient.category_details?.name || '-' },
+                          { key: 'stock_quantity', label: 'Quantity', align: 'center', render: ingredient => `${Number(ingredient.stock_quantity).toLocaleString()} ${ingredient.base_unit}` },
+                          { key: 'minimum_stock_level', label: 'Min / Max', align: 'center', render: ingredient => `${ingredient.minimum_stock_level} / ${ingredient.maximum_stock_level}` },
+                          {
+                            key: 'inventory_status_label',
+                            label: 'Status',
+                            render: ingredient => {
+                              const meta = getInventoryStatusMeta(ingredient.inventory_status);
+                              return (
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold ${meta.className}`}>
+                                  {ingredient.inventory_status_label}
+                                </span>
+                              );
+                            },
+                          },
+                          { key: 'suggested_action', label: 'Action' },
+                          {
+                            key: 'expiration_date',
+                            label: 'Expiry',
+                            render: ingredient => (
+                              <>
+                                {ingredient.expiration_date || 'N/A'}
+                                {ingredient.days_until_expiry !== null && ingredient.days_until_expiry !== undefined && (
+                                  <span className="block text-[10px] text-espresso/40">{ingredient.days_until_expiry} day(s)</span>
+                                )}
+                              </>
+                            ),
+                          },
+                          { key: 'storage_location', label: 'Storage', render: ingredient => ingredient.storage_location || 'N/A' },
+                        ]}
+                        rows={pagedInventory}
+                        sort={inventorySort}
+                        onSort={(key, column) => toggleSort(inventorySort, setInventorySort, key, column)}
+                        renderActions={ingredient => (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              icon={Pencil}
+                              title={`Edit ${ingredient.name}`}
+                              aria-label={`Edit ${ingredient.name}`}
+                              onClick={() => openEditIngredientModal(ingredient)}
+                            />
+                            <Button variant="ghost" size="xs" onClick={() => {
+                              setManualAdjIngredient(ingredient);
+                              setAdjQty(0);
+                              setAdjUnit(ingredient.base_unit);
+                              setAdjMovementType('IN');
+                            }}>Adjust Stock</Button>
+                          </>
+                        )}
+                        emptyIcon={Package}
+                        emptyTitle="No ingredients found"
+                        emptyDescription="Try a different search or status filter."
+                        minWidth={980}
+                        actionWidth="w-[176px]"
+                        containerClassName="h-full"
+                        emptyStateClassName="h-full !py-4"
+                      />
+                    </div>
+                    <PaginationControls page={inventoryPage} setPage={setInventoryPage} total={visibleInventory.length} pageSize={inventoryRowsPerPage} alwaysVisible compact />
+                  </div>
+                </section>
+              ) : (
+                <section role="tabpanel" id="inventory-panel-product-sales" aria-labelledby="inventory-tab-product-sales" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">
+                    <CardHeader title="Today’s Product Sales, Returns & Wastage" subtitle="Serving counts reconcile to the beginning stock snapshot. A returned wasted drink remains consumed stock while its sale is removed from net sold and revenue." className="mb-3 shrink-0" />
+                    <div ref={productSalesTableAreaRef} className="min-h-0 flex-1">
+                      <DataTable
+                        columns={[
+                          { key: 'product_name', label: 'Product' },
+                          { key: 'beginning_stock', label: 'Beginning', align: 'right' },
+                          { key: 'quantity_sold', label: 'Sold', align: 'right' },
+                          { key: 'wastage', label: 'Wastage', align: 'right' },
+                          { key: 'ending_stock', label: 'Ending', align: 'right' },
+                          { key: 'revenue', label: 'Net revenue', align: 'right', render: row => formatCurrency(row.revenue) },
+                          { key: 'profit_loss', label: 'Profit / loss', align: 'right', render: row => <span className={Number(row.profit_loss) < 0 ? 'text-red-700' : 'text-emerald-700'}>{formatCurrency(row.profit_loss)}</span> },
+                        ]}
+                        rows={pagedProductSalesInventory}
+                        emptyIcon={Package}
+                        emptyTitle="No active products"
+                        emptyDescription="Add café or studio products to track serving counts."
+                        minWidth={900}
+                        containerClassName="h-full"
+                        emptyStateClassName="h-full !py-4"
+                      />
+                    </div>
+                    <PaginationControls page={productSalesPage} setPage={setProductSalesPage} total={productSalesInventory.length} pageSize={productSalesRowsPerPage} alwaysVisible compact />
+                  </Card>
+                </section>
+              )}
             </div>
           )}
 
           {/* CATALOG & PURCHASING */}
           {activeTab === 'catalog' && (
-            <div className="space-y-6 animate-in-up" key="catalog">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden animate-in-up" key="catalog">
+              <div className="shrink-0">
                 <div>
                   <h1 className="heading-page text-espresso">Catalog &amp; Purchasing</h1>
                   <p className="text-xs text-espresso/50 mt-1">Manage sellable products, reference data, and the full purchase-order lifecycle.</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" icon={Settings2} onClick={() => openCategoryModal()}>Add Category</Button>
-                  <Button variant="outline" size="sm" icon={Truck} onClick={() => openSupplierModal()}>Add Supplier</Button>
-                  <Button variant="primary" size="sm" icon={Plus} onClick={() => openCatalogProductModal()}>Add Product</Button>
-                  <Button variant="gold" size="sm" icon={ClipboardList} onClick={() => openPurchaseOrderModal()}>New Purchase Order</Button>
-                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div role="tablist" aria-label="Catalog and purchasing sections" className="grid w-full shrink-0 grid-cols-3 gap-1 border-b border-espresso/10 sm:gap-2">
                 {[
-                  ['Active products', catalogProducts.filter(product => product.is_active !== false).length, 'text-emerald-700 bg-emerald-50'],
-                  ['Inactive products', catalogProducts.filter(product => product.is_active === false).length, 'text-slate-700 bg-slate-100'],
-                  ['Open purchase orders', purchaseOrders.filter(order => order.status === 'ORDERED').length, 'text-amber-700 bg-amber-50'],
-                  ['Received orders', purchaseOrders.filter(order => order.status === 'RECEIVED').length, 'text-blue-700 bg-blue-50'],
-                ].map(([label, value, className]) => (
-                  <div key={label} className="rounded-2xl border border-espresso/[0.06] bg-white p-4 shadow-sm">
-                    <div className={`mb-3 inline-flex rounded-xl px-2.5 py-1 text-[10px] font-black ${className}`}>{label}</div>
-                    <p className="font-sans text-2xl font-extrabold text-espresso">{value}</p>
-                  </div>
-                ))}
+                  ['overview', 'Catalog & Purchasing'],
+                  ['sellable-catalog', 'Sellable Catalog'],
+                  ['purchase-orders', 'Purchase Orders'],
+                ].map(([key, label]) => {
+                  const selected = catalogSection === key;
+                  return (
+                    <button
+                      key={key}
+                      id={`catalog-tab-${key}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      aria-controls={`catalog-panel-${key}`}
+                      onClick={() => setCatalogSection(key)}
+                      className={`-mb-px min-w-0 border-b-2 px-1.5 py-2.5 text-center text-[10px] font-black transition-colors sm:px-4 sm:text-xs ${selected ? 'border-gold text-espresso' : 'border-transparent text-espresso/50 hover:text-espresso'}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                <Card>
-                  <CardHeader title="Categories" subtitle={`${catalogCategories.length} configured reference categor${catalogCategories.length === 1 ? 'y' : 'ies'}`} />
-                  <div className="space-y-2">
-                    {catalogCategories.length ? catalogCategories.map(category => (
-                      <div key={category.id} className="flex items-center justify-between gap-3 rounded-xl bg-cream/70 px-3 py-2.5">
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-black text-espresso">{category.name}</p>
-                          <p className="truncate text-[10px] text-espresso/50">{category.description || 'No description'}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <StatusBadge status={category.is_active === false ? 'CANCELLED' : 'ACTIVE'} />
-                          <Button variant="ghost" size="xs" icon={Pencil} title={`Edit ${category.name}`} aria-label={`Edit ${category.name}`} onClick={() => openCategoryModal(category)} />
-                          <Button variant="ghost" size="xs" icon={category.is_active === false ? Check : Trash2} title={`${category.is_active === false ? 'Activate' : 'Deactivate'} ${category.name}`} aria-label={`${category.is_active === false ? 'Activate' : 'Deactivate'} ${category.name}`} onClick={() => handleCategoryActivation(category)} />
-                        </div>
+              {catalogSection === 'overview' && (
+                <section role="tabpanel" id="catalog-panel-overview" aria-labelledby="catalog-tab-overview" className="min-h-0 flex-1 space-y-4 overflow-y-auto scrollbar-thin">
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    {[
+                      ['Active products', catalogProducts.filter(product => product.is_active !== false).length, 'text-emerald-700 bg-emerald-50'],
+                      ['Inactive products', catalogProducts.filter(product => product.is_active === false).length, 'text-slate-700 bg-slate-100'],
+                      ['Open purchase orders', purchaseOrders.filter(order => order.status === 'ORDERED').length, 'text-amber-700 bg-amber-50'],
+                      ['Received orders', purchaseOrders.filter(order => order.status === 'RECEIVED').length, 'text-blue-700 bg-blue-50'],
+                    ].map(([label, value, className]) => (
+                      <div key={label} className="rounded-2xl border border-espresso/[0.06] bg-white p-4 shadow-sm">
+                        <div className={`mb-3 inline-flex rounded-xl px-2.5 py-1 text-[10px] font-black ${className}`}>{label}</div>
+                        <p className="font-sans text-2xl font-extrabold text-espresso">{value}</p>
                       </div>
-                    )) : <EmptyState icon={Settings2} title="No categories" description="Create a category to organize catalog products." />}
+                    ))}
                   </div>
-                </Card>
 
-                <Card>
-                  <CardHeader title="Suppliers" subtitle={`${catalogSuppliers.length} configured supplier${catalogSuppliers.length === 1 ? '' : 's'}`} />
-                  <div className="space-y-2">
-                    {catalogSuppliers.length ? catalogSuppliers.map(supplier => (
-                      <div key={supplier.id} className="flex items-center justify-between gap-3 rounded-xl bg-cream/70 px-3 py-2.5">
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-black text-espresso">{supplier.name}</p>
-                          <p className="truncate text-[10px] text-espresso/50">{supplier.contact_person || 'No contact person'}{supplier.email ? ` · ${supplier.email}` : ''}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          <StatusBadge status={supplier.is_active === false ? 'CANCELLED' : 'ACTIVE'} />
-                          <Button variant="ghost" size="xs" icon={Pencil} title={`Edit ${supplier.name}`} aria-label={`Edit ${supplier.name}`} onClick={() => openSupplierModal(supplier)} />
-                          <Button variant="ghost" size="xs" icon={supplier.is_active === false ? Check : Trash2} title={`${supplier.is_active === false ? 'Activate' : 'Deactivate'} ${supplier.name}`} aria-label={`${supplier.is_active === false ? 'Activate' : 'Deactivate'} ${supplier.name}`} onClick={() => handleSupplierActivation(supplier)} />
-                        </div>
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <Card>
+                      <CardHeader title="Categories" subtitle={`${catalogCategories.length} configured reference categor${catalogCategories.length === 1 ? 'y' : 'ies'}`} action={<Button variant="outline" size="sm" icon={Settings2} onClick={() => openCategoryModal()}>Add Category</Button>} />
+                      <div className="space-y-2">
+                        {catalogCategories.length ? catalogCategories.map(category => (
+                          <div key={category.id} className="flex items-center justify-between gap-3 rounded-xl bg-cream/70 px-3 py-2.5">
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-black text-espresso">{category.name}</p>
+                              <p className="truncate text-[10px] text-espresso/50">{category.description || 'No description'}</p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <StatusBadge status={category.is_active === false ? 'CANCELLED' : 'ACTIVE'} />
+                              <Button variant="ghost" size="xs" icon={Pencil} title={`Edit ${category.name}`} aria-label={`Edit ${category.name}`} onClick={() => openCategoryModal(category)} />
+                              <Button variant="ghost" size="xs" icon={category.is_active === false ? Check : Trash2} title={`${category.is_active === false ? 'Activate' : 'Deactivate'} ${category.name}`} aria-label={`${category.is_active === false ? 'Activate' : 'Deactivate'} ${category.name}`} onClick={() => handleCategoryActivation(category)} />
+                            </div>
+                          </div>
+                        )) : <EmptyState icon={Settings2} title="No categories" description="Create a category to organize catalog products." />}
                       </div>
-                    )) : <EmptyState icon={Truck} title="No suppliers" description="Create a supplier to use in purchase orders." />}
-                  </div>
-                </Card>
-              </div>
+                    </Card>
 
-              <div className="space-y-3">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <h2 className="heading-section text-espresso">Sellable Catalog</h2>
-                    <p className="text-xs text-espresso/50 mt-1">Changes here flow to the POS after the next refresh.</p>
+                    <Card>
+                      <CardHeader title="Suppliers" subtitle={`${catalogSuppliers.length} configured supplier${catalogSuppliers.length === 1 ? '' : 's'}`} action={<Button variant="outline" size="sm" icon={Truck} onClick={() => openSupplierModal()}>Add Supplier</Button>} />
+                      <div className="space-y-2">
+                        {catalogSuppliers.length ? catalogSuppliers.map(supplier => (
+                          <div key={supplier.id} className="flex items-center justify-between gap-3 rounded-xl bg-cream/70 px-3 py-2.5">
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-black text-espresso">{supplier.name}</p>
+                              <p className="truncate text-[10px] text-espresso/50">{supplier.contact_person || 'No contact person'}{supplier.email ? ` · ${supplier.email}` : ''}</p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <StatusBadge status={supplier.is_active === false ? 'CANCELLED' : 'ACTIVE'} />
+                              <Button variant="ghost" size="xs" icon={Pencil} title={`Edit ${supplier.name}`} aria-label={`Edit ${supplier.name}`} onClick={() => openSupplierModal(supplier)} />
+                              <Button variant="ghost" size="xs" icon={supplier.is_active === false ? Check : Trash2} title={`${supplier.is_active === false ? 'Activate' : 'Deactivate'} ${supplier.name}`} aria-label={`${supplier.is_active === false ? 'Activate' : 'Deactivate'} ${supplier.name}`} onClick={() => handleSupplierActivation(supplier)} />
+                            </div>
+                          </div>
+                        )) : <EmptyState icon={Truck} title="No suppliers" description="Create a supplier to use in purchase orders." />}
+                      </div>
+                    </Card>
                   </div>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <div className="relative min-w-[240px]">
+                </section>
+              )}
+
+              {catalogSection === 'sellable-catalog' && (
+                <section role="tabpanel" id="catalog-panel-sellable-catalog" aria-labelledby="catalog-tab-sellable-catalog" className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+                  <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <h2 className="heading-section text-espresso">Sellable Catalog</h2>
+                      <p className="text-xs text-espresso/50 mt-1">Changes here flow to the POS after the next refresh.</p>
+                    </div>
+                    <Button variant="primary" size="sm" icon={Plus} onClick={() => openCatalogProductModal()}>Add Product</Button>
+                  </div>
+                  <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                    <div className="relative min-w-0 flex-1">
                       <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-espresso/30" />
                       <input type="text" value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)} placeholder="Search products, SKU, category..." className="w-full bg-white border border-espresso/10 rounded-xl py-2.5 pl-10 pr-4 text-xs focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/20" />
                     </div>
-                    <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
+                    <div className="flex shrink-0 bg-white border border-espresso/10 rounded-xl p-1 text-xs">
                       {[['ALL', 'All'], ['ACTIVE', 'Active'], ['INACTIVE', 'Inactive']].map(([value, label]) => (
                         <button key={value} type="button" onClick={() => setCatalogStatusFilter(value)} className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${catalogStatusFilter === value ? 'bg-espresso text-cream shadow-sm' : 'text-espresso/50 hover:text-espresso'}`}>{label}</button>
                       ))}
                     </div>
                   </div>
-                </div>
-                <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
-                  <DataTable
-                    columns={[
-                      { key: 'name', label: 'Product', render: product => <><p className="font-bold text-espresso">{product.name}</p><p className="text-[10px] text-espresso/45">{product.sku || 'No SKU'} · {product.is_cafe_item ? 'Cafe item' : 'Studio item'}</p></> },
-                      { key: 'category_details.name', label: 'Category', render: product => product.category_details?.name || 'Uncategorized' },
-                      { key: 'supplier_details.name', label: 'Supplier', render: product => product.supplier_details?.name || 'No supplier' },
-                      { key: 'price', label: 'Price', align: 'right', render: product => formatCurrency(product.price) },
-                      { key: 'stock_level', label: 'Stock', align: 'center', render: product => `${product.stock_level} ${product.unit || 'pcs'}` },
-                      { key: 'is_active', label: 'Status', align: 'center', render: product => <StatusBadge status={product.is_active === false ? 'CANCELLED' : 'ACTIVE'} /> },
-                    ]}
-                    rows={pagedCatalogProducts}
-                    renderActions={product => <><Button variant="ghost" size="xs" icon={Pencil} title={`Edit ${product.name}`} aria-label={`Edit ${product.name}`} onClick={() => openCatalogProductModal(product)} /><Button variant="ghost" size="xs" icon={product.is_active === false ? Check : Trash2} title={`${product.is_active === false ? 'Activate' : 'Deactivate'} ${product.name}`} aria-label={`${product.is_active === false ? 'Activate' : 'Deactivate'} ${product.name}`} onClick={() => handleCatalogProductActivation(product)} /></>}
-                    emptyIcon={Package}
-                    emptyTitle="No catalog products"
-                    emptyDescription="Create a product or adjust the current filters."
-                    minWidth={900}
-                  />
-                  <PaginationControls page={catalogPage} setPage={setCatalogPage} total={filteredCatalogProducts.length} pageSize={TABLE_PAGE_SIZE} />
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <h2 className="heading-section text-espresso">Purchase Orders</h2>
-                    <p className="text-xs text-espresso/50 mt-1">Create, edit ordered drafts, receive stock once, or cancel an order.</p>
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-espresso/5 bg-white p-3 shadow-sm">
+                    <div ref={catalogTableAreaRef} className="min-h-0 flex-1">
+                      <DataTable
+                        columns={[
+                          { key: 'name', label: 'Product', render: product => <><p className="font-bold text-espresso">{product.name}</p><p className="text-[10px] text-espresso/45">{product.sku || 'No SKU'} · {product.is_cafe_item ? 'Cafe item' : 'Studio item'}</p></> },
+                          { key: 'category_details.name', label: 'Category', render: product => product.category_details?.name || 'Uncategorized' },
+                          { key: 'supplier_details.name', label: 'Supplier', render: product => product.supplier_details?.name || 'No supplier' },
+                          { key: 'price', label: 'Price', align: 'right', render: product => formatCurrency(product.price) },
+                          { key: 'stock_level', label: 'Stock', align: 'center', render: product => `${product.stock_level} ${product.unit || 'pcs'}` },
+                          { key: 'is_active', label: 'Status', align: 'center', render: product => <StatusBadge status={product.is_active === false ? 'CANCELLED' : 'ACTIVE'} /> },
+                        ]}
+                        rows={pagedCatalogProducts}
+                        renderActions={product => <><Button variant="ghost" size="xs" icon={Pencil} title={`Edit ${product.name}`} aria-label={`Edit ${product.name}`} onClick={() => openCatalogProductModal(product)} /><Button variant="ghost" size="xs" icon={product.is_active === false ? Check : Trash2} title={`${product.is_active === false ? 'Activate' : 'Deactivate'} ${product.name}`} aria-label={`${product.is_active === false ? 'Activate' : 'Deactivate'} ${product.name}`} onClick={() => handleCatalogProductActivation(product)} /></>}
+                        emptyIcon={Package}
+                        emptyTitle="No catalog products"
+                        emptyDescription="Create a product or adjust the current filters."
+                        minWidth={900}
+                        containerClassName="h-full"
+                        emptyStateClassName="h-full !py-4"
+                      />
+                    </div>
+                    <PaginationControls page={catalogPage} setPage={setCatalogPage} total={filteredCatalogProducts.length} pageSize={catalogRowsPerPage} alwaysVisible compact />
                   </div>
-                  <div className="flex bg-white border border-espresso/10 rounded-xl p-1 text-xs">
+                </section>
+              )}
+
+              {catalogSection === 'purchase-orders' && (
+                <section role="tabpanel" id="catalog-panel-purchase-orders" aria-labelledby="catalog-tab-purchase-orders" className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+                  <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <h2 className="heading-section text-espresso">Purchase Orders</h2>
+                      <p className="text-xs text-espresso/50 mt-1">Create, edit ordered drafts, receive stock once, or cancel an order.</p>
+                    </div>
+                    <Button variant="gold" size="sm" icon={ClipboardList} onClick={() => openPurchaseOrderModal()}>New Purchase Order</Button>
+                  </div>
+                  <div className="flex shrink-0 gap-1 overflow-x-auto bg-white border border-espresso/10 rounded-xl p-1 text-xs sm:w-fit">
                     {[['ALL', 'All'], ['ORDERED', 'Ordered'], ['RECEIVED', 'Received'], ['CANCELLED', 'Cancelled']].map(([value, label]) => (
-                      <button key={value} type="button" onClick={() => setPurchaseOrderStatusFilter(value)} className={`px-3 py-1.5 rounded-lg font-semibold transition-all ${purchaseOrderStatusFilter === value ? 'bg-espresso text-cream shadow-sm' : 'text-espresso/50 hover:text-espresso'}`}>{label}</button>
+                      <button key={value} type="button" onClick={() => setPurchaseOrderStatusFilter(value)} className={`shrink-0 px-3 py-1.5 rounded-lg font-semibold transition-all ${purchaseOrderStatusFilter === value ? 'bg-espresso text-cream shadow-sm' : 'text-espresso/50 hover:text-espresso'}`}>{label}</button>
                     ))}
                   </div>
-                </div>
-                <div className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm">
-                  <DataTable
-                    columns={[
-                      { key: 'id', label: 'PO', render: order => <><p className="font-bold text-espresso">PO #{order.id}</p><p className="text-[10px] text-espresso/45">{formatManilaDateTime(order.created_at)}</p></> },
-                      { key: 'supplier_name', label: 'Supplier' },
-                      { key: 'items', label: 'Items', align: 'center', render: order => `${order.items?.length || 0} line${order.items?.length === 1 ? '' : 's'}` },
-                      { key: 'total_quantity', label: 'Quantity', align: 'center', render: order => order.total_quantity ?? (order.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0) },
-                      { key: 'total_value', label: 'Value', align: 'right', render: order => formatCurrency(order.total_value) },
-                      { key: 'status', label: 'Status', align: 'center', render: order => <StatusBadge status={order.status} /> },
-                    ]}
-                    rows={pagedPurchaseOrders}
-                    renderActions={order => <>
-                      {order.status === 'ORDERED' && <Button variant="ghost" size="xs" icon={Pencil} title={`Edit PO ${order.id}`} aria-label={`Edit PO ${order.id}`} onClick={() => openPurchaseOrderModal(order)} />}
-                      {order.status === 'ORDERED' && <Button variant="success" size="xs" icon={Check} loading={purchaseOrderActionId === order.id} onClick={() => handlePurchaseOrderStatus(order, 'RECEIVED')}>Receive</Button>}
-                      {order.status === 'ORDERED' && <Button variant="danger" size="xs" icon={X} loading={purchaseOrderActionId === order.id} onClick={() => handlePurchaseOrderStatus(order, 'CANCELLED')}>Cancel</Button>}
-                    </>}
-                    emptyIcon={ClipboardList}
-                    emptyTitle="No purchase orders"
-                    emptyDescription="Create an order to start tracking replenishment through receipt."
-                    minWidth={900}
-                    actionWidth="w-[240px]"
-                  />
-                  <PaginationControls page={purchaseOrderPage} setPage={setPurchaseOrderPage} total={filteredPurchaseOrders.length} pageSize={TABLE_PAGE_SIZE} />
-                </div>
-              </div>
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-espresso/5 bg-white p-3 shadow-sm">
+                    <div ref={purchaseOrderTableAreaRef} className="min-h-0 flex-1">
+                      <DataTable
+                        columns={[
+                          { key: 'id', label: 'PO', render: order => <><p className="font-bold text-espresso">PO #{order.id}</p><p className="text-[10px] text-espresso/45">{formatManilaDateTime(order.created_at)}</p></> },
+                          { key: 'supplier_name', label: 'Supplier' },
+                          { key: 'items', label: 'Items', align: 'center', render: order => `${order.items?.length || 0} line${order.items?.length === 1 ? '' : 's'}` },
+                          { key: 'total_quantity', label: 'Quantity', align: 'center', render: order => order.total_quantity ?? (order.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0) },
+                          { key: 'total_value', label: 'Value', align: 'right', render: order => formatCurrency(order.total_value) },
+                          { key: 'status', label: 'Status', align: 'center', render: order => <StatusBadge status={order.status} /> },
+                        ]}
+                        rows={pagedPurchaseOrders}
+                        renderActions={order => <>
+                          {order.status === 'ORDERED' && <Button variant="ghost" size="xs" icon={Pencil} title={`Edit PO ${order.id}`} aria-label={`Edit PO ${order.id}`} onClick={() => openPurchaseOrderModal(order)} />}
+                          {order.status === 'ORDERED' && <Button variant="success" size="xs" icon={Check} loading={purchaseOrderActionId === order.id} onClick={() => handlePurchaseOrderStatus(order, 'RECEIVED')}>Receive</Button>}
+                          {order.status === 'ORDERED' && <Button variant="danger" size="xs" icon={X} loading={purchaseOrderActionId === order.id} onClick={() => handlePurchaseOrderStatus(order, 'CANCELLED')}>Cancel</Button>}
+                        </>}
+                        emptyIcon={ClipboardList}
+                        emptyTitle="No purchase orders"
+                        emptyDescription="Create an order to start tracking replenishment through receipt."
+                        minWidth={900}
+                        actionWidth="w-[240px]"
+                        containerClassName="h-full"
+                        emptyStateClassName="h-full !py-4"
+                      />
+                    </div>
+                    <PaginationControls page={purchaseOrderPage} setPage={setPurchaseOrderPage} total={filteredPurchaseOrders.length} pageSize={purchaseOrderRowsPerPage} alwaysVisible compact />
+                  </div>
+                </section>
+              )}
             </div>
           )}
 
