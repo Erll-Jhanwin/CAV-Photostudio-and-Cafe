@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import mimetypes
 import re
+import time
 from urllib.parse import quote
 
 import requests
@@ -27,6 +28,9 @@ class SupabasePaymentProofStorage(Storage):
     """Use a private bucket; Django's receipt endpoint controls file access."""
 
     timeout = 30
+    upload_attempts = 2
+    upload_timeout = 20
+    upload_upsert = True
 
     def _test_storage(self):
         # Tests use isolated in-memory storage and local development can use
@@ -86,22 +90,34 @@ class SupabasePaymentProofStorage(Storage):
         base_url, api_key, bucket = self._config()
         safe_name = self._safe_name(name)
         content_type = getattr(content, 'content_type', '') or mimetypes.guess_type(safe_name)[0] or 'application/octet-stream'
-        try:
-            if hasattr(content, 'chunks'):
-                body = b''.join(content.chunks())
-            else:
-                body = content.read()
-            response = requests.post(
-                self._object_url(base_url, bucket, safe_name),
-                data=body,
-                headers={**self._headers(api_key, content_type), 'x-upsert': 'false'},
-                timeout=self.timeout,
-            )
-            if response.status_code not in (200, 201):
-                raise SupabaseStorageError(f'Supabase Storage upload failed ({response.status_code}).')
-        except requests.RequestException as exc:
-            raise SupabaseStorageError('Supabase Storage upload failed.') from exc
-        return safe_name
+        if hasattr(content, 'chunks'):
+            body = b''.join(content.chunks())
+        else:
+            body = content.read()
+        url = self._object_url(base_url, bucket, safe_name)
+        last_error = None
+        for attempt in range(self.upload_attempts):
+            try:
+                response = requests.post(
+                    url,
+                    data=body,
+                    # A retry can follow a timeout after Supabase stored the
+                    # first request. Upsert makes replaying this UUID path safe.
+                    headers={**self._headers(api_key, content_type), 'x-upsert': str(self.upload_upsert).lower()},
+                    timeout=self.upload_timeout,
+                )
+                if response.status_code in (200, 201):
+                    return safe_name
+                if response.status_code not in (408, 425, 429, 500, 502, 503, 504):
+                    raise SupabaseStorageError(f'Supabase Storage upload failed ({response.status_code}).')
+                last_error = SupabaseStorageError(
+                    f'Supabase Storage upload failed ({response.status_code}).'
+                )
+            except requests.RequestException as exc:
+                last_error = exc
+            if attempt + 1 < self.upload_attempts:
+                time.sleep(0.25 * (attempt + 1))
+        raise SupabaseStorageError('Supabase Storage upload failed after retry.') from last_error
 
     def _open(self, name, mode='rb'):
         if mode not in {'rb', 'r'}:

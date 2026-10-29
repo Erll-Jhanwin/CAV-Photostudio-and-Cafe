@@ -1,32 +1,7 @@
--- Run in the Supabase SQL editor for the existing project.
--- Only configures the private payment-proof bucket; it does not alter app tables.
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-  'payment-proofs',
-  'payment-proofs',
-  false,
-  5242880,
-  array['image/jpeg', 'image/png', 'image/webp', 'application/pdf']::text[]
-)
-on conflict (id) do update
-set name = excluded.name,
-    public = false,
-    file_size_limit = excluded.file_size_limit,
-    allowed_mime_types = excluded.allowed_mime_types;
-
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-  'customer-photos',
-  'customer-photos',
-  false,
-  5242880,
-  array['image/jpeg', 'image/png', 'image/webp']::text[]
-)
-on conflict (id) do update
-set name = excluded.name,
-    public = false,
-    file_size_limit = excluded.file_size_limit,
-    allowed_mime_types = excluded.allowed_mime_types;
+-- Create payment-proofs and customer-photos as private buckets in the
+-- Supabase Dashboard (Storage > New Bucket). This script intentionally avoids
+-- direct writes to storage.buckets, which is managed by the Storage service.
+-- Run in the Supabase SQL editor for the existing project after bucket setup.
 
 -- Prevent anon/authenticated users from reaching this bucket even if another
 -- permissive policy is later added for a different bucket. The Django backend

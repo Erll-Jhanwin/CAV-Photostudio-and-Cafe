@@ -2,6 +2,7 @@ from datetime import timedelta
 from io import BytesIO
 from unittest.mock import Mock, patch
 
+import requests
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -43,7 +44,7 @@ class SupabasePaymentProofStorageTests(TestCase):
         post_args = post.call_args
         self.assertEqual(post_args.args[0], 'https://demo-project.supabase.co/storage/v1/object/payment-proofs/booking_receipts/test-proof.png')
         self.assertEqual(post_args.kwargs['headers']['Authorization'], 'Bearer test-only-server-secret')
-        self.assertEqual(post_args.kwargs['headers']['x-upsert'], 'false')
+        self.assertEqual(post_args.kwargs['headers']['x-upsert'], 'true')
         self.assertEqual(post_args.kwargs['data'][:8], b'\x89PNG\r\n\x1a\n')
         self.assertEqual(get.call_args.args[0], post_args.args[0])
         self.assertNotIn('public', get.call_args.args[0])
@@ -67,6 +68,29 @@ class SupabasePaymentProofStorageTests(TestCase):
                 SupabasePaymentProofStorage()._config()[1],
                 'sb_secret_test-only',
             )
+
+    def test_upload_retries_transient_storage_errors_on_the_same_object_path(self):
+        storage = SupabasePaymentProofStorage()
+        with patch('payment.storage.requests.post', side_effect=[
+            Mock(status_code=503), Mock(status_code=200),
+        ]) as post, patch('payment.storage.time.sleep'):
+            stored_name = storage.save('booking_receipts/retry-proof.png', receipt_image())
+
+        self.assertEqual(stored_name, 'booking_receipts/retry-proof.png')
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args_list[0].args[0], post.call_args_list[1].args[0])
+        self.assertEqual(post.call_args_list[0].kwargs['headers']['x-upsert'], 'true')
+
+    def test_upload_retries_after_ambiguous_timeout(self):
+        storage = SupabasePaymentProofStorage()
+        with patch('payment.storage.requests.post', side_effect=[
+            requests.Timeout('response timed out'), Mock(status_code=200),
+        ]) as post, patch('payment.storage.time.sleep'):
+            stored_name = storage.save('booking_receipts/timeout-proof.png', receipt_image())
+
+        self.assertEqual(stored_name, 'booking_receipts/timeout-proof.png')
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args_list[0].args[0], post.call_args_list[1].args[0])
 
     def test_debug_mode_uses_local_django_storage_without_supabase_credentials(self):
         storage = SupabasePaymentProofStorage()
@@ -183,6 +207,57 @@ class BookingPaymentReferenceFlowTests(TestCase):
         self.client.force_authenticate(other_customer)
         denied = self.client.get(f'/api/bookings/payments/{payment.pk}/receipt/')
         self.assertEqual(denied.status_code, 404)
+
+    def test_failed_proof_upload_keeps_booking_retryable_and_retry_saves_one_payment(self):
+        booking = self.create_booking(27, 'proof-retry')
+        payload = {
+            'booking': booking.pk,
+            'reference_number': 'PAY-REF-PROOF-RETRY',
+            'amount': '500.00',
+            'method': 'GCASH',
+            'paid_at': timezone.now().isoformat(),
+            'idempotency_key': 'payment-proof-retry-key',
+            'receipt': receipt_image(),
+        }
+        storage_settings = {
+            'IS_TESTING': False,
+            'DEBUG': False,
+            'SUPABASE_URL': 'https://demo-project.supabase.co',
+            'SUPABASE_SECRET_KEY': '',
+            'SUPABASE_SERVICE_ROLE_KEY': 'test-only-server-secret',
+            'SUPABASE_PAYMENT_PROOFS_BUCKET': 'payment-proofs',
+        }
+        with override_settings(**storage_settings), \
+                patch('payment.storage.requests.post', return_value=Mock(status_code=503)) as upload, \
+                patch('payment.storage.time.sleep'):
+            failed = self.client.post('/api/bookings/payments/', payload.copy(), format='multipart')
+
+        self.assertEqual(failed.status_code, 503, failed.data)
+        self.assertEqual(upload.call_count, 2)
+        self.assertEqual(Booking.objects.filter(pk=booking.pk).count(), 1)
+        self.assertEqual(Payment.objects.filter(booking=booking).count(), 0)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, 'PENDING')
+
+        payload['receipt'] = receipt_image()
+        with override_settings(**storage_settings), \
+                patch('payment.storage.requests.post', return_value=Mock(status_code=200)) as upload, \
+                patch('payment.storage.requests.get', return_value=Mock(status_code=200, content=b'proof bytes')) as download:
+            retried = self.client.post('/api/bookings/payments/', payload, format='multipart')
+            receipt_response = self.client.get(f"/api/bookings/payments/{retried.data['id']}/receipt/")
+            receipt_body = b''.join(receipt_response.streaming_content) if receipt_response.status_code == 200 else b''
+            download_url = download.call_args.args[0]
+
+        self.assertEqual(retried.status_code, 201, retried.data)
+        self.assertEqual(upload.call_count, 1)
+        self.assertEqual(Payment.objects.filter(booking=booking).count(), 1)
+        payment = Payment.objects.get(booking=booking)
+        self.assertTrue(payment.receipt.name)
+        self.assertEqual(payment.status, 'PENDING_VERIFICATION')
+        self.assertEqual(Booking.objects.filter(pk=booking.pk).count(), 1)
+        self.assertEqual(receipt_response.status_code, 200)
+        self.assertEqual(receipt_body, b'proof bytes')
+        self.assertIn('/payment-proofs/booking_receipts/', download_url)
 
     def test_duplicate_booking_reference_is_rejected_case_insensitively(self):
         first_booking = self.create_booking(23, 'first')

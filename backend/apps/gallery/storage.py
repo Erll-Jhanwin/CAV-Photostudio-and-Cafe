@@ -11,6 +11,11 @@ from payment.storage import SupabaseStorageError, SupabasePaymentProofStorage
 class SupabaseCustomerPhotoStorage(SupabasePaymentProofStorage):
     """Private persistent storage for photos delivered to a specific customer."""
 
+    timeout = 30
+    upload_attempts = 1
+    upload_timeout = 30
+    upload_upsert = False
+
     def _config(self):
         base_url, api_key, _ = super()._config()
         bucket = str(getattr(settings, 'SUPABASE_CUSTOMER_PHOTOS_BUCKET', 'customer-photos') or '').strip()
@@ -28,6 +33,11 @@ class SupabaseGalleryStorage(SupabasePaymentProofStorage):
     The bucket must be configured as public in Supabase. The service role key is
     used only for writes and is never included in the public image URL.
     """
+
+    timeout = 30
+    upload_attempts = 1
+    upload_timeout = 30
+    upload_upsert = False
 
     def _config(self):
         base_url = str(getattr(settings, 'SUPABASE_URL', '') or '').strip().rstrip('/')
