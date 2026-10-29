@@ -6,7 +6,7 @@ import {
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
   X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
   ArrowDownRight, Camera, Printer, Upload, ChevronLeft, ChevronRight,
-  Star, Quote, ThumbsUp, ThumbsDown, Minus, ClipboardList
+  Star, Quote, ThumbsUp, ThumbsDown, Minus, ClipboardList, Search
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -66,6 +66,210 @@ const formatCurrency = (value) => `PHP ${Number(value || 0).toLocaleString('en-P
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
 })}`;
+
+const CloseoutMetric = ({ label, value, valueClassName = 'text-espresso' }) => (
+  <div className="min-w-0 rounded-xl border border-espresso/[0.07] bg-white p-3">
+    <p className="text-[9px] font-black uppercase tracking-wider text-espresso/45">{label}</p>
+    <p className={`mt-1 break-words text-sm font-black ${valueClassName}`}>{value}</p>
+  </div>
+);
+
+const EndOfDayReportDetailsModal = ({ report, onClose, isLoading = false, error = '' }) => {
+  if (!report) return null;
+  const transactions = Array.isArray(report.transactions) ? report.transactions : [];
+  const transactionIds = Array.isArray(report.transaction_ids) && report.transaction_ids.length
+    ? report.transaction_ids
+    : [report.first_transaction_id, report.last_transaction_id].filter((value, index, values) => value && values.indexOf(value) === index);
+  const printHistory = Array.isArray(report.print_history) ? report.print_history : [];
+  const hasTransactionSnapshot = transactions.length > 0;
+
+  return (
+    <Modal
+      open={Boolean(report)}
+      onClose={onClose}
+      title={`Saved Closeout · ${report.report_date}`}
+      size="5xl"
+      className="max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)] overflow-hidden"
+      bodyClassName="max-h-[calc(100vh-8rem)] max-h-[calc(100dvh-8rem)] space-y-4 overflow-y-auto p-4 sm:p-6"
+    >
+      <section className="rounded-2xl border border-espresso/10 bg-cream/55 p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-black text-espresso">Closeout report #{report.id}</p>
+            <p className="mt-1 break-words text-xs font-bold text-espresso/60">
+              Closed by {report.staff_name || report.closed_by_name || 'Admin'}
+              {report.closed_by != null ? ` · Admin ID ${report.closed_by}` : ''}
+            </p>
+          </div>
+          <span className={`w-fit rounded-full px-3 py-1 text-[10px] font-black ${Number(report.cash_difference) === 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+            Cash difference {formatCurrency(report.cash_difference)}
+          </span>
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <CloseoutMetric label="Report date" value={report.report_date || 'Not recorded'} />
+          <CloseoutMetric label="Opening time" value={formatManilaDateTime(report.opening_time) || 'Not recorded'} />
+          <CloseoutMetric label="Closing time" value={formatManilaDateTime(report.closing_time) || 'Not recorded'} />
+          <CloseoutMetric label="Saved at" value={formatManilaDateTime(report.created_at) || 'Not recorded'} />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-espresso/10 bg-cream/35 p-4">
+        <h3 className="text-xs font-black uppercase tracking-wider text-espresso">Report totals</h3>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+          <CloseoutMetric label="Transactions" value={report.total_transactions ?? 0} />
+          <CloseoutMetric label="Items sold" value={report.total_items_sold ?? 0} />
+          <CloseoutMetric label="Gross sales" value={formatCurrency(report.gross_sales)} />
+          <CloseoutMetric label="Discounts" value={formatCurrency(report.discounts)} />
+          <CloseoutMetric label="Refunds" value={formatCurrency(report.refunds)} />
+          <CloseoutMetric label="Cancelled / voided" value={report.cancelled_or_voided_transactions ?? 0} />
+          <CloseoutMetric label="Booking income" value={formatCurrency(report.booking_income)} />
+          <CloseoutMetric label="Cafe POS income" value={formatCurrency(report.cafe_pos_income)} />
+        </div>
+        <div className="mt-3 rounded-xl border border-espresso/[0.07] bg-white p-3">
+          <p className="text-[9px] font-black uppercase tracking-wider text-espresso/45">Transaction IDs</p>
+          {transactionIds.length ? (
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {transactionIds.map((transactionId, index) => (
+                <li key={`${transactionId}-${index}`} className="max-w-full break-all rounded-lg bg-gold/10 px-2.5 py-1 text-[10px] font-black text-gold-dark">{transactionId}</li>
+              ))}
+            </ul>
+          ) : <p className="mt-1 text-xs text-espresso/50">No transaction IDs were saved with this report.</p>}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-espresso/10 bg-cream/35 p-4">
+        <h3 className="text-xs font-black uppercase tracking-wider text-espresso">Payment breakdown</h3>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+          <CloseoutMetric label="Cash" value={formatCurrency(report.cash_sales)} />
+          <CloseoutMetric label="GCash" value={formatCurrency(report.gcash_sales)} />
+          <CloseoutMetric label="Card" value={formatCurrency(report.card_sales)} />
+          <CloseoutMetric label="Other payments" value={formatCurrency(report.other_payment_sales)} />
+          <CloseoutMetric label="Booking income" value={formatCurrency(report.booking_income)} />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-espresso/10 bg-cream/35 p-4">
+        <h3 className="text-xs font-black uppercase tracking-wider text-espresso">Cash reconciliation</h3>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+          <CloseoutMetric label="Opening cash" value={formatCurrency(report.opening_cash)} />
+          <CloseoutMetric label="Cash sales" value={formatCurrency(report.cash_sales)} />
+          <CloseoutMetric label="Cash in / out" value={formatCurrency(report.cash_in_out)} />
+          <CloseoutMetric label="Expected cash" value={formatCurrency(report.expected_cash)} />
+          <CloseoutMetric label="Actual cash counted" value={formatCurrency(report.actual_cash)} />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-espresso/10 bg-cream/35 p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-xs font-black uppercase tracking-wider text-espresso">Itemized transactions</h3>
+          <span className="text-[10px] font-bold text-espresso/50">{transactions.length} saved transaction{transactions.length === 1 ? '' : 's'}</span>
+        </div>
+        {report.transactions_reconstructed && hasTransactionSnapshot && (
+          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10px] leading-relaxed text-amber-900">
+            This older report predates transaction snapshots. Its item details are loaded from the recorded transactions for the report date; the saved report totals remain unchanged.
+          </p>
+        )}
+        {isLoading ? (
+          <p role="status" className="mt-3 rounded-xl border border-espresso/[0.07] bg-white p-4 text-xs font-bold text-espresso/60">Loading transaction details…</p>
+        ) : error ? (
+          <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-4 text-xs leading-relaxed text-red-800">{error}</p>
+        ) : hasTransactionSnapshot ? (
+          <div className="mt-3 space-y-3">
+            {transactions.map((transaction, transactionIndex) => (
+              <article key={transaction.id || transaction.transaction_id || transactionIndex} className="min-w-0 rounded-xl border border-espresso/[0.08] bg-white p-3 sm:p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="break-all text-xs font-black text-espresso">
+                      {transaction.transaction_id || `Transaction ${transaction.id || transactionIndex + 1}`}
+                    </p>
+                    <p className="mt-1 break-words text-[10px] font-bold text-espresso/55">
+                      {String(transaction.type || 'Transaction').replace(/_/g, ' ')}
+                      {transaction.booking_id ? ` · Booking #${transaction.booking_id}` : ''}
+                      {transaction.booking_customer_name ? ` · ${transaction.booking_customer_name}` : ''}
+                      {transaction.staff_name ? ` · ${transaction.staff_name}` : ''}
+                    </p>
+                    {transaction.created_at && <p className="mt-1 text-[10px] text-espresso/50">{formatManilaDateTime(transaction.created_at)}</p>}
+                  </div>
+                  <p className="shrink-0 text-sm font-black text-gold-dark">Total {formatCurrency(transaction.total)}</p>
+                </div>
+
+                {transaction.items?.length ? (
+                  <div className="mt-3 space-y-2 border-t border-espresso/[0.07] pt-3">
+                    {transaction.items.map((item, itemIndex) => (
+                      <div key={item.id || `${item.name}-${itemIndex}`} className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-1 rounded-lg bg-cream/50 p-2 text-[10px] sm:grid-cols-4">
+                        <p className="col-span-2 break-words font-black text-espresso sm:col-span-1">{item.name || 'Item'}</p>
+                        <p className="text-espresso/65">Qty {item.quantity ?? 0}{Number(item.returned_quantity) > 0 ? ` · ${item.returned_quantity} returned` : ''}</p>
+                        <p className="break-words text-espresso/65">Unit {formatCurrency(item.price)}</p>
+                        <p className="break-words font-bold text-espresso/75">Line {formatCurrency(item.net_subtotal ?? item.subtotal)}</p>
+                        {Number(item.discount_amount) > 0 && <p className="col-span-2 text-amber-700 sm:col-span-4">Item discount {formatCurrency(item.discount_amount)}</p>}
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="mt-3 border-t border-espresso/[0.07] pt-3 text-[10px] text-espresso/50">No item lines were recorded for this transaction.</p>}
+
+                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-espresso/[0.07] pt-3 sm:grid-cols-4">
+                  <CloseoutMetric label="Subtotal" value={formatCurrency(transaction.subtotal)} />
+                  <CloseoutMetric label="Discount" value={`${transaction.discount_type ? `${transaction.discount_type} ` : ''}${formatCurrency(transaction.discount_amount)}`} />
+                  <CloseoutMetric label="Refunds" value={formatCurrency(transaction.refunds)} />
+                  <CloseoutMetric label="Total" value={formatCurrency(transaction.total)} valueClassName="text-gold-dark" />
+                </div>
+                {transaction.payments?.length > 0 && (
+                  <div className="mt-3 border-t border-espresso/[0.07] pt-3">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-espresso/45">Payments</p>
+                    <div className="mt-1 space-y-1">
+                      {transaction.payments.map((payment, paymentIndex) => (
+                        <p key={payment.id || payment.transaction_id || paymentIndex} className="break-words text-[10px] font-medium text-espresso/65">
+                          {payment.method || 'Payment'} · {formatCurrency(payment.amount)}
+                          {payment.transaction_id ? ` · ${payment.transaction_id}` : ''}
+                          {payment.reference_number ? ` · Ref ${payment.reference_number}` : ''}
+                          {payment.paid_at ? ` · ${formatManilaDateTime(payment.paid_at)}` : ''}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+            {report.transactions_reconstructed
+              ? 'No transaction-level records are available for this older report date. Its saved aggregate item summary is shown below where available.'
+              : 'This older saved report does not contain a transaction-level snapshot. Its saved aggregate item summary is shown below where available.'}
+            {report.best_selling_items?.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {report.best_selling_items.map((item, index) => <li key={`${item.name}-${index}`}>{item.name}: {item.quantity} units · {formatCurrency(item.total)}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-espresso/10 bg-cream/35 p-4">
+        <h3 className="text-xs font-black uppercase tracking-wider text-espresso">Print history</h3>
+        {printHistory.length ? (
+          <ol className="mt-3 space-y-2">
+            {printHistory.map((entry, index) => (
+              <li key={`${entry.recorded_at || 'print'}-${index}`} className="rounded-xl border border-espresso/[0.07] bg-white p-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs font-black text-espresso">{String(entry.event || 'print').replace(/_/g, ' ')} · {entry.printed ? 'Printed' : 'Not printed'}</p>
+                  <p className="text-[10px] text-espresso/55">{formatManilaDateTime(entry.recorded_at) || 'Time not recorded'}</p>
+                </div>
+                {entry.printer && <p className="mt-1 break-words text-[10px] text-espresso/65">Printer: {entry.printer}</p>}
+                {entry.error && <p className="mt-1 break-words text-[10px] text-amber-800">{entry.error}</p>}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="mt-2 text-xs text-espresso/55">No print history was recorded for this report.</p>
+        )}
+        {report.print_status?.error && !printHistory.some(entry => entry.error === report.print_status.error) && (
+          <p className="mt-2 break-words text-xs text-amber-800">Latest print status: {report.print_status.error}</p>
+        )}
+      </section>
+    </Modal>
+  );
+};
 
 const inventoryStatusMeta = {
   IN_STOCK: { label: 'In Stock', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -364,6 +568,8 @@ export default function AdminDashboard() {
   const [paymentPageSize, setPaymentPageSize] = useState(10);
   const [staffPage, setStaffPage] = useState(1);
   const [staffPageSize, setStaffPageSize] = useState(10);
+  const [staffSearch, setStaffSearch] = useState('');
+  const [staffRoleFilter, setStaffRoleFilter] = useState('ALL');
   const [faqPage, setFaqPage] = useState(1);
   const [faqPageSize, setFaqPageSize] = useState(10);
   const [reviewPage, setReviewPage] = useState(1);
@@ -377,6 +583,9 @@ export default function AdminDashboard() {
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
   const [receiptPrintError, setReceiptPrintError] = useState('');
   const [endOfDayModalOpen, setEndOfDayModalOpen] = useState(false);
+  const [selectedEndOfDayReport, setSelectedEndOfDayReport] = useState(null);
+  const [endOfDayDetailLoading, setEndOfDayDetailLoading] = useState(false);
+  const [endOfDayDetailError, setEndOfDayDetailError] = useState('');
   const [endOfDayDate, setEndOfDayDate] = useState(todayValue());
   const [endOfDayOpeningCash, setEndOfDayOpeningCash] = useState('0.00');
   const [endOfDayCashInOut, setEndOfDayCashInOut] = useState('0.00');
@@ -396,6 +605,7 @@ export default function AdminDashboard() {
   const [tabLoading, setTabLoading] = useState({});
   const dashboardFetchSeqRef = useRef(0);
   const forecastFetchSeqRef = useRef(0);
+  const endOfDayDetailsRequestRef = useRef(0);
 
   const loadAdminTabData = useCallback(async (tab, { force = false } = {}) => {
     if (tab === 'analytics') return;
@@ -1022,6 +1232,19 @@ export default function AdminDashboard() {
       const message = err?.message || getApiErrorMessage(err, 'The local printer could not print the closeout.');
       setLocalPrintStatus(`Local print failed: ${message}`);
       setReceiptPrintError(`Report saved, but local printing failed: ${message}`);
+      try {
+        const failedReport = await client.post(`/api/pos/end-of-day-reports/${report.id}/mark-printed/`, {
+          printer: printer?.name || selectedLocalPrinter || 'local cashier printer',
+          printed: false,
+          error: message,
+        });
+        setEndOfDayReports(current => normalizeRowsById(
+          current.map(item => item.id === report.id ? failedReport.data : item),
+          row => row?.report_number || row?.created_at
+        ));
+      } catch {
+        // The saved report remains available even if the local print failure cannot be synced.
+      }
       return false;
     }
   };
@@ -1092,6 +1315,36 @@ export default function AdminDashboard() {
     const printed = await handleLocalEndOfDayPrint(report);
     setEndOfDayReprintingId(null);
     if (printed) alert('Report reprinted successfully.');
+  };
+
+  const handleOpenSavedEndOfDayReport = async (report) => {
+    const requestId = endOfDayDetailsRequestRef.current + 1;
+    endOfDayDetailsRequestRef.current = requestId;
+    setSelectedEndOfDayReport(report);
+    setEndOfDayDetailError('');
+    if (report.transaction_snapshot_version) {
+      setEndOfDayDetailLoading(false);
+      return;
+    }
+
+    setEndOfDayDetailLoading(true);
+    try {
+      const response = await client.get(`/api/pos/end-of-day-reports/${report.id}/`);
+      if (endOfDayDetailsRequestRef.current === requestId) setSelectedEndOfDayReport(response.data);
+    } catch (error) {
+      if (endOfDayDetailsRequestRef.current === requestId) {
+        setEndOfDayDetailError(getApiErrorMessage(error, 'Could not load transaction details for this saved report.'));
+      }
+    } finally {
+      if (endOfDayDetailsRequestRef.current === requestId) setEndOfDayDetailLoading(false);
+    }
+  };
+
+  const closeSavedEndOfDayReport = () => {
+    endOfDayDetailsRequestRef.current += 1;
+    setSelectedEndOfDayReport(null);
+    setEndOfDayDetailLoading(false);
+    setEndOfDayDetailError('');
   };
 
   const handleLogout = useCallback(() => {
@@ -1181,7 +1434,31 @@ export default function AdminDashboard() {
   ));
   const paymentPageRows = paginateRows(filteredBookingPayments, paymentPage, paymentPageSize);
   const reportPageRows = paginateRows(endOfDayReports, reportsPage, reportsPageSize);
-  const sortedStaffList = sortRows(staffList, staffSort);
+  const staffRoleFilterOptions = [
+    { value: 'ALL', label: 'All' },
+    { value: 'ADMIN', label: 'Admin' },
+    { value: 'STAFF', label: 'Staff' },
+    { value: 'CUSTOMER', label: 'Customers' },
+  ];
+  const staffRoleCounts = staffList.reduce((counts, account) => {
+    const role = String(account.role || '').toUpperCase();
+    counts[role] = (counts[role] || 0) + 1;
+    return counts;
+  }, {});
+  const normalizedStaffSearch = staffSearch.trim().toLowerCase();
+  const filteredStaffList = staffList.filter(account => {
+    const matchesRole = staffRoleFilter === 'ALL' || String(account.role || '').toUpperCase() === staffRoleFilter;
+    const searchableText = [
+      account.username,
+      account.first_name,
+      account.last_name,
+      account.email,
+      account.phone_number,
+      account.address,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return matchesRole && (!normalizedStaffSearch || searchableText.includes(normalizedStaffSearch));
+  });
+  const sortedStaffList = sortRows(filteredStaffList, staffSort);
   const staffPageRows = paginateRows(sortedStaffList, staffPage, staffPageSize);
   const faqPageRows = paginateRows(faqs, faqPage, faqPageSize);
   const reviewPageRows = paginateRows(reviews, reviewPage, reviewPageSize);
@@ -1248,9 +1525,9 @@ export default function AdminDashboard() {
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
-        <main className={`flex-1 min-h-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${activeTab === 'reports' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <main className={`flex-1 min-h-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${['reports', 'faq'].includes(activeTab) ? 'overflow-hidden' : 'overflow-y-auto'} ${activeTab === 'faq' ? 'flex flex-col' : ''}`}>
           {['payments', 'staff', 'faq'].includes(activeTab) && (
-            <h1 className="heading-page mb-4 text-espresso">{pageTitles[activeTab]}</h1>
+            <h1 className="heading-page mb-4 shrink-0 text-espresso">{pageTitles[activeTab]}</h1>
           )}
           {receiptPrintError && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
@@ -2098,8 +2375,13 @@ export default function AdminDashboard() {
                   <>
                   <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1 scrollbar-thin">
                     {reportPageRows.map(report => (
-                      <div key={report.id} className="rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-                        <div className="min-w-0">
+                      <div key={report.id} className="flex flex-col gap-4 rounded-2xl border border-espresso/5 bg-white p-4 shadow-sm transition hover:border-gold/30 hover:shadow-md xl:flex-row xl:items-center xl:justify-between">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSavedEndOfDayReport(report)}
+                          aria-label={`View saved closeout for ${report.report_date}`}
+                          className="min-w-0 flex-1 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50"
+                        >
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-black text-espresso">{report.report_date}</p>
                             <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${Number(report.cash_difference) === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
@@ -2127,7 +2409,8 @@ export default function AdminDashboard() {
                                 : `${report.first_transaction_id} to ${report.last_transaction_id}`}
                             </p>
                           )}
-                        </div>
+                          <span className="mt-3 inline-flex text-[10px] font-black uppercase tracking-wider text-gold-dark">View report details</span>
+                        </button>
                         <Button variant="outline" size="sm" icon={Printer} onClick={() => handleReprintEndOfDayReport(report)} loading={endOfDayReprintingId === report.id} disabled={endOfDayReprintingId !== null}>
                           Reprint Closeout
                         </Button>
@@ -2409,7 +2692,45 @@ export default function AdminDashboard() {
                       />
                     )}
                   />
-                  {staffList.length > 0 ? (
+                  <div className="mb-4 flex flex-col gap-3">
+                    <label className="relative block min-w-0">
+                      <span className="sr-only">Search accounts</span>
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-espresso/40" aria-hidden="true" />
+                      <input
+                        type="search"
+                        aria-label="Search accounts"
+                        value={staffSearch}
+                        onChange={event => {
+                          setStaffSearch(event.target.value);
+                          setStaffPage(1);
+                        }}
+                        placeholder="Search username, name, email, phone, or address"
+                        className="h-10 w-full min-w-0 rounded-xl border border-espresso/10 bg-white pl-10 pr-3 text-xs font-semibold text-espresso placeholder:text-espresso/40 focus:border-gold focus:outline-none focus:ring-4 focus:ring-gold/15"
+                      />
+                    </label>
+                    <div role="group" aria-label="Filter accounts by role" className="flex flex-wrap gap-2">
+                      {staffRoleFilterOptions.map(option => {
+                        const count = option.value === 'ALL' ? staffList.length : staffRoleCounts[option.value] || 0;
+                        const selected = staffRoleFilter === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => {
+                              setStaffRoleFilter(option.value);
+                              setStaffPage(1);
+                            }}
+                            className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50 ${selected ? 'border-gold bg-gold/15 text-espresso' : 'border-espresso/10 bg-white text-espresso/60 hover:border-gold/40 hover:text-espresso'}`}
+                          >
+                            <span>{option.label}</span>
+                            <span className={`rounded-full px-1.5 py-0.5 text-[9px] ${selected ? 'bg-white/80 text-espresso' : 'bg-cream text-espresso/55'}`}>{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {filteredStaffList.length > 0 ? (
                     <div className="flex min-h-0 flex-1 flex-col">
                     <DashboardTable
                       columns={[
@@ -2478,8 +2799,27 @@ export default function AdminDashboard() {
                       )}
                       minWidth={1080}
                     />
-                    <PaginationControls page={staffPage} setPage={setStaffPage} total={staffList.length} pageSize={staffPageSize} setPageSize={setStaffPageSize} />
+                    <PaginationControls page={staffPage} setPage={setStaffPage} total={filteredStaffList.length} pageSize={staffPageSize} setPageSize={setStaffPageSize} />
                     </div>
+                  ) : staffList.length > 0 ? (
+                    <EmptyState
+                      icon={Users}
+                      title="No matching accounts"
+                      description="No accounts match the selected role and search. Adjust the filters or clear them to see all accounts."
+                      action={(
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setStaffRoleFilter('ALL');
+                            setStaffSearch('');
+                            setStaffPage(1);
+                          }}
+                        >
+                          Clear filters
+                        </Button>
+                      )}
+                    />
                   ) : (
                     <EmptyState icon={Users} title="No accounts found" description="Use the add account button to create the first account." />
                   )}
@@ -2489,11 +2829,11 @@ export default function AdminDashboard() {
 
           {/* FAQ MANAGER */}
           {activeTab === 'faq' && (
-            <div className="grid w-full grid-cols-1 gap-4 xl:grid-cols-12 items-start animate-in-up" key="faq">
-              <div className="xl:col-span-4">
-                <Card className="!p-4 md:!p-5">
-                  <CardHeader title={editingFaq ? 'Update FAQ Entry' : 'Add FAQ Entry'} />
-                  <form onSubmit={handleFAQSubmit} className="space-y-4">
+            <div className="grid min-h-0 w-full flex-1 grid-cols-1 grid-rows-2 gap-4 animate-in-up xl:grid-cols-12 xl:grid-rows-1" key="faq">
+              <div className="min-h-0 xl:col-span-4">
+                <Card className="!p-4 md:!p-5 flex h-full min-h-0 flex-col overflow-hidden">
+                  <CardHeader title={editingFaq ? 'Update FAQ Entry' : 'Add FAQ Entry'} className="mb-3 shrink-0" />
+                  <form onSubmit={handleFAQSubmit} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1 scrollbar-thin">
                     <Input
                       label="Question"
                       required
@@ -2510,11 +2850,13 @@ export default function AdminDashboard() {
                       onChange={e => { setFaqAnswer(e.target.value); setFaqErrors(current => ({ ...current, answer: '' })); }}
                       placeholder="e.g. Yes! We accept Mastercard, Visa, and GCash."
                       rows={4}
+                      containerClassName="flex min-h-0 flex-1 flex-col"
+                      className="min-h-[5rem] flex-1"
                       disabled={faqSaving}
                       error={faqErrors.answer}
                     />
                     <Input label="Tags / Keywords" value={faqTags} onChange={e => setFaqTags(e.target.value)} placeholder="e.g. card, payment, visa" disabled={faqSaving} />
-                    <div className="flex gap-2">
+                    <div className="mt-auto flex shrink-0 gap-2">
                       <Button type="submit" variant="primary" className="flex-1" icon={Check} loading={faqSaving} disabled={faqSaving || !faqFormValid}>
                         Publish FAQ Answer
                       </Button>
@@ -2528,12 +2870,12 @@ export default function AdminDashboard() {
                 </Card>
               </div>
 
-              <div className="xl:col-span-8">
-                <Card className="!p-4 md:!p-5">
-                  <CardHeader title="Knowledge Base FAQs" subtitle="RAG-powered question bank" />
+              <div className="min-h-0 xl:col-span-8">
+                <Card className="!p-4 md:!p-5 flex h-full min-h-0 flex-col overflow-hidden">
+                  <CardHeader title="Knowledge Base FAQs" subtitle="RAG-powered question bank" className="mb-3 shrink-0" />
                   {faqs.length > 0 ? (
-                    <>
-                    <div className="space-y-2.5">
+                    <div className="flex min-h-0 flex-1 flex-col">
+                    <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-1 scrollbar-thin">
                       {faqPageRows.map((faq, i) => (
                         <div key={faq.id} className="bg-cream p-4 md:p-5 rounded-2xl border border-espresso/5 flex justify-between items-start gap-4 animate-in-up" style={{ animationDelay: `${i * 50}ms` }}>
                           <div className="space-y-1.5 flex-1 min-w-0">
@@ -2555,10 +2897,14 @@ export default function AdminDashboard() {
                         </div>
                       ))}
                     </div>
-                    <PaginationControls page={faqPage} setPage={setFaqPage} total={faqs.length} pageSize={faqPageSize} setPageSize={setFaqPageSize} />
-                    </>
+                    <div className="shrink-0">
+                      <PaginationControls page={faqPage} setPage={setFaqPage} total={faqs.length} pageSize={faqPageSize} setPageSize={setFaqPageSize} />
+                    </div>
+                    </div>
                   ) : (
-                    <EmptyState icon={MessageSquare} title="No FAQs yet" description="Add your first FAQ entry to power the chatbot." />
+                    <div className="flex min-h-0 flex-1 items-center justify-center">
+                      <EmptyState icon={MessageSquare} title="No FAQs yet" description="Add your first FAQ entry to power the chatbot." />
+                    </div>
                   )}
                 </Card>
               </div>
@@ -2861,6 +3207,13 @@ export default function AdminDashboard() {
           </div>
         </div>
       </Modal>
+
+      <EndOfDayReportDetailsModal
+        report={selectedEndOfDayReport}
+        onClose={closeSavedEndOfDayReport}
+        isLoading={endOfDayDetailLoading}
+        error={endOfDayDetailError}
+      />
 
       <IngredientStatusModal
         open={ingredientStatusOpen}

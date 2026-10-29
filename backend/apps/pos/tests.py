@@ -138,6 +138,108 @@ class EndOfDayReportDataTests(SimpleTestCase):
         self.assertTrue(all(len(line) <= RECEIPT_WIDTH for line in text.splitlines()))
 
 
+class EndOfDayReportDetailsApiTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_user(
+            username='closeout-admin',
+            email='closeout-admin@example.com',
+            password='Admin123!pass',
+            role='ADMIN',
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+        self.order = Order.objects.create(
+            staff=self.admin,
+            subtotal=Decimal('200.00'),
+            discount_type='FIXED',
+            discount_value=Decimal('20.00'),
+            discount_amount=Decimal('20.00'),
+            total=Decimal('180.00'),
+            transaction_id='CLOSEOUT-TXN-001',
+            payment_status='PAID',
+            order_type='WALK_IN',
+            line_items=[{
+                'id': 7,
+                'quantity': 2,
+                'returned_quantity': 0,
+                'price': '100.00',
+                'subtotal': '200.00',
+                'discount_amount': '20.00',
+                'net_subtotal': '180.00',
+                'product_details': {'name': 'Closeout Test Latte'},
+            }],
+        )
+        Payment.objects.create(
+            payment_type=Payment.POS,
+            order=self.order,
+            amount=Decimal('180.00'),
+            method='CASH',
+            transaction_id='CLOSEOUT-PAY-001',
+            status='PAID',
+            paid_at=timezone.now(),
+        )
+
+    def test_saved_report_persists_transaction_item_payment_and_print_history_details(self):
+        response = self.client.post('/api/pos/end-of-day-reports/', {
+            'report_date': timezone.localdate().isoformat(),
+            'opening_cash': '100.00',
+            'cash_in_out': '0.00',
+            'actual_cash': '280.00',
+            'print_report': False,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201, response.data)
+        report_id = response.data['id']
+        transaction = response.data['transactions'][0]
+        self.assertIn('CLOSEOUT-TXN-001', response.data['transaction_ids'])
+        self.assertIn('CLOSEOUT-PAY-001', response.data['transaction_ids'])
+        self.assertEqual(transaction['items'][0]['name'], 'Closeout Test Latte')
+        self.assertEqual(transaction['items'][0]['quantity'], 2)
+        self.assertEqual(transaction['items'][0]['price'], '100.00')
+        self.assertEqual(transaction['discount_amount'], '20.00')
+        self.assertEqual(transaction['payments'][0]['method'], 'CASH')
+        self.assertEqual(response.data['expected_cash'], '280.00')
+        self.assertEqual(response.data['cash_difference'], '0.00')
+        self.assertEqual(response.data['print_history'][0]['event'], 'created')
+        self.assertEqual(response.data['transaction_snapshot_version'], 1)
+
+        stored_report = Order.objects.get(pk=report_id)
+        self.assertEqual(stored_report.report_data['transactions'][0]['transaction_id'], 'CLOSEOUT-TXN-001')
+
+        legacy_data = dict(stored_report.report_data)
+        legacy_data.pop('transactions')
+        legacy_data.pop('transaction_ids')
+        legacy_data.pop('transaction_snapshot_version')
+        legacy_report = Order.objects.create(
+            staff=self.admin,
+            order_type='END_OF_DAY_REPORT',
+            report_data=legacy_data,
+        )
+        detail = self.client.get(f'/api/pos/end-of-day-reports/{legacy_report.id}/')
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertTrue(detail.data['transactions_reconstructed'])
+        self.assertEqual(detail.data['transactions'][0]['items'][0]['name'], 'Closeout Test Latte')
+        self.assertIn('CLOSEOUT-PAY-001', detail.data['transaction_ids'])
+
+        marked = self.client.post(f'/api/pos/end-of-day-reports/{report_id}/mark-printed/', {
+            'printer': 'Cashier Receipt Printer',
+        }, format='json')
+        self.assertEqual(marked.status_code, 200, marked.data)
+        self.assertEqual(len(marked.data['print_history']), 2)
+        self.assertEqual(marked.data['print_history'][-1]['printer'], 'Cashier Receipt Printer')
+
+        failed_print = self.client.post(f'/api/pos/end-of-day-reports/{report_id}/mark-printed/', {
+            'printer': 'Cashier Receipt Printer',
+            'printed': False,
+            'error': 'Printer is offline.',
+        }, format='json')
+        self.assertEqual(failed_print.status_code, 200, failed_print.data)
+        self.assertEqual(len(failed_print.data['print_history']), 3)
+        self.assertFalse(failed_print.data['print_history'][-1]['printed'])
+        self.assertEqual(failed_print.data['print_history'][-1]['error'], 'Printer is offline.')
+        self.assertEqual(failed_print.data['print_status']['printed'], False)
+
+
 class PosIdempotencyTests(TestCase):
     def setUp(self):
         self.staff = get_user_model().objects.create_user(

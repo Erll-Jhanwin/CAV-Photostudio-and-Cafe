@@ -44,7 +44,7 @@ from inventory.views import (
     PurchaseOrderDetailUpdateView, IngredientListCreateView, IngredientDetailUpdateView, ProductSalesInventoryView,
     RecipeIngredientListCreateView, IngredientStockMovementListView, GenerateRecipeIngredientsView
 )
-from pos.views import OrderListCreateView, OrderDetailView, OrderReturnView, PaymentCreateView, EndOfDayReportListCreateView, EndOfDayReportReprintView, EndOfDayReportMarkPrintedView, EndOfDayReportSummaryView
+from pos.views import OrderListCreateView, OrderDetailView, OrderReturnView, PaymentCreateView, EndOfDayReportListCreateView, EndOfDayReportDetailView, EndOfDayReportReprintView, EndOfDayReportMarkPrintedView, EndOfDayReportSummaryView
 from chatbot.views import ChatbotQueryView, FAQListCreateView, FAQDetailUpdateView
 from dashboard.views import DashboardAnalyticsView
 from forecasting.views import ForecastingDataView, SalesHistoryImportView
@@ -127,6 +127,7 @@ urlpatterns = [
     path('api/pos/payments/', PaymentCreateView.as_view(), name='pos_payments'),
     path('api/pos/end-of-day-summary/', EndOfDayReportSummaryView.as_view(), name='pos_end_of_day_summary'),
     path('api/pos/end-of-day-reports/', EndOfDayReportListCreateView.as_view(), name='pos_end_of_day_reports'),
+    path('api/pos/end-of-day-reports/<int:pk>/', EndOfDayReportDetailView.as_view(), name='pos_end_of_day_report_detail'),
     path('api/pos/end-of-day-reports/<int:pk>/reprint/', EndOfDayReportReprintView.as_view(), name='pos_end_of_day_report_reprint'),
     path('api/pos/end-of-day-reports/<int:pk>/mark-printed/', EndOfDayReportMarkPrintedView.as_view(), name='pos_end_of_day_report_mark_printed'),
     

@@ -52,3 +52,74 @@ test('uses wrapping grid tracks and constrained date inputs at responsive breakp
   expect(screen.getByLabelText('Start date')).toHaveClass('min-w-0');
   expect(screen.getByLabelText('End date')).toHaveClass('min-w-0');
 });
+
+test('opens successful event details from a keyboard-accessible row and redacts sensitive metadata', async () => {
+  client.get.mockResolvedValue({ data: { count: 1, results: [{
+    id: 21,
+    timestamp: '2026-10-29T10:30:00Z',
+    user_id: 7,
+    name: 'Audit Admin',
+    role: 'ADMIN',
+    action: 'USER_UPDATE',
+    module: 'users',
+    record_reference: '44',
+    description: 'Updated user role.',
+    details: {
+      outcome: 'Success',
+      target_user_id: 44,
+      old_values: { role: 'STAFF' },
+      new_values: { role: 'ADMIN' },
+      changed_fields: ['role'],
+      customer_email: 'private@example.test',
+      access_token: 'do-not-display',
+      note: 'Contact private@example.test with Bearer abc123',
+    },
+  }] } });
+  render(<AuditLogsPage />);
+
+  const eventRow = await screen.findByRole('row', { name: 'View audit event USER_UPDATE' });
+  eventRow.focus();
+  fireEvent.keyDown(eventRow, { key: 'Enter' });
+
+  const dialog = await screen.findByRole('dialog', { name: 'Audit event · USER_UPDATE' });
+  expect(screen.getAllByText('Audit Admin').length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText('Affected module').parentElement).toHaveTextContent('users');
+  expect(screen.getByText('Affected record').parentElement).toHaveTextContent('44');
+  expect(screen.getByText('Before').parentElement).toHaveTextContent('STAFF');
+  expect(screen.getByText('After').parentElement).toHaveTextContent('ADMIN');
+  expect(screen.getByText('Outcome').parentElement).toHaveTextContent('Success');
+  expect(screen.getByText('Relevant metadata')).toBeInTheDocument();
+  expect(dialog).toHaveTextContent('[redacted email]');
+  expect(dialog).toHaveTextContent('[redacted credential]');
+  expect(dialog).not.toHaveTextContent('do-not-display');
+  expect(dialog).not.toHaveTextContent('private@example.test');
+  expect(dialog.querySelector('[class*="max-h-[calc(100dvh-8rem)]"]')).toHaveClass('overflow-y-auto');
+});
+
+test('opens warning and error rows and labels unrecorded cause or recovery without inventing details', async () => {
+  client.get.mockResolvedValue({ data: { count: 2, results: [
+    {
+      id: 22, timestamp: '2026-10-29T10:31:00Z', user_id: 3, name: 'Staff User', role: 'STAFF',
+      action: 'INVENTORY_LOW_STOCK_WARNING', module: 'inventory', record_reference: '18',
+      description: 'Stock level warning recorded.', details: { warning: true, product_id: 18 },
+    },
+    {
+      id: 23, timestamp: '2026-10-29T10:32:00Z', user_id: null, name: 'System', role: 'SYSTEM',
+      action: 'API_SERVER_ERROR', module: 'bookings', record_reference: '48',
+      description: 'Unexpected server error.', details: { message: 'Request failed.', issue: 'PermissionDenied' },
+    },
+  ] } });
+  render(<AuditLogsPage />);
+
+  fireEvent.click(await screen.findByRole('row', { name: 'View audit event INVENTORY_LOW_STOCK_WARNING' }));
+  expect(await screen.findByRole('dialog', { name: 'Audit event · INVENTORY_LOW_STOCK_WARNING' })).toBeInTheDocument();
+  expect(screen.getByText('Warning')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Close modal' }));
+
+  fireEvent.click(screen.getByRole('row', { name: 'View audit event API_SERVER_ERROR' }));
+  expect(await screen.findByRole('dialog', { name: 'Audit event · API_SERVER_ERROR' })).toBeInTheDocument();
+  expect(screen.getByText('Error')).toBeInTheDocument();
+  expect(screen.getByText('Recorded error message').parentElement).toHaveTextContent('Request failed.');
+  expect(screen.getByText('Recorded cause').parentElement).toHaveTextContent('PermissionDenied');
+  expect(screen.getByText('Recovery actions').parentElement).toHaveTextContent('Not recorded');
+});

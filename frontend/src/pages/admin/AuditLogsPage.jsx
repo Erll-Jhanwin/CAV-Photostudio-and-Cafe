@@ -3,8 +3,147 @@ import { Search, RefreshCw, ClipboardList, ChevronLeft, ChevronRight, Filter } f
 import client, { getApiErrorMessage } from '../../api/client';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Input, Select } from '../../components/ui/Input';
+import { Modal } from '../../components/ui/Modal';
 import { LoadingSpinner } from '../../components/ui/Skeleton';
 import { formatManilaDateTime } from '../../utils/dateTime';
+
+const sensitiveMetadataKey = /(password|passwd|otp|token|secret|authorization|cookie|credential|proof|file|image|base64|email|phone|mobile|address|ip_address|session|component_stack|stack|traceback|receipt|username|(^|_)name$)/i;
+const sensitiveMetadataValue = /(Bearer\s+\S+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/gi;
+const emailValue = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const phoneValue = /\+?\d[\d ()-]{7,}\d/g;
+const missingValue = 'Not recorded';
+
+const sanitizeAuditDetail = (value, key = '', depth = 0) => {
+  if (sensitiveMetadataKey.test(key)) return undefined;
+  if (depth > 5) return '[nested details omitted]';
+  if (Array.isArray(value)) return value.slice(0, 50).map(item => sanitizeAuditDetail(item, '', depth + 1)).filter(item => item !== undefined);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).slice(0, 80)
+      .map(([nestedKey, nestedValue]) => [nestedKey, sanitizeAuditDetail(nestedValue, nestedKey, depth + 1)])
+      .filter(([, nestedValue]) => nestedValue !== undefined));
+  }
+  if (typeof value === 'string') {
+    return value
+      .replace(sensitiveMetadataValue, '[redacted credential]')
+      .replace(emailValue, '[redacted email]')
+      .replace(phoneValue, '[redacted phone]')
+      .slice(0, 2000);
+  }
+  return value;
+};
+
+const pickMetadataValue = (metadata, keys) => {
+  for (const key of keys) {
+    if (metadata && Object.prototype.hasOwnProperty.call(metadata, key) && metadata[key] !== null && metadata[key] !== '') {
+      return sanitizeAuditDetail(metadata[key], key);
+    }
+  }
+  return undefined;
+};
+
+const displayAuditValue = value => {
+  if (value === undefined || value === null || value === '') return missingValue;
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'object') return JSON.stringify(value, null, 2);
+  return String(value);
+};
+
+const AuditDetailField = ({ label, value, multiline = false }) => (
+  <div className="min-w-0 rounded-xl border border-espresso/[0.07] bg-white p-3">
+    <p className="text-[9px] font-black uppercase tracking-wider text-espresso/45">{label}</p>
+    {multiline ? (
+      <pre className="mt-1 whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-espresso/75">{displayAuditValue(value)}</pre>
+    ) : (
+      <p className="mt-1 break-words text-xs leading-relaxed text-espresso/75">{displayAuditValue(value)}</p>
+    )}
+  </div>
+);
+
+function AuditLogDetailsModal({ event, onClose }) {
+  if (!event) return null;
+  const metadata = event.details && typeof event.details === 'object' && !Array.isArray(event.details) ? event.details : {};
+  const safeMetadata = sanitizeAuditDetail(metadata) || {};
+  const errorMessage = pickMetadataValue(metadata, ['error_message', 'storage_error', 'error', 'message', 'detail']);
+  const errorCause = pickMetadataValue(metadata, ['cause', 'cause_type', 'exception_type', 'error_type', 'issue', 'reason']);
+  const recovery = pickMetadataValue(metadata, ['recovery_actions', 'recovery_action', 'recovery', 'recommended_action', 'suggested_action', 'next_step']);
+  const before = pickMetadataValue(metadata, ['before', 'old_values', 'previous_values', 'old_data']);
+  const after = pickMetadataValue(metadata, ['after', 'new_values', 'updated_values', 'new_data']);
+  const changedFields = pickMetadataValue(metadata, ['changed_fields', 'change_summary']);
+  const outcomeValue = pickMetadataValue(metadata, ['outcome', 'result', 'status', 'success', 'printed', 'approved']);
+  const actionText = String(event.action || '').toUpperCase();
+  const isError = /ERROR|FAILED|FAILURE/.test(actionText) || Boolean(errorMessage || errorCause);
+  const isWarning = !isError && (/WARN|WARNING|ISSUE/.test(actionText) || metadata.verification_issue === true || Boolean(metadata.warning));
+  const errorClassName = isError
+    ? 'bg-red-50 text-red-700'
+    : isWarning ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700';
+  const visibleMetadata = Object.entries(safeMetadata).filter(([key]) => ![
+    'before', 'old_values', 'previous_values', 'old_data', 'after', 'new_values', 'updated_values', 'new_data',
+    'changed_fields', 'change_summary', 'outcome', 'result', 'status', 'success', 'printed', 'approved',
+    'error_message', 'storage_error', 'error', 'message', 'detail', 'cause', 'cause_type', 'exception_type',
+    'error_type', 'issue', 'reason', 'recovery_actions', 'recovery_action', 'recovery', 'recommended_action',
+    'suggested_action', 'next_step',
+  ].includes(key));
+
+  return (
+    <Modal
+      open={Boolean(event)}
+      onClose={onClose}
+      title={`Audit event · ${event.action || 'Action not recorded'}`}
+      size="5xl"
+      className="max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)] overflow-hidden"
+      bodyClassName="max-h-[calc(100vh-8rem)] max-h-[calc(100dvh-8rem)] space-y-4 overflow-y-auto p-4 sm:p-6"
+    >
+      <section className="rounded-2xl border border-espresso/10 bg-cream/45 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-black text-espresso">{event.action || missingValue}</p>
+            <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-espresso/65">{event.description || missingValue}</p>
+          </div>
+          <span className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-black ${errorClassName}`}>
+            {isError ? 'Error' : isWarning ? 'Warning' : 'Recorded event'}
+          </span>
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <AuditDetailField label="Timestamp" value={event.timestamp ? formatManilaDateTime(event.timestamp) : undefined} />
+          <AuditDetailField label="Actor" value={event.name} />
+          <AuditDetailField label="Actor user ID" value={event.user_id} />
+          <AuditDetailField label="Actor role" value={event.role} />
+          <AuditDetailField label="Action taken" value={event.action} />
+          <AuditDetailField label="Affected module" value={event.module} />
+          <AuditDetailField label="Affected record" value={event.record_reference} />
+          <AuditDetailField label="Outcome" value={outcomeValue === undefined ? 'No explicit outcome recorded' : outcomeValue} />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-espresso/10 bg-cream/30 p-4">
+        <h3 className="text-xs font-black uppercase tracking-wider text-espresso">Changes</h3>
+        <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
+          <AuditDetailField label="Before" value={before} multiline />
+          <AuditDetailField label="After" value={after} multiline />
+        </div>
+        <div className="mt-2"><AuditDetailField label="Changed fields / summary" value={changedFields} multiline /></div>
+      </section>
+
+      <section className={`rounded-2xl border p-4 ${isError || isWarning ? 'border-amber-200 bg-amber-50/50' : 'border-espresso/10 bg-cream/30'}`}>
+        <h3 className="text-xs font-black uppercase tracking-wider text-espresso">{isError || isWarning ? 'Issue details' : 'Error details'}</h3>
+        <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-3">
+          <AuditDetailField label="Recorded error message" value={errorMessage} multiline />
+          <AuditDetailField label="Recorded cause" value={errorCause} multiline />
+          <AuditDetailField label="Recovery actions" value={recovery} multiline />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-espresso/10 bg-cream/30 p-4">
+        <h3 className="text-xs font-black uppercase tracking-wider text-espresso">Relevant metadata</h3>
+        {visibleMetadata.length ? (
+          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+            {visibleMetadata.map(([key, value]) => <AuditDetailField key={key} label={key.replace(/_/g, ' ')} value={value} multiline={typeof value === 'object'} />)}
+          </div>
+        ) : <p className="mt-2 text-xs text-espresso/55">No additional safe metadata was recorded.</p>}
+      </section>
+    </Modal>
+  );
+}
 
 const roleOptions = [
   { value: '', label: 'All roles' }, { value: 'ADMIN', label: 'Admin' },
@@ -37,6 +176,7 @@ export default function AuditLogsPage() {
   const [payload, setPayload] = useState({ count: 0, results: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -96,11 +236,23 @@ export default function AuditLogsPage() {
                   <th className="px-4 py-3">Action</th><th className="px-4 py-3">Module / record</th><th className="px-4 py-3">Change details</th>
                 </tr></thead>
                 <tbody>{(payload.results || []).map(row => (
-                  <tr key={row.id} className="border-t border-espresso/[0.06] align-top hover:bg-cream/40">
+                  <tr
+                    key={row.id}
+                    tabIndex={0}
+                    aria-label={`View audit event ${row.action || 'details'}`}
+                    onClick={() => setSelectedEvent(row)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedEvent(row);
+                      }
+                    }}
+                    className="cursor-pointer border-t border-espresso/[0.06] align-top hover:bg-cream/40 focus-visible:bg-cream/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gold"
+                  >
                     <td className="whitespace-nowrap px-4 py-3.5 font-semibold text-espresso/70">{formatManilaDateTime(row.timestamp)}</td>
                     <td className="px-4 py-3.5"><div className="font-bold text-espresso">{row.name || 'System'}</div><div className="mt-1 text-[10px] text-espresso/45">ID {row.user_id ?? '—'}</div></td>
                     <td className="px-4 py-3.5"><span className="rounded-full bg-cream px-2.5 py-1 font-black text-espresso/65">{row.role || 'SYSTEM'}</span></td>
-                    <td className="px-4 py-3.5"><div className="font-black text-espresso">{row.action}</div><div className="mt-1 max-w-sm text-espresso/55">{row.description}</div></td>
+                    <td className="px-4 py-3.5"><div className="font-black text-espresso">{row.action || missingValue}</div><div className="mt-1 max-w-sm text-espresso/55">{sanitizeAuditDetail(row.description) || missingValue}</div></td>
                     <td className="px-4 py-3.5"><div className="font-bold capitalize text-espresso/75">{String(row.module || '').replaceAll('_', ' ')}</div><div className="mt-1 text-espresso/50">{row.record_reference ? `#${row.record_reference}` : '—'}</div></td>
                     <td className="px-4 py-3.5 text-espresso/65">{row.details?.changed_fields?.length ? row.details.changed_fields.join(', ') : row.details?.change_summary || '—'}</td>
                   </tr>
@@ -115,6 +267,7 @@ export default function AuditLogsPage() {
           </>
         )}
       </Card>
+      <AuditLogDetailsModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
     </div>
   );
 }

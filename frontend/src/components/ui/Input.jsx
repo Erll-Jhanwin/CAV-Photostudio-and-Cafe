@@ -97,14 +97,14 @@ export const Select = forwardRef(({ label, icon: Icon, error, options = [], clas
   );
 });
 
-export const Textarea = forwardRef(({ label, error, className = '', ...props }, ref) => {
+export const Textarea = forwardRef(({ label, error, className = '', containerClassName = '', ...props }, ref) => {
   const id = props.id || `textarea-${label?.toLowerCase().replace(/\s+/g, '-')}`;
   const errorId = `${id}-error`;
   const isDarkField = className.includes('text-white') || className.includes('bg-white/[');
   const labelClass = isDarkField ? 'text-cream/85' : 'text-espresso/70';
 
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 ${containerClassName}`}>
       {label && (
         <label htmlFor={id} className={`text-xs font-bold uppercase tracking-[0.16em] block ${labelClass}`}>
           {label}

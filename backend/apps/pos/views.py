@@ -526,6 +526,20 @@ def report_time_display(value):
 
 def report_from_order(order):
     data = dict(order.report_data or {})
+    if not data.get('transaction_ids'):
+        data['transaction_ids'] = list(dict.fromkeys(
+            value for value in (data.get('first_transaction_id'), data.get('last_transaction_id')) if value
+        ))
+    data.setdefault('transactions', [])
+    data.setdefault('print_history', [])
+    if not data['print_history'] and order.printed_at:
+        data['print_history'] = [{
+            'event': 'print',
+            'recorded_at': order.printed_at,
+            'printed': bool((order.print_status or {}).get('printed')),
+            'printer': (order.print_status or {}).get('printer') or '',
+            'error': (order.print_status or {}).get('error') or '',
+        }]
     data.update({
         'id': order.id,
         'closed_by': order.staff_id,
@@ -535,6 +549,123 @@ def report_from_order(order):
         'created_at': order.created_at,
     })
     return data
+
+
+def append_report_print_event(report_order, print_status, event='print'):
+    report_data = dict(report_order.report_data or {})
+    print_history = list(report_data.get('print_history') or [])
+    print_history.append({
+        'event': event,
+        'recorded_at': timezone.now().isoformat(),
+        'printed': bool(print_status.get('printed')),
+        'printer': print_status.get('printer') or '',
+        'error': print_status.get('error') or '',
+    })
+    report_data['print_history'] = print_history
+    report_order.report_data = report_data
+    report_order.print_status = print_status
+    if print_status.get('printed'):
+        report_order.printed_at = timezone.now()
+    report_order.save(update_fields=['report_data', 'print_status', 'printed_at'])
+
+
+def build_report_transaction_snapshot(paid_orders, booking_payments):
+    transactions = []
+    for order in sorted(paid_orders, key=lambda row: (row.completed_at or row.created_at, row.id)):
+        payments = list(order.payments.all())
+        transactions.append({
+            'id': order.id,
+            'transaction_id': order.transaction_id or '',
+            'type': order.order_type,
+            'created_at': order.completed_at or order.created_at,
+            'staff_name': (order.staff.get_full_name() or order.staff.username) if order.staff else '',
+            'booking_id': order.booking_id,
+            'booking_customer_name': (
+                order.booking.customer.get_full_name() or order.booking.customer.username
+            ) if order.booking_id and order.booking and order.booking.customer else '',
+            'subtotal': order.subtotal,
+            'discount_type': order.discount_type,
+            'discount_value': order.discount_value,
+            'discount_amount': order.discount_amount,
+            'refunds': order.returned_amount,
+            'total': order.total,
+            'items': [
+                {
+                    'id': item.get('id'),
+                    'name': (item.get('product_details') or {}).get('name') or item.get('name') or 'Item',
+                    'quantity': item.get('quantity', 0),
+                    'returned_quantity': item.get('returned_quantity', 0),
+                    'price': item.get('price', '0.00'),
+                    'subtotal': item.get('subtotal', '0.00'),
+                    'discount_amount': item.get('discount_amount', '0.00'),
+                    'net_subtotal': item.get('net_subtotal', item.get('subtotal', '0.00')),
+                }
+                for item in order.line_items or []
+            ],
+            'payments': [
+                {
+                    'method': payment.method,
+                    'amount': payment.amount,
+                    'transaction_id': payment.transaction_id or '',
+                    'reference_number': payment.reference_number or '',
+                    'paid_at': payment.paid_at or payment.created_at,
+                }
+                for payment in payments
+            ],
+        })
+
+    for payment in sorted(booking_payments, key=lambda row: (row.paid_at or row.created_at, row.id)):
+        transactions.append({
+            'id': f'booking-payment-{payment.id}',
+            'transaction_id': payment.transaction_id or payment.reference_number or '',
+            'type': 'BOOKING_PAYMENT',
+            'created_at': payment.paid_at or payment.created_at,
+            'staff_name': '',
+            'booking_id': payment.booking_id,
+            'subtotal': payment.amount,
+            'discount_type': '',
+            'discount_value': Decimal('0.00'),
+            'discount_amount': Decimal('0.00'),
+            'refunds': Decimal('0.00'),
+            'total': payment.amount,
+            'items': [],
+            'payments': [{
+                'method': payment.method,
+                'amount': payment.amount,
+                'transaction_id': payment.transaction_id or '',
+                'reference_number': payment.reference_number or '',
+                'paid_at': payment.paid_at or payment.created_at,
+            }],
+        })
+
+    transaction_ids = []
+    for transaction in transactions:
+        candidate_ids = [transaction.get('transaction_id')]
+        candidate_ids.extend(
+            payment_id
+            for payment in transaction.get('payments') or []
+            for payment_id in (payment.get('transaction_id'), payment.get('reference_number'))
+        )
+        transaction_ids.extend(value for value in candidate_ids if value)
+    transaction_ids = list(dict.fromkeys(transaction_ids))
+    return transactions, transaction_ids
+
+
+def transactions_for_report_date(report_date):
+    tz = timezone.get_current_timezone()
+    start = timezone.make_aware(datetime.combine(report_date, datetime.min.time()), tz)
+    end = timezone.make_aware(datetime.combine(report_date, datetime.max.time()), tz)
+    paid_orders = list(
+        Order.objects.exclude(order_type='END_OF_DAY_REPORT')
+        .filter(payment_status='PAID', created_at__range=(start, end))
+        .select_related('staff', 'booking', 'booking__customer')
+        .prefetch_related('payments')
+    )
+    booking_payments = list(
+        Payment.objects.filter(payment_type=Payment.BOOKING, status='APPROVED', paid_at__range=(start, end))
+        .select_related('booking', 'booking__customer')
+    )
+    return build_report_transaction_snapshot(paid_orders, booking_payments)
 
 
 def build_end_of_day_payload(report):
@@ -554,8 +685,8 @@ def build_end_of_day_report_data(user, report_date, actual_cash, opening_cash=De
     tz = timezone.get_current_timezone()
     start = timezone.make_aware(datetime.combine(report_date, datetime.min.time()), tz)
     end = timezone.make_aware(datetime.combine(report_date, datetime.max.time()), tz)
-    paid_orders = list(Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(payment_status='PAID', created_at__range=(start, end)).prefetch_related('payments'))
-    booking_payments = list(Payment.objects.filter(payment_type=Payment.BOOKING, status='APPROVED', paid_at__range=(start, end)))
+    paid_orders = list(Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(payment_status='PAID', created_at__range=(start, end)).select_related('staff', 'booking', 'booking__customer').prefetch_related('payments'))
+    booking_payments = list(Payment.objects.filter(payment_type=Payment.BOOKING, status='APPROVED', paid_at__range=(start, end)).select_related('booking', 'booking__customer'))
 
     cash_sales = sum((order_revenue_by_payment_method(order, 'CASH') for order in paid_orders), Decimal('0.00'))
     gcash_pos_sales = sum((order_revenue_by_payment_method(order, 'GCASH') for order in paid_orders), Decimal('0.00'))
@@ -588,6 +719,7 @@ def build_end_of_day_report_data(user, report_date, actual_cash, opening_cash=De
     opening_cash = Decimal(str(opening_cash or '0'))
     cash_in_out = Decimal(str(cash_in_out or '0'))
     expected_cash = opening_cash + cash_sales + cash_in_out
+    transaction_snapshots, all_transaction_ids = build_report_transaction_snapshot(paid_orders, booking_payments)
     report = {
         'report_date': report_date,
         'opening_time': opening_time,
@@ -610,6 +742,9 @@ def build_end_of_day_report_data(user, report_date, actual_cash, opening_cash=De
         'cash_in_out': cash_in_out,
         'first_transaction_id': transaction_ids[0] if transaction_ids else '',
         'last_transaction_id': transaction_ids[-1] if transaction_ids else '',
+        'transaction_ids': all_transaction_ids,
+        'transactions': transaction_snapshots,
+        'transaction_snapshot_version': 1,
         'expected_cash': expected_cash,
         'actual_cash': actual_cash,
         'cash_difference': actual_cash - expected_cash,
@@ -690,9 +825,7 @@ class EndOfDayReportListCreateView(APIView):
                 'error': 'Report printing was deferred to the local cashier printer.',
             }
         )
-        report_order.print_status = print_status
-        report_order.printed_at = timezone.now() if print_status.get("printed") else None
-        report_order.save(update_fields=['print_status', 'printed_at'])
+        append_report_print_event(report_order, print_status, event='created')
         AuditLog.objects.create(
             user=request.user,
             action='ADMIN_END_OF_DAY_REPORT_CREATE',
@@ -724,9 +857,7 @@ class EndOfDayReportReprintView(APIView):
                 'error': 'Report printing was deferred to the local cashier printer.',
             }
         )
-        report_order.print_status = print_status
-        report_order.printed_at = timezone.now() if print_status.get("printed") else report_order.printed_at
-        report_order.save(update_fields=['print_status', 'printed_at'])
+        append_report_print_event(report_order, print_status, event='reprint')
         AuditLog.objects.create(
             user=request.user,
             action='ADMIN_END_OF_DAY_REPORT_REPRINT',
@@ -736,6 +867,33 @@ class EndOfDayReportReprintView(APIView):
         data = EndOfDayReportSerializer(report_from_order(report_order)).data
         data['receipt_print'] = print_status
         return Response(data)
+
+
+class EndOfDayReportDetailView(APIView):
+    permission_classes = [IsAdmin]
+
+    def get(self, request, pk):
+        if request.user.role != 'ADMIN':
+            return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            report_order = Order.objects.select_related('staff').get(pk=pk, order_type='END_OF_DAY_REPORT')
+        except Order.DoesNotExist:
+            return Response({'detail': 'Report not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        report = report_from_order(report_order)
+        if not report.get('transaction_snapshot_version'):
+            try:
+                report_date = datetime.strptime(str(report.get('report_date') or ''), '%Y-%m-%d').date()
+            except ValueError:
+                report_date = None
+            if report_date:
+                transactions, transaction_ids = transactions_for_report_date(report_date)
+                if transactions:
+                    report['transactions'] = transactions
+                    report['transaction_ids'] = transaction_ids or report.get('transaction_ids', [])
+                report['transactions_reconstructed'] = True
+
+        return Response(EndOfDayReportSerializer(report).data)
 
 
 class EndOfDayReportMarkPrintedView(APIView):
@@ -750,13 +908,24 @@ class EndOfDayReportMarkPrintedView(APIView):
             return Response({'detail': 'Report not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         printer = str(request.data.get('printer') or 'local cashier printer').strip()[:255]
-        report_order.print_status = {'printed': True, 'printer': printer, 'error': ''}
-        report_order.printed_at = timezone.now()
-        report_order.save(update_fields=['print_status', 'printed_at'])
+        printed = str(request.data.get('printed', True)).strip().lower() not in {'0', 'false', 'no', 'off'}
+        print_status = {
+            'printed': printed,
+            'printer': printer,
+            'error': str(request.data.get('error') or '').strip()[:1000],
+        }
+        append_report_print_event(
+            report_order,
+            print_status,
+            event='local_print' if printed else 'local_print_failed',
+        )
         AuditLog.objects.create(
             user=request.user,
-            action='ADMIN_END_OF_DAY_REPORT_MARK_PRINTED',
-            description=f'Marked end-of-day report #{report_order.id} as printed.',
-            metadata={'report_order_id': report_order.id, 'printer': printer},
+            action='ADMIN_END_OF_DAY_REPORT_MARK_PRINTED' if printed else 'ADMIN_END_OF_DAY_REPORT_PRINT_FAILED',
+            description=(
+                f'Marked end-of-day report #{report_order.id} as printed.'
+                if printed else f'Local printing failed for end-of-day report #{report_order.id}.'
+            ),
+            metadata={'report_order_id': report_order.id, 'printer': printer, 'printed': printed, 'error': print_status['error']},
         )
         return Response(EndOfDayReportSerializer(report_from_order(report_order)).data)
