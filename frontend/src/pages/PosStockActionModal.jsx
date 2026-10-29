@@ -13,10 +13,12 @@ export default function PosStockActionModal({
   actionType,
   products = [],
   loadingProducts = false,
+  productError = '',
   submitting = false,
   error = '',
   initialValues = null,
   onClose,
+  onRetryProducts,
   onSubmit,
 }) {
   const [search, setSearch] = useState('');
@@ -50,7 +52,9 @@ export default function PosStockActionModal({
   }, [open, actionType, initialValues]);
 
   const activeProducts = useMemo(() => products
-    .filter(product => product.item_type === 'PRODUCT' && product.is_active !== false)
+    // /api/inventory/products/ is already restricted to PRODUCT rows. The
+    // ProductSerializer intentionally omits item_type, so accept that shape.
+    .filter(product => product.item_type !== 'INGREDIENT' && product.is_active !== false)
     .sort((left, right) => left.name.localeCompare(right.name)), [products]);
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -162,8 +166,10 @@ export default function PosStockActionModal({
                 <span className="font-semibold">{product.name}</span>
                 <span className="ml-2 flex shrink-0 items-center gap-1 text-xs font-bold text-gold-dark"><Plus aria-hidden="true" className="h-3.5 w-3.5" />Add</span>
               </button>
-            )) : <p className="px-3 py-4 text-center text-xs text-espresso/50">No matching products.</p>}
+            )) : productError && activeProducts.length === 0 ? <div className="px-3 py-3 text-center text-xs text-red-700"><p role="alert">{productError}</p><Button type="button" size="xs" variant="outline" className="mt-2" onClick={onRetryProducts}>Retry product list</Button></div>
+              : <p className="px-3 py-4 text-center text-xs text-espresso/50">{activeProducts.length ? 'No matching products.' : 'No active products are available.'}</p>}
           </div>
+          {!loadingProducts && productError && filteredProducts.length > 0 && <p role="status" className="mt-1 text-[11px] text-amber-800">{productError}</p>}
         </div>
 
         <section aria-label="Selected products" className="space-y-2">

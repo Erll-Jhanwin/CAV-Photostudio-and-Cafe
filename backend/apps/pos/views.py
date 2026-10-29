@@ -573,6 +573,15 @@ class POSStockActionView(APIView):
                     order = Order.objects.select_for_update().get(transaction_id=transaction_id)
                 except Order.DoesNotExist:
                     return Response({'transaction_id': 'Transaction was not found.'}, status=status.HTTP_404_NOT_FOUND)
+                # A new client key can be generated if a user reopens the
+                # modal after a successful submit. Collapse an identical
+                # physical action on this sale before mutating stock again.
+                duplicate_action = POSStockAction.objects.filter(
+                    order=order,
+                    request_fingerprint=fingerprint,
+                ).first()
+                if duplicate_action:
+                    return Response(self.response_for(duplicate_action), status=status.HTTP_200_OK)
                 if order.order_type == 'END_OF_DAY_REPORT' or order.payment_status != 'PAID':
                     return Response({'transaction_id': 'Only completed, paid transactions can be used.'}, status=status.HTTP_409_CONFLICT)
 

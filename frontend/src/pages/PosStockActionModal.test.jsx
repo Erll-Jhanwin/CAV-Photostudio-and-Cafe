@@ -3,8 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import PosStockActionModal from './PosStockActionModal';
 
 const products = [
-  { id: 1, name: 'Americano', sku: 'AMER-01', item_type: 'PRODUCT', is_active: true },
-  { id: 2, name: 'Matcha', sku: 'MATCHA-01', item_type: 'PRODUCT', is_active: true },
+  // ProductSerializer returns product-only rows without an item_type field.
+  { id: 1, name: 'Americano', sku: 'AMER-01', is_active: true },
+  { id: 2, name: 'Matcha', sku: 'MATCHA-01', is_active: true },
   { id: 3, name: 'Inactive Latte', item_type: 'PRODUCT', is_active: false },
   { id: 4, name: 'Milk', item_type: 'INGREDIENT', is_active: true },
 ];
@@ -18,11 +19,16 @@ test('wastage modal searches products, adjusts and removes selected quantities, 
   const onSubmit = jest.fn();
   render(<PosStockActionModal open actionType="WASTAGE" products={products} onSubmit={onSubmit} onClose={jest.fn()} />);
 
+  expect(screen.getByRole('button', { name: /Americano Add/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Matcha Add/ })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Search products'), { target: { value: 'matcha' } });
   expect(screen.getByRole('button', { name: /Matcha Add/ })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Americano Add/ })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Search products'), { target: { value: '' } });
   expect(screen.queryByRole('button', { name: /Inactive Latte Add/ })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Search products'), { target: { value: 'MATCHA-01' } });
+  expect(screen.getByRole('button', { name: /Matcha Add/ })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Search products'), { target: { value: '' } });
 
   fireEvent.click(screen.getByRole('button', { name: /Americano Add/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Increase Americano quantity' }));
@@ -74,4 +80,15 @@ test('both actions stay disabled until transaction, reason, and a product are su
   expect(screen.getByRole('button', { name: 'Confirm Wastage' })).toBeDisabled();
   fillReferenceAndReason();
   expect(screen.getByRole('button', { name: 'Confirm Wastage' })).toBeEnabled();
+});
+
+test('product loading and failure have explicit status and retry states', () => {
+  const onRetryProducts = jest.fn();
+  const { rerender } = render(<PosStockActionModal open actionType="WASTAGE" loadingProducts products={[]} onSubmit={jest.fn()} onClose={jest.fn()} onRetryProducts={onRetryProducts} />);
+  expect(screen.getByRole('status')).toHaveTextContent('Loading product list');
+
+  rerender(<PosStockActionModal open actionType="REFUND" productError="Could not load products." products={[]} onSubmit={jest.fn()} onClose={jest.fn()} onRetryProducts={onRetryProducts} />);
+  expect(screen.getByRole('alert')).toHaveTextContent('Could not load products.');
+  fireEvent.click(screen.getByRole('button', { name: 'Retry product list' }));
+  expect(onRetryProducts).toHaveBeenCalledTimes(1);
 });

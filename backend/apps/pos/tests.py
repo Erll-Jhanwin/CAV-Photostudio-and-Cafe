@@ -419,7 +419,8 @@ class POSStockActionApiTests(TestCase):
         sale = self.create_sale(quantity=4)
         payload = self.action_payload(sale, 'REFUND', quantity=1, disposition='WASTED')
         first = self.client.post('/api/pos/stock-actions/', payload, format='json')
-        repeated = self.client.post('/api/pos/stock-actions/', payload, format='json')
+        duplicate_with_new_key = dict(payload, idempotency_key='stock-action-refund-new-key')
+        repeated = self.client.post('/api/pos/stock-actions/', duplicate_with_new_key, format='json')
 
         self.assertEqual(first.status_code, 201, first.data)
         self.assertEqual(repeated.status_code, 200, repeated.data)
@@ -535,6 +536,21 @@ class POSStockActionApiTests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_level, 7)
         self.assertEqual(POSStockAction.objects.count(), 1)
+
+    def test_reopening_modal_cannot_duplicate_the_same_wastage_with_a_new_key(self):
+        sale = self.create_sale(quantity=2)
+        first_payload = self.action_payload(sale, 'WASTAGE', quantity=1, key='stock-action-first-key')
+        first = self.client.post('/api/pos/stock-actions/', first_payload, format='json')
+        retry_payload = self.action_payload(sale, 'WASTAGE', quantity=1, key='stock-action-new-key')
+        retry = self.client.post('/api/pos/stock-actions/', retry_payload, format='json')
+
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(retry.status_code, 200, retry.data)
+        self.assertEqual(first.data['action_id'], retry.data['action_id'])
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_level, 7)
+        self.assertEqual(POSStockAction.objects.count(), 1)
+        self.assertEqual(InventoryEvent.objects.filter(product=self.product, reason__startswith='POS WASTAGE').count(), 1)
 
     def test_recipe_product_wastage_uses_existing_recipe_stock_movements(self):
         ingredient = Product.objects.create(

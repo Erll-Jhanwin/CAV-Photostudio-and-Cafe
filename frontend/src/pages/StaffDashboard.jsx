@@ -249,6 +249,7 @@ export default function StaffDashboard() {
   const [stockActionPrefill, setStockActionPrefill] = useState(null);
   const [stockActionProducts, setStockActionProducts] = useState([]);
   const [stockActionProductsLoading, setStockActionProductsLoading] = useState(false);
+  const [stockActionProductsError, setStockActionProductsError] = useState('');
   const [stockActionSubmitting, setStockActionSubmitting] = useState(false);
   const [stockActionError, setStockActionError] = useState('');
   const [receiptPrintError, setReceiptPrintError] = useState('');
@@ -744,20 +745,29 @@ export default function StaffDashboard() {
 
   const loadStockActionProducts = async () => {
     setStockActionProductsLoading(true);
+    setStockActionProductsError('');
     try {
       const allProducts = [];
       let offset = 0;
       while (true) {
         const response = await client.get('/api/inventory/products/', { params: { limit: 200, offset } });
-        const page = Array.isArray(response.data) ? response.data : [];
+        const page = Array.isArray(response.data) ? response.data : Array.isArray(response.data?.results) ? response.data.results : null;
+        if (!page) throw new Error('Unexpected product list response.');
         allProducts.push(...page);
         if (page.length < 200) break;
         offset += page.length;
       }
       setStockActionProducts(normalizeRowsById(allProducts, row => row?.name)
-        .filter(product => product.item_type === 'PRODUCT' && product.is_active !== false));
+        .filter(product => product.is_active !== false)
+        .map(product => ({ ...product, item_type: 'PRODUCT' })));
     } catch {
-      setStockActionProducts(products.filter(product => product.item_type === 'PRODUCT' && product.is_active !== false));
+      const cachedProducts = products
+        .filter(product => product.item_type !== 'INGREDIENT' && product.is_active !== false)
+        .map(product => ({ ...product, item_type: 'PRODUCT' }));
+      setStockActionProducts(cachedProducts);
+      setStockActionProductsError(cachedProducts.length
+        ? 'Could not refresh the product list. Showing previously loaded products.'
+        : 'Could not load products. Check your connection and retry.');
     } finally {
       setStockActionProductsLoading(false);
     }
@@ -765,7 +775,10 @@ export default function StaffDashboard() {
 
   const openStockAction = (actionType, prefill = null) => {
     setStockActionError('');
-    setStockActionProducts(products.filter(product => product.item_type === 'PRODUCT' && product.is_active !== false));
+    setStockActionProductsError('');
+    setStockActionProducts(products
+      .filter(product => product.item_type !== 'INGREDIENT' && product.is_active !== false)
+      .map(product => ({ ...product, item_type: 'PRODUCT' })));
     setStockActionPrefill(prefill);
     setStockActionType(actionType);
     void loadStockActionProducts();
@@ -2857,10 +2870,12 @@ export default function StaffDashboard() {
         actionType={stockActionType}
         products={stockActionProducts}
         loadingProducts={stockActionProductsLoading}
+        productError={stockActionProductsError}
         initialValues={stockActionPrefill}
         submitting={stockActionSubmitting}
         error={stockActionError}
         onClose={() => { if (!stockActionSubmitting) setStockActionType(null); }}
+        onRetryProducts={loadStockActionProducts}
         onSubmit={handleStockActionSubmit}
       />
     </div>
