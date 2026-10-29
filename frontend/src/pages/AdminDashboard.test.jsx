@@ -50,6 +50,47 @@ jest.mock('../api/client', () => ({
 import AdminDashboard from './AdminDashboard';
 
 describe('AdminDashboard', () => {
+  it('loads an Admin payment proof only after opening it and preserves verification actions', async () => {
+    const payment = {
+      id: 18,
+      booking: 48,
+      booking_details: {
+        customer_name: 'Jamie Reyes', customer_email: 'jamie@example.com',
+        service_name: 'Studio', package_name: 'Portrait Session',
+        scheduled_date: '2026-11-15', scheduled_time: '10:30',
+      },
+      method_label: 'GCash', reference_number: 'GC-48', amount: '1250.00',
+      required_down_payment: '1250.00', paid_at: '2026-10-28T10:00:00Z',
+      status: 'PENDING_VERIFICATION', receipt_url: '/api/bookings/payments/18/receipt/',
+    };
+    getCached.mockImplementation(url => {
+      if (url.includes('/api/bookings/payments/')) return Promise.resolve({ data: [payment] });
+      if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
+      return Promise.resolve({ data: {
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
+        top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
+        low_stock_alerts: [], inventory_alerts: [],
+      } });
+    });
+    let resolveProof;
+    client.get.mockReturnValue(new Promise(resolve => { resolveProof = resolve; }));
+
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
+
+    const proofButton = await screen.findByRole('button', { name: 'View proof of payment for booking 48' });
+    expect(screen.getByRole('button', { name: 'Confirm Payment' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Flag Payment Issue' })).toBeInTheDocument();
+    expect(client.get).not.toHaveBeenCalled();
+
+    fireEvent.click(proofButton);
+    expect(await screen.findByRole('dialog', { name: 'Payment proof · Booking #48' })).toBeInTheDocument();
+    expect(screen.getByText('Loading payment proof…')).toBeInTheDocument();
+    expect(client.get).toHaveBeenCalledWith('/api/bookings/payments/18/receipt/', { responseType: 'blob' });
+    await act(async () => resolveProof({ data: new Blob(['proof'], { type: 'image/png' }) }));
+  });
+
   it('renders the admin shell and opens Accounts with Lucide action icons', async () => {
     render(
       <MemoryRouter>
