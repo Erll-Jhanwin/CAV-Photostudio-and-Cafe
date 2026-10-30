@@ -72,3 +72,22 @@ class SalesHistoryRecord(models.Model):
             models.Index(fields=['import_batch', 'sale_date']),
             models.Index(fields=['transaction_number']),
         ]
+
+
+class ForecastRun(models.Model):
+    """Immutable output and evaluation metadata for one controlled retrain."""
+
+    model_version = models.CharField(max_length=40, default='least-squares-linear-v1')
+    generated_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    horizon_days = models.PositiveSmallIntegerField(default=7)
+    training_start = models.DateField(null=True, blank=True)
+    training_end = models.DateField(null=True, blank=True)
+    test_start = models.DateField(null=True, blank=True)
+    test_end = models.DateField(null=True, blank=True)
+    data_status = models.CharField(max_length=32, default='insufficient_history')
+    predictions = models.JSONField(default=dict, blank=True)
+    evaluation = models.JSONField(default=dict, blank=True)
+    recommendations = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ['-generated_at']

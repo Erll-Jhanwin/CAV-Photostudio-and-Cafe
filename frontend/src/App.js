@@ -15,6 +15,7 @@ const PrivacyPolicyPage = lazy(() => lazyWithRetry(() => import('./pages/Privacy
 const NotFoundPage = lazy(() => lazyWithRetry(() => import('./pages/NotFoundPage')));
 const CustomerDashboard = lazy(() => lazyWithRetry(() => import('./pages/CustomerDashboard')));
 const StaffDashboard = lazy(() => lazyWithRetry(() => import('./pages/StaffDashboard')));
+const MachineLearningPage = lazy(() => lazyWithRetry(() => import('./pages/MachineLearningPage')));
 const SPLASH_SEEN_KEY = 'cav:splash-seen';
 
 const redactDiagnostic = (value, limit) => String(value || '')
@@ -241,6 +242,14 @@ function App() {
                     element={
                       <ProtectedRoute allowedRoles={['ADMIN']}>
                         <AdminDashboard />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/machine-learning"
+                    element={
+                      <ProtectedRoute allowedRoles={['STAFF', 'ADMIN']}>
+                        <MachineLearningPage />
                       </ProtectedRoute>
                     }
                   />
