@@ -1,4 +1,5 @@
 import calendar
+from django.core import signing
 import logging
 import mimetypes
 from collections import defaultdict
@@ -18,6 +19,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from django.utils import timezone
 from booking.models import Service, Package, Booking, BookingDateLock, BookingReview, StudioUnavailableDate
+from booking.email_notifications import FEEDBACK_SALT
 from booking.serializers import (
     ServiceSerializer,
     PackageSerializer,
@@ -561,6 +563,7 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                     raise ValidationError({'scheduled_time': 'This schedule is no longer available. Select another slot before reopening the booking.'})
             updated_booking = serializer.save()
 
+
             if status_changed:
                 AuditLog.objects.create(
                     user=user,
@@ -670,6 +673,54 @@ class BookingReviewCreateView(generics.CreateAPIView):
             self.get_serializer(review).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class BookingFeedbackSurveyView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def _booking(self, token):
+        try:
+            payload = signing.loads(token, salt=FEEDBACK_SALT, max_age=180 * 24 * 60 * 60)
+            booking_id = int(payload.get('booking_id'))
+            return Booking.objects.select_related('customer', 'package', 'package__service').get(pk=booking_id)
+        except (signing.BadSignature, signing.SignatureExpired, TypeError, ValueError, Booking.DoesNotExist):
+            return None
+
+    def get(self, request, *args, **kwargs):
+        booking = self._booking(request.query_params.get('token', ''))
+        if not booking or booking.status != 'COMPLETED':
+            return Response({'detail': 'This feedback link is invalid or no longer available.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            'booking_id': booking.id,
+            'service': booking.package.service.name,
+            'package': booking.package.name,
+            'already_submitted': BookingReview.objects.filter(booking=booking).exists(),
+        })
+
+    def post(self, request, *args, **kwargs):
+        booking = self._booking(request.data.get('token', ''))
+        if not booking or booking.status != 'COMPLETED':
+            return Response({'detail': 'This feedback link is invalid or no longer available.'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            rating = int(request.data.get('rating'))
+        except (TypeError, ValueError):
+            rating = 0
+        if rating < 1 or rating > 5:
+            return Response({'rating': 'Choose a satisfaction rating from 1 to 5.'}, status=status.HTTP_400_BAD_REQUEST)
+        feedback = str(request.data.get('feedback') or '').strip()
+        if len(feedback) > 2000:
+            return Response({'feedback': 'Comments must be 2,000 characters or less.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            with transaction.atomic():
+                review = BookingReview.objects.create(
+                    booking=booking,
+                    customer=booking.customer,
+                    rating=rating,
+                    feedback=feedback,
+                )
+        except IntegrityError:
+            return Response({'detail': 'Feedback has already been submitted for this session.'}, status=status.HTTP_409_CONFLICT)
+        return Response(BookingReviewSerializer(review).data, status=status.HTTP_201_CREATED)
 
 
 class BookingReviewListView(generics.ListAPIView):

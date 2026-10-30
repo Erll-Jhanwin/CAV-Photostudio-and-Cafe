@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from booking.models import Booking, BookingReview, Package, Service, StudioUnavailableDate
+from booking.models import Booking, BookingEmail, BookingReview, Package, Service, StudioUnavailableDate
 
 
 class PackageInline(admin.TabularInline):
@@ -34,6 +34,18 @@ class BookingReviewAdmin(admin.ModelAdmin):
     list_display = ('id', 'booking', 'customer', 'rating', 'created_at')
     list_filter = ('rating', 'created_at')
     search_fields = ('customer__username', 'customer__email', 'feedback', 'suggestions')
+
+
+@admin.register(BookingEmail)
+class BookingEmailAdmin(admin.ModelAdmin):
+    list_display = ('id', 'booking', 'event_type', 'recipient', 'status', 'attempt_count', 'scheduled_for', 'sent_at')
+    list_filter = ('event_type', 'status')
+    search_fields = ('recipient', 'event_key', 'last_error')
+    readonly_fields = ('booking', 'event_type', 'event_key', 'recipient', 'scheduled_for', 'status', 'attempt_count',
+                       'next_retry_at', 'sent_at', 'last_error', 'payload', 'created_at', 'updated_at')
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(StudioUnavailableDate)

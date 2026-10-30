@@ -223,7 +223,7 @@ else:
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'CAV Photo Studio & Cafe <no-reply@cav.local>')
 EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
@@ -234,11 +234,14 @@ _email_host_password = os.environ.get('EMAIL_HOST_PASSWORD', '')
 EMAIL_HOST_PASSWORD = ''.join(_email_host_password.split()) if EMAIL_HOST.lower() == 'smtp.gmail.com' else _email_host_password
 EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', True)
 EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
+if EMAIL_USE_TLS and EMAIL_USE_SSL:
+    raise ImproperlyConfigured('Set only one of EMAIL_USE_TLS or EMAIL_USE_SSL.')
 EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '20'))
-EMAIL_PROVIDER = os.environ.get('EMAIL_PROVIDER', 'smtp').strip().lower()
-RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
-RESEND_API_URL = os.environ.get('RESEND_API_URL', 'https://api.resend.com/emails')
 EMAIL_DELIVERY_ENABLED = env_bool('EMAIL_DELIVERY_ENABLED', False)
+BOOKING_FEEDBACK_URL = os.environ.get(
+    'BOOKING_FEEDBACK_URL',
+    'https://cav-photostudio-and-cafe-frontend.onrender.com/booking-feedback',
+).strip().rstrip('/')
 SMS_DELIVERY_ENABLED = env_bool('SMS_DELIVERY_ENABLED', False)
 SMS_ASYNC_DELIVERY_ENABLED = env_bool('SMS_ASYNC_DELIVERY_ENABLED', False)
 SMS_MAX_ATTEMPTS = int(os.environ.get('SMS_MAX_ATTEMPTS', '3'))

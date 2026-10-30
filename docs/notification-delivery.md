@@ -5,16 +5,20 @@ one `NotificationDelivery` row for every attempted email, SMS, or push channel.
 Delivery is best-effort: a provider outage is logged and does not roll back a
 booking or payment workflow.
 
-## Provider configuration
+## SMTP and channel configuration
 
 Enable only the channels that have been configured in the backend environment:
 
 ```text
 EMAIL_DELIVERY_ENABLED=true
-EMAIL_PROVIDER=resend
-DEFAULT_FROM_EMAIL=CAV Photo Studio & Cafe <verified-sender@example.com>
-RESEND_API_KEY=re_your_key
-RESEND_API_URL=https://api.resend.com/emails
+EMAIL_HOST=smtp.your-provider.example
+EMAIL_PORT=587
+EMAIL_HOST_USER=your-smtp-username
+EMAIL_HOST_PASSWORD=your-smtp-password
+EMAIL_USE_TLS=true
+EMAIL_USE_SSL=false
+DEFAULT_FROM_EMAIL=CAV Photo Studio & Cafe <no-reply@your-domain.com>
+EMAIL_TIMEOUT=20
 
 SMS_DELIVERY_ENABLED=true
 IPROG_SMS_API_TOKEN=your_iprogsms_token
@@ -31,9 +35,10 @@ PUSH_VAPID_SUBJECT=mailto:ops@example.com
 PUSH_DELIVERY_TTL_SECONDS=86400
 ```
 
-Email can use SMTP instead of Resend by setting `EMAIL_PROVIDER=smtp` and the
-standard Django `EMAIL_*` variables. The default console backend is treated as
-non-delivery and produces a `skipped / console_backend` log entry.
+Email uses Django's built-in SMTP backend. Use TLS on port 587 or SSL on port
+465, but do not enable both. Render free web services block SMTP ports 25, 465,
+and 587; port 25 is blocked on all Render services. See [Render's current
+free-service limits](https://render.com/docs/free).
 
 Generate one VAPID key pair with the `pywebpush`/`py-vapid` tooling or another
 trusted Web Push key generator. Keep the private key server-side; only the
@@ -122,6 +127,32 @@ scheduler runs do not resend it. Stale reminders are suppressed after cancellati
 or rescheduling. Failures remain in `NotificationDelivery`; they do not roll back
 the booking. Use `--at 2026-10-18T08:00:00+08:00 --dry-run` to inspect due
 reminders without creating notifications or contacting iProgSMS.
+
+## Booking email notifications
+
+Booking submission, approval (including a verified down payment), and completion
+create durable email outbox records in the same database transaction as the
+booking change. A 24-hour reminder is scheduled from the current session start.
+Emails include the booking number, service, package, local date/time, status, and
+package price. Completion emails include a signed link to a satisfaction survey;
+ratings and optional comments are saved as booking reviews for the existing
+staff/admin review screen. The signed survey link expires after 180 days and can
+submit one response per booking.
+
+Set `EMAIL_DELIVERY_ENABLED=true`, configure the SMTP settings above, and set
+`BOOKING_FEEDBACK_URL` to the deployed frontend's
+`/booking-feedback` URL. Run `python manage.py process_notification_deliveries`
+every minute; that existing worker now processes due booking emails as well as
+SMS delivery recovery. `python manage.py process_booking_emails` can also be run
+as a dedicated email worker. Failed sends are logged on the booking email record
+and retried up to five times with increasing delays. Repeated worker runs do not
+resend records already marked sent. SMTP is at-least-once if a worker crashes
+after the server accepts a message but before the database records success.
+
+Rescheduling cancels the old queued reminder and schedules a new one for the new
+session time. Cancellation cancels any queued reminder, and the worker rechecks
+booking status and schedule immediately before delivery. A reminder already sent
+cannot be recalled. Run database migrations before deploying this change.
 
 ## Deployment checklist
 

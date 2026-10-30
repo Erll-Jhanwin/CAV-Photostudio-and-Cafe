@@ -156,7 +156,9 @@ export default function LoginPage() {
     setError('');
     setSuccess('');
     setLoading(true);
-    const res = await loginWithGoogle(credential, isRegister ? form.phone : '');
+    const res = await loginWithGoogle(credential, isRegister ? form.phone : '', {
+      privacy_consent: isRegister ? registrationConsent : false,
+    });
     setLoading(false);
     if (res.pendingVerification) {
       setIsRegister(true);
@@ -185,12 +187,17 @@ export default function LoginPage() {
       showLoginSuccess(res.user);
       navigateAfterAuth(res.user);
     } else {
-      if (res.errors?.phone_number) {
+      if (res.errors?.privacy_consent) {
+        setIsRegister(true);
+        setRegisterStep('details');
+        setFormErrors({ privacyConsent: Array.isArray(res.errors.privacy_consent) ? res.errors.privacy_consent.join(' ') : res.errors.privacy_consent });
+        setError('Accept the Privacy Notice, then choose Google again to create your account.');
+      } else if (res.errors?.phone_number) {
         setFormErrors({ phone: Array.isArray(res.errors.phone_number) ? res.errors.phone_number.join(' ') : res.errors.phone_number });
       }
       setError(res.error);
     }
-  }, [form.phone, isRegister, loginWithGoogle, navigateAfterAuth]);
+  }, [form.phone, isRegister, loginWithGoogle, navigateAfterAuth, registrationConsent]);
 
   useEffect(() => {
     if (!googleClientId) return undefined;
@@ -277,7 +284,9 @@ export default function LoginPage() {
         setError('Google did not return a sign-in token. Please try again.');
         return;
       }
-      const res = await loginWithGoogle(credential, isRegister ? form.phone : '');
+      const res = await loginWithGoogle(credential, isRegister ? form.phone : '', {
+        privacy_consent: isRegister ? registrationConsent : false,
+      });
       if (res.pendingVerification) {
         setIsRegister(true);
         setRegisterStep('otp');
@@ -305,7 +314,12 @@ export default function LoginPage() {
         setSuccess(`Admin SMS verification code sent to ${contactHint}.`);
         setFormErrors({});
       } else {
-        if (res.errors?.phone_number) {
+        if (res.errors?.privacy_consent) {
+          setIsRegister(true);
+          setRegisterStep('details');
+          setFormErrors({ privacyConsent: Array.isArray(res.errors.privacy_consent) ? res.errors.privacy_consent.join(' ') : res.errors.privacy_consent });
+          setError('Accept the Privacy Notice, then choose Google again to create your account.');
+        } else if (res.errors?.phone_number) {
           setFormErrors({ phone: Array.isArray(res.errors.phone_number) ? res.errors.phone_number.join(' ') : res.errors.phone_number });
         }
         setError(res.error);
@@ -1070,6 +1084,7 @@ export default function LoginPage() {
                             placeholder="+63 917 123 4567"
                             error={formErrors.phone}
                           />
+                          <p className="-mt-3 text-[11px] leading-relaxed text-espresso/50">Required for regular sign-up. Google sign-up can continue without a number; add one before booking.</p>
                           <Textarea
                             label="Address"
                             value={form.address}
@@ -1122,11 +1137,13 @@ export default function LoginPage() {
                               onChange={(e) => {
                                 setRegistrationConsent(e.target.checked);
                                 setFormErrors(current => ({ ...current, privacyConsent: '' }));
+                                if (e.target.checked) setError('');
                               }}
                               className="mt-1 h-4 w-4 rounded border-espresso/30 text-gold focus:ring-gold"
                             />
                             <span>I agree to the <Link to="/privacy-policy" className="font-bold text-gold-dark underline">Privacy Notice</Link> and service data processing.</span>
                           </label>
+                          {formErrors.privacyConsent && <p role="alert" className="-mt-2 text-xs font-semibold text-red-700">{formErrors.privacyConsent}</p>}
                         </>
                       )}
 

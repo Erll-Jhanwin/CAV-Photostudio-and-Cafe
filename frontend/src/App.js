@@ -14,6 +14,7 @@ const LoginPage = lazy(() => lazyWithRetry(() => import('./pages/LoginPage')));
 const PrivacyPolicyPage = lazy(() => lazyWithRetry(() => import('./pages/PrivacyPolicyPage')));
 const NotFoundPage = lazy(() => lazyWithRetry(() => import('./pages/NotFoundPage')));
 const CustomerDashboard = lazy(() => lazyWithRetry(() => import('./pages/CustomerDashboard')));
+const BookingFeedbackPage = lazy(() => lazyWithRetry(() => import('./pages/BookingFeedbackPage')));
 const StaffDashboard = lazy(() => lazyWithRetry(() => import('./pages/StaffDashboard')));
 const MachineLearningPage = lazy(() => lazyWithRetry(() => import('./pages/MachineLearningPage')));
 const SPLASH_SEEN_KEY = 'cav:splash-seen';
@@ -221,6 +222,7 @@ function App() {
                   <Route path="/how-to-book" element={<BookingGuidePage />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+                  <Route path="/booking-feedback" element={<BookingFeedbackPage />} />
                   <Route
                     path="/customer"
                     element={

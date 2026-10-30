@@ -213,3 +213,45 @@ test('booking history filters canonical statuses and shows matching status count
   expect(await screen.findByText('Confirmed - Down Payment Received')).toBeInTheDocument();
   expect(screen.queryByText('Cancelled')).not.toBeInTheDocument();
 });
+
+test('notification status and type filters combine immediately and preserve unread counts', async () => {
+  const notificationRows = [
+    { id: 81, notification_type: 'BOOKING_CREATED', title: 'Booking request received', message: 'We received your request.', is_read: false, created_at: '2026-10-20T04:00:00Z' },
+    { id: 82, notification_type: 'BOOKING_PAYMENT_APPROVED', title: 'Payment approved', message: 'Your payment is approved.', is_read: false, created_at: '2026-10-20T05:00:00Z' },
+    { id: 83, notification_type: 'BOOKING_PAYMENT_REJECTED', title: 'Payment needs review', message: 'Please check your payment.', is_read: true, created_at: '2026-10-20T06:00:00Z' },
+  ];
+  const defaultGet = client.get.getMockImplementation();
+  client.get.mockImplementation((url, options) => url === '/api/notifications/'
+    ? Promise.resolve({ data: notificationRows })
+    : defaultGet(url, options));
+  const defaultCachedGet = getCached.getMockImplementation();
+  getCached.mockImplementation((url, ...args) => url === '/api/notifications/'
+    ? Promise.resolve({ data: notificationRows })
+    : defaultCachedGet(url, ...args));
+  client.patch.mockImplementation(async () => {
+    notificationRows.find(row => row.id === 82).is_read = true;
+    return { data: { is_read: true } };
+  });
+
+  render(<CustomerDashboard />);
+  fireEvent.click(await screen.findByRole('button', { name: /Notifications/ }));
+  expect(await screen.findByRole('button', { name: 'Unread notification: Booking request received' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'All 3' })).toHaveAttribute('aria-pressed', 'true');
+
+  fireEvent.change(screen.getByLabelText('Filter by notification type'), { target: { value: 'Payment' } });
+  expect(screen.queryByText('Booking request received')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Read 1' })).toHaveAttribute('aria-pressed', 'false');
+  fireEvent.click(screen.getByRole('button', { name: 'Read 1' }));
+  expect(await screen.findByRole('button', { name: 'Read notification: Payment needs review' })).toBeInTheDocument();
+  expect(screen.queryByText('Payment approved')).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Unread 2' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Unread notification: Payment approved' }));
+  await waitFor(() => expect(screen.getByText('No notifications match these filters')).toBeInTheDocument());
+  expect(screen.getByRole('button', { name: 'Unread 1' })).toBeInTheDocument();
+  expect(client.patch).toHaveBeenCalledWith('/api/notifications/82/read/');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+  expect(await screen.findByRole('button', { name: 'Unread notification: Booking request received' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Read notification: Payment approved' })).toBeInTheDocument();
+});

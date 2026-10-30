@@ -232,6 +232,12 @@ class BookingReviewSerializer(serializers.ModelSerializer):
 
     def get_customer_details(self, obj):
         customer = obj.customer
+        if customer is None:
+            return {
+                'name': obj.booking.contact_name or 'Walk-in customer',
+                'username': '',
+                'email': obj.booking.contact_email or '',
+            }
         return {
             'name': customer.get_full_name() or customer.username,
             'username': customer.username,

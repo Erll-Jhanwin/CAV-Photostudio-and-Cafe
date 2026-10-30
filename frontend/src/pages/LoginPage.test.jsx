@@ -45,6 +45,55 @@ describe('responsive authentication layout', () => {
   });
 });
 
+describe('Google registration', () => {
+  beforeEach(() => {
+    mockLoginWithGoogle.mockReset();
+  });
+
+  test('requests privacy consent for a new Google account, then signs the verified customer in without a phone', async () => {
+    let googleCallback;
+    const originalClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+    const originalAlert = window.alert;
+    process.env.REACT_APP_GOOGLE_CLIENT_ID = 'google-client-id';
+    window.alert = jest.fn();
+    window.google = {
+      accounts: {
+        id: {
+          initialize: jest.fn(({ callback }) => { googleCallback = callback; }),
+          renderButton: jest.fn(),
+        },
+      },
+    };
+    mockLoginWithGoogle
+      .mockResolvedValueOnce({ success: false, error: 'Accept the Privacy Notice, then choose Google again to create your account.', errors: { privacy_consent: 'Accept the privacy notice.' } })
+      .mockResolvedValueOnce({ success: true, created: true, user: { id: 91, username: 'google.customer', email: 'google@example.com', role: 'CUSTOMER' } });
+
+    try {
+      renderLogin();
+      await waitFor(() => expect(googleCallback).toBeDefined());
+      await act(async () => { googleCallback({ credential: 'verified-google-id-token' }); });
+
+      expect(await screen.findByText('Accept the Privacy Notice, then choose Google again to create your account.')).toBeInTheDocument();
+      expect(screen.getByLabelText('Mobile number')).toBeInTheDocument();
+      expect(screen.getByLabelText('Mobile number')).not.toBeRequired();
+      fireEvent.click(screen.getByRole('checkbox'));
+      await waitFor(() => expect(window.google.accounts.id.initialize.mock.calls.length).toBeGreaterThan(1));
+
+      await act(async () => { googleCallback({ credential: 'verified-google-id-token' }); });
+
+      await waitFor(() => expect(mockLoginWithGoogle).toHaveBeenCalledTimes(2));
+      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(1, 'verified-google-id-token', '', { privacy_consent: false });
+      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(2, 'verified-google-id-token', '', { privacy_consent: true });
+      expect(window.alert).toHaveBeenCalledWith('google.customer logged in successfully.');
+    } finally {
+      if (originalClientId === undefined) delete process.env.REACT_APP_GOOGLE_CLIENT_ID;
+      else process.env.REACT_APP_GOOGLE_CLIENT_ID = originalClientId;
+      window.alert = originalAlert;
+      delete window.google;
+    }
+  });
+});
+
 describe('OTP resend flows', () => {
   beforeEach(() => {
     jest.useFakeTimers();

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -485,23 +486,23 @@ class BookingNotificationTests(TestCase):
 
     @override_settings(
         EMAIL_DELIVERY_ENABLED=True,
-        EMAIL_PROVIDER='resend',
-        RESEND_API_KEY='re_test_key',
+        EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+        EMAIL_HOST='smtp.example.test',
+        DEFAULT_FROM_EMAIL='CAV Photo Studio <studio@example.test>',
         SMS_DELIVERY_ENABLED=False,
         PUSH_DELIVERY_ENABLED=False,
     )
-    @patch('users.email_delivery.requests.post')
-    def test_resend_email_delivery_is_logged(self, mocked_post):
-        mocked_post.return_value = Mock(status_code=200, json=Mock(return_value={'id': 'email_123'}))
+    def test_smtp_email_delivery_uses_django_mail_and_is_logged(self):
         notification = self._notification()
 
         dispatch_notification(notification)
 
         delivery = NotificationDelivery.objects.get(notification=notification, channel='email')
         self.assertEqual(delivery.status, NotificationDelivery.STATUS_SENT)
-        self.assertEqual(delivery.provider_message_id, 'email_123')
-        self.assertEqual(mocked_post.call_args.args[0], 'https://api.resend.com/emails')
-        self.assertEqual(mocked_post.call_args.kwargs['json']['to'], [self.customer.email])
+        self.assertEqual(delivery.provider, 'smtp')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.customer.email])
+        self.assertEqual(mail.outbox[0].from_email, 'CAV Photo Studio <studio@example.test>')
 
     @override_settings(
         EMAIL_DELIVERY_ENABLED=False,

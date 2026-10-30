@@ -101,7 +101,7 @@ def _fail(delivery, *, provider, code, message, metadata=None):
 
 
 def _send_email_notification(notification):
-    provider = getattr(settings, 'EMAIL_PROVIDER', 'smtp') or 'smtp'
+    provider = 'smtp'
     delivery = _new_delivery(notification, NotificationDelivery.CHANNEL_EMAIL, provider=provider)
     user_email = (notification.user.email or '').strip()
 
@@ -112,19 +112,12 @@ def _send_email_notification(notification):
             code='disabled',
             message='Email delivery is disabled by configuration.',
         )
-    if provider == 'resend' and not getattr(settings, 'RESEND_API_KEY', '').strip():
-        return _skip(
-            delivery,
-            provider=provider,
-            code='missing_credentials',
-            message='RESEND_API_KEY is not configured.',
-        )
-    if provider not in {'smtp', 'resend', 'console'}:
+    if not getattr(settings, 'EMAIL_HOST', '').strip():
         return _fail(
             delivery,
             provider=provider,
-            code='unsupported_provider',
-            message=f'Unsupported email provider: {provider}.',
+            code='smtp_not_configured',
+            message='SMTP email delivery is not configured.',
         )
     if not user_email:
         return _skip(
@@ -143,15 +136,6 @@ def _send_email_notification(notification):
             message='The user email address is invalid.',
             metadata=_safe_email_metadata(user_email) if '@' in user_email else {},
         )
-    if provider == 'smtp' and str(getattr(settings, 'EMAIL_BACKEND', '')).endswith('console.EmailBackend'):
-        return _skip(
-            delivery,
-            provider=provider,
-            code='console_backend',
-            message='SMTP delivery is configured with Django console backend.',
-            metadata=_safe_email_metadata(user_email),
-        )
-
     try:
         result = send_transactional_email(
             user_email,
@@ -310,7 +294,7 @@ def dispatch_notification(notification, *, skip_channels=()):
     return deliveries
 
 
-def create_booking_notification(*, booking, notification_type, title, message, event_key=None):
+def create_booking_notification(*, booking, notification_type, title, message, event_key=None, skip_channels=()):
     """Persist a notification and dispatch it after its transaction commits."""
     values = dict(user_id=booking.customer_id, booking_id=booking.id,
                   notification_type=notification_type, title=title, message=message)
@@ -325,9 +309,9 @@ def create_booking_notification(*, booking, notification_type, title, message, e
         try:
             if getattr(settings, 'SMS_ASYNC_DELIVERY_ENABLED', False):
                 queue_sms_notification(notification.id)
-                dispatch_notification(notification.id, skip_channels={'sms'})
+                dispatch_notification(notification.id, skip_channels={'sms', *skip_channels})
             else:
-                dispatch_notification(notification.id)
+                dispatch_notification(notification.id, skip_channels=skip_channels)
         except Exception as exc:
             logger.error('Post-commit notification dispatch failed notification_id=%s exception_type=%s', notification.id, type(exc).__name__)
 

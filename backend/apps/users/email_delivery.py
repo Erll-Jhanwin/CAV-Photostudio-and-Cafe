@@ -1,54 +1,15 @@
-import uuid
-
-import requests
 from django.conf import settings
 from django.core.mail import send_mail
 
 
 class EmailDeliveryError(Exception):
-    pass
+    """A safe, provider-neutral failure message for transactional email."""
 
 
 def send_transactional_email(recipient, subject, message, *, html_message=None):
-    """Send an email through the configured SMTP or Resend provider.
-
-    The return value is intentionally small and provider-neutral so the
-    notification service can record delivery IDs without storing message
-    contents or credentials.
-    """
-    if settings.EMAIL_PROVIDER == 'resend':
-        if not settings.RESEND_API_KEY:
-            raise EmailDeliveryError('RESEND_API_KEY is not configured.')
-        try:
-            response = requests.post(
-                settings.RESEND_API_URL,
-                headers={
-                    'Authorization': f'Bearer {settings.RESEND_API_KEY}',
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'cav-photostudio-and-cafe/1.0',
-                    'Idempotency-Key': f'password-reset-{uuid.uuid4()}',
-                },
-                json={
-                    'from': settings.DEFAULT_FROM_EMAIL,
-                    'to': [recipient],
-                    'subject': subject,
-                    'text': message,
-                    **({'html': html_message} if html_message else {}),
-                },
-                timeout=settings.EMAIL_TIMEOUT,
-            )
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            raise EmailDeliveryError('Resend email delivery failed.') from exc
-        try:
-            data = response.json()
-        except ValueError:
-            data = {}
-        return {
-            'provider': 'resend',
-            'provider_message_id': str(data.get('id') or ''),
-        }
-
+    """Send email through Django's configured built-in SMTP backend."""
+    if not settings.EMAIL_HOST:
+        raise EmailDeliveryError('SMTP email delivery is not configured.')
     try:
         sent = send_mail(
             subject=subject,
@@ -59,13 +20,12 @@ def send_transactional_email(recipient, subject, message, *, html_message=None):
             fail_silently=False,
         )
     except Exception as exc:
-        raise EmailDeliveryError('Email delivery failed.') from exc
+        # Do not include the SMTP exception text, which could contain sensitive
+        # server or authentication details, in persisted delivery logs.
+        raise EmailDeliveryError('SMTP email delivery failed.') from exc
     if sent != 1:
-        raise EmailDeliveryError('Email provider did not accept the message.')
-    return {
-        'provider': settings.EMAIL_PROVIDER or 'smtp',
-        'provider_message_id': '',
-    }
+        raise EmailDeliveryError('SMTP server did not accept the message.')
+    return {'provider': 'smtp', 'provider_message_id': ''}
 
 
 def send_password_reset_email(recipient, otp, purpose='password reset'):

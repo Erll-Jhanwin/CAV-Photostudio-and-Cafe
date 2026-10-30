@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
-import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Hourglass, BadgeCheck, Ban, ReceiptText, Phone, Mail, Star, Download } from 'lucide-react';
+import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, ChevronDown, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Hourglass, BadgeCheck, Ban, ReceiptText, Phone, Mail, Star, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -36,6 +36,7 @@ import {
   isPushSupported,
   syncPushSubscription,
 } from '../utils/pushNotifications';
+import { filterNotifications, getNotificationCategories } from '../utils/notificationFilters';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -321,6 +322,8 @@ export default function CustomerDashboard() {
   const [paymentMethod, setPaymentMethod] = useState('');
   const [paymentQrFailed, setPaymentQrFailed] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [notificationStatusFilter, setNotificationStatusFilter] = useState('all');
+  const [notificationTypeFilter, setNotificationTypeFilter] = useState('all');
   const [pushState, setPushState] = useState({ supported: false, enabled: false, permission: 'default', loading: false, error: '' });
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
@@ -1466,13 +1469,18 @@ export default function CustomerDashboard() {
     navigate('/login', { replace: true });
   }, [logout, navigate]);
 
+  const unreadNotificationCount = notifications.filter(notification => !notification.is_read).length;
+  const readNotificationCount = notifications.length - unreadNotificationCount;
+  const notificationCategories = getNotificationCategories(notifications);
+  const filteredNotifications = filterNotifications(notifications, notificationStatusFilter, notificationTypeFilter);
+
   const navItems = [
     { key: 'book', label: 'Book a Session', icon: Plus, active: activeTab === 'book', onClick: () => setActiveTab('book') },
     { key: 'history', label: 'Booking History', icon: Clock, active: activeTab === 'history', onClick: () => setActiveTab('history') },
     { key: 'photos', label: 'My Photos', icon: Camera, active: activeTab === 'photos', onClick: () => setActiveTab('photos') },
     { key: 'profile', label: 'My Profile', icon: User, active: activeTab === 'profile', onClick: () => setActiveTab('profile') },
     { key: 'notifications', label: 'Notifications', icon: Bell, active: activeTab === 'notifications', onClick: () => setActiveTab('notifications'),
-      badge: notifications.filter(notification => !notification.is_read).length },
+      badge: unreadNotificationCount },
   ];
 
   const pageTitles = { book: 'Book a Session', history: 'Booking History', photos: 'My Photos', profile: 'My Profile', notifications: 'Notifications' };
@@ -1640,9 +1648,9 @@ export default function CustomerDashboard() {
                 <p className="text-xs text-espresso/50 mt-1">Reserve your premium studio slot or custom event package below.</p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
                 {/* Left column: Sliding Stepper */}
-                <div className="lg:col-span-8">
+                <div className="min-h-0 lg:col-span-8">
                   <Card className="flex flex-col h-[580px] max-h-[580px] overflow-hidden" padding={true}>
                     {/* Stepper progress indicator */}
                     <div className="border-b border-espresso/5 pb-4 mb-4 shrink-0">
@@ -2427,72 +2435,80 @@ export default function CustomerDashboard() {
                 </div>
 
                 {/* Right column: Summary sidebar */}
-                <div className="lg:col-span-4">
-                  <Card className="sticky top-6">
-                    <CardHeader title="Cart Summary" />
+                <div className="min-h-0 lg:col-span-4">
+                  <Card className="flex h-[580px] max-h-[580px] min-h-0 flex-col overflow-hidden" padding={true}>
+                    <CardHeader title="Cart Summary" subtitle="Your session details and price breakdown" className="mb-4 shrink-0 border-b border-espresso/5 pb-4" />
                     {selectedService ? (
-                      <div className="space-y-4 text-xs">
-                        <div className="space-y-1">
-                          <p className="text-[10px] uppercase text-espresso/50 font-bold">Service</p>
-                          <p className="font-semibold text-espresso">{selectedService?.name}</p>
+                      <>
+                        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                          <div className="divide-y divide-espresso/5 text-xs">
+                            <section className="space-y-3 py-3 first:pt-0" aria-label="Selected service and package">
+                              <h3 className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Service &amp; package</h3>
+                              <dl className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-2">
+                                <dt className="text-espresso/50">Service</dt>
+                                <dd className="break-words text-right font-bold text-espresso">{selectedService.name}</dd>
+                                <dt className="text-espresso/50">Package</dt>
+                                <dd className="break-words text-right font-bold text-espresso">{selectedPackage?.name || 'Not selected'}</dd>
+                              </dl>
+                            </section>
+
+                            <section className="space-y-3 py-3" aria-label="Booking schedule">
+                              <h3 className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Schedule</h3>
+                              <dl className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-2">
+                                <dt className="flex items-center gap-1.5 text-espresso/50"><Calendar className="h-3.5 w-3.5 text-gold" />Date</dt>
+                                <dd className="text-right font-semibold text-espresso">{selectedDate || 'Not selected'}</dd>
+                                <dt className="flex items-center gap-1.5 text-espresso/50"><Clock className="h-3.5 w-3.5 text-gold" />Time</dt>
+                                <dd className="text-right font-semibold text-espresso">{selectedSlotLabel || 'Not selected'}</dd>
+                              </dl>
+                            </section>
+
+                            <section className="space-y-3 py-3" aria-label="Customer details">
+                              <h3 className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Customer details</h3>
+                              <dl className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-2">
+                                <dt className="text-espresso/50">Name</dt>
+                                <dd className="break-words text-right font-semibold text-espresso">{customerFullName || 'Not provided'}</dd>
+                                <dt className="text-espresso/50">Email</dt>
+                                <dd className="break-all text-right font-semibold text-espresso">{bookingEmail || 'Not provided'}</dd>
+                                <dt className="text-espresso/50">Phone</dt>
+                                <dd className="break-words text-right font-semibold text-espresso">{phone || 'Not provided'}</dd>
+                                <dt className="text-espresso/50">Address</dt>
+                                <dd className="break-words text-right font-semibold text-espresso">{address || 'Not provided'}</dd>
+                              </dl>
+                            </section>
+
+                            <section className="space-y-3 py-3" aria-label="Price breakdown">
+                              <h3 className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Price breakdown</h3>
+                              <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2">
+                                <dt className="text-espresso/60">Package rate</dt>
+                                <dd className="text-right font-bold text-espresso">{selectedPackage ? formatPeso(selectedPackage.price) : '—'}</dd>
+                                <dt className="text-espresso/60">Required down payment</dt>
+                                <dd className="text-right font-bold text-espresso">{selectedPackage ? formatPeso(requiredDownPayment) : '—'}</dd>
+                              </dl>
+                            </section>
+                            {notes && (
+                              <section className="space-y-2 py-3" aria-label="Special requests">
+                                <h3 className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Special requests</h3>
+                                <p className="whitespace-pre-wrap break-words text-espresso/70">{notes}</p>
+                              </section>
+                            )}
+                          </div>
                         </div>
-                        {selectedPackage && (
-                          <div className="space-y-1">
-                            <p className="text-[10px] uppercase text-espresso/50 font-bold">Package</p>
-                            <p className="font-semibold text-espresso">{selectedPackage.name}</p>
-                            <div className="flex justify-between font-bold text-gold text-xs mt-0.5">
-                              <span>Base Rate:</span>
-                              <span>PHP {selectedPackage.price}</span>
-                            </div>
+                        <div className="mt-auto shrink-0 border-t border-espresso/10 pt-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-black text-espresso">Total</span>
+                            <span className="font-sans text-lg font-black text-gold-dark">{formatPeso(totalCart)}</span>
                           </div>
-                        )}
-
-                        {customerFullName && (
-                          <div className="space-y-2 pt-2 border-t border-espresso/5">
-                            <p className="text-[10px] uppercase text-espresso/50 font-bold">Customer</p>
-                            <div className="rounded-xl bg-cream/70 border border-espresso/5 p-3 text-[11px] text-espresso/70 space-y-1">
-                              <p className="font-bold text-espresso">{customerFullName}</p>
-                              <p>{phone || 'No contact number'}</p>
-                              <p className="break-all">{bookingEmail || 'No email address'}</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {selectedDate && selectedTime && (
-                          <div className="bg-cream p-3 rounded-xl border border-espresso/5 space-y-1.5 text-[11px]">
-                            <div className="flex items-center gap-2 text-espresso/60">
-                              <Calendar className="w-3.5 h-3.5 text-gold" />
-                              <span>{selectedDate}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-espresso/60">
-                              <Clock className="w-3.5 h-3.5 text-gold" />
-                              <span>{selectedSlotLabel}</span>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="border-t border-espresso/10 pt-4 space-y-2">
-                          <div className="flex justify-between items-center font-bold text-sm">
-                            <span>Total:</span>
-                            <span className="font-sans text-base text-espresso">PHP {totalCart}</span>
-                          </div>
-                          {selectedPackage && (
-                            <div className="flex justify-between items-center rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2 text-[11px] font-black text-emerald-700">
-                              <span>Required Down Payment</span>
-                              <span>{formatPeso(requiredDownPayment)}</span>
-                            </div>
-                          )}
                         </div>
-                      </div>
+                      </>
                     ) : (
-                      <div className="space-y-5 text-sm">
-                        <div className="bg-cream rounded-2xl p-5 border border-espresso/5 text-center space-y-3">
-                          <div className="bg-gold/10 text-gold w-12 h-12 mx-auto rounded-2xl flex items-center justify-center animate-pulse">
-                            <ShoppingBag className="w-6 h-6" />
+                      <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-3 text-center">
+                        <div className="space-y-3">
+                          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gold/10 text-gold">
+                            <ShoppingBag className="h-6 w-6" />
                           </div>
                           <div>
-                            <p className="font-extrabold text-espresso text-xs">Ready to book?</p>
-                            <p className="text-[11px] text-espresso/50 mt-1">Configure your photoshoot session using the stepper wizard.</p>
+                            <p className="text-xs font-extrabold text-espresso">Ready to book?</p>
+                            <p className="mt-1 text-[11px] leading-relaxed text-espresso/50">Configure your photoshoot session using the stepper wizard.</p>
                           </div>
                         </div>
                       </div>
@@ -2715,17 +2731,18 @@ export default function CustomerDashboard() {
 
           {/* PROFILE */}
           {activeTab === 'profile' && (
-            <div className="space-y-6 animate-in-up" key="profile">
-              <div>
+            <div className="flex flex-col gap-4 animate-in-up md:h-[calc(100dvh-3rem)] md:min-h-0 md:overflow-hidden lg:h-[calc(100dvh-4rem)]" key="profile">
+              <div className="shrink-0">
                 <h1 className="heading-page text-espresso">Account Profile</h1>
                 <p className="text-xs text-espresso/50 mt-1">Update your personal details and check loyalty points.</p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-                <div className="md:col-span-7">
-                  <Card>
-                    <CardHeader title="Personal Information" />
-                    <form onSubmit={handleProfileUpdate} className="space-y-4">
+              <div className="grid min-h-0 grid-cols-1 gap-4 md:flex-1 md:grid-cols-12 md:items-stretch md:gap-4">
+                <div className="flex min-h-0 flex-col md:col-span-7">
+                  <Card className="min-h-0 md:flex md:flex-1 md:flex-col" padding={true}>
+                    <CardHeader title="Personal Information" className="mb-4 shrink-0" />
+                    <form onSubmit={handleProfileUpdate} className="flex min-h-0 flex-col md:flex-1">
+                      <div className="space-y-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-2 md:scrollbar-thin">
                       <div className="flex flex-col gap-4 rounded-2xl border border-espresso/[0.06] bg-cream/60 p-4 sm:flex-row sm:items-center">
                         <Avatar user={profileAvatarUser} size="xl" />
                         <div className="min-w-0 flex-1 space-y-3">
@@ -2830,57 +2847,52 @@ export default function CustomerDashboard() {
                           />
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 pt-2">
+                      <div className="mt-4 rounded-2xl border border-espresso/5 bg-cream/70 p-3 text-xs text-espresso/55">
+                        <p className="mb-1 font-semibold text-espresso">Account Security</p>
+                        <p>Use your current password before setting a new one. Google-only accounts can set their first password here.</p>
+                      </div>
+                      </div>
+                      <div className="mt-4 flex shrink-0 flex-wrap items-center gap-3 border-t border-espresso/[0.08] pt-4">
                         <Button type="submit" variant="primary" loading={profileSaving} disabled={profileSaving || !profileFormValid}>Update My Profile</Button>
                         <Button type="button" variant="outline" size="sm" onClick={() => { setProfileErrors({}); fetchDashboardData(); }} disabled={profileSaving}>Restore Saved Info</Button>
                       </div>
                     </form>
                   </Card>
-                  <div className="mt-4 bg-cream rounded-2xl border border-espresso/5 p-4 text-xs text-espresso/50">
-                    <p className="font-semibold text-espresso mb-1">Account Security</p>
-                    <p>Use your current password before setting a new one. Google-only accounts can set their first password here.</p>
-                  </div>
                 </div>
 
-                <div className="md:col-span-5 space-y-4">
-                  <div className="bg-gradient-to-br from-espresso to-espresso-dark rounded-3xl p-6 text-cream border border-white/5 shadow-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-40 h-40 bg-gold/10 rounded-full blur-3xl" />
-                    <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full blur-2xl" />
-                    <div className="relative z-10 space-y-5">
-                      <div className="flex justify-between items-start">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <Avatar user={profileAvatarUser} size="md" className="border-white/10 bg-white/10 text-cream" />
-                          <div className="min-w-0">
-                          <p className="text-[9px] uppercase tracking-widest text-gold font-bold">Loyalty Card</p>
-                          <h2 className="heading-section mt-1 truncate text-white">{user?.username}</h2>
-                          </div>
-                        </div>
-                        <span className="bg-gold/10 text-gold border border-gold/20 rounded-lg px-2.5 py-0.5 text-xs font-bold uppercase">{loyaltyTier}</span>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[10px] text-cream/50">Points Balance</p>
-                        <div className="flex items-baseline gap-1.5">
-                          <span className="text-3xl font-sans font-black text-gold">{points}</span>
-                          <span className="text-xs text-cream/50">PTS</span>
-                        </div>
-                        <div className="w-full bg-white/10 rounded-full h-1.5 mt-3">
-                          <div className="bg-gold h-1.5 rounded-full" style={{ width: `${Math.min((points % 100) / 100 * 100, 100)}%` }} />
-                        </div>
-                        <p className="text-[9px] text-cream/40">{100 - (points % 100)} pts until next reward tier</p>
+                <div className="min-h-0 md:col-span-5">
+                  <section className="rounded-3xl border border-espresso/[0.07] bg-white p-5 shadow-[0_18px_45px_rgba(46,26,17,0.07)] sm:p-6" aria-labelledby="member-benefits-title">
+                    <div className="mb-5 flex items-center gap-3 border-b border-espresso/5 pb-4">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold-dark"><Sparkles className="h-5 w-5" /></span>
+                      <div>
+                        <h2 id="member-benefits-title" className="text-base font-black text-espresso">Member Benefits</h2>
+                        <p className="mt-0.5 text-xs text-espresso/55">Your activity and rewards</p>
                       </div>
                     </div>
-                  </div>
-                  <div className="bg-white rounded-2xl border border-espresso/5 shadow-sm p-4 text-xs space-y-3">
-                    <p className="font-extrabold text-espresso">Member Benefits</p>
-                    <div className="flex justify-between text-espresso/60">
-                      <span>Photo sessions</span>
-                      <span className="font-semibold text-espresso">{bookings.length} booked</span>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-espresso/5 bg-cream/75 p-4">
+                        <div className="flex items-center gap-2 text-espresso/55"><Camera className="h-4 w-4 text-gold-dark" /><span className="text-[10px] font-black uppercase tracking-wider">Photo sessions</span></div>
+                        <p className="mt-3 text-3xl font-black leading-none text-espresso">{bookings.length}</p>
+                        <p className="mt-1 text-[11px] font-medium text-espresso/50">Bookings on your account</p>
+                      </div>
+                      <div className="rounded-2xl border border-gold/20 bg-gold/[0.08] p-4">
+                        <div className="flex items-center gap-2 text-espresso/55"><Star className="h-4 w-4 text-gold-dark" /><span className="text-[10px] font-black uppercase tracking-wider">Loyalty points</span></div>
+                        <p className="mt-3 text-3xl font-black leading-none text-gold-dark">{points}</p>
+                        <p className="mt-1 text-[11px] font-medium text-espresso/50">Current points balance</p>
+                      </div>
                     </div>
-                    <div className="flex justify-between text-espresso/60">
-                      <span>Cafe orders</span>
-                      <span className="font-semibold text-espresso">-- via POS</span>
+
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-espresso/5 bg-white px-4 py-3">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-espresso/60"><BadgeCheck className="h-4 w-4 text-gold-dark" /><span>Membership tier</span></div>
+                      <span className="rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-gold-dark">{loyaltyTier}</span>
                     </div>
-                  </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-3 px-1 py-2 text-xs">
+                      <div className="flex items-center gap-2 font-semibold text-espresso/55"><Coffee className="h-4 w-4 text-gold-dark" /><span>Cafe orders</span></div>
+                      <span className="text-right font-bold text-espresso/60">Tracked through cafe POS</span>
+                    </div>
+                  </section>
                 </div>
               </div>
             </div>
@@ -2930,9 +2942,45 @@ export default function CustomerDashboard() {
                 </div>
               )}
 
-              {notifications.length > 0 ? (
+              <div className="flex flex-col gap-3 rounded-2xl border border-espresso/10 bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="grid grid-cols-3 gap-1 rounded-xl bg-cream/80 p-1" role="group" aria-label="Filter notifications by read status">
+                  {[
+                    ['all', 'All', notifications.length],
+                    ['unread', 'Unread', unreadNotificationCount],
+                    ['read', 'Read', readNotificationCount],
+                  ].map(([filter, label, count]) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      aria-pressed={notificationStatusFilter === filter}
+                      onClick={() => setNotificationStatusFilter(filter)}
+                      className={`min-h-10 rounded-lg px-3 py-2 text-xs font-black transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-1 ${notificationStatusFilter === filter ? 'bg-espresso text-gold shadow-sm' : 'text-espresso/60 hover:bg-white hover:text-espresso'}`}
+                    >
+                      {label} <span className={notificationStatusFilter === filter ? 'text-gold/80' : 'text-espresso/40'}>{count}</span>
+                    </button>
+                  ))}
+                </div>
+                <label htmlFor="notification-type-filter" className="flex min-w-0 items-center gap-2 text-xs font-bold text-espresso/65 sm:justify-end">
+                  <span className="shrink-0">Type</span>
+                  <span className="relative min-w-0 flex-1 sm:flex-none">
+                    <select
+                      id="notification-type-filter"
+                      aria-label="Filter by notification type"
+                      value={notificationTypeFilter}
+                      onChange={event => setNotificationTypeFilter(event.target.value)}
+                      className="min-h-10 w-full appearance-none rounded-xl border border-espresso/15 bg-cream px-3 py-2 pr-9 text-xs font-bold text-espresso shadow-sm outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/25 sm:min-w-44"
+                    >
+                      <option value="all">All Types</option>
+                      {notificationCategories.map(category => <option key={category} value={category}>{category}</option>)}
+                    </select>
+                    <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold-dark" />
+                  </span>
+                </label>
+              </div>
+
+              {filteredNotifications.length > 0 ? (
                 <div className="space-y-3">
-                  {notifications.map((n, i) => {
+                  {filteredNotifications.map((n, i) => {
                     const unread = !n.is_read;
                     return (
                     <button
@@ -2959,6 +3007,13 @@ export default function CustomerDashboard() {
                     </button>
                     );
                   })}
+                </div>
+              ) : notifications.length > 0 ? (
+                <div className="rounded-2xl border border-espresso/5 bg-white px-5 py-8 text-center shadow-sm">
+                  <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-gold/10 text-gold-dark"><Bell className="h-5 w-5" /></div>
+                  <h2 className="text-sm font-extrabold text-espresso">No notifications match these filters</h2>
+                  <p className="mt-1 text-xs text-espresso/55">Try another status or notification type.</p>
+                  <button type="button" onClick={() => { setNotificationStatusFilter('all'); setNotificationTypeFilter('all'); }} className="mt-3 rounded-lg px-3 py-2 text-xs font-black text-gold-dark underline decoration-gold/50 underline-offset-2 hover:text-espresso focus:outline-none focus-visible:ring-2 focus-visible:ring-gold">Clear filters</button>
                 </div>
               ) : (
                 <EmptyState icon={Bell} title="No notifications" description="You're all caught up!" />

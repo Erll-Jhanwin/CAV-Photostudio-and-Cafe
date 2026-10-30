@@ -1,14 +1,19 @@
-from datetime import timedelta
+from datetime import time, timedelta
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core import mail
 from django.db import connection, transaction
 from django.test import TestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from booking.models import Booking, Package, Service
+from booking.models import Booking, BookingEmail, BookingReview, Package, Service
+from booking.email_notifications import FEEDBACK_SALT, build_email_content, process_booking_email
+from django.core import signing
+from django.core.management import call_command
+from users.email_delivery import EmailDeliveryError
 from notifications.models import Notification, NotificationDelivery as Delivery
 from notifications.services import dispatch_notification
 from payment.models import Payment
@@ -166,6 +171,186 @@ class BookingLifecycleTests(WorkflowFixtures, TestCase):
                               ['BOOKING_CREATED', 'BOOKING_UPDATED', 'BOOKING_CANCELLED'])
         booking.refresh_from_db()
         self.assertEqual(len(booking.change_history), 1)
+
+
+@override_settings(EMAIL_DELIVERY_ENABLED=False, PUSH_DELIVERY_ENABLED=False, SMS_DELIVERY_ENABLED=False)
+class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
+    def test_submission_approval_completion_and_repeat_requests_are_deduplicated(self):
+        booking = self.book()
+        self.assertEqual(BookingEmail.objects.filter(booking=booking, event_type=BookingEmail.EVENT_SUBMITTED).count(), 1)
+        reminder = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_REMINDER)
+        self.assertEqual(reminder.scheduled_for, booking.starts_at - timedelta(hours=24))
+
+        self.client.force_authenticate(self.staff)
+        approved = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'CONFIRMED'}, format='json')
+        self.assertEqual(approved.status_code, 200, approved.data)
+        self.assertEqual(BookingEmail.objects.filter(booking=booking, event_type=BookingEmail.EVENT_APPROVED).count(), 1)
+        completed = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json')
+        self.assertEqual(completed.status_code, 200, completed.data)
+        repeated = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json')
+        self.assertEqual(repeated.status_code, 200, repeated.data)
+        self.assertEqual(BookingEmail.objects.filter(booking=booking, event_type=BookingEmail.EVENT_COMPLETED).count(), 1)
+        subject, text_body, html_body = build_email_content(BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_COMPLETED))
+        self.assertIn('completed', subject.lower())
+        self.assertIn('Share your feedback:', text_body)
+        self.assertIn('Share your feedback', html_body)
+
+    def test_payment_approval_queues_approval_email_once(self):
+        booking = self.book()
+        payment = self.pay(booking)
+        self.client.force_authenticate(self.staff)
+        for _ in range(2):
+            response = self.client.patch(f'/api/bookings/payments/{payment.id}/verify/', {'status': 'APPROVED'}, format='json')
+            self.assertEqual(response.status_code, 200, response.data)
+        approved = BookingEmail.objects.filter(booking=booking, event_type=BookingEmail.EVENT_APPROVED)
+        self.assertEqual(approved.count(), 1)
+        self.assertIn('Down Payment', approved.get().payload['status'])
+
+    def test_reschedule_replaces_reminder_and_cancellation_suppresses_it(self):
+        booking = self.book()
+        first_reminder = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_REMINDER)
+        new_day = self.day + timedelta(days=3)
+        response = self.client.patch(f'/api/bookings/{booking.id}/', {
+            'scheduled_date': new_day.isoformat(), 'scheduled_time': '10:00:00',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        first_reminder.refresh_from_db()
+        self.assertEqual(first_reminder.status, BookingEmail.STATUS_CANCELLED)
+        current_reminder = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_REMINDER,
+                                                   scheduled_for=Booking.objects.get(pk=booking.pk).starts_at - timedelta(hours=24))
+        self.assertEqual(current_reminder.status, BookingEmail.STATUS_QUEUED)
+
+        cancelled = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'CANCELLED'}, format='json')
+        self.assertEqual(cancelled.status_code, 200, cancelled.data)
+        current_reminder.refresh_from_db()
+        self.assertEqual(current_reminder.status, BookingEmail.STATUS_CANCELLED)
+
+    @override_settings(EMAIL_DELIVERY_ENABLED=True)
+    def test_background_delivery_retries_and_never_resends_a_sent_event(self):
+        booking = self.book()
+        email = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_SUBMITTED)
+        now = timezone.now() + timedelta(seconds=1)
+        with patch('users.email_delivery.send_transactional_email', side_effect=[EmailDeliveryError('temporary outage'), {'provider': 'smtp'}]) as sender:
+            first = process_booking_email(email.id, now=now)
+            email.refresh_from_db()
+            self.assertEqual(first, BookingEmail.STATUS_QUEUED)
+            self.assertEqual(email.attempt_count, 1)
+            self.assertIn('temporary outage', email.last_error)
+            second = process_booking_email(email.id, now=email.next_retry_at + timedelta(seconds=1))
+            third = process_booking_email(email.id, now=timezone.now() + timedelta(days=10))
+        email.refresh_from_db()
+        self.assertEqual((second, third), (BookingEmail.STATUS_SENT, BookingEmail.STATUS_SENT))
+        self.assertEqual(email.attempt_count, 2)
+        self.assertEqual(sender.call_count, 2)
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=True,
+        EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+        EMAIL_HOST='smtp.example.test',
+        DEFAULT_FROM_EMAIL='CAV Photo Studio <studio@example.test>',
+    )
+    def test_completed_booking_email_delivers_through_django_and_keeps_survey_template(self):
+        booking = self.book()
+        self.client.force_authenticate(self.staff)
+        response = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        email = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_COMPLETED)
+        self.assertEqual(process_booking_email(email.id), BookingEmail.STATUS_SENT)
+        self.assertEqual(len(mail.outbox), 1)
+        sent_message = mail.outbox[0]
+        self.assertEqual(sent_message.from_email, 'CAV Photo Studio <studio@example.test>')
+        self.assertEqual(sent_message.to, [self.customer.email])
+        self.assertIn('completed', sent_message.subject.lower())
+        self.assertIn('Share your feedback:', sent_message.body)
+        self.assertIn('https://cav-photostudio-and-cafe-frontend.onrender.com/booking-feedback?token=',
+                      sent_message.alternatives[0][0])
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=True,
+        EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+        EMAIL_HOST='smtp.example.test',
+    )
+    def test_existing_booking_notifications_do_not_duplicate_outbox_emails(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            booking = self.book()
+        self.client.force_authenticate(self.staff)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'CONFIRMED'}, format='json').status_code, 200)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json').status_code, 200)
+        self.assertEqual(mail.outbox, [])
+
+        due_emails = BookingEmail.objects.filter(
+            booking=booking,
+            event_type__in=[BookingEmail.EVENT_SUBMITTED, BookingEmail.EVENT_APPROVED, BookingEmail.EVENT_COMPLETED],
+        )
+        for email in due_emails:
+            process_booking_email(email.id)
+        self.assertEqual(len(mail.outbox), 3)
+
+    @override_settings(EMAIL_DELIVERY_ENABLED=True)
+    def test_existing_notification_worker_delivers_due_booking_emails(self):
+        booking = self.book()
+        email = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_SUBMITTED)
+        with patch('users.email_delivery.send_transactional_email', return_value={'provider': 'smtp'}) as sender:
+            call_command('process_notification_deliveries', '--limit', '20')
+        email.refresh_from_db()
+        self.assertEqual(email.status, BookingEmail.STATUS_SENT)
+        sender.assert_called_once()
+
+    @override_settings(EMAIL_DELIVERY_ENABLED=True)
+    def test_24_hour_reminder_is_delivered_for_the_current_schedule(self):
+        booking = self.book()
+        starts_at = (timezone.now() + timedelta(hours=24, minutes=2)).replace(second=0, microsecond=0)
+        local_start = timezone.localtime(starts_at)
+        booking.scheduled_date = local_start.date()
+        booking.scheduled_time = local_start.time()
+        booking.save(update_fields=['scheduled_date', 'scheduled_time'])
+        reminder = BookingEmail.objects.filter(booking=booking, event_type=BookingEmail.EVENT_REMINDER,
+                                               status=BookingEmail.STATUS_QUEUED).latest('scheduled_for')
+        with patch('users.email_delivery.send_transactional_email', return_value={'provider': 'smtp'}) as sender:
+            result = process_booking_email(reminder.id, now=reminder.scheduled_for + timedelta(seconds=1))
+        reminder.refresh_from_db()
+        self.assertEqual(result, BookingEmail.STATUS_SENT)
+        self.assertEqual(reminder.status, BookingEmail.STATUS_SENT)
+        self.assertIn('session is tomorrow', sender.call_args.args[1].lower())
+
+    def test_signed_survey_saves_optional_comments_for_admin_review(self):
+        booking = Booking.objects.create(
+            package=self.package,
+            scheduled_date=self.day,
+            scheduled_time=time(9, 0),
+            status='PENDING',
+            is_walk_in=True,
+            contact_name='Walk-in Guest',
+            contact_email='walkin@example.test',
+        )
+        booking.status = 'COMPLETED'
+        booking.save(update_fields=['status'])
+        token = signing.dumps({'booking_id': booking.id}, salt=FEEDBACK_SALT)
+        self.client.force_authenticate(user=None)
+        survey = self.client.get('/api/bookings/reviews/survey/', {'token': token})
+        self.assertEqual(survey.status_code, 200, survey.data)
+        self.assertFalse(survey.data['already_submitted'])
+        response = self.client.post('/api/bookings/reviews/survey/', {
+            'token': token, 'rating': 5, 'feedback': 'Lovely session',
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['customer_details']['name'], 'Walk-in Guest')
+        self.assertEqual(BookingReview.objects.get(booking=booking).feedback, 'Lovely session')
+        duplicate = self.client.post('/api/bookings/reviews/survey/', {'token': token, 'rating': 4}, format='json')
+        self.assertEqual(duplicate.status_code, 409)
+        self.client.force_authenticate(self.staff)
+        admin_reviews = self.client.get('/api/bookings/reviews/all/')
+        self.assertEqual(admin_reviews.status_code, 200)
+        self.assertEqual(admin_reviews.data[0]['rating'], 5)
+
+    def test_cancelled_booking_does_not_get_feedback_survey_link(self):
+        booking = self.book()
+        self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'CANCELLED'}, format='json')
+        self.client.force_authenticate(self.staff)
+        self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json')
+        self.assertFalse(BookingEmail.objects.filter(booking=booking, event_type=BookingEmail.EVENT_COMPLETED).exists())
 
 
 @override_settings(EMAIL_DELIVERY_ENABLED=False, PUSH_DELIVERY_ENABLED=False, SMS_DELIVERY_ENABLED=True,

@@ -37,6 +37,7 @@ from booking.views import (
     BookingPaymentMethodsView, BookingPaymentReceiptView,
     StudioUnavailableDateListCreateView, StudioUnavailableDateDetailView,
     BookingReviewCreateView, BookingReviewListView,
+    BookingFeedbackSurveyView,
 )
 from inventory.views import (
     ProductListCreateView, ProductDetailUpdateView, StockMovementListView, 
@@ -100,6 +101,7 @@ urlpatterns = [
     path('api/bookings/<int:pk>/', BookingDetailUpdateView.as_view(), name='booking_detail_update'),
     path('api/bookings/reviews/', BookingReviewCreateView.as_view(), name='booking_review_create'),
     path('api/bookings/reviews/all/', BookingReviewListView.as_view(), name='booking_review_list'),
+    path('api/bookings/reviews/survey/', BookingFeedbackSurveyView.as_view(), name='booking_feedback_survey'),
     path('api/bookings/payments/', BookingPaymentListCreateView.as_view(), name='booking_payment_list_create'),
     path('api/bookings/payments/<int:pk>/receipt/', BookingPaymentReceiptView.as_view(), name='booking_payment_receipt'),
     path('api/bookings/payments/reference-check/', BookingPaymentReferenceCheckView.as_view(), name='booking_payment_reference_check'),

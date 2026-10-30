@@ -646,62 +646,79 @@ class GoogleAuthView(views.APIView):
             return Response({"detail": "Google account email must be verified."}, status=status.HTTP_400_BAD_REQUEST)
         google_picture_url = (profile.get('picture') or '').strip()
 
-        user = User.objects.filter(email__iexact=email).first()
-        created = False
-        if not user:
-            phone_number = normalize_philippine_mobile_number(request.data.get('phone_number'))
+        raw_phone_number = str(request.data.get('phone_number') or '').strip()
+        phone_number = ''
+        if raw_phone_number:
+            phone_number = normalize_philippine_mobile_number(raw_phone_number)
             if not phone_number:
                 return Response(
-                    {'phone_number': 'A valid Philippine mobile number is required for Google registration.'},
+                    {'phone_number': 'Enter a valid Philippine mobile number, or leave it blank and add one before booking.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if is_phone_number_taken(phone_number):
                 return Response({'phone_number': 'Phone number already exists.'}, status=status.HTTP_400_BAD_REQUEST)
-            registration_token = secrets.token_urlsafe(32)
-            pending = {
-                'username': unique_username_from_email(email),
-                'email': email,
-                'first_name': profile.get('given_name', ''),
-                'last_name': profile.get('family_name', ''),
-                'phone_number': phone_number,
-                'address': '',
-                'password_hash': make_password(secrets.token_urlsafe(32)),
-                'registration_method': User.RegistrationMethod.GOOGLE,
-                'profile_picture_external_url': google_picture_url[:500],
-                'contact_type': 'phone',
-                'contact': phone_number,
-                'attempts': 0,
-                'expires_at': (timezone.now() + timezone.timedelta(minutes=PASSWORD_RESET_OTP_TTL_MINUTES)).timestamp(),
-                'last_otp_sent_at': time.time(),
-            }
-            allowed, retry_after = reserve_otp_send(phone_number, request, 'registration')
-            if not allowed:
+
+        user = User.objects.filter(email__iexact=email).first()
+        created = False
+        if not user:
+            if not request.data.get('privacy_consent'):
                 return Response(
-                    {'detail': 'Please wait before requesting another verification code.', 'retry_after_seconds': retry_after},
-                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                    {'privacy_consent': 'Accept the privacy notice and service data processing before creating your Google account.'},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
+
+            given_name = str(profile.get('given_name') or '').strip()
+            family_name = str(profile.get('family_name') or '').strip()
+            if not given_name and profile.get('name'):
+                name_parts = str(profile['name']).strip().split()
+                given_name = name_parts[0] if name_parts else ''
+                family_name = ' '.join(name_parts[1:])
+
+            # Use the unique, verified email as the idempotency key. The DB's
+            # case-insensitive unique constraint closes the concurrent signup race.
             try:
-                send_password_reset_otp(phone_number, purpose='registration')
-            except (IProgSMSDeliveryError, OSError):
-                logger.exception('Google registration OTP delivery failed.')
-                return Response(
-                    {'detail': 'We could not send the verification code. Please try again later.'},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-            cache.set(
-                f'registration_otp:{registration_token}',
-                pending,
-                timeout=PASSWORD_RESET_OTP_TTL_MINUTES * 60,
-            )
-            return Response({
-                'message': 'Verification code sent. Verify it to finish creating your account.',
-                'pending_verification': True,
-                'registration_token': registration_token,
-                'contact_type': 'phone',
-                'contact_hint': mask_registration_contact(phone_number, 'phone'),
-                'expires_in_minutes': PASSWORD_RESET_OTP_TTL_MINUTES,
-                'resend_cooldown_seconds': PASSWORD_RESET_RESEND_COOLDOWN_SECONDS,
-            }, status=status.HTTP_200_OK)
+                with transaction.atomic():
+                    user, created = User.objects.get_or_create(
+                        email=email,
+                        defaults={
+                            'username': unique_username_from_email(email),
+                            'first_name': given_name[:150],
+                            'last_name': family_name[:150],
+                            'phone_number': phone_number,
+                            'address': '',
+                            'role': 'CUSTOMER',
+                            'registration_method': User.RegistrationMethod.GOOGLE,
+                            'profile_picture_external_url': google_picture_url[:500],
+                        },
+                    )
+                    if created:
+                        user.set_unusable_password()
+                        user.save(update_fields=['password'])
+                        Customer.objects.get_or_create(user=user)
+                        PrivacyConsent.objects.get_or_create(
+                            user=user, consent_type='PRIVACY_NOTICE', policy_version='2026-10-01',
+                            defaults={'source': 'google_registration'},
+                        )
+                        PrivacyConsent.objects.get_or_create(
+                            user=user, consent_type='SERVICE_PROCESSING', policy_version='2026-10-01',
+                            defaults={'source': 'google_registration'},
+                        )
+                        AuditLog.objects.create(
+                            user=user,
+                            action='CUSTOMER_REGISTER_GOOGLE',
+                            description=f'New customer registered: {user.username}',
+                            metadata={'registration_method': user.registration_method, 'target_user_id': user.id},
+                            ip_address=get_client_ip(request),
+                        )
+            except IntegrityError:
+                # A simultaneous request may have created this verified email.
+                user = User.objects.filter(email__iexact=email).first()
+                if not user:
+                    return Response(
+                        {'detail': 'Account creation could not be completed. Please try Google sign-up again.'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                created = False
 
         if user.role == 'CUSTOMER':
             Customer.objects.get_or_create(user=user)
@@ -719,9 +736,18 @@ class GoogleAuthView(views.APIView):
             if not valid_mfa:
                 return Response({'detail': 'Invalid or expired admin verification code.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if google_picture_url and not user.profile_picture and user.profile_picture_external_url != google_picture_url:
+        changed_fields = []
+        if not user.first_name and profile.get('given_name'):
+            user.first_name = str(profile['given_name']).strip()[:150]
+            changed_fields.append('first_name')
+        if not user.last_name and profile.get('family_name'):
+            user.last_name = str(profile['family_name']).strip()[:150]
+            changed_fields.append('last_name')
+        if google_picture_url and not user.profile_picture and not user.profile_picture_external_url:
             user.profile_picture_external_url = google_picture_url[:500]
-            user.save(update_fields=['profile_picture_external_url'])
+            changed_fields.append('profile_picture_external_url')
+        if changed_fields:
+            user.save(update_fields=changed_fields)
 
         AuditLog.objects.create(
             user=user,

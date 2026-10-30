@@ -133,7 +133,9 @@ class BookingReview(models.Model):
     booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='review')
     customer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='booking_reviews',
     )
     rating = models.PositiveSmallIntegerField()
@@ -156,7 +158,8 @@ class BookingReview(models.Model):
         ]
 
     def __str__(self):
-        return f"Review for booking {self.booking_id} by {self.customer.username}"
+        reviewer = self.customer.username if self.customer_id else (self.booking.contact_name or 'walk-in customer')
+        return f"Review for booking {self.booking_id} by {reviewer}"
 
 
 class BookingDateLock(models.Model):
@@ -164,6 +167,44 @@ class BookingDateLock(models.Model):
 
     def __str__(self):
         return f"Booking lock for {self.scheduled_date}"
+
+
+class BookingEmail(models.Model):
+    EVENT_SUBMITTED = 'submitted'
+    EVENT_APPROVED = 'approved'
+    EVENT_REMINDER = 'reminder_24h'
+    EVENT_COMPLETED = 'completed'
+    EVENT_CHOICES = (
+        (EVENT_SUBMITTED, 'Booking submitted'),
+        (EVENT_APPROVED, 'Booking approved'),
+        (EVENT_REMINDER, '24-hour session reminder'),
+        (EVENT_COMPLETED, 'Session completed'),
+    )
+    STATUS_QUEUED = 'queued'
+    STATUS_SENT = 'sent'
+    STATUS_FAILED = 'failed'
+    STATUS_CANCELLED = 'cancelled'
+
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='email_events')
+    event_type = models.CharField(max_length=24, choices=EVENT_CHOICES)
+    event_key = models.CharField(max_length=200, unique=True)
+    recipient = models.EmailField(max_length=254)
+    scheduled_for = models.DateTimeField(db_index=True)
+    status = models.CharField(max_length=16, default=STATUS_QUEUED)
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    next_retry_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=500, blank=True, default='')
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['scheduled_for', 'id']
+        indexes = [models.Index(fields=['status', 'scheduled_for'], name='booking_email_due_idx')]
+
+    def __str__(self):
+        return f'{self.event_type} email for booking #{self.booking_id} ({self.status})'
 
 
 class StudioUnavailableDate(models.Model):

@@ -19,15 +19,18 @@ def notify_booking_created(booking):
     return create_booking_notification(
         booking=booking, notification_type='BOOKING_CREATED', title='Booking request received',
         message=booking_message(booking, 'request submitted'), event_key=f'booking:{booking.id}:created',
+        skip_channels={'email'},
     )
 
 
 def notify_booking_status(booking):
+    dedicated_booking_email = booking.status in {'CONFIRMED', 'CONFIRMED_DP', 'COMPLETED'}
     return create_booking_notification(
         booking=booking, notification_type=f'BOOKING_{booking.status}',
         title=f'Booking {booking.get_status_display().lower()}',
         message=booking_message(booking, f'status changed to {booking.get_status_display().lower()}'),
         event_key=f'booking:{booking.id}:status:{uuid4().hex}',
+        skip_channels={'email'} if dedicated_booking_email else (),
     )
 
 
@@ -50,4 +53,5 @@ def notify_booking_payment(payment):
         booking=payment.booking, notification_type=f'BOOKING_PAYMENT_{payment.status}', title=title,
         message=booking_message(payment.booking, event, payment.get_status_display()),
         event_key=f'payment:{payment.id}:{payment.status}:{payment.verified_at.isoformat() if payment.verified_at else "submitted"}',
+        skip_channels={'email'} if payment.status == 'APPROVED' else (),
     )
