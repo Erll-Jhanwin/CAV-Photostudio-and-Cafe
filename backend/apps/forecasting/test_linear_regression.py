@@ -1,83 +1,84 @@
-from datetime import date, datetime, time, timedelta
+import csv
+import tempfile
+from datetime import date, timedelta
+from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from django.utils import timezone
 from rest_framework.test import APIClient
 
-from booking.models import Booking, Package, Service
 from forecasting.models import ForecastRun
-from inventory.models import Product
-from ml.linear_regression_forecasting import create_forecast_run, evaluate_series, least_squares_predict
-from payment.models import Payment
-from pos.models import Order
+from ml.linear_regression_forecasting import (
+    create_forecast_run, evaluate_series, fit_linear_regression, load_daily_sales,
+)
 
 
 class LinearRegressionCalculationTests(TestCase):
-    def test_ordinary_least_squares_recovers_linear_sequence(self):
-        predictions = least_squares_predict([3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29], 2)
-        self.assertEqual(predictions, [31.0, 33.0])
+    def test_ordinary_least_squares_reports_formula_sums_and_forecasts(self):
+        model = fit_linear_regression([10, 20, 30])
+        self.assertEqual(model, {
+            'sample_count': 3, 'sum_x': 3, 'sum_y': 60,
+            'sum_x2': 5, 'sum_xy': 80, 'slope': 10.0, 'intercept': 10.0,
+        })
 
-    def test_chronological_evaluation_reports_mae_and_rmse(self):
-        evaluation = evaluate_series([float(index) for index in range(20)])
-        self.assertEqual(evaluation['status'], 'available')
-        self.assertEqual(evaluation['split_index'], 16)
-        self.assertEqual(evaluation['mae'], 0)
-        self.assertEqual(evaluation['rmse'], 0)
-        self.assertEqual(evaluate_series([1, 2, 3])['status'], 'insufficient_history')
+    def test_chronological_holdout_reports_metrics_and_mean_baseline(self):
+        values = [float(index) for index in range(10)]
+        dates = [date(2025, 1, 1) + timedelta(days=index) for index in range(10)]
+        evaluation = evaluate_series(values, dates)
+        self.assertEqual(evaluation['train_count'], 8)
+        self.assertEqual(evaluation['test_count'], 2)
+        self.assertEqual(evaluation['training_end'], '2025-01-08')
+        self.assertEqual(evaluation['testing_start'], '2025-01-09')
+        self.assertEqual(evaluation['linear_regression'], {'mae': 0.0, 'rmse': 0.0, 'r2': 1.0})
+        self.assertIn('mae', evaluation['baseline'])
+
+    def test_actual_csv_is_validated_sorted_and_labeled_synthetic(self):
+        dataset = load_daily_sales()
+        self.assertEqual(dataset['status'], 'ok')
+        self.assertTrue(dataset['quality']['is_synthetic'])
+        self.assertEqual(dataset['quality']['columns'], ['Date', 'Orders', 'Units', 'Sales (PHP)', 'Data origin'])
+        self.assertEqual(dataset['quality']['raw_rows'], 1096)
+        self.assertEqual(dataset['quality']['exact_duplicate_rows_removed'], 0)
+        self.assertEqual(dataset['quality']['duplicate_date_rows_aggregated'], 0)
+        self.assertEqual(dataset['quality']['imputed_missing_days'], 0)
+        self.assertEqual(dataset['dates'][0].isoformat(), '2022-08-01')
+        self.assertEqual(dataset['dates'][-1].isoformat(), '2025-07-31')
+        self.assertEqual(len(dataset['values']), 1096)
+
+    def test_missing_and_duplicate_dates_are_handled_without_leakage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'sample.csv'
+            rows = [
+                {'Date': '2025-01-02', 'Sales (PHP)': '20', 'Data origin': 'SYNTHETIC'},
+                {'Date': '2025-01-01', 'Sales (PHP)': '10', 'Data origin': 'SYNTHETIC'},
+                {'Date': '2025-01-01', 'Sales (PHP)': '10', 'Data origin': 'SYNTHETIC'},
+                {'Date': '2025-01-02', 'Sales (PHP)': '5', 'Data origin': 'SYNTHETIC'},
+            ]
+            with path.open('w', newline='', encoding='utf-8') as handle:
+                writer = csv.DictWriter(handle, fieldnames=['Date', 'Sales (PHP)', 'Data origin'])
+                writer.writeheader()
+                writer.writerows(rows)
+            dataset = load_daily_sales(path)
+        self.assertEqual(dataset['values'], [10.0, 25.0])
+        self.assertEqual(dataset['quality']['exact_duplicate_rows_removed'], 1)
+        self.assertEqual(dataset['quality']['duplicate_date_rows_aggregated'], 1)
 
 
 class ForecastDataIntegrationTests(TestCase):
-    def setUp(self):
-        self.today = timezone.localdate()
-        self.ingredient = Product.objects.create(name='Forecast milk', item_type=Product.INGREDIENT, sku='ML-FORECAST-MILK', stock_quantity=5, base_unit='ML')
-        self.product = Product.objects.create(name='Forecast latte', item_type=Product.PRODUCT, sku='ML-FORECAST-LATTE', stock_level=0, recipe_data=[{'ingredient': self.ingredient.id, 'quantity': '2'}])
-        self.service = Service.objects.create(name='Forecast studio', base_price='100.00')
-        self.package = Package.objects.create(service=self.service, name='Forecast session', price='100.00', inclusions='Session')
-        for offset in range(20):
-            day = self.today - timedelta(days=19 - offset)
-            order = Order.objects.create(
-                total='100.00', returned_amount='10.00', payment_status='PAID',
-                completed_at=timezone.make_aware(datetime.combine(day, time(12, 0))),
-                line_items=[{'product': self.product.id, 'name': self.product.name, 'quantity': 3, 'returned_quantity': 1, 'net_subtotal': '100.00', 'refunded_amount': '10.00'}],
-                return_events=[{'action_type': 'WASTAGE', 'product_id': self.product.id, 'quantity': 4}],
-            )
-            Order.objects.filter(pk=order.pk).update(created_at=timezone.make_aware(datetime.combine(day, time(12, 0))))
-            booking = Booking.objects.create(package=self.package, scheduled_date=day, scheduled_time=time(10, 0), status='CONFIRMED')
-            Payment.objects.create(
-                payment_type=Payment.BOOKING, booking=booking, amount='10.00', status='APPROVED',
-                paid_at=timezone.make_aware(datetime.combine(day, time(13, 0))),
-            )
-        Booking.objects.create(package=self.package, scheduled_date=self.today + timedelta(days=1), scheduled_time=time(11, 0), status='CANCELLED')
-
-    def test_records_refunds_cancellations_wastage_and_recipe_requirements(self):
+    def test_forecast_run_uses_synthetic_csv_and_saves_holdout_and_future(self):
         run = create_forecast_run(horizon=7)
-        report = run.predictions
         self.assertEqual(run.data_status, 'ready')
-        self.assertEqual(report['sales'][0]['predicted_revenue'], 100.0)
-        self.assertEqual(report['products'][0]['predicted_quantity'], 2.0)
-        self.assertEqual(report['bookings'][0]['predicted_bookings'], 1.0)
-        self.assertEqual(report['actual_history'][-1]['actual_wastage_units'], 4.0)
-        ingredient = next(row for row in run.recommendations if row['type'] == 'ingredient')
-        self.assertEqual(ingredient['forecast_requirement'], 28.0)
-        self.assertEqual(ingredient['shortage'], 23.0)
-        self.assertTrue(all('actual_revenue' not in row for row in report['sales']))
-        self.assertEqual(run.evaluation['sales']['status'], 'available')
-        self.assertEqual(run.model_version, 'least-squares-linear-v1')
-        self.ingredient.refresh_from_db()
-        self.assertEqual(float(self.ingredient.stock_quantity), 5.0)
-        self.assertEqual(sum(event['quantity'] for order in Order.objects.all() for event in order.return_events), 80)
+        self.assertEqual(run.model_version, 'daily-sales-ols-synthetic-v1')
+        self.assertEqual(run.training_start, date(2022, 8, 1))
+        self.assertEqual(run.training_end, date(2025, 7, 31))
+        self.assertEqual(len(run.predictions['backtest']), 220)
+        self.assertEqual(len(run.predictions['sales']), 7)
+        self.assertEqual(run.predictions['sales'][0]['date'], '2025-08-01')
+        self.assertEqual(run.evaluation['sales']['train_count'], 876)
+        self.assertEqual(run.evaluation['sales']['test_count'], 220)
+        self.assertTrue(run.evaluation['sales']['data_quality']['is_synthetic'])
 
-    def test_short_history_saves_no_fabricated_forecast(self):
-        Order.objects.all().delete()
-        Booking.objects.all().delete()
-        Order.objects.create(total='55.00', payment_status='PAID', completed_at=timezone.now(), line_items=[])
-        run = create_forecast_run()
-        self.assertEqual(run.data_status, 'insufficient_history')
-        self.assertEqual(run.predictions['sales'], [])
-        self.assertEqual(run.recommendations, [])
-
-    def test_forecast_endpoint_requires_existing_staff_or_admin_permission(self):
+    def test_forecast_endpoint_is_staff_only_and_accepts_valid_horizon(self):
         customer = get_user_model().objects.create_user(username='forecast-customer', password='test-pass', role='CUSTOMER')
         staff = get_user_model().objects.create_user(username='forecast-staff', password='test-pass', role='STAFF')
         client = APIClient()
@@ -86,5 +87,6 @@ class ForecastDataIntegrationTests(TestCase):
         client.force_authenticate(staff)
         response = client.post('/api/forecasting/ml/', {'horizon_days': 7}, format='json')
         self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['model_version'], 'daily-sales-ols-synthetic-v1')
+        self.assertEqual(response.data['dataset']['dataset_type'], 'Synthetic dataset')
         self.assertEqual(ForecastRun.objects.count(), 1)
-        self.assertEqual(response.data['horizon_days'], 7)

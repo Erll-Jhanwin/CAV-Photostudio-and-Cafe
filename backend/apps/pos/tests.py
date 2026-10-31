@@ -292,6 +292,49 @@ class PosIdempotencyTests(TestCase):
         self.assertEqual(order.line_items[0]['discount_amount'], '47.50')
         self.assertEqual(order.line_items[0]['net_subtotal'], '202.50')
 
+    def test_each_product_uses_its_own_line_discount(self):
+        second_product = Product.objects.create(
+            name='Discount Test Tea',
+            sku='DISCOUNT-TEST-TEA',
+            item_type=Product.PRODUCT,
+            price=Decimal('50.00'),
+            stock_level=5,
+            reorder_point=1,
+        )
+
+        response = self.client.post('/api/pos/orders/', {
+            'items': [
+                {'product_id': self.product.id, 'quantity': 1, 'discount': {'type': 'PERCENT', 'value': 10}},
+                {'product_id': second_product.id, 'quantity': 2, 'discount': {'type': 'PERCENT', 'value': 20}},
+            ],
+            'payment': {'amount': '192.50', 'method': 'CASH'},
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201, response.data)
+        order = Order.objects.get(pk=response.data['id'])
+        self.assertEqual(order.total, Decimal('192.50'))
+        self.assertEqual(
+            [(line['product'], line['discount_amount'], line['net_subtotal']) for line in order.line_items],
+            [
+                (self.product.id, '12.50', '112.50'),
+                (second_product.id, '20.00', '80.00'),
+            ],
+        )
+
+    def test_duplicate_product_lines_with_conflicting_discounts_are_rejected(self):
+        response = self.client.post('/api/pos/orders/', {
+            'items': [
+                {'product_id': self.product.id, 'quantity': 1, 'discount': {'type': 'PERCENT', 'value': 10}},
+                {'product_id': self.product.id, 'quantity': 1, 'discount': {'type': 'PERCENT', 'value': 20}},
+            ],
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('items', response.data)
+        self.assertFalse(Order.objects.exists())
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.stock_level, 5)
+
     def test_wasted_return_changes_sold_revenue_but_does_not_restore_stock(self):
         created = self.client.post('/api/pos/orders/', {
             'items': [{'product_id': self.product.id, 'quantity': 3}],

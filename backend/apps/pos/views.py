@@ -214,6 +214,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
             booking_id = None
 
         item_quantities = {}
+        item_discounts = {}
         for item in items_data:
             try:
                 product_id = int(item.get('product_id'))
@@ -222,6 +223,13 @@ class OrderListCreateView(generics.ListCreateAPIView):
                 return Response({"detail": "Invalid cart item."}, status=status.HTTP_400_BAD_REQUEST)
             if qty <= 0:
                 return Response({"detail": "Item quantity must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+            item_discount = item.get('discount') or {}
+            if product_id in item_discounts and item_discounts[product_id] != item_discount:
+                return Response(
+                    {"items": "The same product cannot have multiple line discounts in one cart."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            item_discounts[product_id] = item_discount
             item_quantities[product_id] = item_quantities.get(product_id, 0) + qty
 
         with transaction.atomic():
@@ -271,7 +279,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
                         if ingredient and recipe_quantity > 0:
                             ingredient_serving_counts.append(int(ingredient.stock_quantity // recipe_quantity))
                     beginning_stock = min(ingredient_serving_counts) if ingredient_serving_counts else 0
-                line_discount_data = item.get('discount') or {}
+                line_discount_data = item_discounts.get(product_id, {})
                 line_discount, line_discount_error = calculate_discount(subtotal, line_discount_data)
                 if line_discount_error:
                     return Response({'items': f"{product.name}: {line_discount_error.data.get('discount', 'Invalid item discount.')}"}, status=status.HTTP_400_BAD_REQUEST)

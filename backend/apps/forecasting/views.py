@@ -10,7 +10,7 @@ from rest_framework import status
 
 from ml.forecasting_engine import generate_forecast_report
 from ml.sales_history_repository import import_sales_history_csv
-from ml.linear_regression_forecasting import create_forecast_run, serialize_run
+from ml.linear_regression_forecasting import MODEL_VERSION, create_forecast_run, serialize_run
 from forecasting.models import ForecastRun
 from users.permissions import IsStaffOrAdmin
 
@@ -77,17 +77,22 @@ class MachineLearningForecastView(views.APIView):
     permission_classes = [IsStaffOrAdmin]
 
     def get(self, request, *args, **kwargs):
-        runs = list(ForecastRun.objects.all()[:20])
+        runs = list(ForecastRun.objects.filter(model_version=MODEL_VERSION)[:20])
         return Response({
             'latest': serialize_run(runs[0]) if runs else None,
             'history': [serialize_run(run) for run in runs],
             'forecast_horizon_default_days': 7,
-            'implementation_assumption': 'Daily calendar-day observations; the default forecast horizon is seven calendar days. Missing recorded dates contribute zero.',
+            'dataset_file': 'CAV_Three_Year_Synthetic_Sales-Daily sales.csv',
+            'dataset_type': 'Synthetic daily sales data',
+            'implementation_assumption': 'Linear regression fits daily Sales (PHP) against elapsed calendar days. Exact duplicate rows are removed, duplicate dates are summed, invalid date or sales rows are skipped, and missing calendar dates are filled with zero. Evaluation uses the first 80% of dates for training and the later 20% for testing. The default forecast horizon is seven calendar days.',
         })
 
     def post(self, request, *args, **kwargs):
+        horizon_value = request.data.get('horizon_days', 7)
+        if isinstance(horizon_value, bool) or not str(horizon_value).strip().isdigit():
+            return Response({'horizon_days': 'Use a whole number from 1 to 90.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            horizon = int(request.data.get('horizon_days', 7))
+            horizon = int(horizon_value)
         except (TypeError, ValueError):
             return Response({'horizon_days': 'Use a whole number from 1 to 90.'}, status=status.HTTP_400_BAD_REQUEST)
         if not 1 <= horizon <= 90:

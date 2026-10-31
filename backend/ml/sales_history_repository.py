@@ -117,7 +117,7 @@ def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME):
     status_column = _find_column(raw.columns, ['Status', 'State'])
     quantity_column = _find_column(raw.columns, ['Qty.', 'Qty', 'Quantity', 'Units'])
     total_amount_column = _find_column(raw.columns, ['Total amount', 'Subtotal', 'Amount'])
-    total_column = _find_column(raw.columns, ['Total', 'Sales', 'Revenue'])
+    total_column = _find_column(raw.columns, ['Total', 'Sales', 'Sales (PHP)', 'Revenue'])
     items_column = _find_column(raw.columns, ['Items Description', 'Item Description', 'Items', 'Product', 'Description'])
     number_column = _find_column(raw.columns, ['Number', 'Transaction', 'Transaction ID', 'Order'])
 
