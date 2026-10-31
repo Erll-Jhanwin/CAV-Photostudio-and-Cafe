@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from ml.forecasting_engine import generate_forecast_report
-from ml.sales_history_repository import import_sales_history_csv
+from ml.sales_history_repository import DEFAULT_SOURCE_NAME, get_active_sales_history, import_sales_history_csv
 from ml.linear_regression_forecasting import MODEL_VERSION, create_forecast_run, serialize_run
 from forecasting.models import ForecastRun
 from users.permissions import IsStaffOrAdmin
@@ -18,13 +18,18 @@ FORECAST_CACHE_SECONDS = 20
 
 
 def forecast_cache_key():
-    return f'forecasting:dashboard-report:v1:{timezone.localdate().isoformat()}'
+    return f'forecasting:dashboard-report:v2:{timezone.localdate().isoformat()}'
 
 
 class ForecastingDataView(views.APIView):
     permission_classes = [IsStaffOrAdmin]
 
     def get(self, request, *args, **kwargs):
+        active_batch, _ = get_active_sales_history(DEFAULT_SOURCE_NAME)
+        if not active_batch:
+            import_result = import_sales_history_csv(source_name=DEFAULT_SOURCE_NAME)
+            if import_result.get('status') == 'ok':
+                cache.delete(forecast_cache_key())
         report = cache.get_or_set(
             forecast_cache_key(),
             generate_forecast_report,
@@ -55,7 +60,7 @@ class SalesHistoryImportView(views.APIView):
                 temporary_path = temporary_file.name
                 for chunk in upload.chunks():
                     temporary_file.write(chunk)
-            result = import_sales_history_csv(temporary_path)
+            result = import_sales_history_csv(temporary_path, source_filename=upload.name)
         finally:
             if temporary_path:
                 try:
@@ -66,7 +71,8 @@ class SalesHistoryImportView(views.APIView):
         response_status = status.HTTP_201_CREATED if result.get('imported') else status.HTTP_200_OK
         if result.get('status') != 'ok':
             response_status = status.HTTP_400_BAD_REQUEST
-        elif result.get('imported'):
+        else:
+            # A content duplicate can still reactivate a snapshot after changing source.
             cache.delete(forecast_cache_key())
         return Response(result, status=response_status)
 

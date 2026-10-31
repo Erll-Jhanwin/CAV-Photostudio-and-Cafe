@@ -89,6 +89,36 @@ class ForecastingEngineTests(TestCase):
         report = generate_forecast_report()
         self.assertEqual(report['history_end'], '2025-02-01')
 
+    def test_synthetic_daily_sales_import_reaches_linear_regression_and_populates_ranges(self):
+        imported = import_sales_history_csv()
+        report = generate_forecast_report()
+
+        self.assertEqual(imported['status'], 'ok')
+        self.assertEqual(imported['imported_row_count'], 1096)
+        self.assertEqual(imported['skipped_row_count'], 0)
+        self.assertEqual(report['status'], 'ok')
+        self.assertEqual(report['source_file'], 'CAV_Three_Year_Synthetic_Sales-Daily sales.csv')
+        self.assertTrue(report['data_quality']['is_synthetic'])
+        self.assertEqual(report['data_quality']['source_columns'], ['Date', 'Orders', 'Units', 'Sales (PHP)', 'Data origin'])
+        self.assertEqual(report['data_quality']['valid_rows'], 1096)
+        self.assertEqual(report['data_quality']['history_days'], 1096)
+        self.assertEqual(report['history_start'], '2022-08-01')
+        self.assertEqual(report['history_end'], '2025-07-31')
+        self.assertEqual(report['model']['name'], 'linear_regression')
+        self.assertEqual(report['model']['training_computation']['sample_count'], 876)
+        self.assertEqual(report['model']['metrics']['holdout_days'], 220)
+        self.assertTrue(report['model']['metrics']['accuracy_available'])
+        self.assertEqual(len(report['actual_history']), 1096)
+        self.assertEqual(len(report['sales_backtest']), 220)
+        self.assertEqual(report['forecast_start'], '2025-08-01')
+        self.assertEqual(len(report['sales_forecast']), 90)
+        self.assertGreater(report['sales_forecast'][0]['predicted_sales'], 0)
+        self.assertEqual(report['forecast_ranges']['next_7_days']['rows'], 7)
+        self.assertEqual(report['forecast_ranges']['next_week']['rows'], 7)
+        self.assertEqual(report['forecast_ranges']['next_7_days']['total_predicted_sales'], round(sum(row['predicted_sales'] for row in report['sales_forecast'][:7]), 2))
+        self.assertEqual(report['forecast_ranges']['next_week']['total_predicted_sales'], round(sum(row['predicted_sales'] for row in report['sales_forecast'][7:14]), 2))
+        self.assertGreater(len(report['forecast_ranges']['upcoming_months']), 0)
+
     def test_report_does_not_fabricate_predictions_without_an_import(self):
         report = generate_forecast_report()
 
@@ -165,3 +195,13 @@ class ForecastingReportApiTests(TestCase):
         self.assertEqual(first.data, report)
         self.assertEqual(second.data, report)
         generate.assert_called_once_with()
+
+    def test_dashboard_api_bootstraps_bundled_dataset_and_returns_computed_forecast(self):
+        response = self.client.get('/api/forecasting/predictions/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], 'ok')
+        self.assertEqual(response.data['data_quality']['valid_rows'], 1096)
+        self.assertEqual(response.data['model']['name'], 'linear_regression')
+        self.assertEqual(response.data['sales_forecast'][0]['target_date'], '2025-08-01')
+        self.assertGreater(response.data['forecast_ranges']['next_7_days']['total_predicted_sales'], 0)

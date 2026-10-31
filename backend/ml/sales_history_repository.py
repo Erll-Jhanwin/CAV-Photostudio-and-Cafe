@@ -18,8 +18,8 @@ from django.utils import timezone
 from forecasting.models import SalesHistoryImport, SalesHistoryRecord
 
 
-DEFAULT_SOURCE_NAME = 'cafe_sparkling_drinks'
-DEFAULT_CSV_FILENAME = 'Cafe_and_Sparkling_Drinks_Only_July_2025.csv'
+DEFAULT_SOURCE_NAME = 'cav_synthetic_daily_sales'
+DEFAULT_CSV_FILENAME = 'CAV_Three_Year_Synthetic_Sales-Daily sales.csv'
 EXCLUDED_STATUS_PATTERN = re.compile(r'cancel|void|refund|reject|failed|declined', re.IGNORECASE)
 
 
@@ -39,11 +39,18 @@ def _find_column(columns, aliases):
 def _decimal(value, default=Decimal('0')):
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return default
-    cleaned = re.sub(r'[^0-9.\-]', '', str(value).strip())
-    if not cleaned or cleaned in {'-', '.', '-.'}:
+    cleaned = str(value).strip().replace(',', '')
+    negative_parentheses = cleaned.startswith('(') and cleaned.endswith(')')
+    if negative_parentheses:
+        cleaned = cleaned[1:-1].strip()
+    cleaned = re.sub(r'^(?:PHP|₱)\s*|\s*(?:PHP|₱)$', '', cleaned, flags=re.IGNORECASE).strip()
+    if not cleaned or not re.fullmatch(r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)', cleaned):
         return default
     try:
-        return Decimal(cleaned).quantize(Decimal('0.01'))
+        parsed = Decimal(cleaned)
+        if negative_parentheses:
+            parsed = -parsed
+        return parsed.quantize(Decimal('0.01')) if parsed.is_finite() else default
     except (InvalidOperation, ValueError):
         return default
 
@@ -88,7 +95,7 @@ def _result(batch=None, **values):
     return result
 
 
-def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME):
+def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME, source_filename=None):
     """Validate and atomically activate a new immutable CSV snapshot."""
     path = resolve_csv_path(csv_path)
     if not path.is_file():
@@ -105,18 +112,29 @@ def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME):
     if existing and existing.status == SalesHistoryImport.READY:
         with transaction.atomic():
             SalesHistoryImport.objects.filter(source_name=source_name, is_active=True).exclude(pk=existing.pk).update(is_active=False)
+            changed_fields = []
+            if existing.source_name != source_name:
+                existing.source_name = source_name
+                changed_fields.append('source_name')
             if not existing.is_active:
                 existing.is_active = True
-                existing.save(update_fields=['is_active'])
+                changed_fields.append('is_active')
+            if changed_fields:
+                existing.save(update_fields=changed_fields)
         return _result(existing, duplicate=True, detail='This CSV has already been imported; the existing snapshot is active.')
 
+    source_row_count = len(raw)
     if raw.empty:
         return _result(status='invalid', detail='Sales history CSV is empty.')
+
+    raw = raw.drop_duplicates()
+    exact_duplicate_count = source_row_count - len(raw)
 
     date_column = _find_column(raw.columns, ['Date/Time', 'Date Time', 'Datetime', 'Date', 'Timestamp'])
     status_column = _find_column(raw.columns, ['Status', 'State'])
     quantity_column = _find_column(raw.columns, ['Qty.', 'Qty', 'Quantity', 'Units'])
     total_amount_column = _find_column(raw.columns, ['Total amount', 'Subtotal', 'Amount'])
+    daily_sales_column = _find_column(raw.columns, ['Sales (PHP)'])
     total_column = _find_column(raw.columns, ['Total', 'Sales', 'Sales (PHP)', 'Revenue'])
     items_column = _find_column(raw.columns, ['Items Description', 'Item Description', 'Items', 'Product', 'Description'])
     number_column = _find_column(raw.columns, ['Number', 'Transaction', 'Transaction ID', 'Order'])
@@ -127,14 +145,19 @@ def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME):
         return _result(status='invalid', detail='Sales history CSV has no quantity, amount, or item column.')
 
     valid_rows = []
-    skipped_count = 0
+    skipped_count = exact_duplicate_count
     for index, row in raw.iterrows():
         parsed_date = pd.to_datetime(row[date_column], format='mixed', errors='coerce')
         quantity = _decimal(row[quantity_column]) if quantity_column else Decimal('0')
         total_amount = _decimal(row[total_amount_column]) if total_amount_column else Decimal('0')
-        total = _decimal(row[total_column]) if total_column else total_amount
+        raw_total = row[total_column] if total_column else ''
+        total = _decimal(raw_total, default=None) if total_column and str(raw_total).strip() else total_amount
+        if daily_sales_column is not None and not str(raw_total).strip():
+            total = None
         items_description = str(row[items_column] if items_column else '').strip()
-        if pd.isna(parsed_date) or (quantity <= 0 and total <= 0 and not items_description):
+        if (pd.isna(parsed_date) or total is None or quantity < 0 or total_amount < 0
+                or (daily_sales_column is not None and total < 0)
+                or (daily_sales_column is None and quantity <= 0 and total <= 0 and not items_description)):
             skipped_count += 1
             continue
         valid_rows.append(SalesHistoryRecord(
@@ -156,10 +179,10 @@ def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME):
     with transaction.atomic():
         batch = SalesHistoryImport.objects.create(
             source_name=source_name,
-            source_filename=path.name,
+            source_filename=source_filename or path.name,
             source_hash=source_hash,
             status=SalesHistoryImport.PENDING,
-            row_count=len(raw),
+            row_count=source_row_count,
             imported_row_count=len(valid_rows),
             skipped_row_count=skipped_count,
             history_start=min(dates),

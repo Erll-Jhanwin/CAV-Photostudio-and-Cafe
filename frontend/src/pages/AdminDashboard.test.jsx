@@ -213,6 +213,62 @@ describe('AdminDashboard', () => {
     await act(async () => resolveForecast({ data: { sales_forecast: [], reorder_recommendations: [] } }));
   });
 
+  it('shows calculated sales forecast cards, backtest reliability, and the training computation', async () => {
+    const forecastRows = Array.from({ length: 14 }, (_, index) => ({
+      target_date: `2025-08-${String(index + 1).padStart(2, '0')}`,
+      predicted_sales: (index + 1) * 10,
+      lower_bound: (index + 1) * 8,
+      upper_bound: (index + 1) * 12,
+    }));
+    const report = {
+      status: 'ok',
+      source_file: 'CAV_Three_Year_Synthetic_Sales-Daily sales.csv',
+      imported_at: '2025-08-01T00:00:00Z',
+      history_start: '2022-08-01',
+      history_end: '2025-07-31',
+      sales_forecast: forecastRows,
+      monthly_forecast: [{ target_date: '2025-08-01', predicted_sales: 2000, lower_bound: 1800, upper_bound: 2200 }],
+      actual_history: [{ date: '2025-07-31', actual_sales: 145, backtest_predicted_sales: 120, is_imputed: false }],
+      sales_backtest: [{ date: '2025-07-31', actual_sales: 145, predicted_sales: 120 }],
+      forecast_ranges: {
+        next_7_days: { start_date: '2025-08-01', end_date: '2025-08-07', total_predicted_sales: 280 },
+        next_week: { start_date: '2025-08-08', end_date: '2025-08-14', total_predicted_sales: 770 },
+      },
+      metrics: { accuracy_available: true, holdout_days: 220, wape: 0.5, mae: 25, rmse: 40, r2: 0.25, baseline: { mae: 30, rmse: 42, r2: 0.2, wape: 0.6 } },
+      model: {
+        name: 'linear_regression', display_name: 'Daily linear regression',
+        training_computation: { sample_count: 876, sum_x: 383250, sum_y: 94975, sum_x2: 223690250, sum_xy: 43231380, slope: 0.03, intercept: 95.3 },
+        final_model_computation: { sample_count: 1096 },
+      },
+      data_quality: { valid_rows: 1096, history_days: 1096, is_synthetic: true },
+      data_sufficiency: { is_sufficient: true, message: 'Chronological backtest completed.' },
+      product_forecast_summary: [],
+      reorder_recommendations: [],
+    };
+    getCached.mockImplementation(url => url.includes('/api/forecasting/predictions/')
+      ? Promise.resolve({ data: report })
+      : Promise.resolve({ data: {
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
+        top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
+        low_stock_alerts: [], inventory_alerts: [],
+      } }));
+
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+
+    expect(await screen.findByText('Backtested forecast available')).toBeInTheDocument();
+    expect(screen.getByText('PHP 280')).toBeInTheDocument();
+    expect(screen.getByText('PHP 770')).toBeInTheDocument();
+    expect(screen.getAllByText('50%')).toHaveLength(2);
+    expect(screen.getByText('Linear regression: How it works')).toBeInTheDocument();
+    expect(screen.getAllByText('876').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Following week' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upcoming months' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Actual' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Forecast' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Combined' })).toBeInTheDocument();
+  });
+
   it('opens the matching live ingredient list from each stock summary card', async () => {
     render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
 

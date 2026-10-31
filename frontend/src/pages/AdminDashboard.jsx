@@ -28,6 +28,7 @@ import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
+import { buildSalesForecastChartData, selectSalesForecastRows } from './salesForecastChartData';
 import AuditLogsPage from './admin/AuditLogsPage';
 import GalleryManager from './admin/GalleryManager';
 import IngredientStatusModal from '../components/admin/IngredientStatusModal';
@@ -347,7 +348,17 @@ const getRangeDates = (preset, customStart, customEnd) => {
   return { start: formatDateValue(start), end: formatDateValue(end) };
 };
 
-const sumBy = (rows, key) => rows.reduce((total, row) => total + Number(row?.[key] || 0), 0);
+const finiteForecastValue = value => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const sumForecastValues = (rows, key) => {
+  if (!rows.length) return null;
+  const values = rows.map(row => finiteForecastValue(row?.[key]));
+  return values.some(value => value === null) ? null : values.reduce((total, value) => total + value, 0);
+};
+const formatForecastAmount = value => value === null ? '—' : formatCurrency(value);
 
 const emptyAccountForm = () => ({
   username: '',
@@ -380,11 +391,12 @@ const getAccountValidationErrors = (form, { passwordRequired = false } = {}) => 
 
 const getAccountErrorMessage = (value) => Array.isArray(value) ? value.join(' ') : value;
 
-const formatChartDate = (value) => {
+const formatForecastDate = value => {
   if (!value) return '';
-  const date = new Date(value);
+  const text = String(value).slice(0, 10);
+  const date = new Date(`${text}T12:00:00`);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-PH', { timeZone: MANILA_TIME_ZONE, month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('en-PH', { timeZone: MANILA_TIME_ZONE, year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 function SalesForecastTooltip({ active, payload, label }) {
@@ -392,7 +404,7 @@ function SalesForecastTooltip({ active, payload, label }) {
   const row = payload[0]?.payload || {};
   return (
     <div className="rounded-2xl border border-espresso/[0.08] bg-white/95 p-3 text-xs shadow-[0_18px_45px_rgba(46,26,17,0.12)]">
-      <p className="mb-2 font-black text-espresso">{formatChartDate(label || row.date)}</p>
+      <p className="mb-2 font-black text-espresso">{formatForecastDate(label || row.date)}</p>
       {row.actual_sales != null && (
         <p className="font-bold text-espresso/75">Actual: {formatCurrency(row.actual_sales)}</p>
       )}
@@ -505,6 +517,7 @@ export default function AdminDashboard() {
 
   const [analytics, setAnalytics] = useState(null);
   const [forecast, setForecast] = useState(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
   const [staffList, setStaffList] = useState([]);
   const [inventoryIngredients, setInventoryIngredients] = useState([]);
   const [productSalesInventory, setProductSalesInventory] = useState([]);
@@ -656,18 +669,26 @@ export default function AdminDashboard() {
   const loadForecast = useCallback(async ({ force = false } = {}) => {
     const requestSeq = forecastFetchSeqRef.current + 1;
     forecastFetchSeqRef.current = requestSeq;
+    setForecastLoading(true);
+    setForecastError('');
     try {
       const response = await getCached('/api/forecasting/predictions/', {}, { force });
       if (requestSeq !== forecastFetchSeqRef.current) return;
       const data = response?.data || null;
-      if (data) {
+      const hasForecastRows = Array.isArray(data?.sales_forecast) && data.sales_forecast.some(row => finiteForecastValue(row?.predicted_sales) !== null);
+      if (data?.status === 'ok' && hasForecastRows) {
         setForecast(data);
-        setForecastError(data.status && data.status !== 'ok' ? (data.detail || 'Sales history is not ready for forecasting.') : '');
+      } else {
+        setForecast(null);
+        setForecastError(data?.detail || 'The forecasting service did not return valid daily predictions.');
       }
     } catch (error) {
       if (requestSeq === forecastFetchSeqRef.current) {
+        setForecast(null);
         setForecastError(getApiErrorMessage(error, 'Forecast data could not be loaded.'));
       }
+    } finally {
+      if (requestSeq === forecastFetchSeqRef.current) setForecastLoading(false);
     }
   }, []);
 
@@ -1396,37 +1417,23 @@ export default function AdminDashboard() {
   const posPageRows = paginateRows(sortedPos, posPage, posPageSize);
   const allForecastRows = asArray(forecast?.sales_forecast);
   const monthlyForecastRows = asArray(forecast?.monthly_forecast);
-  const salesForecastRows = forecastView === 'next_week'
-    ? allForecastRows.slice(7, 14)
-    : forecastView === 'upcoming_months'
-      ? monthlyForecastRows
-      : allForecastRows.slice(0, 7);
+  const salesForecastRows = selectSalesForecastRows(allForecastRows, monthlyForecastRows, forecastView);
   const csvHistoryRows = asArray(forecast?.actual_history);
   const dashboardHistoryRows = asArray(analytics?.sales_history_chart);
   const salesHistoryRows = csvHistoryRows.length ? csvHistoryRows : dashboardHistoryRows;
-  const forecastChartData = [
-    ...salesHistoryRows.map(row => ({
-      date: row.date,
-      actual_sales: Number(row.actual_sales ?? row.total_revenue ?? 0),
-      combined_sales: Number(row.actual_sales ?? row.total_revenue ?? 0),
-      is_imputed: Boolean(row.is_imputed),
-    })),
-    ...salesForecastRows.map(row => ({
-      date: row.target_date,
-      forecast_sales: Number(row.predicted_sales || 0),
-      combined_sales: Number(row.predicted_sales || 0),
-      lower_bound: Number(row.lower_bound || 0),
-      upper_bound: Number(row.upper_bound || 0),
-    })),
-  ];
+  const forecastChartData = buildSalesForecastChartData(salesHistoryRows, salesForecastRows);
   const next7Summary = asRecord(forecast?.forecast_ranges?.next_7_days);
   const nextWeekSummary = asRecord(forecast?.forecast_ranges?.next_week);
-  const next7Forecast = Number(next7Summary.total_predicted_sales ?? sumBy(allForecastRows.slice(0, 7), 'predicted_sales'));
-  const nextWeekForecast = Number(nextWeekSummary.total_predicted_sales ?? sumBy(allForecastRows.slice(7, 14), 'predicted_sales'));
+  const next7Forecast = finiteForecastValue(next7Summary.total_predicted_sales) ?? sumForecastValues(allForecastRows.slice(0, 7), 'predicted_sales');
+  const nextWeekForecast = finiteForecastValue(nextWeekSummary.total_predicted_sales) ?? sumForecastValues(allForecastRows.slice(7, 14), 'predicted_sales');
   const forecastMetrics = asRecord(forecast?.metrics);
-  const forecastAccuracy = forecastMetrics.accuracy_available && forecastMetrics.wape != null
+  const forecastAccuracy = forecastMetrics.accuracy_available && finiteForecastValue(forecastMetrics.wape) !== null
     ? Math.round(Math.max(0, Math.min(100, (1 - Math.min(Number(forecastMetrics.wape), 1)) * 100)))
     : null;
+  const backtestAvailable = forecastAccuracy !== null && forecastMetrics.holdout_days > 0;
+  const salesModel = asRecord(forecast?.model);
+  const trainingComputation = asRecord(salesModel.training_computation);
+  const finalComputation = asRecord(salesModel.final_model_computation);
   const productForecastSummary = asArray(forecast?.product_forecast_summary);
   const forecastQualityMessage = forecast?.data_sufficiency?.message || 'No model evaluation is available.';
   const topProducts = asArray(analytics?.top_selling_products);
@@ -1785,22 +1792,22 @@ export default function AdminDashboard() {
                 {[
                   {
                     label: 'Next 7 Days',
-                    value: formatCurrency(next7Forecast),
-                    detail: next7Summary.start_date ? `${formatChartDate(next7Summary.start_date)} – ${formatChartDate(next7Summary.end_date)}` : 'No forecast available',
+                    value: forecastLoading ? 'Loading…' : forecastError ? 'Unavailable' : formatForecastAmount(next7Forecast),
+                    detail: next7Summary.start_date ? `${formatForecastDate(next7Summary.start_date)} – ${formatForecastDate(next7Summary.end_date)}` : 'No forecast available',
                     icon: TrendingUp,
                     className: 'bg-gold/10 text-gold-dark border-gold/20',
                   },
                   {
                     label: 'Following Week',
-                    value: formatCurrency(nextWeekForecast),
-                    detail: nextWeekSummary.start_date ? `${formatChartDate(nextWeekSummary.start_date)} – ${formatChartDate(nextWeekSummary.end_date)}` : 'No forecast available',
+                    value: forecastLoading ? 'Loading…' : forecastError ? 'Unavailable' : formatForecastAmount(nextWeekForecast),
+                    detail: nextWeekSummary.start_date ? `${formatForecastDate(nextWeekSummary.start_date)} – ${formatForecastDate(nextWeekSummary.end_date)}` : 'No forecast available',
                     icon: DollarSign,
                     className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
                   },
                   {
                     label: 'Backtest Reliability',
-                    value: forecastAccuracy == null ? 'N/A' : `${forecastAccuracy}%`,
-                    detail: forecastAccuracy == null ? forecastQualityMessage : `Held-out WAPE ${Number(forecastMetrics.wape).toLocaleString('en-PH', { style: 'percent', maximumFractionDigits: 1 })}`,
+                    value: forecastLoading ? 'Loading…' : forecastError ? 'Unavailable' : !backtestAvailable ? 'N/A' : `${forecastAccuracy}%`,
+                    detail: backtestAvailable ? `Held-out WAPE ${Number(forecastMetrics.wape).toLocaleString('en-PH', { style: 'percent', maximumFractionDigits: 1 })}` : forecastQualityMessage,
                     icon: BarChart2,
                     className: 'bg-blue-50 text-blue-700 border-blue-200',
                   },
@@ -1826,11 +1833,11 @@ export default function AdminDashboard() {
                   <Button size="sm" variant="outline" onClick={() => loadForecast({ force: true })}>Retry forecast</Button>
                 </div>
               )}
-              {!forecastError && forecast?.status === 'ok' && (
-                <div className={`rounded-2xl border px-4 py-3 text-xs ${forecast?.data_sufficiency?.is_sufficient ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
-                  <p className="font-black">{forecast?.data_sufficiency?.is_sufficient ? 'Backtested forecast available' : 'Baseline forecast only'}</p>
+              {!forecastLoading && !forecastError && forecast?.status === 'ok' && (
+                <div className={`rounded-2xl border px-4 py-3 text-xs ${backtestAvailable ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                  <p className="font-black">{backtestAvailable ? 'Backtested forecast available' : 'Forecast available; backtest metrics unavailable'}</p>
                   <p className="mt-1 font-semibold opacity-80">{forecast?.data_sufficiency?.message}</p>
-                  <p className="mt-1 opacity-70">Source: {forecast.source_file} · Imported {forecast.imported_at ? formatChartDate(forecast.imported_at) : 'unknown'} · Refresh after importing a new sales-history snapshot.</p>
+                  <p className="mt-1 opacity-70">Source: {forecast.source_file} · Imported {forecast.imported_at ? formatForecastDate(forecast.imported_at) : 'unknown'} · {forecast.data_quality?.valid_rows ?? '—'} valid rows · {forecast.data_quality?.history_days ?? '—'} calendar days.</p>
                 </div>
               )}
 
@@ -1838,7 +1845,7 @@ export default function AdminDashboard() {
                 <Card className="rounded-[24px]" padding={false}>
                   <div className="p-5 md:p-6">
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
-                      <CardHeader title="Sales Analytics" subtitle={`${forecast?.history_start && forecast?.history_end ? `CSV actuals ${formatChartDate(forecast.history_start)} – ${formatChartDate(forecast.history_end)}` : 'Recorded sales'} with ${forecast?.data_sufficiency?.is_sufficient ? 'backtested' : 'baseline'} forecast. Missing dates are marked in the tooltip.`} className="p-0" />
+                      <CardHeader title="Sales Analytics" subtitle={`${forecast?.history_start && forecast?.history_end ? `CSV actuals ${formatForecastDate(forecast.history_start)} – ${formatForecastDate(forecast.history_end)}` : 'Recorded sales'} · ${salesModel.display_name || 'Daily linear regression'}. Missing dates are marked in the tooltip.`} className="p-0" />
                       <div className="flex flex-wrap items-center gap-2">
                         <label className="inline-flex cursor-pointer items-center rounded-2xl bg-cream px-3 py-2 text-[11px] font-black text-espresso/70 hover:text-espresso">
                           <Upload className="mr-1.5 h-3.5 w-3.5" />
@@ -1868,8 +1875,8 @@ export default function AdminDashboard() {
                         ))}
                       </div>
                     </div>
-                    <div className="h-[300px] 2xl:h-[360px] w-full" aria-busy={!forecast && !forecastError}>
-                      {!forecast && !forecastError && (
+                    <div className="h-[300px] 2xl:h-[360px] w-full" aria-busy={forecastLoading || (!forecast && !forecastError)}>
+                      {(forecastLoading || (!forecast && !forecastError)) && (
                         <div className="h-full flex flex-col items-center justify-center gap-3 rounded-2xl bg-cream/60" role="status">
                           <Skeleton className="h-5 w-48" />
                           <Skeleton className="h-48 w-[85%] rounded-xl" />
@@ -1881,7 +1888,7 @@ export default function AdminDashboard() {
                           <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart data={forecastChartData} margin={{ top: 12, right: 20, left: 0, bottom: 5 }}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
-                              <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} tickFormatter={formatChartDate} />
+                              <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} tickFormatter={formatForecastDate} />
                               <YAxis stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `PHP ${Math.round(Number(value || 0) / 1000)}k`} />
                               <Tooltip content={<SalesForecastTooltip />} />
                               <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -1900,6 +1907,37 @@ export default function AdminDashboard() {
                   </div>
                 </Card>
               </div>
+
+              <Card padding={false} className="rounded-[24px]">
+                <div className="p-5 md:p-6">
+                  <CardHeader title="Linear regression: How it works" subtitle="The imported daily sales are sorted by date; x is elapsed calendar days and y is daily sales in PHP." className="mb-4" />
+                  {trainingComputation.sample_count ? <>
+                    <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+                      <p><b>Training n:</b> {trainingComputation.sample_count}</p>
+                      <p><b>Σx:</b> {Number(trainingComputation.sum_x).toLocaleString()}</p>
+                      <p><b>Σy:</b> {formatCurrency(trainingComputation.sum_y)}</p>
+                      <p><b>Σx²:</b> {Number(trainingComputation.sum_x2).toLocaleString()}</p>
+                      <p><b>Σxy:</b> {Number(trainingComputation.sum_xy).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                      <p><b>Training slope m:</b> {Number(trainingComputation.slope).toFixed(10)}</p>
+                      <p><b>Training intercept b:</b> {formatCurrency(trainingComputation.intercept)}</p>
+                      <p><b>Holdout days:</b> {forecastMetrics.holdout_days ?? '—'}</p>
+                    </div>
+                    <div className="mt-4 space-y-2 rounded-2xl bg-cream/70 p-4 text-xs text-espresso/75">
+                      <p>ŷ = mx + b</p>
+                      <p>m = [nΣxy − (Σx)(Σy)] / [nΣx² − (Σx)²]</p>
+                      <p>b = (Σy − mΣx) / n</p>
+                      <p><b>Worked slope:</b> m = [{trainingComputation.sample_count} × {Number(trainingComputation.sum_xy).toLocaleString()} − {Number(trainingComputation.sum_x).toLocaleString()} × {Number(trainingComputation.sum_y).toLocaleString()}] / [{trainingComputation.sample_count} × {Number(trainingComputation.sum_x2).toLocaleString()} − {Number(trainingComputation.sum_x).toLocaleString()}²] = {Number(trainingComputation.slope).toFixed(10)}.</p>
+                      <p><b>Holdout:</b> {forecast.sales_backtest?.length ? `${formatForecastDate(forecast.sales_backtest[0].date)} actual ${formatCurrency(forecast.sales_backtest[0].actual_sales)}; predicted ${formatCurrency(forecast.sales_backtest[0].predicted_sales)}.` : 'No held-out predictions are available.'}</p>
+                      <p><b>Future fit:</b> Refit on all {finalComputation.sample_count ?? '—'} daily values, then evaluate ŷ at dates after {formatForecastDate(forecast.history_end)}. First forecast: {forecast.sales_forecast?.length ? `${formatForecastDate(forecast.sales_forecast[0].target_date)} · ${formatCurrency(forecast.sales_forecast[0].predicted_sales)}` : 'unavailable'}.</p>
+                    </div>
+                    <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[480px] text-left text-xs"><thead className="bg-cream text-espresso/60"><tr>{['Model / baseline', 'MAE (PHP)', 'RMSE (PHP)', 'R²', 'WAPE'].map(label => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>
+                      <tr className="border-t border-espresso/5"><td className="p-2 font-bold">Linear regression</td><td className="p-2">{formatForecastAmount(finiteForecastValue(forecastMetrics.mae))}</td><td className="p-2">{formatForecastAmount(finiteForecastValue(forecastMetrics.rmse))}</td><td className="p-2">{finiteForecastValue(forecastMetrics.r2)?.toFixed(4) ?? 'N/A'}</td><td className="p-2">{finiteForecastValue(forecastMetrics.wape) == null ? 'N/A' : Number(forecastMetrics.wape).toLocaleString('en-PH', { style: 'percent', maximumFractionDigits: 1 })}</td></tr>
+                      {forecastMetrics.baseline && <tr className="border-t border-espresso/5"><td className="p-2 font-bold">Training mean baseline</td><td className="p-2">{formatForecastAmount(finiteForecastValue(forecastMetrics.baseline.mae))}</td><td className="p-2">{formatForecastAmount(finiteForecastValue(forecastMetrics.baseline.rmse))}</td><td className="p-2">{finiteForecastValue(forecastMetrics.baseline.r2)?.toFixed(4) ?? 'N/A'}</td><td className="p-2">{finiteForecastValue(forecastMetrics.baseline.wape) == null ? 'N/A' : Number(forecastMetrics.baseline.wape).toLocaleString('en-PH', { style: 'percent', maximumFractionDigits: 1 })}</td></tr>}
+                    </tbody></table></div>
+                    <p className="mt-3 text-xs text-espresso/55">Linear regression models a trend and may miss seasonality. This source is synthetic; its backtest does not establish real-world accuracy.</p>
+                  </> : <p className="rounded-xl bg-cream/70 p-4 text-sm text-espresso/60">Training details appear after validated CSV records reach the model.</p>}
+                </div>
+              </Card>
 
               <div className="animate-in-up">
                 <Card className="rounded-[24px]" padding={false}>

@@ -14,8 +14,10 @@ import pandas as pd
 from django.utils import timezone
 
 from inventory.models import Product
+from ml.linear_regression_forecasting import fit_linear_regression
 from ml.sales_history_repository import (
     DEFAULT_SOURCE_NAME,
+    DEFAULT_CSV_FILENAME,
     EXCLUDED_STATUS_PATTERN,
     get_active_sales_history,
 )
@@ -85,9 +87,7 @@ def preprocess_sales_history(source_name=DEFAULT_SOURCE_NAME):
         row_quantity = float(record.get('quantity') or 0)
         row_sales = float(record.get('total') or record.get('total_amount') or 0)
         items = _parse_items(record.get('items_description'), row_quantity)
-        if not items:
-            continue
-        total_item_quantity = sum(quantity for quantity, _ in items) or 1.0
+        total_item_quantity = sum(quantity for quantity, _ in items) or max(row_quantity, 0.0)
         transaction_rows.append({
             'date': sale_date,
             'sales': max(row_sales, 0.0),
@@ -139,6 +139,7 @@ def preprocess_sales_history(source_name=DEFAULT_SOURCE_NAME):
         unit_revenue[product_key] = float(group['sales'].sum()) / total_quantity if total_quantity else 0.0
 
     observed_dates = int(daily['is_observed'].sum())
+    is_synthetic = batch.source_filename == DEFAULT_CSV_FILENAME
     return {
         'status': 'ok',
         'error': '',
@@ -149,6 +150,9 @@ def preprocess_sales_history(source_name=DEFAULT_SOURCE_NAME):
             'import_id': batch.id,
             'source_name': batch.source_name,
             'source_file': batch.source_filename,
+            'dataset_type': 'Synthetic daily sales data' if is_synthetic else 'Imported sales history',
+            'is_synthetic': is_synthetic,
+            'source_columns': ['Date', 'Orders', 'Units', 'Sales (PHP)', 'Data origin'] if is_synthetic else [],
             'source_hash': batch.source_hash,
             'imported_at': batch.completed_at.isoformat() if batch.completed_at else None,
             'raw_rows': batch.row_count,
@@ -208,11 +212,14 @@ def _metrics(actual, predicted):
             'mape': None, 'mape_coverage': 0, 'holdout_days': 0,
         }
     errors = np.abs(actual - predicted)
+    residual_sum_squares = float(np.sum((actual - predicted) ** 2))
+    total_sum_squares = float(np.sum((actual - np.mean(actual)) ** 2))
     denominator = np.abs(actual) + np.abs(predicted)
     nonzero = actual != 0
     return {
         'mae': round(float(np.mean(errors)), 2),
         'rmse': round(float(np.sqrt(np.mean((actual - predicted) ** 2))), 2),
+        'r2': round(1 - residual_sum_squares / total_sum_squares, 6) if total_sum_squares else None,
         'wape': round(float(np.sum(errors) / np.sum(np.abs(actual))), 4) if np.sum(np.abs(actual)) else None,
         'smape': round(float(np.mean(np.divide(2 * errors, denominator, out=np.zeros_like(errors), where=denominator != 0))), 4),
         'mape': round(float(np.mean(errors[nonzero] / np.abs(actual[nonzero]))), 4) if np.any(nonzero) else None,
@@ -225,6 +232,8 @@ def _series_forecast(series, value_column, horizon):
     values = series[value_column].astype(float).to_numpy()
     observed_days = int(series.get('is_observed', pd.Series(False, index=series.index)).sum())
     reliable = len(values) >= MIN_RELIABLE_HISTORY_DAYS and observed_days >= MIN_RELIABLE_OBSERVED_DAYS
+    if value_column == 'actual_sales':
+        return _linear_sales_forecast(values, horizon, observed_days, reliable)
     holdout_metrics = _metrics([], [])
     selected_model = '7_day_moving_average'
 
@@ -270,8 +279,66 @@ def _series_forecast(series, value_column, horizon):
     }
 
 
+def _linear_sales_forecast(values, horizon, observed_days, reliable):
+    """Backtest OLS on the later 20% after fitting only the earlier 80%."""
+    sample_count = len(values)
+    split = int(sample_count * 0.8)
+    if split < 2 or split >= sample_count:
+        return np.array([]), np.array([]), np.array([]), {
+            'name': 'linear_regression', 'display_name': 'Daily linear regression',
+            'history_days': sample_count, 'observed_days': observed_days,
+            'reliable': False,
+            'metrics': {'accuracy_available': False, 'reliability': 'insufficient_history',
+                        'mae': None, 'rmse': None, 'r2': None, 'wape': None,
+                        'holdout_days': 0},
+            'training_computation': None, 'final_model_computation': None,
+            'backtest': [],
+        }
+
+    train = values[:split].tolist()
+    actual = values[split:].tolist()
+    training_model = fit_linear_regression(train)
+    test_x = np.arange(split, sample_count, dtype=float)
+    predicted = np.maximum(training_model['slope'] * test_x + training_model['intercept'], 0.0)
+    baseline_value = float(np.mean(values[:split]))
+    baseline_prediction = np.repeat(baseline_value, len(actual))
+    metrics = _metrics(np.asarray(actual), predicted)
+    baseline_metrics = _metrics(np.asarray(actual), baseline_prediction)
+    metrics.update({
+        'accuracy_available': bool(reliable and metrics['wape'] is not None),
+        'reliability': 'chronological_backtest' if reliable else 'insufficient_history',
+        'holdout_days': len(actual),
+        'train_days': split,
+        'baseline': {'name': 'training_mean', 'value': round(baseline_value, 2), **baseline_metrics},
+    })
+
+    final_model = fit_linear_regression(values.tolist())
+    future_x = np.arange(sample_count, sample_count + horizon, dtype=float)
+    future = np.maximum(final_model['slope'] * future_x + final_model['intercept'], 0.0)
+    residuals = np.asarray(actual) - predicted
+    spread = max(float(np.sqrt(np.mean(residuals ** 2))), 1.0)
+    backtest = [
+        {'date_index': int(index), 'actual_sales': round(float(actual[offset]), 2),
+         'predicted_sales': round(float(predicted[offset]), 2),
+         'baseline_sales': round(float(baseline_prediction[offset]), 2)}
+        for offset, index in enumerate(range(split, sample_count))
+    ]
+    return future, np.maximum(future - spread, 0.0), future + spread, {
+        'name': 'linear_regression', 'display_name': 'Daily linear regression',
+        'history_days': sample_count, 'observed_days': observed_days,
+        'reliable': bool(reliable), 'metrics': metrics,
+        'training_computation': training_model,
+        'final_model_computation': final_model,
+        'backtest': backtest,
+        'backtest_start_index': split,
+    }
+
+
 def _round(value):
-    return round(float(value or 0), 2)
+    if value is None:
+        return None
+    number = float(value)
+    return round(number, 2) if math.isfinite(number) else None
 
 
 def _date_text(value):
@@ -301,13 +368,14 @@ def _empty_report(data):
             'minimum_reliable_observed_days': MIN_RELIABLE_OBSERVED_DAYS,
             'requested_30_day_observed_coverage': {'available': False, 'observed_days': 0, 'required_observed_days': 30},
         },
+        'sales_backtest': [],
         'reorder_recommendations': get_reorder_recommendations(),
     }
 
 
 def _range_summary(label, rows):
     if not rows:
-        return {'label': label, 'start_date': None, 'end_date': None, 'total_predicted_sales': 0, 'total_predicted_quantity': 0, 'rows': 0}
+        return {'label': label, 'start_date': None, 'end_date': None, 'total_predicted_sales': None, 'total_predicted_quantity': None, 'average_daily_sales': None, 'rows': 0}
     return {
         'label': label,
         'start_date': rows[0]['target_date'],
@@ -320,13 +388,16 @@ def _range_summary(label, rows):
 
 
 def generate_forecast_report(source_name=DEFAULT_SOURCE_NAME, horizon=FORECAST_HORIZON_DAYS):
-    """Return a JSON-ready report sourced only from the active Supabase batch."""
+    """Return a JSON-ready report sourced from the active validated CSV import."""
     data = preprocess_sales_history(source_name)
     if data['status'] != 'ok':
         return _empty_report(data)
 
     horizon = max(14, min(int(horizon), 365))
     daily = data['daily']
+    if len(daily) < 3:
+        data = {**data, 'status': 'insufficient_history', 'error': 'At least three chronologically ordered daily sales records are required to train and evaluate the forecast.'}
+        return _empty_report(data)
     total_sales, sales_lower, sales_upper, sales_model = _series_forecast(daily, 'actual_sales', horizon)
     total_quantity, _, _, quantity_model = _series_forecast(daily, 'actual_quantity', horizon)
     last_date = daily['date'].max()
@@ -355,6 +426,18 @@ def generate_forecast_report(source_name=DEFAULT_SOURCE_NAME, horizon=FORECAST_H
         }
         for _, row in daily.iterrows()
     ]
+    sales_backtest = [
+        {
+            'date': _date_text(daily.iloc[row['date_index']]['date']),
+            'actual_sales': row['actual_sales'],
+            'predicted_sales': row['predicted_sales'],
+            'baseline_sales': row['baseline_sales'],
+        }
+        for row in sales_model.get('backtest', [])
+    ]
+    backtest_by_date = {row['date']: row['predicted_sales'] for row in sales_backtest}
+    for row in actual_history:
+        row['backtest_predicted_sales'] = backtest_by_date.get(row['date'])
 
     product_forecasts = []
     product_sales_forecast = []
@@ -456,6 +539,7 @@ def generate_forecast_report(source_name=DEFAULT_SOURCE_NAME, horizon=FORECAST_H
             'revenue_allocation': 'Transaction total allocated by parsed item quantity for product-level revenue.',
         },
         'actual_history': actual_history,
+        'sales_backtest': sales_backtest,
         'sales_forecast': sales_forecast,
         'monthly_forecast': monthly_forecast,
         'forecast_ranges': forecast_ranges,
