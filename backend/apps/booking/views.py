@@ -431,6 +431,7 @@ class WalkInBookingCreateView(views.APIView):
                     contact_phone=data['customer_phone'],
                     created_by=request.user,
                     walk_in_idempotency_key=idempotency_key or None,
+                    status='CONFIRMED_DP' if data.get('payment_amount') is not None else 'PENDING',
                 )
                 AuditLog.objects.create(
                     user=request.user,
@@ -440,21 +441,32 @@ class WalkInBookingCreateView(views.APIView):
                 )
                 if data.get('payment_amount') is not None:
                     method = data['payment_method']
+                    received_at = timezone.now()
                     Payment.objects.create(
                         payment_type=Payment.BOOKING,
                         booking=booking,
                         amount=data['payment_amount'],
                         method=method,
                         reference_number=(data.get('payment_reference') or '').strip() or None,
-                        status='PAID' if method == 'CASH' else 'PENDING_VERIFICATION',
-                        paid_at=timezone.now(),
+                        status='APPROVED',
+                        paid_at=received_at,
+                        verified_by=request.user,
+                        verified_at=received_at,
+                        admin_note='Received and verified by staff during walk-in booking.',
                         idempotency_key=f'{idempotency_key}-payment'[:100] if idempotency_key else None,
                     )
                     AuditLog.objects.create(
                         user=request.user,
-                        action='BOOKING_PAYMENT_SUBMIT',
-                        description=f'Recorded {method.lower()} payment for walk-in booking #{booking.id}.',
-                        metadata={'booking_id': booking.id, 'amount': str(data['payment_amount']), 'method': method},
+                        action='BOOKING_PAYMENT_APPROVED',
+                        description=f'Recorded and verified {method.lower()} downpayment for walk-in booking #{booking.id}.',
+                        metadata={
+                            'booking_id': booking.id,
+                            'amount': str(data['payment_amount']),
+                            'method': method,
+                            'reference_number': (data.get('payment_reference') or '').strip() or None,
+                            'verified_by': request.user.id,
+                            'verified_at': received_at.isoformat(),
+                        },
                     )
         except IntegrityError:
             if idempotency_key:

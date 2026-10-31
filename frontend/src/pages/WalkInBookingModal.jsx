@@ -84,7 +84,9 @@ export default function WalkInBookingModal({ open, onClose, onCreated }) {
     }
     try {
       const { data } = await client.post('/api/bookings/walk-in/', payload);
-      setNotice(`Walk-in booking #${data.id} confirmed in the schedule.`);
+      setNotice(data.payments?.length
+        ? `Walk-in booking #${data.id} saved. Downpayment received and verified; remaining balance ${peso(data.remaining_balance)}.`
+        : `Walk-in booking #${data.id} saved in the schedule.`);
       onCreated?.(data);
       window.setTimeout(() => onClose?.(), 700);
     } catch (err) {
@@ -125,9 +127,9 @@ export default function WalkInBookingModal({ open, onClose, onCreated }) {
           <Input label="Payment amount (optional)" type="number" min="0.01" max={selectedPackage?.price || undefined} step="0.01" value={form.paymentAmount} onChange={setField('paymentAmount')} placeholder="Leave blank if unpaid" />
         </div>
         {form.paymentAmount !== '' && <div className="grid gap-4 sm:grid-cols-2">
-          <Select label="Payment method" value={form.paymentMethod} onChange={setField('paymentMethod')} options={[{ value: 'CASH', label: 'Cash (recorded as paid)' }, { value: 'GCASH', label: 'GCash (pending verification)' }, { value: 'MAYA', label: 'Maya (pending verification)' }, { value: 'MARIBANK', label: 'MariBank (pending verification)' }]} />
+          <Select label="Payment method" value={form.paymentMethod} onChange={setField('paymentMethod')} options={[{ value: 'CASH', label: 'Cash' }, { value: 'GCASH', label: 'GCash' }, { value: 'MAYA', label: 'Maya' }, { value: 'MARIBANK', label: 'MariBank' }]} />
           {form.paymentMethod !== 'CASH' && <Input label="Payment reference" value={form.paymentReference} onChange={setField('paymentReference')} required minLength={6} maxLength={100} />}
-          <p className="sm:col-span-2 text-xs text-espresso/55">Recorded deposits must be at least 50% of the package price ({selectedPackage ? peso(Number(selectedPackage.price) * 0.5) : '—'}).</p>
+          <p className="sm:col-span-2 text-xs text-espresso/55">Staff-recorded payments are verified when the walk-in booking is saved. The downpayment must be at least 50% of the package price ({selectedPackage ? peso(Number(selectedPackage.price) * 0.5) : '—'}).</p>
         </div>}
         <Textarea label="Notes (optional)" value={form.notes} onChange={setField('notes')} rows={2} maxLength={2000} />
         {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}

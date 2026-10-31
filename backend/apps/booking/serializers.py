@@ -302,6 +302,7 @@ class BookingSerializer(serializers.ModelSerializer):
     review = serializers.SerializerMethodField()
     change_history = serializers.JSONField(read_only=True)
     required_down_payment = serializers.SerializerMethodField()
+    remaining_balance = serializers.SerializerMethodField()
     can_edit = serializers.BooleanField(source='is_customer_editable', read_only=True)
     edit_locked_reason = serializers.CharField(source='customer_edit_lock_reason', read_only=True)
     edit_deadline = serializers.DateTimeField(read_only=True)
@@ -319,7 +320,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'is_walk_in', 'contact_name', 'contact_email', 'contact_phone', 'created_by',
             'created_by_name', 'booking_type', 'customer_name', 'customer_email', 'customer_phone',
             'scheduled_time', 'status', 'notes', 'created_at', 'items',
-            'payments', 'required_down_payment', 'change_history',
+            'payments', 'required_down_payment', 'remaining_balance', 'change_history',
             'review',
             'can_edit', 'edit_locked_reason', 'edit_deadline',
             'first_name', 'last_name', 'email', 'phone_number', 'address',
@@ -334,6 +335,13 @@ class BookingSerializer(serializers.ModelSerializer):
 
     def get_required_down_payment(self, obj):
         return obj.package.price * Decimal('0.50')
+
+    def get_remaining_balance(self, obj):
+        received = sum(
+            (payment.amount for payment in obj.payments.all() if payment.status in {'APPROVED', 'PAID'}),
+            Decimal('0.00'),
+        )
+        return max(Decimal('0.00'), obj.package.price - received)
 
     def get_customer_name(self, obj):
         if obj.contact_name:

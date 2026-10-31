@@ -60,6 +60,8 @@ class BookingLifecycleTests(WorkflowFixtures, TestCase):
     def test_full_lifecycle_emits_once_and_history_remains_available(self):
         booking = self.book()
         payment = self.pay(booking)
+        self.assertEqual(payment.status, 'PENDING_VERIFICATION')
+        self.assertIsNone(payment.verified_by_id)
         self.client.force_authenticate(self.staff)
         for state in ['REJECTED', 'APPROVED', 'APPROVED']:
             response = self.client.patch(f'/api/bookings/payments/{payment.id}/verify/', {'status': state}, format='json')
