@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush,
   Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, BarChart, Bar
 } from 'recharts';
 import { Button, IconButton } from '../components/ui/Button';
@@ -28,7 +28,13 @@ import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
-import { buildSalesForecastChartData, selectSalesForecastRows } from './salesForecastChartData';
+import {
+  aggregateSalesChartData,
+  buildSalesForecastChartData,
+  filterSalesChartData,
+  getSalesYAxisDomain,
+  selectSalesForecastRows,
+} from './salesForecastChartData';
 import AuditLogsPage from './admin/AuditLogsPage';
 import GalleryManager from './admin/GalleryManager';
 import IngredientStatusModal from '../components/admin/IngredientStatusModal';
@@ -402,9 +408,12 @@ const formatForecastDate = value => {
 function SalesForecastTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload || {};
+  const periodLabel = row.period_start && row.period_end && row.period_start !== row.period_end
+    ? `${formatForecastDate(row.period_start)} – ${formatForecastDate(row.period_end)}`
+    : formatForecastDate(label || row.date);
   return (
     <div className="rounded-2xl border border-espresso/[0.08] bg-white/95 p-3 text-xs shadow-[0_18px_45px_rgba(46,26,17,0.12)]">
-      <p className="mb-2 font-black text-espresso">{formatForecastDate(label || row.date)}</p>
+      <p className="mb-2 font-black text-espresso">{periodLabel}</p>
       {row.actual_sales != null && (
         <p className="font-bold text-espresso/75">Actual: {formatCurrency(row.actual_sales)}</p>
       )}
@@ -559,6 +568,10 @@ export default function AdminDashboard() {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [forecastView, setForecastView] = useState('next_7_days');
+  const [salesChartGranularity, setSalesChartGranularity] = useState('daily');
+  const [salesChartStartDate, setSalesChartStartDate] = useState('');
+  const [salesChartEndDate, setSalesChartEndDate] = useState('');
+  const [salesChartRange, setSalesChartRange] = useState(null);
   const [visibleSeries, setVisibleSeries] = useState({
     actual: true,
     forecast: true,
@@ -1416,12 +1429,65 @@ export default function AdminDashboard() {
   const bookingPageRows = paginateRows(sortedBookings, bookingPage, bookingPageSize);
   const posPageRows = paginateRows(sortedPos, posPage, posPageSize);
   const allForecastRows = asArray(forecast?.sales_forecast);
-  const monthlyForecastRows = asArray(forecast?.monthly_forecast);
-  const salesForecastRows = selectSalesForecastRows(allForecastRows, monthlyForecastRows, forecastView);
+  const salesForecastRows = selectSalesForecastRows(allForecastRows, forecastView);
   const csvHistoryRows = asArray(forecast?.actual_history);
   const dashboardHistoryRows = asArray(analytics?.sales_history_chart);
   const salesHistoryRows = csvHistoryRows.length ? csvHistoryRows : dashboardHistoryRows;
-  const forecastChartData = buildSalesForecastChartData(salesHistoryRows, salesForecastRows);
+  const unfilteredSalesChartData = buildSalesForecastChartData(salesHistoryRows, salesForecastRows);
+  const salesChartDataInDateRange = filterSalesChartData(unfilteredSalesChartData, salesChartStartDate, salesChartEndDate);
+  const forecastChartData = aggregateSalesChartData(salesChartDataInDateRange, salesChartGranularity);
+  const salesChartLastIndex = Math.max(forecastChartData.length - 1, 0);
+  const salesChartStartIndex = salesChartRange
+    ? Math.max(0, Math.min(salesChartLastIndex, salesChartRange.start))
+    : 0;
+  const salesChartEndIndex = salesChartRange
+    ? Math.max(salesChartStartIndex, Math.min(salesChartLastIndex, salesChartRange.end))
+    : salesChartLastIndex;
+  const visibleSalesChartData = forecastChartData.slice(salesChartStartIndex, salesChartEndIndex + 1);
+  const salesYAxisDomain = getSalesYAxisDomain(visibleSalesChartData, visibleSeries);
+  const salesChartDateLimits = {
+    min: unfilteredSalesChartData[0]?.date || '',
+    max: unfilteredSalesChartData[unfilteredSalesChartData.length - 1]?.date || '',
+  };
+  const resetSalesChartView = () => {
+    setSalesChartStartDate('');
+    setSalesChartEndDate('');
+    setSalesChartGranularity('daily');
+    setSalesChartRange(null);
+    setForecastView('next_7_days');
+    setVisibleSeries({ actual: true, forecast: true, combined: true });
+  };
+  const handleSalesChartDateChange = (setter, value) => {
+    setter(value);
+    setSalesChartRange(null);
+  };
+  const handleSalesChartBrush = range => {
+    if (!range || !Number.isFinite(range.startIndex) || !Number.isFinite(range.endIndex)) return;
+    if (range.startIndex === 0 && range.endIndex === salesChartLastIndex) {
+      setSalesChartRange(null);
+    } else {
+      setSalesChartRange({ start: range.startIndex, end: range.endIndex });
+    }
+  };
+  const zoomSalesChart = factor => {
+    if (forecastChartData.length < 2) return;
+    const currentSize = salesChartEndIndex - salesChartStartIndex + 1;
+    const nextSize = Math.max(2, Math.min(forecastChartData.length, Math.round(currentSize * factor)));
+    const center = (salesChartStartIndex + salesChartEndIndex) / 2;
+    let start = Math.max(0, Math.floor(center - (nextSize - 1) / 2));
+    let end = Math.min(forecastChartData.length - 1, start + nextSize - 1);
+    start = Math.max(0, end - nextSize + 1);
+    setSalesChartRange(start === 0 && end === salesChartLastIndex ? null : { start, end });
+  };
+  const panSalesChart = direction => {
+    const currentSize = salesChartEndIndex - salesChartStartIndex + 1;
+    const offset = Math.max(1, Math.round(currentSize * 0.25)) * direction;
+    let start = salesChartStartIndex + offset;
+    let end = salesChartEndIndex + offset;
+    if (start < 0) { end -= start; start = 0; }
+    if (end > salesChartLastIndex) { start = Math.max(0, start - (end - salesChartLastIndex)); end = salesChartLastIndex; }
+    setSalesChartRange(start === 0 && end === salesChartLastIndex ? null : { start, end });
+  };
   const next7Summary = asRecord(forecast?.forecast_ranges?.next_7_days);
   const nextWeekSummary = asRecord(forecast?.forecast_ranges?.next_week);
   const next7Forecast = finiteForecastValue(next7Summary.total_predicted_sales) ?? sumForecastValues(allForecastRows.slice(0, 7), 'predicted_sales');
@@ -1860,7 +1926,7 @@ export default function AdminDashboard() {
                           ['next_week', 'Following week'],
                           ['upcoming_months', 'Upcoming months'],
                         ].map(([key, label]) => (
-                          <button key={key} onClick={() => setForecastView(key)} className={`px-3 py-2 rounded-2xl text-[11px] font-black transition-all ${forecastView === key ? 'bg-espresso text-gold' : 'bg-cream text-espresso/60 hover:text-espresso'}`}>
+                          <button key={key} aria-pressed={forecastView === key} onClick={() => { setForecastView(key); setSalesChartGranularity(key === 'upcoming_months' ? 'monthly' : 'daily'); setSalesChartRange(null); }} className={`px-3 py-2 rounded-2xl text-[11px] font-black transition-all ${forecastView === key ? 'bg-espresso text-gold' : 'bg-cream text-espresso/60 hover:text-espresso'}`}>
                             {label}
                           </button>
                         ))}
@@ -1869,10 +1935,41 @@ export default function AdminDashboard() {
                           ['forecast', 'Forecast'],
                           ['combined', 'Combined'],
                         ].map(([key, label]) => (
-                          <button key={key} onClick={() => setVisibleSeries(v => ({ ...v, [key]: !v[key] }))} className={`px-3 py-2 rounded-2xl text-[11px] font-black transition-all ${visibleSeries[key] ? 'bg-gold text-espresso' : 'bg-cream text-espresso/45'}`}>
+                          <button key={key} aria-pressed={visibleSeries[key]} onClick={() => setVisibleSeries(v => ({ ...v, [key]: !v[key] }))} className={`px-3 py-2 rounded-2xl text-[11px] font-black transition-all ${visibleSeries[key] ? 'bg-gold text-espresso' : 'bg-cream text-espresso/45'}`}>
                             {label}
                           </button>
                         ))}
+                      </div>
+                    </div>
+                    <div className="mb-4 space-y-3 rounded-2xl border border-espresso/[0.06] bg-cream/45 p-3">
+                      <div className="flex flex-wrap items-end gap-3">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-espresso/55">From
+                          <input aria-label="Sales chart start date" type="date" min={salesChartDateLimits.min} max={salesChartDateLimits.max} value={salesChartStartDate} onChange={event => handleSalesChartDateChange(setSalesChartStartDate, event.target.value)} className="mt-1 block rounded-xl border border-espresso/10 bg-white px-3 py-2 text-xs font-semibold text-espresso" />
+                        </label>
+                        <label className="text-[10px] font-black uppercase tracking-wider text-espresso/55">To
+                          <input aria-label="Sales chart end date" type="date" min={salesChartDateLimits.min} max={salesChartDateLimits.max} value={salesChartEndDate} onChange={event => handleSalesChartDateChange(setSalesChartEndDate, event.target.value)} className="mt-1 block rounded-xl border border-espresso/10 bg-white px-3 py-2 text-xs font-semibold text-espresso" />
+                        </label>
+                        <div className="flex flex-wrap gap-1" role="group" aria-label="Sales chart time interval">
+                          {[
+                            ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'],
+                          ].map(([key, label]) => (
+                            <button key={key} type="button" aria-pressed={salesChartGranularity === key} onClick={() => { setSalesChartGranularity(key); setSalesChartRange(null); }} className={`rounded-xl px-3 py-2 text-[11px] font-black ${salesChartGranularity === key ? 'bg-espresso text-gold' : 'bg-white text-espresso/60 hover:text-espresso'}`}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <Button size="sm" variant="outline" onClick={resetSalesChartView}>Reset View</Button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="mr-1 text-[10px] font-black uppercase tracking-wider text-espresso/45">Horizontal view</span>
+                        <Button size="sm" variant="outline" icon={ChevronLeft} aria-label="Pan chart left" title="Pan chart left" disabled={salesChartStartIndex <= 0} onClick={() => panSalesChart(-1)} />
+                        <Button size="sm" variant="outline" aria-label="Zoom out" disabled={salesChartStartIndex === 0 && salesChartEndIndex === salesChartLastIndex} onClick={() => zoomSalesChart(1.5)}>−</Button>
+                        <Button size="sm" variant="outline" aria-label="Zoom in" disabled={forecastChartData.length < 3 || salesChartEndIndex - salesChartStartIndex < 2} onClick={() => zoomSalesChart(0.67)}>+</Button>
+                        <Button size="sm" variant="outline" icon={ChevronRight} aria-label="Pan chart right" title="Pan chart right" disabled={salesChartEndIndex >= salesChartLastIndex} onClick={() => panSalesChart(1)} />
+                        <span className="text-[11px] font-semibold text-espresso/55">
+                          {visibleSalesChartData.length ? `${formatForecastDate(visibleSalesChartData[0].period_start || visibleSalesChartData[0].date)} – ${formatForecastDate(visibleSalesChartData[visibleSalesChartData.length - 1].period_end || visibleSalesChartData[visibleSalesChartData.length - 1].date)}` : 'No dates in selected range'}
+                        </span>
+                        <span className="ml-auto text-[10px] font-semibold text-espresso/45">Drag the range handles below the chart to zoom and pan.</span>
                       </div>
                     </div>
                     <div className="h-[300px] 2xl:h-[360px] w-full" aria-busy={forecastLoading || (!forecast && !forecastError)}>
@@ -1886,10 +1983,10 @@ export default function AdminDashboard() {
                       {forecastChartData.length > 0 ? (
                         <DashboardChartBoundary resetKey={`${forecastView}:${forecastChartData.length}:${visibleSeries.actual}:${visibleSeries.forecast}:${visibleSeries.combined}`}>
                           <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={forecastChartData} margin={{ top: 12, right: 20, left: 0, bottom: 5 }}>
+                            <ComposedChart data={forecastChartData} margin={{ top: 12, right: 20, left: 12, bottom: 5 }}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
-                              <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} tickFormatter={formatForecastDate} />
-                              <YAxis stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `PHP ${Math.round(Number(value || 0) / 1000)}k`} />
+                              <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} minTickGap={22} interval="preserveStartEnd" tickFormatter={formatForecastDate} />
+                              <YAxis domain={salesYAxisDomain} allowDataOverflow stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} width={95} tickFormatter={formatCurrency} />
                               <Tooltip content={<SalesForecastTooltip />} />
                               <Legend wrapperStyle={{ fontSize: 11 }} />
                               {visibleSeries.actual && <Line type="monotone" dataKey="actual_sales" name="Actual Sales" stroke="#2E1A11" strokeWidth={3} dot={false} connectNulls={false} />}
@@ -1897,11 +1994,12 @@ export default function AdminDashboard() {
                               {visibleSeries.forecast && <Line type="monotone" dataKey="upper_bound" name="Upper Confidence" stroke="#8D6E63" strokeWidth={1.5} strokeDasharray="3 5" dot={false} connectNulls={false} />}
                               {visibleSeries.forecast && <Line type="monotone" dataKey="lower_bound" name="Lower Confidence" stroke="#E57373" strokeWidth={1.5} strokeDasharray="3 5" dot={false} connectNulls={false} />}
                               {visibleSeries.combined && <Line type="monotone" dataKey="combined_sales" name="Combined Actual + Forecast" stroke="#3B82F6" strokeWidth={2.5} dot={false} connectNulls />}
+                              {forecastChartData.length > 1 && <Brush dataKey="date" ariaLabel="Drag to zoom or pan sales chart" height={34} travellerWidth={10} startIndex={salesChartStartIndex} endIndex={salesChartEndIndex} onChange={handleSalesChartBrush} tickFormatter={formatForecastDate} stroke="#A47716" fill="#F7F0E3" />}
                             </ComposedChart>
                           </ResponsiveContainer>
                         </DashboardChartBoundary>
                       ) : (forecast || forecastError) ? (
-                        <EmptyState icon={BarChart2} title="No sales or forecast data" description="Run forecasting or select a date range with completed revenue." />
+                        <EmptyState icon={BarChart2} title={salesChartStartDate || salesChartEndDate ? 'No sales in selected date range' : 'No sales or forecast data'} description="Adjust the date filters or reset the graph view to inspect available sales." />
                       ) : null}
                     </div>
                   </div>

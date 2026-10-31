@@ -267,6 +267,26 @@ describe('AdminDashboard', () => {
     expect(screen.getByRole('button', { name: 'Actual' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Forecast' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Combined' })).toBeInTheDocument();
+    const startDate = screen.getByLabelText('Sales chart start date');
+    fireEvent.change(startDate, { target: { value: '2025-08-02' } });
+    expect(startDate).toHaveValue('2025-08-02');
+    fireEvent.click(screen.getByRole('button', { name: 'Weekly' }));
+    expect(screen.getByRole('button', { name: 'Weekly' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Monthly' }));
+    expect(screen.getByRole('button', { name: 'Monthly' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Upcoming months' }));
+    expect(screen.getByRole('button', { name: 'Upcoming months' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset View' }));
+    expect(startDate).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(screen.getByRole('button', { name: 'Pan chart left' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Pan chart left' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pan chart right' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset View' }));
+    expect(startDate).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Next 7 days' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Actual' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('opens the matching live ingredient list from each stock summary card', async () => {
