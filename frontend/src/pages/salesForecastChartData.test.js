@@ -3,7 +3,9 @@ import {
   buildSalesForecastChartData,
   filterSalesChartData,
   getSalesYAxisDomain,
+  panSalesChartRange,
   selectSalesForecastRows,
+  zoomSalesChartRange,
 } from './salesForecastChartData';
 
 describe('sales forecast chart data', () => {
@@ -68,5 +70,23 @@ describe('sales forecast chart data', () => {
     const withForecast = getSalesYAxisDomain(rows, { actual: false, forecast: true, combined: false });
     expect(withForecast[0]).toBeLessThanOrEqual(130);
     expect(withForecast[1]).toBeGreaterThanOrEqual(150);
+  });
+
+  it('zooms around the cursor while respecting minimum and maximum date limits', () => {
+    expect(zoomSalesChartRange({ start: 0, end: 19, total: 20, factor: 0.5, anchorRatio: 0.75 }))
+      .toEqual({ start: 8, end: 17 });
+    expect(zoomSalesChartRange({ start: 5, end: 7, total: 20, factor: 0.5, anchorRatio: 0.5 }))
+      .toEqual({ start: 5, end: 7 });
+    expect(zoomSalesChartRange({ start: 0, end: 19, total: 20, factor: 3, anchorRatio: 0.5 }))
+      .toEqual({ start: 0, end: 19 });
+  });
+
+  it('pans by date intervals and clamps at either end without changing zoom width', () => {
+    expect(panSalesChartRange({ start: 5, end: 9, total: 20, delta: -3 }))
+      .toEqual({ start: 2, end: 6 });
+    expect(panSalesChartRange({ start: 1, end: 5, total: 20, delta: -20 }))
+      .toEqual({ start: 0, end: 4 });
+    expect(panSalesChartRange({ start: 15, end: 19, total: 20, delta: 20 }))
+      .toEqual({ start: 15, end: 19 });
   });
 });

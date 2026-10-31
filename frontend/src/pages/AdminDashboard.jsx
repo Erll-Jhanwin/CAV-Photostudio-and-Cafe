@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Line, XAxis, YAxis, CartesianGrid, Tooltip, Brush,
+  Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, BarChart, Bar
 } from 'recharts';
 import { Button, IconButton } from '../components/ui/Button';
@@ -33,7 +33,9 @@ import {
   buildSalesForecastChartData,
   filterSalesChartData,
   getSalesYAxisDomain,
+  panSalesChartRange,
   selectSalesForecastRows,
+  zoomSalesChartRange,
 } from './salesForecastChartData';
 import AuditLogsPage from './admin/AuditLogsPage';
 import GalleryManager from './admin/GalleryManager';
@@ -549,6 +551,7 @@ export default function AdminDashboard() {
   const [salesChartStartDate, setSalesChartStartDate] = useState('');
   const [salesChartEndDate, setSalesChartEndDate] = useState('');
   const [salesChartRange, setSalesChartRange] = useState(null);
+  const [salesChartDragging, setSalesChartDragging] = useState(false);
   const [visibleSeries, setVisibleSeries] = useState({
     actual: true,
     forecast: true,
@@ -573,6 +576,7 @@ export default function AdminDashboard() {
   const [reportsPageSize, setReportsPageSize] = useState(5);
   const [paymentPage, setPaymentPage] = useState(1);
   const [paymentPageSize, setPaymentPageSize] = useState(10);
+  const paymentListRef = useRef(null);
   const [staffPage, setStaffPage] = useState(1);
   const [staffPageSize, setStaffPageSize] = useState(10);
   const staffTableAreaRef = useRef(null);
@@ -614,6 +618,8 @@ export default function AdminDashboard() {
   const dashboardFetchSeqRef = useRef(0);
   const forecastFetchSeqRef = useRef(0);
   const endOfDayDetailsRequestRef = useRef(0);
+  const salesChartInteractionElementRef = useRef(null);
+  const salesChartInteractionRef = useRef(null);
 
   const loadAdminTabData = useCallback(async (tab, { force = false } = {}) => {
     if (tab === 'analytics') return;
@@ -1449,33 +1455,77 @@ export default function AdminDashboard() {
     setter(value);
     setSalesChartRange(null);
   };
-  const handleSalesChartBrush = range => {
-    if (!range || !Number.isFinite(range.startIndex) || !Number.isFinite(range.endIndex)) return;
-    if (range.startIndex === 0 && range.endIndex === salesChartLastIndex) {
-      setSalesChartRange(null);
-    } else {
-      setSalesChartRange({ start: range.startIndex, end: range.endIndex });
-    }
-  };
-  const zoomSalesChart = factor => {
+  const setSalesChartWindow = useCallback(range => {
+    setSalesChartRange(range.start === 0 && range.end === salesChartLastIndex ? null : range);
+  }, [salesChartLastIndex]);
+  const getSalesChartPointerRatio = useCallback((clientX, chartElement) => {
+    const rect = chartElement?.getBoundingClientRect?.();
+    if (!rect || rect.width <= 0) return 0.5;
+    const plotStart = rect.left + 107;
+    const plotEnd = rect.right - 20;
+    if (plotEnd <= plotStart) return 0.5;
+    return Math.max(0, Math.min(1, (clientX - plotStart) / (plotEnd - plotStart)));
+  }, []);
+  const handleSalesChartWheel = useCallback(event => {
     if (forecastChartData.length < 2) return;
-    const currentSize = salesChartEndIndex - salesChartStartIndex + 1;
-    const nextSize = Math.max(2, Math.min(forecastChartData.length, Math.round(currentSize * factor)));
-    const center = (salesChartStartIndex + salesChartEndIndex) / 2;
-    let start = Math.max(0, Math.floor(center - (nextSize - 1) / 2));
-    let end = Math.min(forecastChartData.length - 1, start + nextSize - 1);
-    start = Math.max(0, end - nextSize + 1);
-    setSalesChartRange(start === 0 && end === salesChartLastIndex ? null : { start, end });
-  };
-  const panSalesChart = direction => {
-    const currentSize = salesChartEndIndex - salesChartStartIndex + 1;
-    const offset = Math.max(1, Math.round(currentSize * 0.25)) * direction;
-    let start = salesChartStartIndex + offset;
-    let end = salesChartEndIndex + offset;
-    if (start < 0) { end -= start; start = 0; }
-    if (end > salesChartLastIndex) { start = Math.max(0, start - (end - salesChartLastIndex)); end = salesChartLastIndex; }
-    setSalesChartRange(start === 0 && end === salesChartLastIndex ? null : { start, end });
-  };
+    event.preventDefault();
+    const cursorRatio = getSalesChartPointerRatio(event.clientX, event.currentTarget);
+    const range = zoomSalesChartRange({
+      start: salesChartStartIndex,
+      end: salesChartEndIndex,
+      total: forecastChartData.length,
+      factor: Math.exp(Math.max(-0.3, Math.min(0.3, event.deltaY * 0.002))),
+      anchorRatio: cursorRatio,
+    });
+    setSalesChartWindow(range);
+  }, [forecastChartData.length, salesChartStartIndex, salesChartEndIndex, getSalesChartPointerRatio, setSalesChartWindow]);
+  const handleSalesChartMouseDown = useCallback(event => {
+    if (event.button !== 0 || forecastChartData.length < 2) return;
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    salesChartInteractionRef.current = {
+      startX: event.clientX,
+      startIndex: salesChartStartIndex,
+      endIndex: salesChartEndIndex,
+      plotWidth: Math.max(rect.width - 127, 1),
+    };
+    setSalesChartDragging(true);
+  }, [forecastChartData.length, salesChartStartIndex, salesChartEndIndex]);
+  const handleSalesChartMouseMove = useCallback(event => {
+    const drag = salesChartInteractionRef.current;
+    if (!drag) return;
+    const windowSize = drag.endIndex - drag.startIndex + 1;
+    const dateShift = -((event.clientX - drag.startX) / drag.plotWidth) * windowSize;
+    setSalesChartWindow(panSalesChartRange({
+      start: drag.startIndex,
+      end: drag.endIndex,
+      total: forecastChartData.length,
+      delta: dateShift,
+    }));
+  }, [forecastChartData.length, setSalesChartWindow]);
+  const handleSalesChartMouseEnd = useCallback(() => {
+    if (!salesChartInteractionRef.current) return;
+    salesChartInteractionRef.current = null;
+    setSalesChartDragging(false);
+  }, []);
+  useEffect(() => {
+    if (!salesChartDragging) return undefined;
+    const onMove = event => handleSalesChartMouseMove(event);
+    const onUp = () => handleSalesChartMouseEnd();
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, [salesChartDragging, handleSalesChartMouseMove, handleSalesChartMouseEnd]);
+  useEffect(() => {
+    const element = salesChartInteractionElementRef.current;
+    if (!element) return undefined;
+    const onWheel = event => handleSalesChartWheel(event);
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  }, [handleSalesChartWheel]);
   const next7Summary = asRecord(forecast?.forecast_ranges?.next_7_days);
   const nextWeekSummary = asRecord(forecast?.forecast_ranges?.next_week);
   const next7Forecast = finiteForecastValue(next7Summary.total_predicted_sales) ?? sumForecastValues(allForecastRows.slice(0, 7), 'predicted_sales');
@@ -1612,7 +1662,7 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className={`min-h-screen bg-cream flex flex-col md:flex-row ${['staff', 'faq', 'gallery', 'audit', 'inventory'].includes(activeTab) ? 'h-dvh overflow-hidden' : ''}`}>
+    <div className={`min-h-screen bg-cream flex flex-col md:flex-row ${['staff', 'faq', 'gallery', 'audit', 'inventory', 'payments'].includes(activeTab) ? 'h-dvh overflow-hidden' : ''}`}>
       <Sidebar
         brand="CAV Admin"
         brandSubtitle="Management Console"
@@ -1627,11 +1677,11 @@ export default function AdminDashboard() {
         onSignOutConfirm={handleLogout}
       />
 
-      <div className={`flex-1 flex flex-col overflow-hidden ${['staff', 'faq', 'gallery', 'audit', 'inventory'].includes(activeTab) ? 'h-dvh min-h-0' : 'min-h-screen'}`}>
+      <div className={`flex-1 flex flex-col overflow-hidden ${['staff', 'faq', 'gallery', 'audit', 'inventory', 'payments'].includes(activeTab) ? 'h-dvh min-h-0' : 'min-h-screen'}`}>
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
-        <main className={`flex-1 min-h-0 min-w-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${['reports', 'staff', 'faq', 'gallery', 'audit', 'inventory'].includes(activeTab) ? 'overflow-hidden' : 'overflow-y-auto'} ${['staff', 'faq', 'gallery', 'audit', 'inventory'].includes(activeTab) ? 'flex flex-col' : ''}`}>
-          {['payments', 'staff', 'faq'].includes(activeTab) && (
+        <main className={`flex-1 min-h-0 min-w-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${['reports', 'staff', 'faq', 'gallery', 'audit', 'inventory', 'payments'].includes(activeTab) ? 'overflow-hidden' : 'overflow-y-auto'} ${['staff', 'faq', 'gallery', 'audit', 'inventory', 'payments'].includes(activeTab) ? 'flex flex-col' : ''}`}>
+          {['staff', 'faq'].includes(activeTab) && (
             <h1 className="heading-page mb-4 shrink-0 text-espresso">{pageTitles[activeTab]}</h1>
           )}
           {receiptPrintError && (
@@ -1971,15 +2021,10 @@ export default function AdminDashboard() {
                         <Button size="sm" variant="outline" onClick={resetSalesChartView}>Reset View</Button>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="mr-1 text-[10px] font-black uppercase tracking-wider text-espresso/45">Horizontal view</span>
-                        <Button size="sm" variant="outline" icon={ChevronLeft} aria-label="Pan chart left" title="Pan chart left" disabled={salesChartStartIndex <= 0} onClick={() => panSalesChart(-1)} />
-                        <Button size="sm" variant="outline" aria-label="Zoom out" disabled={salesChartStartIndex === 0 && salesChartEndIndex === salesChartLastIndex} onClick={() => zoomSalesChart(1.5)}>−</Button>
-                        <Button size="sm" variant="outline" aria-label="Zoom in" disabled={forecastChartData.length < 3 || salesChartEndIndex - salesChartStartIndex < 2} onClick={() => zoomSalesChart(0.67)}>+</Button>
-                        <Button size="sm" variant="outline" icon={ChevronRight} aria-label="Pan chart right" title="Pan chart right" disabled={salesChartEndIndex >= salesChartLastIndex} onClick={() => panSalesChart(1)} />
                         <span className="text-[11px] font-semibold text-espresso/55">
                           <span data-testid="sales-chart-visible-range">{visibleSalesChartData.length ? `${formatForecastDate(visibleSalesChartData[0].period_start || visibleSalesChartData[0].date)} – ${formatForecastDate(visibleSalesChartData[visibleSalesChartData.length - 1].period_end || visibleSalesChartData[visibleSalesChartData.length - 1].date)}` : 'No dates in selected range'}</span>
                         </span>
-                        <span className="ml-auto text-[10px] font-semibold text-espresso/45">Drag the range handles below the chart to zoom and pan.</span>
+                        <span className="ml-auto text-[10px] font-semibold text-espresso/45">Scroll to zoom · Drag to pan.</span>
                       </div>
                     </div>
                     <div className="h-[360px] 2xl:h-[420px] w-full" aria-busy={forecastLoading || (!forecast && !forecastError)}>
@@ -1992,7 +2037,15 @@ export default function AdminDashboard() {
                       )}
                       {forecastChartData.length > 0 ? (
                         <div className="flex h-full min-h-0 flex-col">
-                          <div className="min-h-0 flex-1">
+                          <div
+                            className={`min-h-0 flex-1 touch-none select-none ${salesChartDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                            ref={salesChartInteractionElementRef}
+                            data-testid="sales-chart-interaction-area"
+                            onMouseDown={handleSalesChartMouseDown}
+                            onMouseMove={handleSalesChartMouseMove}
+                            onMouseUp={handleSalesChartMouseEnd}
+                            style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
+                          >
                             <DashboardChartBoundary resetKey={`${forecastView}:${visibleSalesChartData.length}:${visibleSeries.actual}:${visibleSeries.forecast}:${visibleSeries.combined}`}>
                               <ResponsiveContainer width="100%" height="100%">
                                 <ComposedChart data={visibleSalesChartData} margin={{ top: 12, right: 20, left: 12, bottom: 5 }}>
@@ -2008,18 +2061,6 @@ export default function AdminDashboard() {
                               </ResponsiveContainer>
                             </DashboardChartBoundary>
                           </div>
-                          {forecastChartData.length > 1 && (
-                            <div className="h-16 w-full shrink-0" aria-label="Sales chart range selector">
-                              <ResponsiveContainer width="100%" height="100%">
-                                <ComposedChart data={forecastChartData} margin={{ top: 0, right: 20, left: 12, bottom: 0 }}>
-                                  <XAxis dataKey="date" hide />
-                                  <YAxis hide domain={['auto', 'auto']} />
-                                  <Line type="monotone" dataKey="combined_sales" stroke="#A47716" strokeWidth={1} dot={false} connectNulls />
-                                  <Brush dataKey="date" ariaLabel="Drag to zoom or pan sales chart" height={34} travellerWidth={10} startIndex={salesChartStartIndex} endIndex={salesChartEndIndex} onChange={handleSalesChartBrush} tickFormatter={formatForecastDate} stroke="#A47716" fill="#F7F0E3" />
-                                </ComposedChart>
-                              </ResponsiveContainer>
-                            </div>
-                          )}
                         </div>
                       ) : (forecast || forecastError) ? (
                         <EmptyState icon={BarChart2} title={salesChartStartDate || salesChartEndDate ? 'No sales in selected date range' : 'No sales or forecast data'} description="Adjust the date filters or reset the graph view to inspect available sales." />
@@ -2636,48 +2677,55 @@ export default function AdminDashboard() {
 
           {/* PAYMENT BOOKING VERIFICATION */}
           {activeTab === 'payments' && (
-            <div className="w-full space-y-4 animate-in-up" key="payments">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="flex min-h-0 w-full flex-1 flex-col gap-3 animate-in-up" key="payments">
+              <div className="grid shrink-0 grid-cols-3 gap-2">
                 {[
                   ['Pending Verification', paymentStatusCounts.PENDING_VERIFICATION || 0, 'bg-amber-50 text-amber-700 border-amber-200'],
                   ['Approved', paymentStatusCounts.APPROVED || 0, 'bg-emerald-50 text-emerald-700 border-emerald-200'],
                   ['Rejected', paymentStatusCounts.REJECTED || 0, 'bg-red-50 text-red-700 border-red-200'],
                 ].map(([label, value, className]) => (
-                  <div key={label} className={`rounded-2xl border p-4 shadow-sm ${className}`}>
-                    <p className="text-[10px] uppercase tracking-[0.18em] font-black opacity-80">{label}</p>
-                    <p className="text-3xl font-black mt-2">{value}</p>
+                  <div key={label} className={`rounded-2xl border px-3 py-2.5 shadow-sm ${className}`}>
+                    <p className="text-[9px] uppercase tracking-[0.16em] font-black opacity-80">{label}</p>
+                    <p className="text-2xl font-black leading-tight mt-1">{value}</p>
                   </div>
                 ))}
               </div>
 
-              <Card className="!p-4 md:!p-5">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+              <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col p-3 sm:p-4 md:p-5">
                   <CardHeader
                     title="Booking Payment Verification"
                     subtitle="Review the booking details, then match the reference number and amount with the selected payment provider before approving."
-                    className="mb-0"
+                    className="mb-2 shrink-0 gap-2 sm:flex-col sm:items-start"
                   />
-                  <div className="w-full md:w-64">
-                    <Select
-                      label="Filter Status"
-                      value={paymentStatusFilter}
-                      onChange={e => {
-                        setPaymentStatusFilter(e.target.value);
-                        setPaymentPage(1);
-                      }}
-                      options={[
-                        { value: 'PENDING_VERIFICATION', label: 'Pending Verification' },
-                        { value: 'APPROVED', label: 'Approved' },
-                        { value: 'REJECTED', label: 'Rejected' },
-                        { value: 'ALL', label: 'All Payments' },
-                      ]}
-                    />
+                  <div role="group" aria-label="Booking payment status filter" className="mb-3 flex shrink-0 gap-1 overflow-x-auto rounded-xl bg-cream/70 p-1 scrollbar-thin">
+                    {[
+                      ['ALL', 'All'],
+                      ['PENDING_VERIFICATION', 'Pending Verification'],
+                      ['APPROVED', 'Approved'],
+                      ['REJECTED', 'Rejected'],
+                    ].map(([value, label]) => {
+                      const active = paymentStatusFilter === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => {
+                            setPaymentStatusFilter(value);
+                            setPaymentPage(1);
+                            if (paymentListRef.current) paymentListRef.current.scrollTop = 0;
+                          }}
+                          className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-[10px] font-black transition-colors sm:text-xs ${active ? 'bg-espresso text-gold shadow-sm' : 'text-espresso/60 hover:bg-white hover:text-espresso'}`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
-                </div>
 
-                {filteredBookingPayments.length > 0 ? (
-                  <>
-                  <div className="space-y-2">
+                <div ref={paymentListRef} aria-label="Booking payment list" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 scrollbar-thin">
+                {filteredBookingPayments.length > 0 ? <div className="space-y-2 pb-1">
                     {paymentPageRows.map((payment, i) => {
                       const details = payment.booking_details || {};
                       const isPending = payment.status === 'PENDING_VERIFICATION';
@@ -2754,12 +2802,16 @@ export default function AdminDashboard() {
                         </div>
                       );
                     })}
-                  </div>
-                  <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={paymentPageSize} setPageSize={setPaymentPageSize} />
-                  </>
-                ) : (
+                </div> : (
                   <EmptyState icon={CreditCard} title="No payments found" description="Submitted booking payments will appear here for verification." />
                 )}
+                </div>
+                {filteredBookingPayments.length > 0 && (
+                  <div className="mt-2 shrink-0 border-t border-espresso/[0.06] pt-2">
+                    <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={paymentPageSize} setPageSize={setPaymentPageSize} />
+                  </div>
+                )}
+                </div>
               </Card>
             </div>
           )}

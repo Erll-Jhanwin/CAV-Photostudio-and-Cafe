@@ -85,3 +85,27 @@ export function getSalesYAxisDomain(rows, visibleSeries = { actual: true, foreca
   const padding = Math.max((max - min) * 0.08, Math.max(Math.abs(max), 1) * 0.03, 1);
   return [min >= 0 ? Math.max(0, min - padding) : min - padding, max + padding];
 }
+
+export function zoomSalesChartRange({ start, end, total, factor, anchorRatio = 0.5, minSize = 3 }) {
+  if (total < 2 || !Number.isFinite(factor) || factor <= 0) return { start: 0, end: Math.max(total - 1, 0) };
+  const last = total - 1;
+  const currentStart = Math.max(0, Math.min(last, start));
+  const currentEnd = Math.max(currentStart, Math.min(last, end));
+  const currentSize = currentEnd - currentStart + 1;
+  const nextSize = Math.max(Math.min(minSize, total), Math.min(total, Math.round(currentSize * factor)));
+  const ratio = Math.max(0, Math.min(1, anchorRatio));
+  const anchorIndex = currentStart + ratio * (currentSize - 1);
+  let nextStart = Math.round(anchorIndex - ratio * (nextSize - 1));
+  nextStart = Math.max(0, Math.min(total - nextSize, nextStart));
+  return { start: nextStart, end: nextStart + nextSize - 1 };
+}
+
+export function panSalesChartRange({ start, end, total, delta }) {
+  if (total < 2) return { start: 0, end: Math.max(total - 1, 0) };
+  const last = total - 1;
+  const currentStart = Math.max(0, Math.min(last, start));
+  const currentEnd = Math.max(currentStart, Math.min(last, end));
+  const size = currentEnd - currentStart + 1;
+  const nextStart = Math.max(0, Math.min(total - size, currentStart + Math.round(delta)));
+  return { start: nextStart, end: nextStart + size - 1 };
+}

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import client, { getCached } from '../api/client';
 import { getManilaMonthValue } from '../utils/dateTime';
@@ -177,6 +177,71 @@ describe('AdminDashboard', () => {
     await act(async () => resolveProof({ data: new Blob(['proof'], { type: 'image/png' }) }));
   });
 
+  it('filters payment tabs immediately and keeps scrolling inside the fixed verification panel', async () => {
+    const statuses = ['PENDING_VERIFICATION', 'APPROVED', 'REJECTED', 'PENDING_VERIFICATION'];
+    const payments = statuses.map((status, index) => ({
+      id: 70 + index,
+      booking: 170 + index,
+      amount: '500.00',
+      required_down_payment: '500.00',
+      method_label: 'GCash',
+      reference_number: `REF-${index}`,
+      paid_at: '2026-10-28T10:00:00Z',
+      status,
+      verified_by_details: { username: 'Admin' },
+      booking_details: {
+        customer_name: `Payment Customer ${index + 1}`,
+        customer_email: `customer${index + 1}@example.com`,
+        package_name: 'Portrait Session',
+        scheduled_date: '2026-11-15',
+        scheduled_time: '10:30',
+      },
+    }));
+    getCached.mockImplementation(url => {
+      if (url.includes('/api/bookings/payments/')) return Promise.resolve({ data: payments });
+      if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
+      return Promise.resolve({ data: {
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
+        top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
+        low_stock_alerts: [], inventory_alerts: [],
+      } });
+    });
+
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
+
+    const panel = await screen.findByRole('group', { name: 'Booking payment status filter' });
+    const list = screen.getByLabelText('Booking payment list');
+    const main = document.querySelector('main');
+    expect(main).toHaveClass('overflow-hidden', 'flex', 'flex-col');
+    expect(list).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto');
+    expect(within(panel).getByRole('button', { name: 'Pending Verification' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Payment Customer 1')).toBeInTheDocument();
+    expect(screen.getByText('Payment Customer 4')).toBeInTheDocument();
+    expect(screen.queryByText('Payment Customer 2')).not.toBeInTheDocument();
+
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 180 });
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 1200 });
+    list.scrollTop = 360;
+    fireEvent.scroll(list);
+    fireEvent.click(within(panel).getByRole('button', { name: 'Approved' }));
+    expect(list.scrollTop).toBe(0);
+    expect(within(panel).getByRole('button', { name: 'Approved' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Payment Customer 2')).toBeInTheDocument();
+    expect(screen.queryByText('Payment Customer 1')).not.toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Rejected' }));
+    expect(within(panel).getByRole('button', { name: 'Rejected' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Payment Customer 3')).toBeInTheDocument();
+    expect(screen.queryByText('Payment Customer 2')).not.toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('button', { name: 'All' }));
+    expect(within(panel).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Payment Customer 1')).toBeInTheDocument();
+    expect(screen.getByText('Payment Customer 2')).toBeInTheDocument();
+    expect(screen.getByText('Payment Customer 3')).toBeInTheDocument();
+  });
+
   it('renders the admin shell and opens Accounts with Lucide action icons', async () => {
     render(
       <MemoryRouter>
@@ -269,6 +334,8 @@ describe('AdminDashboard', () => {
     expect(screen.getByRole('button', { name: 'Actual' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Forecast' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Combined' })).toBeInTheDocument();
+    expect(screen.getByText('Scroll to zoom · Drag to pan.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Sales chart range selector')).not.toBeInTheDocument();
     const visibleRange = screen.getByTestId('sales-chart-visible-range');
     expect(visibleRange.textContent).toContain('Jul 31, 2025');
     expect(visibleRange.textContent).toContain('Aug 7, 2025');
@@ -283,12 +350,23 @@ describe('AdminDashboard', () => {
     expect(screen.getByRole('button', { name: 'Upcoming months' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Reset View' }));
     expect(startDate).toHaveValue('');
-    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    const interactionArea = screen.getByTestId('sales-chart-interaction-area');
+    interactionArea.getBoundingClientRect = () => ({ left: 0, right: 1000, width: 1000, top: 0, bottom: 360, height: 360 });
+    const zoomInEvent = createEvent.wheel(interactionArea, { deltaY: -120, clientX: 750, cancelable: true });
+    fireEvent(interactionArea, zoomInEvent);
+    expect(zoomInEvent.defaultPrevented).toBe(true);
     expect(visibleRange.textContent).not.toContain('Jul 31, 2025');
-    expect(visibleRange.textContent).not.toContain('Aug 7, 2025');
-    expect(screen.getByRole('button', { name: 'Pan chart left' })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Pan chart left' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Pan chart right' }));
+    const zoomedRange = visibleRange.textContent;
+    const zoomOutEvent = createEvent.wheel(interactionArea, { deltaY: 120, clientX: 750, cancelable: true });
+    fireEvent(interactionArea, zoomOutEvent);
+    expect(zoomOutEvent.defaultPrevented).toBe(true);
+    expect(visibleRange.textContent).toContain('Jul 31, 2025');
+    fireEvent.wheel(interactionArea, { deltaY: -120, clientX: 750, cancelable: true });
+    fireEvent.mouseDown(interactionArea, { button: 0, clientX: 700 });
+    fireEvent.mouseMove(interactionArea, { clientX: 350 });
+    fireEvent.mouseUp(interactionArea, { clientX: 350 });
+    expect(visibleRange.textContent).not.toBe('Jul 31, 2025 – Aug 7, 2025');
+    expect(zoomedRange).not.toBe('Jul 31, 2025 – Aug 7, 2025');
     fireEvent.click(screen.getByRole('button', { name: 'Reset View' }));
     expect(startDate).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Daily' })).toHaveAttribute('aria-pressed', 'true');
