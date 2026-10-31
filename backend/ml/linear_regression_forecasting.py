@@ -7,6 +7,7 @@ import pandas as pd
 from django.db import transaction
 
 from forecasting.models import ForecastRun
+from ml.sales_history_repository import DEFAULT_SOURCE_NAME, _decimal
 
 MODEL_VERSION = 'daily-sales-ols-synthetic-v1'
 DEFAULT_HORIZON_DAYS = 7
@@ -35,14 +36,13 @@ def load_daily_sales(path=None):
     raw = raw.drop_duplicates()
     exact_duplicates = original_count - len(raw)
     dates = pd.to_datetime(raw['Date'].astype(str).str.strip(), format='mixed', errors='coerce')
-    sales_text = raw['Sales (PHP)'].astype(str).str.strip().str.replace(',', '', regex=False).str.replace(r'^(PHP|₱)\s*', '', regex=True)
-    sales = pd.to_numeric(sales_text, errors='coerce')
+    sales = raw['Sales (PHP)'].map(_decimal)
     valid_date = dates.notna()
-    valid_sales = sales.notna() & sales.map(math.isfinite) & sales.ge(0)
+    valid_sales = sales.map(lambda value: value is not None and math.isfinite(float(value)) and value >= 0)
     kept = valid_date & valid_sales
     skipped_missing_or_invalid_date = int((~valid_date).sum())
     skipped_missing_or_invalid_sales = int((valid_date & ~valid_sales).sum())
-    frame = pd.DataFrame({'date': dates[kept].dt.normalize(), 'sales': sales[kept].astype(float).to_numpy()})
+    frame = pd.DataFrame({'date': dates[kept].dt.normalize(), 'sales': sales[kept].map(float).to_numpy()})
     if frame.empty:
         return {'status': 'invalid', 'detail': 'No rows with a valid date and non-negative finite sales value were found.', 'values': [], 'dates': [], 'quality': {'columns': list(raw.columns)}}
 
@@ -145,9 +145,45 @@ def evaluate_series(values, dates=None):
     }
 
 
-def create_forecast_run(horizon=DEFAULT_HORIZON_DAYS, csv_path=None):
+def create_forecast_run(horizon=DEFAULT_HORIZON_DAYS, csv_path=None, source_name=DEFAULT_SOURCE_NAME):
     horizon = max(1, min(int(horizon), 90))
-    data = load_daily_sales(csv_path)
+    if csv_path is None:
+        from ml.forecasting_engine import preprocess_sales_history
+        from ml.sales_history_repository import get_active_sales_history
+
+        active_batch, _ = get_active_sales_history(source_name)
+        if active_batch:
+            processed = preprocess_sales_history(source_name)
+            if processed['status'] == 'ok':
+                daily = processed['daily']
+                quality = processed['summary']
+                data = {
+                    'status': 'ok', 'detail': '',
+                    'dates': [pd.Timestamp(value).date() for value in daily['date']],
+                    'values': [float(value) for value in daily['actual_sales']],
+                    'quality': {
+                        'source_file': quality.get('source_file'),
+                        'dataset_type': quality.get('dataset_type'),
+                        'is_synthetic': quality.get('is_synthetic', False),
+                        'columns': quality.get('source_columns', []),
+                        'column_mapping': quality.get('column_mapping', {}),
+                        'raw_rows': quality.get('raw_rows', 0),
+                        'valid_rows': quality.get('valid_rows', 0),
+                        'skipped_rows': quality.get('skipped_rows', 0),
+                        'exact_duplicate_rows_removed': quality.get('import_quality', {}).get('exact_duplicate_rows_removed', 0),
+                        'duplicate_date_rows_aggregated': quality.get('import_quality', {}).get('duplicate_date_rows', 0),
+                        'imputed_missing_days': quality.get('missing_days', 0),
+                        'training_sales_total_php': quality.get('total_sales', 0),
+                        'start_date': quality['start_date'].isoformat(),
+                        'end_date': quality['end_date'].isoformat(),
+                    },
+                }
+            else:
+                data = {'status': processed['status'], 'detail': processed['error'], 'dates': [], 'values': [], 'quality': {}}
+        else:
+            data = load_daily_sales()
+    else:
+        data = load_daily_sales(csv_path)
     dates, values, quality = data['dates'], data['values'], data['quality']
     predictions = {'sales': [], 'actual_history': [], 'backtest': []}
     evaluation = {}

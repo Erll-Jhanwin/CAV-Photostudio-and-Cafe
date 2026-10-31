@@ -7,18 +7,33 @@ import {
 } from './salesForecastChartData';
 
 describe('sales forecast chart data', () => {
+  it('maps verified imported API revenue and prediction into the chart series', () => {
+    const chartRows = buildSalesForecastChartData([
+      { date: '2022-08-01', actual_sales: 130, backtest_predicted_sales: null },
+    ], [
+      { target_date: '2025-08-01', predicted_sales: 122.65, lower_bound: null, upper_bound: null },
+    ]);
+
+    expect(chartRows).toEqual([
+      expect.objectContaining({ date: '2022-08-01', actual_sales: 130, combined_sales: 130 }),
+      expect.objectContaining({ date: '2025-08-01', forecast_sales: 122.65, combined_sales: 122.65, lower_bound: null, upper_bound: null }),
+    ]);
+  });
+
   it('keeps complete years, chronological order, real zeros, nulls, and combined values', () => {
     const chartRows = buildSalesForecastChartData([
       { date: '2025-01-01', actual_sales: 50, backtest_predicted_sales: 45 },
       { date: '2024-12-31', actual_sales: 0, backtest_predicted_sales: null },
     ], [
       { target_date: '2025-01-02', predicted_sales: 30, lower_bound: 20, upper_bound: 40 },
+      { target_date: '2025-01-03', predicted_sales: 35, lower_bound: 25, upper_bound: 45, interval_method: 'ols_prediction_interval' },
     ]);
 
-    expect(chartRows.map(row => row.date)).toEqual(['2024-12-31', '2025-01-01', '2025-01-02']);
+    expect(chartRows.map(row => row.date)).toEqual(['2024-12-31', '2025-01-01', '2025-01-02', '2025-01-03']);
     expect(chartRows[0]).toMatchObject({ actual_sales: 0, forecast_sales: null, combined_sales: 0 });
     expect(chartRows[1]).toMatchObject({ actual_sales: 50, forecast_sales: 45, combined_sales: 50 });
-    expect(chartRows[2]).toMatchObject({ forecast_sales: 30, combined_sales: 30, lower_bound: 20, upper_bound: 40 });
+    expect(chartRows[2]).toMatchObject({ forecast_sales: 30, combined_sales: 30, lower_bound: null, upper_bound: null });
+    expect(chartRows[3]).toMatchObject({ forecast_sales: 35, lower_bound: 25, upper_bound: 45 });
   });
 
   it('selects distinct next-week and monthly forecast ranges', () => {

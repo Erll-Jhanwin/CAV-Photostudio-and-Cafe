@@ -1903,7 +1903,7 @@ export default function AdminDashboard() {
                 <div className={`rounded-2xl border px-4 py-3 text-xs ${backtestAvailable ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
                   <p className="font-black">{backtestAvailable ? 'Backtested forecast available' : 'Forecast available; backtest metrics unavailable'}</p>
                   <p className="mt-1 font-semibold opacity-80">{forecast?.data_sufficiency?.message}</p>
-                  <p className="mt-1 opacity-70">Source: {forecast.source_file} · Imported {forecast.imported_at ? formatForecastDate(forecast.imported_at) : 'unknown'} · {forecast.data_quality?.valid_rows ?? '—'} valid rows · {forecast.data_quality?.history_days ?? '—'} calendar days.</p>
+                  <p className="mt-1 opacity-70">Dataset: {forecast.data_quality?.dataset_type || (forecast.data_quality?.is_synthetic ? 'Synthetic sales data' : 'Imported sales data')} · Source: {forecast.source_file} · Imported {forecast.imported_at ? formatForecastDate(forecast.imported_at) : 'unknown'} · {forecast.data_quality?.valid_rows ?? '—'} valid rows · {forecast.data_quality?.history_days ?? '—'} calendar days.</p>
                 </div>
               )}
 
@@ -1967,12 +1967,12 @@ export default function AdminDashboard() {
                         <Button size="sm" variant="outline" aria-label="Zoom in" disabled={forecastChartData.length < 3 || salesChartEndIndex - salesChartStartIndex < 2} onClick={() => zoomSalesChart(0.67)}>+</Button>
                         <Button size="sm" variant="outline" icon={ChevronRight} aria-label="Pan chart right" title="Pan chart right" disabled={salesChartEndIndex >= salesChartLastIndex} onClick={() => panSalesChart(1)} />
                         <span className="text-[11px] font-semibold text-espresso/55">
-                          {visibleSalesChartData.length ? `${formatForecastDate(visibleSalesChartData[0].period_start || visibleSalesChartData[0].date)} – ${formatForecastDate(visibleSalesChartData[visibleSalesChartData.length - 1].period_end || visibleSalesChartData[visibleSalesChartData.length - 1].date)}` : 'No dates in selected range'}
+                          <span data-testid="sales-chart-visible-range">{visibleSalesChartData.length ? `${formatForecastDate(visibleSalesChartData[0].period_start || visibleSalesChartData[0].date)} – ${formatForecastDate(visibleSalesChartData[visibleSalesChartData.length - 1].period_end || visibleSalesChartData[visibleSalesChartData.length - 1].date)}` : 'No dates in selected range'}</span>
                         </span>
                         <span className="ml-auto text-[10px] font-semibold text-espresso/45">Drag the range handles below the chart to zoom and pan.</span>
                       </div>
                     </div>
-                    <div className="h-[300px] 2xl:h-[360px] w-full" aria-busy={forecastLoading || (!forecast && !forecastError)}>
+                    <div className="h-[360px] 2xl:h-[420px] w-full" aria-busy={forecastLoading || (!forecast && !forecastError)}>
                       {(forecastLoading || (!forecast && !forecastError)) && (
                         <div className="h-full flex flex-col items-center justify-center gap-3 rounded-2xl bg-cream/60" role="status">
                           <Skeleton className="h-5 w-48" />
@@ -1981,23 +1981,36 @@ export default function AdminDashboard() {
                         </div>
                       )}
                       {forecastChartData.length > 0 ? (
-                        <DashboardChartBoundary resetKey={`${forecastView}:${forecastChartData.length}:${visibleSeries.actual}:${visibleSeries.forecast}:${visibleSeries.combined}`}>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={forecastChartData} margin={{ top: 12, right: 20, left: 12, bottom: 5 }}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
-                              <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} minTickGap={22} interval="preserveStartEnd" tickFormatter={formatForecastDate} />
-                              <YAxis domain={salesYAxisDomain} allowDataOverflow stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} width={95} tickFormatter={formatCurrency} />
-                              <Tooltip content={<SalesForecastTooltip />} />
-                              <Legend wrapperStyle={{ fontSize: 11 }} />
-                              {visibleSeries.actual && <Line type="monotone" dataKey="actual_sales" name="Actual Sales" stroke="#2E1A11" strokeWidth={3} dot={false} connectNulls={false} />}
-                              {visibleSeries.forecast && <Line type="monotone" dataKey="forecast_sales" name="ML Forecast" stroke="#D4AF37" strokeWidth={3} strokeDasharray="7 5" dot={{ r: 3, fill: '#D4AF37' }} connectNulls={false} />}
-                              {visibleSeries.forecast && <Line type="monotone" dataKey="upper_bound" name="Upper Confidence" stroke="#8D6E63" strokeWidth={1.5} strokeDasharray="3 5" dot={false} connectNulls={false} />}
-                              {visibleSeries.forecast && <Line type="monotone" dataKey="lower_bound" name="Lower Confidence" stroke="#E57373" strokeWidth={1.5} strokeDasharray="3 5" dot={false} connectNulls={false} />}
-                              {visibleSeries.combined && <Line type="monotone" dataKey="combined_sales" name="Combined Actual + Forecast" stroke="#3B82F6" strokeWidth={2.5} dot={false} connectNulls />}
-                              {forecastChartData.length > 1 && <Brush dataKey="date" ariaLabel="Drag to zoom or pan sales chart" height={34} travellerWidth={10} startIndex={salesChartStartIndex} endIndex={salesChartEndIndex} onChange={handleSalesChartBrush} tickFormatter={formatForecastDate} stroke="#A47716" fill="#F7F0E3" />}
-                            </ComposedChart>
-                          </ResponsiveContainer>
-                        </DashboardChartBoundary>
+                        <div className="flex h-full min-h-0 flex-col">
+                          <div className="min-h-0 flex-1">
+                            <DashboardChartBoundary resetKey={`${forecastView}:${visibleSalesChartData.length}:${visibleSeries.actual}:${visibleSeries.forecast}:${visibleSeries.combined}`}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <ComposedChart data={visibleSalesChartData} margin={{ top: 12, right: 20, left: 12, bottom: 5 }}>
+                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
+                                  <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} minTickGap={22} interval="preserveStartEnd" tickFormatter={formatForecastDate} />
+                                  <YAxis domain={salesYAxisDomain} allowDataOverflow stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} width={95} tickFormatter={formatCurrency} />
+                                  <Tooltip content={<SalesForecastTooltip />} />
+                                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                                  {visibleSeries.actual && <Line type="monotone" dataKey="actual_sales" name="Actual Sales" stroke="#2E1A11" strokeWidth={3} dot={false} connectNulls={false} />}
+                                  {visibleSeries.forecast && <Line type="monotone" dataKey="forecast_sales" name="ML Forecast" stroke="#D4AF37" strokeWidth={3} strokeDasharray="7 5" dot={{ r: 3, fill: '#D4AF37' }} connectNulls={false} />}
+                                  {visibleSeries.combined && <Line type="monotone" dataKey="combined_sales" name="Combined Actual + Forecast" stroke="#3B82F6" strokeWidth={2.5} dot={false} connectNulls />}
+                                </ComposedChart>
+                              </ResponsiveContainer>
+                            </DashboardChartBoundary>
+                          </div>
+                          {forecastChartData.length > 1 && (
+                            <div className="h-16 w-full shrink-0" aria-label="Sales chart range selector">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <ComposedChart data={forecastChartData} margin={{ top: 0, right: 20, left: 12, bottom: 0 }}>
+                                  <XAxis dataKey="date" hide />
+                                  <YAxis hide domain={['auto', 'auto']} />
+                                  <Line type="monotone" dataKey="combined_sales" stroke="#A47716" strokeWidth={1} dot={false} connectNulls />
+                                  <Brush dataKey="date" ariaLabel="Drag to zoom or pan sales chart" height={34} travellerWidth={10} startIndex={salesChartStartIndex} endIndex={salesChartEndIndex} onChange={handleSalesChartBrush} tickFormatter={formatForecastDate} stroke="#A47716" fill="#F7F0E3" />
+                                </ComposedChart>
+                              </ResponsiveContainer>
+                            </div>
+                          )}
+                        </div>
                       ) : (forecast || forecastError) ? (
                         <EmptyState icon={BarChart2} title={salesChartStartDate || salesChartEndDate ? 'No sales in selected date range' : 'No sales or forecast data'} description="Adjust the date filters or reset the graph view to inspect available sales." />
                       ) : null}

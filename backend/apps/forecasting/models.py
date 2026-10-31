@@ -3,7 +3,7 @@ from django.db.models import Q
 
 
 class SalesHistoryImport(models.Model):
-    """An immutable, validated snapshot of an uploaded sales export."""
+    """A content-addressed, validated snapshot of a sales export."""
 
     PENDING = 'PENDING'
     READY = 'READY'
@@ -22,6 +22,7 @@ class SalesHistoryImport(models.Model):
     row_count = models.PositiveIntegerField(default=0)
     imported_row_count = models.PositiveIntegerField(default=0)
     skipped_row_count = models.PositiveIntegerField(default=0)
+    quality_report = models.JSONField(default=dict, blank=True)
     history_start = models.DateField(null=True, blank=True)
     history_end = models.DateField(null=True, blank=True)
     error_message = models.TextField(blank=True)

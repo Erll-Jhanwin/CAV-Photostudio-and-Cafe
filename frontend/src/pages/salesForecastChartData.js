@@ -23,12 +23,13 @@ export function buildSalesForecastChartData(historyRows, forecastRows) {
   });
   const future = forecastRows.map(row => {
     const prediction = numericValueOrNull(row.predicted_sales);
+    const hasStatisticalInterval = row.interval_method === 'ols_prediction_interval';
     return {
       date: row.target_date,
       forecast_sales: prediction,
       combined_sales: prediction,
-      lower_bound: numericValueOrNull(row.lower_bound),
-      upper_bound: numericValueOrNull(row.upper_bound),
+      lower_bound: hasStatisticalInterval ? numericValueOrNull(row.lower_bound) : null,
+      upper_bound: hasStatisticalInterval ? numericValueOrNull(row.upper_bound) : null,
     };
   });
   return [...historical, ...future].sort((left, right) => String(left.date).localeCompare(String(right.date)));

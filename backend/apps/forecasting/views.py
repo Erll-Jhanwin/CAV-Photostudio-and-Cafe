@@ -68,12 +68,39 @@ class SalesHistoryImportView(views.APIView):
                 except OSError:
                     pass
 
+        forecast_error = ''
+        if result.get('status') == 'ok':
+            # A content duplicate can still repair an old snapshot. Retrain
+            # against the newly active normalized rows before reporting success.
+            cache.delete(forecast_cache_key())
+            ForecastRun.objects.filter(model_version=MODEL_VERSION).delete()
+            try:
+                run = create_forecast_run()
+                if run.data_status != 'ready':
+                    forecast_error = (run.evaluation or {}).get('detail') or 'The imported sales history is insufficient for a valid regression backtest.'
+                else:
+                    result['forecast_run'] = {
+                        'id': run.id,
+                        'status': run.data_status,
+                        'training_count': run.evaluation['sales']['train_count'],
+                        'test_count': run.evaluation['sales']['test_count'],
+                        'training_computation': run.evaluation['sales']['training_computation'],
+                        'metrics': run.evaluation['sales']['backtest'],
+                    }
+            except Exception as exc:
+                forecast_error = f'Forecast retraining failed after import: {exc}'
+            cache.delete(forecast_cache_key())
+            if forecast_error:
+                result['forecast_status'] = 'error'
+                result['detail'] = forecast_error
+            else:
+                result['forecast_status'] = 'ready'
+
         response_status = status.HTTP_201_CREATED if result.get('imported') else status.HTTP_200_OK
         if result.get('status') != 'ok':
             response_status = status.HTTP_400_BAD_REQUEST
-        else:
-            # A content duplicate can still reactivate a snapshot after changing source.
-            cache.delete(forecast_cache_key())
+        elif forecast_error:
+            response_status = status.HTTP_422_UNPROCESSABLE_ENTITY
         return Response(result, status=response_status)
 
 

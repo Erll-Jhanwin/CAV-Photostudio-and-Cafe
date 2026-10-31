@@ -152,7 +152,9 @@ def preprocess_sales_history(source_name=DEFAULT_SOURCE_NAME):
             'source_file': batch.source_filename,
             'dataset_type': 'Synthetic daily sales data' if is_synthetic else 'Imported sales history',
             'is_synthetic': is_synthetic,
-            'source_columns': ['Date', 'Orders', 'Units', 'Sales (PHP)', 'Data origin'] if is_synthetic else [],
+            'source_columns': batch.quality_report.get('source_columns', []),
+            'column_mapping': batch.quality_report.get('column_mapping', {}),
+            'import_quality': batch.quality_report,
             'source_hash': batch.source_hash,
             'imported_at': batch.completed_at.isoformat() if batch.completed_at else None,
             'raw_rows': batch.row_count,
@@ -315,15 +317,17 @@ def _linear_sales_forecast(values, horizon, observed_days, reliable):
     final_model = fit_linear_regression(values.tolist())
     future_x = np.arange(sample_count, sample_count + horizon, dtype=float)
     future = np.maximum(final_model['slope'] * future_x + final_model['intercept'], 0.0)
-    residuals = np.asarray(actual) - predicted
-    spread = max(float(np.sqrt(np.mean(residuals ** 2))), 1.0)
     backtest = [
         {'date_index': int(index), 'actual_sales': round(float(actual[offset]), 2),
          'predicted_sales': round(float(predicted[offset]), 2),
          'baseline_sales': round(float(baseline_prediction[offset]), 2)}
         for offset, index in enumerate(range(split, sample_count))
     ]
-    return future, np.maximum(future - spread, 0.0), future + spread, {
+    # The former residual-RMSE band was displayed as confidence bounds but
+    # omitted leverage and uncertainty calculation. Do not label a heuristic
+    # spread as a statistical interval; no bounds are emitted until a valid
+    # prediction interval is implemented.
+    return future, np.full(horizon, np.nan), np.full(horizon, np.nan), {
         'name': 'linear_regression', 'display_name': 'Daily linear regression',
         'history_days': sample_count, 'observed_days': observed_days,
         'reliable': bool(reliable), 'metrics': metrics,

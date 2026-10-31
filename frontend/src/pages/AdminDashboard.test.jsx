@@ -257,6 +257,7 @@ describe('AdminDashboard', () => {
     render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
 
     expect(await screen.findByText('Backtested forecast available')).toBeInTheDocument();
+    expect(screen.getByText(/Dataset: Synthetic sales data/)).toBeInTheDocument();
     expect(screen.getByText('PHP 280')).toBeInTheDocument();
     expect(screen.getByText('PHP 770')).toBeInTheDocument();
     expect(screen.getAllByText('50%')).toHaveLength(2);
@@ -267,6 +268,9 @@ describe('AdminDashboard', () => {
     expect(screen.getByRole('button', { name: 'Actual' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Forecast' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Combined' })).toBeInTheDocument();
+    const visibleRange = screen.getByTestId('sales-chart-visible-range');
+    expect(visibleRange.textContent).toContain('Jul 31, 2025');
+    expect(visibleRange.textContent).toContain('Aug 7, 2025');
     const startDate = screen.getByLabelText('Sales chart start date');
     fireEvent.change(startDate, { target: { value: '2025-08-02' } });
     expect(startDate).toHaveValue('2025-08-02');
@@ -279,6 +283,8 @@ describe('AdminDashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset View' }));
     expect(startDate).toHaveValue('');
     fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(visibleRange.textContent).not.toContain('Jul 31, 2025');
+    expect(visibleRange.textContent).not.toContain('Aug 7, 2025');
     expect(screen.getByRole('button', { name: 'Pan chart left' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Pan chart left' }));
     fireEvent.click(screen.getByRole('button', { name: 'Pan chart right' }));

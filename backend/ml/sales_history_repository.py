@@ -36,18 +36,22 @@ def _find_column(columns, aliases):
     return None
 
 
-def _decimal(value, default=Decimal('0')):
+def _decimal(value, default=None):
+    """Parse a PHP-style amount without confusing invalid/missing input with zero."""
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return default
-    cleaned = str(value).strip().replace(',', '')
+    cleaned = str(value).strip()
+    if not cleaned:
+        return default
     negative_parentheses = cleaned.startswith('(') and cleaned.endswith(')')
     if negative_parentheses:
         cleaned = cleaned[1:-1].strip()
     cleaned = re.sub(r'^(?:PHP|₱)\s*|\s*(?:PHP|₱)$', '', cleaned, flags=re.IGNORECASE).strip()
-    if not cleaned or not re.fullmatch(r'[+-]?(?:\d+(?:\.\d*)?|\.\d+)', cleaned):
+    # Commas are accepted only as correctly grouped thousands separators.
+    if not re.fullmatch(r'[+-]?(?:(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d*)?|\.\d+)', cleaned):
         return default
     try:
-        parsed = Decimal(cleaned)
+        parsed = Decimal(cleaned.replace(',', ''))
         if negative_parentheses:
             parsed = -parsed
         return parsed.quantize(Decimal('0.01')) if parsed.is_finite() else default
@@ -80,6 +84,7 @@ def _aware_datetime(value):
 
 def _result(batch=None, **values):
     result = {
+        'import_id': batch.id if batch else None,
         'status': 'ok',
         'source_name': batch.source_name if batch else DEFAULT_SOURCE_NAME,
         'source_filename': batch.source_filename if batch else '',
@@ -89,6 +94,7 @@ def _result(batch=None, **values):
         'row_count': batch.row_count if batch else 0,
         'imported_row_count': batch.imported_row_count if batch else 0,
         'skipped_row_count': batch.skipped_row_count if batch else 0,
+        'quality_report': batch.quality_report if batch else {},
         'detail': '',
     }
     result.update(values)
@@ -108,21 +114,6 @@ def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME, sou
         return _result(status='invalid', detail=f'Could not read sales history CSV: {exc}')
 
     source_hash = hashlib.sha256(file_bytes).hexdigest()
-    existing = SalesHistoryImport.objects.filter(source_hash=source_hash).first()
-    if existing and existing.status == SalesHistoryImport.READY:
-        with transaction.atomic():
-            SalesHistoryImport.objects.filter(source_name=source_name, is_active=True).exclude(pk=existing.pk).update(is_active=False)
-            changed_fields = []
-            if existing.source_name != source_name:
-                existing.source_name = source_name
-                changed_fields.append('source_name')
-            if not existing.is_active:
-                existing.is_active = True
-                changed_fields.append('is_active')
-            if changed_fields:
-                existing.save(update_fields=changed_fields)
-        return _result(existing, duplicate=True, detail='This CSV has already been imported; the existing snapshot is active.')
-
     source_row_count = len(raw)
     if raw.empty:
         return _result(status='invalid', detail='Sales history CSV is empty.')
@@ -141,24 +132,36 @@ def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME, sou
 
     if not date_column:
         return _result(status='invalid', detail='Sales history CSV needs a date or date/time column.')
-    if not quantity_column and not total_column and not items_column:
-        return _result(status='invalid', detail='Sales history CSV has no quantity, amount, or item column.')
+    if not total_column and not total_amount_column:
+        return _result(status='invalid', detail='Sales history CSV needs a recognized sales/revenue column; sales values cannot be inferred from quantities.')
 
     valid_rows = []
     skipped_count = exact_duplicate_count
+    invalid_date_count = 0
+    invalid_sales_count = 0
+    invalid_quantity_count = 0
     for index, row in raw.iterrows():
         parsed_date = pd.to_datetime(row[date_column], format='mixed', errors='coerce')
         quantity = _decimal(row[quantity_column]) if quantity_column else Decimal('0')
-        total_amount = _decimal(row[total_amount_column]) if total_amount_column else Decimal('0')
+        total_amount = _decimal(row[total_amount_column]) if total_amount_column else None
         raw_total = row[total_column] if total_column else ''
-        total = _decimal(raw_total, default=None) if total_column and str(raw_total).strip() else total_amount
-        if daily_sales_column is not None and not str(raw_total).strip():
-            total = None
+        # A daily Sales (PHP) column is authoritative. Blank or malformed
+        # values are skipped; a genuine numeric zero remains a valid sale row.
+        if daily_sales_column is not None:
+            total = _decimal(row[daily_sales_column])
+        elif total_column and str(raw_total).strip():
+            total = _decimal(raw_total)
+        else:
+            total = total_amount
         items_description = str(row[items_column] if items_column else '').strip()
-        if (pd.isna(parsed_date) or total is None or quantity < 0 or total_amount < 0
-                or (daily_sales_column is not None and total < 0)
-                or (daily_sales_column is None and quantity <= 0 and total <= 0 and not items_description)):
+        date_invalid = pd.isna(parsed_date)
+        sales_invalid = total is None or total < 0
+        quantity_invalid = quantity_column is not None and (quantity is None or quantity < 0)
+        if date_invalid or sales_invalid or quantity_invalid:
             skipped_count += 1
+            invalid_date_count += int(date_invalid)
+            invalid_sales_count += int(sales_invalid)
+            invalid_quantity_count += int(quantity_invalid)
             continue
         valid_rows.append(SalesHistoryRecord(
             source_row_number=int(index) + 2,
@@ -166,28 +169,68 @@ def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME, sou
             status=str(row[status_column]).strip() if status_column else 'Sale',
             sold_at=_aware_datetime(parsed_date),
             sale_date=parsed_date.date(),
-            quantity=max(quantity, Decimal('0')),
-            total_amount=max(total_amount, Decimal('0')),
-            total=max(total, Decimal('0')),
+            quantity=quantity,
+            total_amount=max(total_amount or Decimal('0'), Decimal('0')),
+            total=total,
             items_description=items_description,
         ))
 
     if not valid_rows:
-        return _result(status='invalid', source_filename=path.name, source_hash=source_hash, row_count=len(raw), skipped_row_count=skipped_count, detail='No valid sales rows were found in the CSV.')
+        return _result(status='invalid', source_filename=path.name, source_hash=source_hash, row_count=source_row_count, skipped_row_count=skipped_count, detail='No rows with valid dates and explicit non-negative sales values were found in the CSV.')
 
     dates = [row.sale_date for row in valid_rows]
+    sales_column_mapping = {
+        'date': date_column,
+        'sales_php': daily_sales_column or total_column or total_amount_column,
+        'quantity': quantity_column,
+        'transaction_total': total_column,
+        'total_amount': total_amount_column,
+        'items': items_column,
+    }
+    quality_report = {
+        'source_columns': list(raw.columns),
+        'column_mapping': sales_column_mapping,
+        'raw_rows': source_row_count,
+        'valid_rows': len(valid_rows),
+        'skipped_rows': skipped_count,
+        'exact_duplicate_rows_removed': exact_duplicate_count,
+        'invalid_date_rows': invalid_date_count,
+        'missing_or_invalid_sales_rows': invalid_sales_count,
+        'missing_or_invalid_quantity_rows': invalid_quantity_count,
+        'zero_sales_rows': sum(row.total == 0 for row in valid_rows),
+        'duplicate_date_rows': len(valid_rows) - len(set(dates)),
+        'sales_total_php': float(sum((row.total for row in valid_rows), Decimal('0.00'))),
+    }
     with transaction.atomic():
-        batch = SalesHistoryImport.objects.create(
-            source_name=source_name,
-            source_filename=source_filename or path.name,
-            source_hash=source_hash,
-            status=SalesHistoryImport.PENDING,
-            row_count=source_row_count,
-            imported_row_count=len(valid_rows),
-            skipped_row_count=skipped_count,
-            history_start=min(dates),
-            history_end=max(dates),
-        )
+        batch = SalesHistoryImport.objects.select_for_update().filter(source_hash=source_hash).first()
+        reprocessed = batch is not None
+        if batch is None:
+            batch = SalesHistoryImport.objects.create(
+                source_name=source_name,
+                source_filename=source_filename or path.name,
+                source_hash=source_hash,
+                status=SalesHistoryImport.PENDING,
+                row_count=source_row_count,
+                imported_row_count=len(valid_rows),
+                skipped_row_count=skipped_count,
+                quality_report=quality_report,
+                history_start=min(dates),
+                history_end=max(dates),
+            )
+        else:
+            # Repair legacy snapshots with the same content hash in place.
+            # Replacing child rows avoids duplicate transactions on re-import.
+            batch.records.all().delete()
+            batch.source_name = source_name
+            batch.source_filename = source_filename or path.name
+            batch.status = SalesHistoryImport.PENDING
+            batch.row_count = source_row_count
+            batch.imported_row_count = len(valid_rows)
+            batch.skipped_row_count = skipped_count
+            batch.quality_report = quality_report
+            batch.history_start = min(dates)
+            batch.history_end = max(dates)
+            batch.error_message = ''
         for row in valid_rows:
             row.import_batch = batch
         SalesHistoryRecord.objects.bulk_create(valid_rows, batch_size=1000)
@@ -195,9 +238,18 @@ def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME, sou
         batch.status = SalesHistoryImport.READY
         batch.is_active = True
         batch.completed_at = timezone.now()
-        batch.save(update_fields=['status', 'is_active', 'completed_at'])
+        batch.save(update_fields=[
+            'source_name', 'source_filename', 'status', 'is_active', 'completed_at',
+            'row_count', 'imported_row_count', 'skipped_row_count',
+            'quality_report',
+            'history_start', 'history_end', 'error_message',
+        ])
 
-    return _result(batch, imported=True, detail='Sales history imported and activated.')
+    return _result(batch, imported=not reprocessed, duplicate=reprocessed,
+                   reprocessed=reprocessed,
+                   column_mapping=sales_column_mapping,
+                   quality_report=quality_report,
+                   detail='Existing CSV snapshot was revalidated and repaired in place.' if reprocessed else 'Sales history imported and activated.')
 
 
 def get_active_sales_history(source_name=DEFAULT_SOURCE_NAME):
