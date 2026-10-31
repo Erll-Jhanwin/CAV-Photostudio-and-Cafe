@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import client, { getCached } from '../api/client';
+import { getManilaMonthValue } from '../utils/dateTime';
 
 const mockNavigate = jest.fn();
 const mockUser = { id: 1, username: 'admin', role: 'ADMIN' };
@@ -309,7 +310,7 @@ describe('AdminDashboard', () => {
   });
 
   it('shows full-width booking details in responsive columns on the calendar', async () => {
-    const bookingMonth = new Date().toISOString().slice(0, 7);
+    const bookingMonth = getManilaMonthValue();
     getCached.mockImplementation(url => {
       if (url.includes('/api/bookings/studio-unavailable-dates/')) return Promise.resolve({ data: [] });
       if (url === '/api/bookings/') {

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.db.models import Count, F, Prefetch, Sum
-from django.db.models.functions import TruncDate
+from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
 from rest_framework import views
 from rest_framework.response import Response
@@ -28,7 +28,7 @@ def pct_change(current, previous):
     current = float(current or 0)
     previous = float(previous or 0)
     if previous == 0:
-        return 100 if current > 0 else 0
+        return None if current > 0 else 0
     return round(((current - previous) / previous) * 100, 1)
 
 
@@ -85,16 +85,18 @@ class DashboardAnalyticsView(views.APIView):
         previous_order_revenue = Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(
             payment_status='PAID', created_at__range=(prev_start_dt, prev_end_dt)
         ).aggregate(revenue=Sum(F('total') - F('returned_amount')))['revenue'] or Decimal('0.00')
-        approved_booking_payments = Payment.objects.filter(
+        booking_payments = Payment.objects.filter(
             payment_type=Payment.BOOKING,
-            status='APPROVED',
-            paid_at__range=(start_dt, end_dt),
+            status__in=('APPROVED', 'PAID'),
+        ).annotate(revenue_at=Coalesce('paid_at', 'created_at')).filter(
+            revenue_at__range=(start_dt, end_dt),
         )
-        booking_payment_revenue = approved_booking_payments.aggregate(revenue=Sum('amount'))['revenue'] or Decimal('0.00')
+        booking_payment_revenue = booking_payments.aggregate(revenue=Sum('amount'))['revenue'] or Decimal('0.00')
         previous_booking_payment_revenue = Payment.objects.filter(
             payment_type=Payment.BOOKING,
-            status='APPROVED',
-            paid_at__range=(prev_start_dt, prev_end_dt),
+            status__in=('APPROVED', 'PAID'),
+        ).annotate(revenue_at=Coalesce('paid_at', 'created_at')).filter(
+            revenue_at__range=(prev_start_dt, prev_end_dt),
         ).aggregate(revenue=Sum('amount'))['revenue'] or Decimal('0.00')
 
         pos_metrics = paid_order_totals.get('WALK_IN', {})
@@ -143,8 +145,8 @@ class DashboardAnalyticsView(views.APIView):
             else:
                 buckets[key]['pos_revenue'] += money(row['revenue'])
             buckets[key]['total_revenue'] = buckets[key]['pos_revenue'] + buckets[key]['booking_revenue']
-        daily_booking_revenue = approved_booking_payments.annotate(
-            local_date=TruncDate('paid_at', tzinfo=timezone.get_current_timezone())
+        daily_booking_revenue = booking_payments.annotate(
+            local_date=TruncDate('revenue_at', tzinfo=timezone.get_current_timezone())
         ).values('local_date').annotate(revenue=Sum('amount')).order_by('local_date')
         for row in daily_booking_revenue:
             key = bucket_key_for_date(row['local_date'], grain)
@@ -225,6 +227,7 @@ class DashboardAnalyticsView(views.APIView):
             'metrics': {
                 'total_revenue': money(total_rev),
                 'total_revenue_change': pct_change(total_rev, prev_total_rev),
+                'previous_period_revenue': money(prev_total_rev),
                 'pos_revenue': money(pos_rev),
                 'booking_revenue': money(booking_rev),
                 'booking_payment_revenue': money(booking_payment_revenue),
@@ -234,6 +237,12 @@ class DashboardAnalyticsView(views.APIView):
                 'total_bookings': sum(grouped_booking_statuses.values()),
                 'completed_bookings': booking_status_counts['completed'],
                 **booking_status_counts,
+            },
+            'record_counts': {
+                'paid_orders': sum(row['count'] for row in paid_order_totals.values()),
+                'pos_transactions': total_tx,
+                'booking_payments': booking_payments.count(),
+                'bookings': sum(grouped_booking_statuses.values()),
             },
             'sales_history_chart': sorted(buckets.values(), key=lambda row: row['date'], reverse=True),
             'low_stock_alerts': [row for row in inventory_alerts if row['inventory_status'] == 'LOW_STOCK'],

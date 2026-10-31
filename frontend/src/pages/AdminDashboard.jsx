@@ -53,6 +53,8 @@ import {
   asRecord,
 } from '../utils/uniqueRecords';
 import { formatManilaDateTime, MANILA_TIME_ZONE } from '../utils/dateTime';
+import { getDashboardRangeDates } from '../utils/dashboardDateRange';
+import { hasDashboardOperationalRecords, validateDashboardAnalytics } from '../utils/dashboardAnalytics';
 import {
   getLocalPrinters,
   getLocalPrintingSetupMessage,
@@ -328,32 +330,6 @@ const getCalendarDays = (value) => {
   return [...blanks, ...days];
 };
 
-const getRangeDates = (preset, customStart, customEnd) => {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfWeek = new Date(today);
-  startOfWeek.setDate(today.getDate() - today.getDay());
-
-  let start = new Date(today);
-  let end = new Date(today);
-
-  if (preset === 'yesterday') {
-    start.setDate(today.getDate() - 1);
-    end.setDate(today.getDate() - 1);
-  } else if (preset === 'week') {
-    start = startOfWeek;
-  } else if (preset === 'month') {
-    start = new Date(today.getFullYear(), today.getMonth(), 1);
-  } else if (preset === 'year') {
-    start = new Date(today.getFullYear(), 0, 1);
-  } else if (preset === 'custom') {
-    start = customStart ? new Date(customStart) : today;
-    end = customEnd ? new Date(customEnd) : today;
-  }
-
-  return { start: formatDateValue(start), end: formatDateValue(end) };
-};
-
 const finiteForecastValue = value => {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
@@ -541,6 +517,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
   const [dataError, setDataError] = useState('');
+  const [analyticsError, setAnalyticsError] = useState('');
   const [forecastError, setForecastError] = useState('');
 
   const [faqQuestion, setFaqQuestion] = useState('');
@@ -709,16 +686,23 @@ export default function AdminDashboard() {
     const requestSeq = dashboardFetchSeqRef.current + 1;
     dashboardFetchSeqRef.current = requestSeq;
     try {
+      const range = getDashboardRangeDates(datePreset, customStart, customEnd);
       if (!background) setLoading(true);
-      const range = getRangeDates(datePreset, customStart, customEnd);
-      const response = await getCached('/api/dashboard/analytics/', { params: { ...range, grain: 'daily' } }, { force: background });
+      setAnalyticsError('');
+      const response = await getCached('/api/dashboard/analytics/', { params: { ...range, grain: 'daily' } }, { force: true });
       if (requestSeq !== dashboardFetchSeqRef.current) return;
-      if (response?.data) setAnalytics(normalizeDashboardAnalytics(response.data));
-      setDataError('');
+      const validationError = validateDashboardAnalytics(response?.data, range);
+      if (validationError) {
+        setAnalyticsError(validationError);
+      } else {
+        setAnalytics(normalizeDashboardAnalytics(response.data));
+        setAnalyticsError('');
+        setDataError('');
+      }
     } catch (err) {
       console.error(err);
       if (requestSeq === dashboardFetchSeqRef.current) {
-        setDataError(getApiErrorMessage(err, 'Failed to load dashboard data.'));
+        setAnalyticsError(getApiErrorMessage(err, 'Failed to load Business Overview metrics.'));
       }
     } finally {
       if (!background && requestSeq === dashboardFetchSeqRef.current) {
@@ -1413,7 +1397,11 @@ export default function AdminDashboard() {
 
   const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', inventory: 'Live Inventory', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', gallery: 'Photo Gallery', audit: 'Audit Logs' };
   const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
-  const metrics = asRecord(analytics?.metrics);
+  const expectedAnalyticsRange = getDashboardRangeDates(datePreset, customStart, customEnd);
+  const analyticsRangeMatches = analytics?.range?.start === expectedAnalyticsRange.start
+    && analytics?.range?.end === expectedAnalyticsRange.end;
+  const analyticsDataAvailable = Boolean(analytics && analyticsRangeMatches && !analyticsError);
+  const metrics = analyticsDataAvailable ? asRecord(analytics.metrics) : {};
   const statusData = [
     { label: 'Pending', value: metrics.pending || 0, color: '#F59E0B' },
     { label: 'Confirmed', value: metrics.confirmed || 0, color: '#3B82F6' },
@@ -1659,7 +1647,7 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {dataError && (
+          {dataError && activeTab !== 'analytics' && (
             <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-2xl mb-6 flex items-start gap-3 shadow-sm" role="alert">
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
               <p className="flex-1 text-xs font-semibold">{dataError}</p>
@@ -1711,36 +1699,58 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+              {analyticsError && (
+                <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800" role="alert">
+                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                  <p className="flex-1 text-xs font-semibold">{analyticsError}</p>
+                  <Button variant="outline" size="sm" onClick={() => fetchData()} className="border-red-200 bg-white text-red-800 hover:bg-red-100">Retry</Button>
+                </div>
+              )}
+              {!analyticsError && !analyticsDataAvailable && (
+                <p className="rounded-xl border border-espresso/10 bg-white px-4 py-3 text-xs font-semibold text-espresso/60" role="status">
+                  {loading ? 'Loading Business Overview metrics…' : 'Waiting for metrics for the selected date range…'}
+                </p>
+              )}
+              {analyticsDataAvailable && !hasDashboardOperationalRecords(analytics) && (
+                <p className="rounded-xl border border-espresso/10 bg-white px-4 py-3 text-xs font-semibold text-espresso/60" role="status">
+                  No operational records were found for {analytics.range.start === analytics.range.end ? analytics.range.start : `${analytics.range.start} to ${analytics.range.end}`} (Asia/Manila). All values below are calculated zeros for this range.
+                </p>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4">
                 {[
                   {
                     label: 'Total Sales',
-                    value: formatCurrency(metrics.total_revenue),
-                    detail: `${Math.abs(metrics.total_revenue_change || 0)}% ${Number(metrics.total_revenue_change || 0) >= 0 ? 'increase' : 'decrease'} vs previous period`,
+                    value: analyticsDataAvailable ? formatCurrency(metrics.total_revenue) : '—',
+                    detail: analyticsDataAvailable
+                      ? (metrics.total_revenue_change === null
+                        ? 'New sales vs previous period'
+                        : `${Math.abs(metrics.total_revenue_change)}% ${Number(metrics.total_revenue_change) >= 0 ? 'increase' : 'decrease'} vs previous period`)
+                      : 'Waiting for verified results',
                     icon: DollarSign,
                     trend: Number(metrics.total_revenue_change || 0) >= 0 ? ArrowUpRight : ArrowDownRight,
                     trendClass: Number(metrics.total_revenue_change || 0) >= 0 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50',
                   },
                   {
                     label: 'Booking Income',
-                    value: formatCurrency(metrics.booking_revenue),
-                    detail: `${metrics.completed_bookings || 0} completed bookings`,
+                    value: analyticsDataAvailable ? formatCurrency(metrics.booking_revenue) : '—',
+                    detail: analyticsDataAvailable ? `${metrics.completed_bookings} completed bookings` : 'Waiting for verified results',
                     icon: Camera,
                     trend: ArrowUpRight,
                     trendClass: 'text-gold-dark bg-gold/10',
                   },
                   {
                     label: 'Total Bookings',
-                    value: metrics.total_bookings || 0,
-                    detail: `P ${metrics.pending || 0} · C ${metrics.confirmed || 0} · Done ${metrics.completed || 0} · X ${metrics.cancelled || 0}`,
+                    value: analyticsDataAvailable ? metrics.total_bookings : '—',
+                    detail: analyticsDataAvailable ? `P ${metrics.pending} · C ${metrics.confirmed} · Done ${metrics.completed} · X ${metrics.cancelled}` : 'Waiting for verified results',
                     icon: ClipboardCheck,
                     trend: Calendar,
                     trendClass: 'text-blue-700 bg-blue-50',
                   },
                   {
                     label: 'POS Transactions',
-                    value: metrics.transaction_count || 0,
-                    detail: `${formatCurrency(metrics.avg_transaction_value)} avg · ${metrics.total_items_sold || 0} items sold`,
+                    value: analyticsDataAvailable ? metrics.transaction_count : '—',
+                    detail: analyticsDataAvailable ? `${formatCurrency(metrics.avg_transaction_value)} avg · ${metrics.total_items_sold} items sold` : 'Waiting for verified results',
                     icon: CreditCard,
                     trend: ShoppingBag,
                     trendClass: 'text-amber-700 bg-amber-50',
@@ -1801,10 +1811,10 @@ export default function AdminDashboard() {
                     <Card padding={false}>
                       <div className="p-5">
                         <CardHeader title="Revenue Sources" className="mb-4" />
-                        <div className="space-y-4">
+                        {analyticsDataAvailable ? <div className="space-y-4">
                           {[
-                            { label: 'POS Income', value: metrics.pos_revenue || 0, color: 'bg-espresso/70' },
-                            { label: 'Booking Income', value: metrics.booking_revenue || 0, color: 'bg-gold' },
+                            { label: 'POS Income', value: metrics.pos_revenue, color: 'bg-espresso/70' },
+                            { label: 'Booking Income', value: metrics.booking_revenue, color: 'bg-gold' },
                           ].map(row => {
                             const pct = revenueTotal ? Math.round((Number(row.value) / revenueTotal) * 100) : 0;
                             return (
@@ -1819,14 +1829,14 @@ export default function AdminDashboard() {
                               </div>
                             );
                           })}
-                        </div>
+                        </div> : <p className="text-xs font-semibold text-espresso/55">Revenue sources are unavailable until valid metrics load.</p>}
                       </div>
                     </Card>
 
                     <Card padding={false}>
                       <div className="p-5">
                         <CardHeader title="Booking Status Summary" className="mb-3" />
-                        <div className="grid grid-cols-[120px_1fr] gap-4 items-center">
+                        {analyticsDataAvailable ? <div className="grid grid-cols-[120px_1fr] gap-4 items-center">
                           <div className="h-[120px]">
                             <DashboardChartBoundary resetKey={JSON.stringify(statusData)}>
                               <ResponsiveContainer width="100%" height="100%">
@@ -1847,7 +1857,7 @@ export default function AdminDashboard() {
                               </div>
                             ))}
                           </div>
-                        </div>
+                        </div> : <p className="text-xs font-semibold text-espresso/55">Booking status counts are unavailable until valid metrics load.</p>}
                       </div>
                     </Card>
                   </div>
