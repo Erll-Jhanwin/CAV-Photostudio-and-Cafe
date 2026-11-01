@@ -9,12 +9,18 @@ services:
       - key: NODE_VERSION
         value: "22"
       - key: REACT_APP_API_BASE_URL
-        value: https://cav-photostudio-and-cafe.onrender.com
+        value: same-origin
       - key: REACT_APP_GOOGLE_CLIENT_ID
         value: 22100729214-a9qrjd5vlvad0crt754f236968rrb3m8.apps.googleusercontent.com
       - key: REACT_APP_RECAPTCHA_SITE_KEY
         sync: false
     routes:
+      # Keep browser authentication cookies first-party in private browsing.
+      # Render rewrites these API paths to the backend without changing the
+      # browser-visible origin, while the API response still comes from Django.
+      - type: rewrite
+        source: /api/*
+        destination: https://cav-photostudio-and-cafe.onrender.com/api/*
       - type: rewrite
         source: /*
         destination: /index.html

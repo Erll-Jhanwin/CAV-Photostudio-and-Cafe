@@ -20,9 +20,20 @@ const readStoredValue = (key) => {
   }
 };
 
+const storeUser = (userData) => {
+  try {
+    localStorage.setItem('user', JSON.stringify(userData));
+  } catch {
+    // The authenticated HttpOnly cookie and in-memory user state are enough to
+    // keep this tab signed in when persistent storage is unavailable.
+  }
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(readStoredUser);
-  const [loading, setLoading] = useState(() => Boolean(readStoredUser()));
+  // Verify the cookie before protected routes decide whether to redirect.
+  // This also allows a private session to restore without localStorage.
+  const [loading, setLoading] = useState(true);
   const restoreControllerRef = useRef(null);
   const loginInFlightRef = useRef(false);
 
@@ -31,24 +42,19 @@ export const AuthProvider = ({ children }) => {
 
     const restoreSession = async () => {
       const savedUser = readStoredValue('user');
-      if (!savedUser) {
-        if (active) {
-          setUser(null);
-          setLoading(false);
-        }
-        return;
-      }
-
       const controller = new AbortController();
       restoreControllerRef.current = controller;
 
       try {
-        const cachedUser = JSON.parse(savedUser);
-        // Keep the cached user in memory only while the session is verified. A
-        // stale role must not render a dashboard and start requests of its own.
-        if (active) {
-          setUser(cachedUser);
-          setLoading(true);
+        // A cached user is only a display hint; protected routes remain gated
+        // until the backend confirms the session and current role.
+        if (savedUser) {
+          try {
+            const cachedUser = JSON.parse(savedUser);
+            if (active) setUser(cachedUser);
+          } catch {
+            // Ignore malformed cached profile data and verify the cookie below.
+          }
         }
         const response = await client.get('/api/auth/profile/', {
           signal: controller.signal,
@@ -66,7 +72,7 @@ export const AuthProvider = ({ children }) => {
         // A login can complete while this restore request is in flight. Do not
         // let the older session overwrite the newly authenticated account.
         if (readStoredValue('user') === savedUser) {
-          localStorage.setItem('user', JSON.stringify(userData));
+          storeUser(userData);
           if (active) setUser(userData);
         }
       } catch {
@@ -98,7 +104,7 @@ export const AuthProvider = ({ children }) => {
       profile_picture_url: profile.profile_picture_url || fallbackUser.profile_picture_url || '',
     };
 
-    localStorage.setItem('user', JSON.stringify(userData));
+    storeUser(userData);
     setUser(userData);
     return userData;
   };
@@ -165,7 +171,11 @@ export const AuthProvider = ({ children }) => {
       console.warn('Server logout failed; clearing local session state.');
     } finally {
       clearStoredAuth();
-      sessionStorage.clear();
+      try {
+        sessionStorage.clear();
+      } catch {
+        // Session cleanup must not prevent the in-memory logout.
+      }
       setUser(null);
     }
   };
@@ -176,7 +186,7 @@ export const AuthProvider = ({ children }) => {
       const currentString = JSON.stringify(current || {});
       const nextString = JSON.stringify(nextUser);
       if (currentString === nextString) return current;
-      localStorage.setItem('user', JSON.stringify(nextUser));
+      storeUser(nextUser);
       return nextUser;
     });
   }, []);

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Check, Trash2, X } from 'lucide-react';
 import client, { getApiErrorMessage } from '../../api/client';
 import { Button } from '../ui/Button';
@@ -22,11 +22,13 @@ const groupBookings = (bookings, today) => {
   return {
     live: sorted.filter(row => row.scheduled_date >= today && ACTIVE_STATUSES.has(row.status)),
     pastActive: sorted.filter(row => row.scheduled_date < today && ACTIVE_STATUSES.has(row.status)),
-    history: sorted.filter(row => ['COMPLETED', 'CANCELLED'].includes(row.status)),
+    completed: sorted.filter(row => row.status === 'COMPLETED'),
+    cancelled: sorted.filter(row => row.status === 'CANCELLED'),
   };
 };
 
-function BookingCard({ booking, busy, onComplete, onCancel, onDelete }) {
+function BookingCard({ booking, busyAction, onComplete, onCancel, onDelete }) {
+  const actionInProgress = Boolean(busyAction);
   return (
     <article className="rounded-2xl border border-espresso/10 bg-cream/40 p-4 text-xs sm:p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -57,12 +59,12 @@ function BookingCard({ booking, busy, onComplete, onCancel, onDelete }) {
         </div>
         {ACTIVE_STATUSES.has(booking.status) && (
           <div className="flex shrink-0 flex-col gap-2 sm:w-44">
-            <Button size="sm" variant="success" icon={Check} loading={Boolean(busy)} disabled={Boolean(busy)} onClick={() => onComplete(booking)}>Photo Shoot Done</Button>
-            <Button size="sm" variant="outline" icon={X} loading={Boolean(busy)} disabled={Boolean(busy)} className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => onCancel(booking)}>Cancel Booking</Button>
+            <Button size="sm" variant="success" icon={Check} loading={busyAction === 'complete'} disabled={actionInProgress} onClick={() => onComplete(booking)}>Photo Shoot Done</Button>
+            <Button size="sm" variant="outline" icon={X} disabled={actionInProgress} className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => onCancel(booking)}>Cancel Booking</Button>
           </div>
         )}
       </div>
-      {onDelete && <button type="button" onClick={() => onDelete(booking)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-50" aria-label={`Delete booking ${booking.id}`}><Trash2 className="h-3.5 w-3.5" /> Delete booking</button>}
+      {onDelete && <button type="button" disabled={actionInProgress} onClick={() => onDelete(booking)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Delete booking ${booking.id}`}><Trash2 className="h-3.5 w-3.5" /> Delete booking</button>}
       {booking.status === 'CANCELLED' && booking.cancellation_reason && (
         <p className="mt-3 border-t border-espresso/10 pt-3 text-espresso/65"><span className="font-black">Cancellation reason:</span> {booking.cancellation_reason}</p>
       )}
@@ -70,7 +72,7 @@ function BookingCard({ booking, busy, onComplete, onCancel, onDelete }) {
   );
 }
 
-function BookingSection({ title, subtitle, bookings, empty, busyId, onComplete, onCancel, onDelete }) {
+function BookingSection({ title, subtitle, bookings, empty, busyActions, onComplete, onCancel, onDelete }) {
   return (
     <section className="space-y-3" aria-label={title}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -81,7 +83,7 @@ function BookingSection({ title, subtitle, bookings, empty, busyId, onComplete, 
         <BookingCard
           key={booking.id}
           booking={booking}
-          busy={busyId === booking.id ? 'busy' : null}
+          busyAction={busyActions[booking.id] || null}
           onComplete={onComplete}
           onCancel={onCancel}
           onDelete={onDelete}
@@ -96,12 +98,16 @@ export default function BookingQueue({ bookings = [], loading = false, onBooking
   const groups = useMemo(() => groupBookings(bookings, today), [bookings, today]);
   const [cancelBooking, setCancelBooking] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
-  const [busyId, setBusyId] = useState(null);
+  const [busyActions, setBusyActions] = useState({});
+  const busyActionsRef = useRef(new Map());
   const [actionError, setActionError] = useState('');
+  const [activeFilter, setActiveFilter] = useState('live');
 
   const updateStatus = async (booking, status, cancellation_reason) => {
-    if (busyId != null) return;
-    setBusyId(booking.id);
+    const action = status === 'COMPLETED' ? 'complete' : 'cancel';
+    if (busyActionsRef.current.has(booking.id)) return;
+    busyActionsRef.current.set(booking.id, action);
+    setBusyActions(current => ({ ...current, [booking.id]: action }));
     setActionError('');
     try {
       const response = await client.patch(`/api/bookings/${booking.id}/`, {
@@ -116,33 +122,57 @@ export default function BookingQueue({ bookings = [], loading = false, onBooking
     } catch (error) {
       setActionError(getApiErrorMessage(error, 'Could not update this booking. Please try again.'));
     } finally {
-      setBusyId(null);
+      busyActionsRef.current.delete(booking.id);
+      setBusyActions(current => {
+        if (current[booking.id] !== action) return current;
+        const next = { ...current };
+        delete next[booking.id];
+        return next;
+      });
     }
   };
 
-  const sections = [
-    { title: 'Live Booking List', bookings: groups.live, empty: 'No active bookings are scheduled for today or upcoming days.' },
-    { title: 'Past bookings needing an update', subtitle: 'Past sessions remain available until marked done or canceled.', bookings: groups.pastActive, empty: 'No past bookings need an update.' },
-    { title: 'History', subtitle: 'Completed and canceled records are retained here.', bookings: groups.history, empty: 'Completed and canceled bookings will appear here.' },
-  ];
+  const sections = activeFilter === 'completed'
+    ? [{ title: 'Completed Session', subtitle: 'Sessions marked completed.', bookings: groups.completed, empty: 'No completed sessions yet.' }]
+    : [
+      { title: 'Live Booking List', subtitle: 'Upcoming and ongoing sessions.', bookings: groups.live, empty: 'No active bookings are scheduled for today or upcoming days.' },
+      { title: 'Past bookings needing an update', subtitle: 'Past sessions remain available until marked done or canceled.', bookings: groups.pastActive, empty: 'No past bookings need an update.' },
+      { title: 'Cancelled bookings', subtitle: 'Cancelled records remain available for review or deletion.', bookings: groups.cancelled, empty: 'No cancelled bookings.' },
+    ];
 
   return (
     <div className="space-y-6">
       {actionError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-800" role="alert">{actionError}</div>}
+      <div className="inline-flex rounded-[20px] border border-espresso/10 bg-white p-1 shadow-sm" role="group" aria-label="Booking list filter">
+        {[
+          { key: 'live', label: 'Live Booking List' },
+          { key: 'completed', label: 'Completed Session' },
+        ].map(filter => (
+          <button
+            key={filter.key}
+            type="button"
+            aria-pressed={activeFilter === filter.key}
+            onClick={() => setActiveFilter(filter.key)}
+            className={`rounded-2xl px-3 py-2 text-xs font-black transition-all ${activeFilter === filter.key ? 'bg-espresso text-gold shadow-sm' : 'text-espresso/60 hover:bg-cream hover:text-espresso'}`}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
       {loading && bookings.length === 0 ? (
         <div className="space-y-3" role="status" aria-label="Loading bookings">
           {[0, 1, 2].map(row => <div key={row} className="rounded-2xl border border-espresso/10 bg-cream/40 p-4" aria-hidden="true"><div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map(col => <div key={col} className="space-y-2"><Skeleton className="h-2.5 w-16 rounded-md" /><Skeleton className="h-4 w-32 max-w-full rounded-md" /><Skeleton className="h-3 w-24 rounded-md" /></div>)}</div></div>)}
         </div>
-      ) : sections.map(section => <BookingSection key={section.title} {...section} busyId={busyId} onComplete={booking => updateStatus(booking, 'COMPLETED')} onCancel={booking => { setCancelBooking(booking); setCancelReason(''); setActionError(''); }} onDelete={onDeleteBooking} />)}
-      <Modal open={Boolean(cancelBooking)} onClose={() => { if (busyId == null) setCancelBooking(null); }} title="Cancel booking">
+      ) : sections.map(section => <BookingSection key={section.title} {...section} busyActions={busyActions} onComplete={booking => updateStatus(booking, 'COMPLETED')} onCancel={booking => { setCancelBooking(booking); setCancelReason(''); setActionError(''); }} onDelete={onDeleteBooking} />)}
+      <Modal open={Boolean(cancelBooking)} onClose={() => { if (!busyActions[cancelBooking?.id]) setCancelBooking(null); }} title="Cancel booking">
         {cancelBooking && <div className="space-y-4">
           <p className="text-sm leading-relaxed text-espresso/70">Cancel booking #{cancelBooking.id} for <span className="font-black text-espresso">{customerName(cancelBooking)}</span>? This will move it to History and record the reason.</p>
           {actionError && <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800" role="alert">{actionError}</p>}
           <Textarea label="Cancellation reason" rows={3} maxLength={500} required value={cancelReason} onChange={event => setCancelReason(event.target.value)} placeholder="Enter why this booking is being canceled" />
           <p className="-mt-2 text-right text-[10px] text-espresso/45">{cancelReason.length}/500</p>
           <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
-            <Button variant="outline" onClick={() => setCancelBooking(null)} disabled={busyId != null}>Keep Booking</Button>
-            <Button variant="danger" icon={X} loading={busyId === cancelBooking.id} disabled={!cancelReason.trim() || busyId != null} onClick={() => updateStatus(cancelBooking, 'CANCELLED', cancelReason.trim())}>Confirm Cancellation</Button>
+            <Button variant="outline" onClick={() => setCancelBooking(null)} disabled={Boolean(busyActions[cancelBooking.id])}>Keep Booking</Button>
+            <Button variant="danger" icon={X} loading={busyActions[cancelBooking.id] === 'cancel'} disabled={!cancelReason.trim() || Boolean(busyActions[cancelBooking.id])} onClick={() => updateStatus(cancelBooking, 'CANCELLED', cancelReason.trim())}>Confirm Cancellation</Button>
           </div>
         </div>}
       </Modal>

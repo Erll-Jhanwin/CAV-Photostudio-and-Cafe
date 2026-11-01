@@ -19,10 +19,14 @@ jest.mock('axios', () => {
 });
 
 import axios from 'axios';
-import { beginAuthTransition, clearQueryCache, getCached } from './client';
+import { beginAuthTransition, clearQueryCache, clearStoredAuth, getCached } from './client';
 
 describe('authenticated query cache', () => {
   let api;
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
   beforeEach(() => {
     api = axios.__mockInstance;
@@ -55,5 +59,15 @@ describe('authenticated query cache', () => {
 
     expect(api.get).toHaveBeenCalledTimes(2);
     expect(secondSession).toBe(secondSessionResponse);
+  });
+
+  test('clears the request cache even when browser storage is unavailable', () => {
+    api.get.mockResolvedValue({ data: [{ id: 1 }] });
+    const removeItem = jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new DOMException('Storage is unavailable', 'QuotaExceededError');
+    });
+
+    expect(() => clearStoredAuth()).not.toThrow();
+    expect(removeItem).toHaveBeenCalled();
   });
 });

@@ -6,6 +6,7 @@ import client from '../api/client';
 const mockLogin = jest.fn();
 const mockLoginWithGoogle = jest.fn();
 const mockRegister = jest.fn();
+const mockNavigate = jest.fn();
 
 jest.mock('../context/AuthContext', () => ({
   useAuth: () => ({ login: mockLogin, loginWithGoogle: mockLoginWithGoogle, register: mockRegister }),
@@ -27,7 +28,7 @@ jest.mock('../api/client', () => ({
 
 jest.mock('react-router-dom', () => ({
   Link: ({ to, children, ...props }) => jest.requireActual('react').createElement('a', { href: to, ...props }, children),
-  useNavigate: () => jest.fn(),
+  useNavigate: () => mockNavigate,
   useSearchParams: () => [new URLSearchParams()],
 }));
 
@@ -82,7 +83,12 @@ describe('password authentication submissions', () => {
   beforeEach(() => {
     mockLogin.mockReset();
     mockRegister.mockReset();
+    mockNavigate.mockReset();
     client.post.mockReset();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   test('login submits only after the reCAPTCHA widget is in the form and its token is available', async () => {
@@ -101,6 +107,25 @@ describe('password authentication submissions', () => {
     await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('member', 'MemberPassword#2026', {
       recaptcha_token: 'test-recaptcha-token',
     }));
+  });
+
+  test.each([
+    ['ADMIN', '/admin'],
+    ['STAFF', '/staff'],
+    ['CUSTOMER', '/customer'],
+  ])('routes an authenticated %s account to %s', async (role, destination) => {
+    mockLogin.mockResolvedValue({
+      success: true,
+      user: { id: 7, username: 'member', role },
+    });
+    jest.spyOn(window, 'alert').mockImplementation(() => {});
+    renderLogin();
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'member' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'MemberPassword#2026' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enter My Dashboard' }));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith(destination));
   });
 
   test('a rejected login token resets the widget so the next attempt requires a fresh challenge', async () => {

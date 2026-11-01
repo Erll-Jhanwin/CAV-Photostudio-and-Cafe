@@ -399,8 +399,8 @@ export default function StaffDashboard() {
         const bookingsRes = await getCached('/api/bookings/', { params: { limit: 500, queue: 'true' } }, { force });
         setStaffBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
       } else if (tab === 'inventory') {
-        await loadStaticInventoryOptions(force);
-        const [ingredientsRes, productSalesRes] = await Promise.all([
+        const [, ingredientsRes, productSalesRes] = await Promise.all([
+          loadStaticInventoryOptions(force),
           getCached('/api/inventory/ingredients/', { params: { limit: 300 } }, { force }),
           getCached('/api/inventory/product-sales/', {}, { force }),
         ]);

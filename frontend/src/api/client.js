@@ -144,7 +144,12 @@ export const getCached = async (url, config = {}, { maxAge = 20_000, force = fal
 };
 
 export const clearStoredAuth = () => {
-  ['access_token', 'refresh_token', 'user'].forEach(key => localStorage.removeItem(key));
+  try {
+    ['access_token', 'refresh_token', 'user'].forEach(key => localStorage.removeItem(key));
+  } catch {
+    // HttpOnly cookies and in-memory auth remain authoritative when browser
+    // storage is disabled or unavailable in a private session.
+  }
   clearQueryCache();
 };
 

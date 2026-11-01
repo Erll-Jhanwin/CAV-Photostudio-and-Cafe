@@ -7,8 +7,8 @@ import { brandAssets } from './utils/cavAssets';
 import { API_BASE_URL } from './api/config';
 import { GlobalLoadingProgress } from './components/ui/GlobalLoadingProgress';
 import { useGlobalLoadingProgressSignal } from './utils/globalLoadingProgress';
-import AdminDashboard from './pages/AdminDashboard';
 
+const AdminDashboard = lazy(() => lazyWithRetry(() => import('./pages/AdminDashboard')));
 const LandingPage = lazy(() => lazyWithRetry(() => import('./pages/LandingPage')));
 const BookingGuidePage = lazy(() => lazyWithRetry(() => import('./pages/BookingGuidePage')));
 const LoginPage = lazy(() => lazyWithRetry(() => import('./pages/LoginPage')));

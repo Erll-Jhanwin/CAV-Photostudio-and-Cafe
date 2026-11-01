@@ -17,7 +17,13 @@ const isNativeApp = () => {
 const browserApiBaseUrl = cleanBaseUrl(process.env.REACT_APP_API_BASE_URL);
 const mobileApiBaseUrl = cleanBaseUrl(process.env.REACT_APP_MOBILE_API_BASE_URL);
 
-export const API_BASE_URL = browserApiBaseUrl
-  || (isNativeApp() ? (mobileApiBaseUrl || PRODUCTION_API_BASE_URL) : (
-    process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : PRODUCTION_API_BASE_URL
-  ));
+const usesSameOriginApi = browserApiBaseUrl.toLowerCase() === 'same-origin';
+
+export const API_BASE_URL = usesSameOriginApi
+  ? (isNativeApp() ? (mobileApiBaseUrl || PRODUCTION_API_BASE_URL) : (
+    typeof window !== 'undefined' ? window.location.origin : PRODUCTION_API_BASE_URL
+  ))
+  : (browserApiBaseUrl
+    || (isNativeApp() ? (mobileApiBaseUrl || PRODUCTION_API_BASE_URL) : (
+      process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : PRODUCTION_API_BASE_URL
+    )));

@@ -1,3 +1,4 @@
+from datetime import datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import get_user_model
@@ -259,9 +260,16 @@ class ProductSalesInventoryView(views.APIView):
         if not day:
             return Response({'date': 'Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
         products = list(Product.objects.filter(item_type=Product.PRODUCT, is_active=True).order_by('name'))
-        product_ids = [row.id for row in products]
+        product_ids = {row.id for row in products}
         sales = {}
-        for order in Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(payment_status='PAID', created_at__date=day).order_by('created_at', 'id'):
+        day_start = timezone.make_aware(datetime.combine(day, time.min))
+        day_end = timezone.make_aware(datetime.combine(day + timedelta(days=1), time.min))
+        orders = Order.objects.filter(
+            payment_status='PAID',
+            created_at__gte=day_start,
+            created_at__lt=day_end,
+        ).exclude(order_type='END_OF_DAY_REPORT').only('id', 'created_at', 'line_items').order_by('created_at', 'id')
+        for order in orders:
             for line in order.line_items or []:
                 product_id = int(line.get('product') or 0)
                 if product_id not in product_ids:
@@ -363,10 +371,17 @@ class ProductSalesTransactionListView(views.APIView):
         if not Product.objects.filter(pk=product_id, item_type=Product.PRODUCT).exists():
             return Response({'detail': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+        day_start = timezone.make_aware(datetime.combine(day, time.min))
+        day_end = timezone.make_aware(datetime.combine(day + timedelta(days=1), time.min))
+        order_fields = ['id', 'created_at', 'transaction_id', 'staff_id']
+        order_fields.append('line_items' if record_type == 'sales' else 'return_events')
         orders = Order.objects.filter(
             payment_status='PAID',
-            created_at__date=day,
-        ).exclude(order_type='END_OF_DAY_REPORT').select_related('staff').order_by('created_at', 'id')
+            created_at__gte=day_start,
+            created_at__lt=day_end,
+        ).exclude(order_type='END_OF_DAY_REPORT').select_related('staff').only(
+            *order_fields, 'staff__id', 'staff__username', 'staff__first_name', 'staff__last_name'
+        ).order_by('created_at', 'id')
         results = []
         if record_type == 'sales':
             for order in orders:

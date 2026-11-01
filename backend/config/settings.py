@@ -84,6 +84,10 @@ AUTH_COOKIE_SAMESITE = os.environ.get('AUTH_COOKIE_SAMESITE', 'None' if not DEBU
 if AUTH_COOKIE_SAMESITE.lower() == 'none' and not AUTH_COOKIE_SECURE:
     AUTH_COOKIE_SAMESITE = 'Lax'
 AUTH_COOKIE_DOMAIN = os.environ.get('AUTH_COOKIE_DOMAIN') or None
+# Render's shared *.onrender.com suffix is not a valid cross-service cookie
+# domain. Browser clients use the frontend's first-party /api rewrite instead.
+if AUTH_COOKIE_DOMAIN and AUTH_COOKIE_DOMAIN.lstrip('.').lower().endswith('onrender.com'):
+    AUTH_COOKIE_DOMAIN = None
 ADMIN_MFA_TTL_MINUTES = int(os.environ.get('ADMIN_MFA_TTL_MINUTES', '10'))
 ADMIN_MFA_MAX_ATTEMPTS = int(os.environ.get('ADMIN_MFA_MAX_ATTEMPTS', '5'))
 PRIVACY_REQUEST_RETENTION_DAYS = int(os.environ.get('PRIVACY_REQUEST_RETENTION_DAYS', '2555'))

@@ -21,6 +21,7 @@ function AuthProbe() {
     <div>
       <span data-testid="loading">{String(loading)}</span>
       <span data-testid="user">{user?.username || 'signed-out'}</span>
+      <span data-testid="role">{user?.role || 'none'}</span>
       <button type="button" onClick={() => void login('customer', 'Customer123!')}>
         Sign in
       </button>
@@ -52,6 +53,10 @@ const renderAuthProbe = () => render(
 );
 
 describe('AuthContext', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   beforeEach(() => {
     localStorage.clear();
     client.get.mockReset();
@@ -86,6 +91,51 @@ describe('AuthContext', () => {
       username: 'customer',
       role: 'CUSTOMER',
     });
+  });
+
+  test('restores a valid cookie session when persistent browser storage is unavailable', async () => {
+    jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage is unavailable', 'QuotaExceededError');
+    });
+    client.get.mockResolvedValue({
+      data: {
+        id: 12,
+        username: 'private-customer',
+        email: 'private@example.com',
+        role: 'CUSTOMER',
+      },
+    });
+
+    renderAuthProbe();
+
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('private-customer'));
+    expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    expect(client.get).toHaveBeenCalledWith('/api/auth/profile/', expect.objectContaining({
+      skipAuthRedirect: true,
+    }));
+  });
+
+  test('uses the verified profile role instead of a cached role', async () => {
+    localStorage.setItem('user', JSON.stringify({
+      id: 12,
+      username: 'member',
+      email: 'member@example.com',
+      role: 'ADMIN',
+    }));
+    client.get.mockResolvedValue({
+      data: {
+        id: 12,
+        username: 'member',
+        email: 'member@example.com',
+        role: 'CUSTOMER',
+      },
+    });
+
+    renderAuthProbe();
+
+    await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
+    expect(screen.getByTestId('role')).toHaveTextContent('CUSTOMER');
+    expect(JSON.parse(localStorage.getItem('user')).role).toBe('CUSTOMER');
   });
 
   test('does not let an older session restore response erase a newer login', async () => {
@@ -138,6 +188,7 @@ describe('AuthContext', () => {
   });
 
   test('Google admin login forwards the resendable MFA challenge without completing a session', async () => {
+    client.get.mockRejectedValue({ response: { status: 401 } });
     client.post.mockResolvedValue({
       data: {
         mfa_required: true,
@@ -148,6 +199,7 @@ describe('AuthContext', () => {
     });
 
     render(<AuthProvider><GoogleMFAProbe /></AuthProvider>);
+    await waitFor(() => expect(client.get).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'Verify Google admin' }));
 
     await waitFor(() => expect(screen.getByTestId('google-mfa-result')).toHaveTextContent('verification-required'));
@@ -157,6 +209,6 @@ describe('AuthContext', () => {
       mfa_token: 'admin-mfa-token',
       mfa_code: '123456',
     });
-    expect(client.get).not.toHaveBeenCalled();
+    expect(client.get).toHaveBeenCalledTimes(1);
   });
 });

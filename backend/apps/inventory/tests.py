@@ -4,6 +4,7 @@ from rest_framework.test import APIClient
 
 from inventory.models import Category, InventoryEvent, Product, Supplier
 from inventory.serializers import ProductSerializer
+from pos.models import Order
 
 
 class StockMovementWriteTests(TestCase):
@@ -222,4 +223,50 @@ class PurchaseOrderLifecycleTests(TestCase):
         self.assertEqual(invalid_response.status_code, 400)
         self.assertIn('items', invalid_response.data)
 
-# Create your tests here.
+class ProductSalesReadTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_user(
+            username='inventory-read-admin',
+            email='inventory-read-admin@example.com',
+            password='Admin123!pass',
+            role='ADMIN',
+            is_staff=True,
+        )
+        self.product = Product.objects.create(
+            name='Daily Sales Test Product',
+            sku='DAILY-SALES-TEST',
+            item_type=Product.PRODUCT,
+            price='15.00',
+            cost='4.00',
+            stock_level=4,
+        )
+        Order.objects.create(
+            payment_status='PAID',
+            order_type='WALK_IN',
+            line_items=[{
+                'product': self.product.id,
+                'quantity': 3,
+                'returned_quantity': 1,
+                'wasted_quantity': 1,
+                'net_subtotal': '30.00',
+                'refunded_amount': '5.00',
+                'cost': '4.00',
+            }],
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_daily_product_sales_summary_and_transactions_preserve_rollups(self):
+        summary = self.client.get('/api/inventory/product-sales/')
+        transactions = self.client.get(
+            '/api/inventory/product-sales/transactions/',
+            {'product_id': self.product.id, 'type': 'sales'},
+        )
+
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(transactions.status_code, 200)
+        row = next(item for item in summary.data if item['product_id'] == self.product.id)
+        self.assertEqual(row['quantity_sold'], 2)
+        self.assertEqual(row['revenue'], '25.00')
+        self.assertEqual(transactions.data[0]['quantity'], 2)
+        self.assertEqual(transactions.data[0]['sale_amount'], '25.00')
