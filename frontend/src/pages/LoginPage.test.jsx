@@ -15,7 +15,7 @@ jest.mock('../components/RecaptchaChallenge', () => {
   const React = require('react');
   return function MockRecaptchaChallenge({ onTokenChange, resetKey }) {
     React.useEffect(() => onTokenChange('test-recaptcha-token', ''), [onTokenChange, resetKey]);
-    return React.createElement('div', { 'data-testid': 'recaptcha-widget' });
+    return React.createElement('div', { 'data-testid': 'recaptcha-widget', 'data-reset-key': resetKey });
   };
 });
 
@@ -101,6 +101,28 @@ describe('password authentication submissions', () => {
     }));
   });
 
+  test('a rejected login token resets the widget so the next attempt requires a fresh challenge', async () => {
+    mockLogin.mockResolvedValue({
+      success: false,
+      error: 'The security check expired or was already used. Complete it again and retry.',
+    });
+    renderLogin();
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'member' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'MemberPassword#2026' } });
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Enter My Dashboard' }));
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText(/security check expired or was already used/i)).toBeInTheDocument();
+    expect(mockLogin).toHaveBeenCalledWith('member', 'MemberPassword#2026', {
+      recaptcha_token: 'test-recaptcha-token',
+    });
+    await waitFor(() => expect(screen.getByTestId('recaptcha-widget')).toHaveAttribute('data-reset-key', '1'));
+  });
+
   test('registration keeps privacy consent required and submits the reCAPTCHA token after consent', async () => {
     mockRegister.mockResolvedValue({
       success: true,
@@ -135,6 +157,31 @@ describe('password authentication submissions', () => {
       recaptcha_token: 'test-recaptcha-token',
     })));
     expect(await screen.findByLabelText('One-Time OTP')).toBeInTheDocument();
+  });
+
+  test('a rejected registration token resets the widget and keeps the retry message visible', async () => {
+    mockRegister.mockResolvedValue({
+      success: false,
+      errors: { detail: 'The security check expired or was already used. Complete it again and retry.' },
+    });
+    renderLogin();
+    fireEvent.click(screen.getByRole('button', { name: 'New to CAV? Create an account' }));
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'new-member' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'member@example.com' } });
+    fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '09171234567' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'SecureCustomer#2026' } });
+    fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'SecureCustomer#2026' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send Verification Code' }));
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText(/The security check expired or was already used/i)).toBeInTheDocument();
+    expect(mockRegister).toHaveBeenCalledWith(expect.objectContaining({ recaptcha_token: 'test-recaptcha-token' }));
+    await waitFor(() => expect(screen.getByTestId('recaptcha-widget')).toHaveAttribute('data-reset-key', '1'));
   });
 });
 

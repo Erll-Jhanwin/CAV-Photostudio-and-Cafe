@@ -62,6 +62,22 @@ class RecaptchaAuthTests(TestCase):
         self.assertIn('Complete the security check', response.data['detail'])
         mocked_verify.assert_not_called()
 
+    @override_settings(RECAPTCHA_SECRET_KEY='')
+    @patch('users.views.requests.post')
+    def test_missing_secret_is_logged_without_logging_the_token(self, mocked_verify):
+        with self.assertLogs('users.views', level='ERROR') as captured:
+            response = self.client.post('/api/auth/login/', {
+                'username': self.user.username,
+                'password': 'CaptchaCustomer123!',
+                'recaptcha_token': 'sensitive-token-with-no-secret-configured',
+            }, format='json')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn('not configured', response.data['detail'])
+        self.assertIn('RECAPTCHA_SECRET_KEY is not configured', '\n'.join(captured.output))
+        self.assertNotIn('sensitive-token-with-no-secret-configured', '\n'.join(captured.output))
+        mocked_verify.assert_not_called()
+
     @patch('users.views.requests.post')
     def test_valid_captcha_allows_login_and_only_sends_secret_to_google(self, mocked_verify):
         mocked_verify.return_value = Mock(
@@ -88,15 +104,57 @@ class RecaptchaAuthTests(TestCase):
             status_code=200,
             json=Mock(return_value={'success': False, 'error-codes': ['timeout-or-duplicate']}),
         )
-        response = self.client.post('/api/auth/login/', {
-            'username': self.user.username,
-            'password': 'CaptchaCustomer123!',
-            'recaptcha_token': 'expired-test-token',
-        }, format='json')
+        with self.assertLogs('users.views', level='WARNING') as captured:
+            response = self.client.post('/api/auth/login/', {
+                'username': self.user.username,
+                'password': 'CaptchaCustomer123!',
+                'recaptcha_token': 'sensitive-expired-token',
+            }, format='json')
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('expired or was already used', response.data['detail'])
         self.assertIn('Complete it again', response.data['detail'])
+        self.assertIn('timeout-or-duplicate', '\n'.join(captured.output))
+        self.assertNotIn('sensitive-expired-token', '\n'.join(captured.output))
+        self.assertNotIn('test-only-secret', '\n'.join(captured.output))
+
+    @patch('users.views.requests.post')
+    def test_invalid_response_code_returns_retry_message_and_safe_diagnostic(self, mocked_verify):
+        mocked_verify.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={'success': False, 'error-codes': ['invalid-input-response']}),
+        )
+        with self.assertLogs('users.views', level='WARNING') as captured:
+            response = self.client.post('/api/auth/login/', {
+                'username': self.user.username,
+                'password': 'CaptchaCustomer123!',
+                'recaptcha_token': 'sensitive-invalid-token',
+            }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Complete it again', response.data['detail'])
+        self.assertIn('invalid-input-response', '\n'.join(captured.output))
+        self.assertNotIn('sensitive-invalid-token', '\n'.join(captured.output))
+        self.assertNotIn('test-only-secret', '\n'.join(captured.output))
+
+    @patch('users.views.requests.post')
+    def test_invalid_secret_is_reported_as_configuration_failure(self, mocked_verify):
+        mocked_verify.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={'success': False, 'error-codes': ['invalid-input-secret']}),
+        )
+        with self.assertLogs('users.views', level='WARNING') as captured:
+            response = self.client.post('/api/auth/login/', {
+                'username': self.user.username,
+                'password': 'CaptchaCustomer123!',
+                'recaptcha_token': 'sensitive-invalid-secret-token',
+            }, format='json')
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn('not configured correctly', response.data['detail'])
+        self.assertIn('invalid-input-secret', '\n'.join(captured.output))
+        self.assertNotIn('sensitive-invalid-secret-token', '\n'.join(captured.output))
+        self.assertNotIn('test-only-secret', '\n'.join(captured.output))
 
     @patch('users.views.send_password_reset_otp')
     @patch('users.views.requests.post')
@@ -124,14 +182,18 @@ class RecaptchaAuthTests(TestCase):
             status_code=200,
             json=Mock(return_value={'success': True, 'hostname': 'attacker.example'}),
         )
-        response = self.client.post('/api/auth/login/', {
-            'username': self.user.username,
-            'password': 'CaptchaCustomer123!',
-            'recaptcha_token': 'wrong-host-token',
-        }, format='json')
+        with self.assertLogs('users.views', level='WARNING') as captured:
+            response = self.client.post('/api/auth/login/', {
+                'username': self.user.username,
+                'password': 'CaptchaCustomer123!',
+                'recaptcha_token': 'sensitive-wrong-host-token',
+            }, format='json')
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('could not be verified for this website', response.data['detail'])
+        self.assertIn('attacker.example', '\n'.join(captured.output))
+        self.assertNotIn('sensitive-wrong-host-token', '\n'.join(captured.output))
+        self.assertNotIn('test-only-secret', '\n'.join(captured.output))
 
 
 class PasswordResetSMSTests(TestCase):

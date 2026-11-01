@@ -471,8 +471,8 @@ export default function LoginPage() {
       setFormErrors({});
     } else {
       const apiErrors = res.errors || {};
+      const fieldError = value => Array.isArray(value) ? value.join(' ') : String(value || '');
       if (typeof apiErrors === 'object' && !Array.isArray(apiErrors)) {
-        const fieldError = value => Array.isArray(value) ? value.join(' ') : String(value || '');
         setFormErrors(current => ({
           ...current,
           username: fieldError(apiErrors.username) || current.username,
@@ -482,7 +482,9 @@ export default function LoginPage() {
         }));
       }
       const errorMsg = typeof apiErrors === 'object'
-        ? Object.entries(apiErrors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' ') : v}`).join(', ')
+        ? (apiErrors.detail
+          ? fieldError(apiErrors.detail)
+          : Object.entries(apiErrors).map(([k, v]) => `${k}: ${fieldError(v)}`).join(', '))
         : apiErrors?.detail || 'Registration failed.';
       setError(errorMsg);
     }

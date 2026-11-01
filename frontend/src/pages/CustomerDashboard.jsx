@@ -1605,7 +1605,7 @@ export default function CustomerDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-cream flex flex-col md:flex-row" aria-busy={loading}>
+    <div className="dashboard-shell min-h-screen bg-cream flex flex-col md:flex-row" aria-busy={loading}>
       <Sidebar
         brand="CAV Portal"
         brandSubtitle="Customer Console"
@@ -1621,9 +1621,9 @@ export default function CustomerDashboard() {
       />
 
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
+        <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(previous => !previous)} user={user} menuOpen={sidebarOpen} />
 
-        <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
+        <main className="dashboard-main flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
           {loading && (
             <div className="mb-4 flex items-center gap-3 rounded-xl border border-espresso/[0.08] bg-white px-4 py-3" role="status">
               <LoadingSpinner size="sm" className="text-gold-dark" label="Loading account and booking information" />

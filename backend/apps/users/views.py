@@ -73,6 +73,7 @@ def validate_recaptcha(request):
 
     secret = settings.RECAPTCHA_SECRET_KEY
     if not secret:
+        logger.error('RECAPTCHA_SECRET_KEY is not configured; rejecting authentication request.')
         return Response(
             {'detail': 'Security verification is not configured. Please contact support.'},
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -87,6 +88,7 @@ def validate_recaptcha(request):
         verification.raise_for_status()
         result = verification.json()
     except (requests.RequestException, ValueError):
+        logger.warning('Google reCAPTCHA verification request failed.')
         return Response(
             {'detail': 'Security verification is temporarily unavailable. Please retry the check.'},
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -97,17 +99,32 @@ def validate_recaptcha(request):
         allowed_hosts = {str(host).strip().lower() for host in settings.RECAPTCHA_ALLOWED_HOSTS if str(host).strip()}
         if hostname and hostname in allowed_hosts:
             return None
+        logger.warning(
+            'Google reCAPTCHA accepted a token for an unconfigured hostname (hostname=%s).',
+            hostname or '(missing)',
+        )
         return Response(
             {'detail': 'Security check could not be verified for this website. Please try again.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    error_codes = set(result.get('error-codes') or [])
+    # Google error codes contain no credentials or token data. Restrict logged
+    # values to the documented code format to avoid logging arbitrary payloads.
+    error_codes = sorted({
+        code for code in (result.get('error-codes') or [])
+        if isinstance(code, str) and code.replace('-', '').isalnum() and len(code) <= 64
+    })
+    logger.warning('Google reCAPTCHA rejected a token (error_codes=%s).', ','.join(error_codes) or 'unspecified')
+    error_codes = set(error_codes)
     if 'timeout-or-duplicate' in error_codes:
         detail = 'The security check expired or was already used. Complete it again and retry.'
     elif 'missing-input-secret' in error_codes or 'invalid-input-secret' in error_codes:
         detail = 'Security verification is not configured correctly. Please contact support.'
         return Response({'detail': detail}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    elif 'missing-input-response' in error_codes:
+        detail = 'Complete the security check, then try again.'
+    elif 'invalid-input-response' in error_codes:
+        detail = 'The security check could not be verified. Complete it again and retry.'
     else:
         detail = 'Security check failed. Complete it again and retry.'
     return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)

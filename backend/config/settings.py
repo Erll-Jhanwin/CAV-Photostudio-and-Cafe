@@ -37,6 +37,14 @@ def env_list(name, default=None):
     return [item.strip() for item in raw.split(',') if item.strip()]
 
 
+def normalize_origin(origin):
+    """Accept bare hostnames in deployment env and normalize them to HTTPS origins."""
+    value = str(origin or '').strip().rstrip('/')
+    if value and '://' not in value:
+        value = f'https://{value}'
+    return value
+
+
 IS_TESTING = 'test' in sys.argv
 DEBUG = env_bool('DJANGO_DEBUG', False)
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or os.environ.get('SECRET_KEY')
@@ -50,11 +58,14 @@ ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS', ['localhost', '127.0.0.1', '[::
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
 RECAPTCHA_ENABLED = env_bool('RECAPTCHA_ENABLED', True)
 RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '').strip()
-RECAPTCHA_ALLOWED_HOSTS = env_list('RECAPTCHA_ALLOWED_HOSTS', [
+RECAPTCHA_ALLOWED_HOSTS = list(dict.fromkeys([
     'localhost',
     '127.0.0.1',
     'cav-photostudio-and-cafe-frontend.onrender.com',
-])
+    'cavphotostudiocafe.com',
+    'www.cavphotostudiocafe.com',
+    *env_list('RECAPTCHA_ALLOWED_HOSTS'),
+]))
 PASSWORD_RESET_OTP_TTL_MINUTES = int(os.environ.get('PASSWORD_RESET_OTP_TTL_MINUTES', '10'))
 PASSWORD_RESET_OTP_MAX_ATTEMPTS = int(os.environ.get('PASSWORD_RESET_OTP_MAX_ATTEMPTS', '5'))
 PASSWORD_RESET_TOKEN_TTL_MINUTES = int(os.environ.get('PASSWORD_RESET_TOKEN_TTL_MINUTES', '10'))
@@ -356,10 +367,12 @@ CAPACITOR_ALLOWED_ORIGINS = [
 ]
 DEPLOYED_FRONTEND_ORIGINS = [
     'https://cav-photostudio-and-cafe-frontend.onrender.com',
+    'https://cavphotostudiocafe.com',
+    'https://www.cavphotostudiocafe.com',
 ]
 CORS_ALLOWED_ORIGINS = list(dict.fromkeys([
     *DEPLOYED_FRONTEND_ORIGINS,
-    *env_list('CORS_ALLOWED_ORIGINS', [
+    *[normalize_origin(origin) for origin in env_list('CORS_ALLOWED_ORIGINS', [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
     'http://localhost:3001',
@@ -367,7 +380,7 @@ CORS_ALLOWED_ORIGINS = list(dict.fromkeys([
     'http://localhost:8100',
     'http://127.0.0.1:8100',
     *CAPACITOR_ALLOWED_ORIGINS,
-    ]),
+    ])],
     *CAPACITOR_ALLOWED_ORIGINS,
 ]))
 CORS_ALLOW_CREDENTIALS = env_bool('CORS_ALLOW_CREDENTIALS', True)
@@ -379,7 +392,7 @@ CORS_ALLOW_HEADERS = [
 ]
 CSRF_TRUSTED_ORIGINS = list(dict.fromkeys([
     *[origin for origin in CORS_ALLOWED_ORIGINS if origin.startswith(('http://', 'https://'))],
-    *env_list('CSRF_TRUSTED_ORIGINS'),
+    *[normalize_origin(origin) for origin in env_list('CSRF_TRUSTED_ORIGINS')],
 ]))
 
 SESSION_COOKIE_HTTPONLY = True

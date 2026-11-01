@@ -1590,7 +1590,7 @@ export default function StaffDashboard() {
   }
 
   return (
-    <div className={`${isViewportBoundTab ? 'h-dvh overflow-hidden' : 'min-h-screen'} bg-cream flex flex-col md:flex-row`} aria-busy={loading}>
+    <div className={`dashboard-shell ${isViewportBoundTab ? 'h-dvh overflow-hidden' : 'min-h-screen'} bg-cream flex flex-col md:flex-row`} aria-busy={loading}>
       <Sidebar
         brand="CAV Terminal"
         brandSubtitle="Staff Console"
@@ -1606,9 +1606,9 @@ export default function StaffDashboard() {
       />
 
       <div className={`flex-1 flex flex-col overflow-hidden ${isViewportBoundTab ? 'h-dvh min-h-0' : 'min-h-screen'}`}>
-        <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
+        <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(previous => !previous)} user={user} menuOpen={sidebarOpen} />
 
-        <main className={`flex-1 p-4 md:p-6 lg:p-8 ${isSalesTab || isBookingsTab || isPaymentsTab || isInventoryTab || isCatalogTab ? 'flex min-h-0 flex-col overflow-hidden' : isPosTab ? 'overflow-y-auto scrollbar-thin lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden' : 'overflow-y-auto scrollbar-thin'}`}>
+        <main className={`dashboard-main flex-1 p-4 md:p-6 lg:p-8 ${isSalesTab || isBookingsTab || isPaymentsTab || isInventoryTab || isCatalogTab ? 'flex min-h-0 flex-col overflow-hidden' : isPosTab ? 'overflow-y-auto scrollbar-thin lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden' : 'overflow-y-auto scrollbar-thin'}`}>
           {error && (
             <div className="bg-red-50 border border-red-100 text-red-800 p-5 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
               <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5" />

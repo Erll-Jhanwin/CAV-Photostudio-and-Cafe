@@ -90,7 +90,10 @@ export function Sidebar({
       )}
 
       <aside
-        className={`
+        id="dashboard-navigation"
+        aria-label={`${brand} navigation`}
+        data-mobile-open={mobileOpen ? 'true' : 'false'}
+        className={`dashboard-sidebar
           fixed md:sticky top-0 left-0 z-30 h-screen w-64 bg-espresso text-cream
           flex flex-col shrink-0 p-5 transition-transform duration-300
           ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}

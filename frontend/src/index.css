@@ -12,13 +12,15 @@
 
   html {
     scroll-behavior: smooth;
-    font-size: 15px;
+    font-size: 14px;
+    overflow-x: clip;
   }
 
   body {
     @apply m-0 font-sans bg-cream text-charcoal antialiased;
     font-family: 'DM Sans', sans-serif;
     text-rendering: optimizeLegibility;
+    overflow-x: clip;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -208,6 +210,89 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+}
+
+/* Shared proportions and overflow handling for authenticated consoles. */
+.dashboard-shell {
+  min-width: 0;
+  width: 100%;
+}
+
+.dashboard-sidebar {
+  width: 16rem !important;
+  padding: 1rem !important;
+}
+
+.dashboard-main {
+  min-width: 0;
+  padding: clamp(1rem, 1.45vw, 1.5rem) !important;
+}
+
+.dashboard-main > *,
+.dashboard-main [class*="grid"],
+.dashboard-main [class*="flex"] {
+  min-width: 0;
+}
+
+.dashboard-main table {
+  max-width: 100%;
+}
+
+@media (max-width: 767px) {
+  .dashboard-sidebar {
+    width: min(84vw, 18rem) !important;
+    height: 100dvh !important;
+    padding: 1rem !important;
+  }
+
+  .dashboard-sidebar[data-mobile-open="false"] {
+    visibility: hidden;
+  }
+
+  .dashboard-sidebar[data-mobile-open="true"] {
+    visibility: visible;
+  }
+
+  .dashboard-shell {
+    height: auto !important;
+    min-height: 100dvh;
+    overflow: visible !important;
+  }
+
+  .dashboard-shell > div.flex-1 {
+    height: auto !important;
+    min-height: 100dvh;
+    overflow: visible !important;
+  }
+
+  .dashboard-main {
+    height: auto;
+    min-height: 0;
+    overflow: visible !important;
+    padding: 1rem !important;
+  }
+
+  .dashboard-main > [class*="h-full"] {
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+
+  [role="dialog"] {
+    align-items: flex-start !important;
+    overflow-y: auto;
+    padding: max(0.75rem, env(safe-area-inset-top)) 0.75rem max(0.75rem, env(safe-area-inset-bottom)) !important;
+  }
+
+  [role="dialog"] > :last-child {
+    max-height: calc(100dvh - 1.5rem);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1100px) {
+  .dashboard-sidebar {
+    width: 14.5rem !important;
   }
 }
 
