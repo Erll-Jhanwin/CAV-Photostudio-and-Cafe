@@ -3,7 +3,7 @@ import { hasDashboardOperationalRecords, validateDashboardAnalytics } from './da
 const range = { start: '2026-11-01', end: '2026-11-01' };
 const payload = {
   metrics: {
-    total_revenue: 0, total_revenue_change: 0, previous_period_revenue: 0, pos_revenue: 0, booking_revenue: 0,
+    total_revenue: 0, total_revenue_change: 0, previous_period_revenue: 0, pos_revenue: 0, cafe_income: 0, booking_revenue: 0,
     booking_payment_revenue: 0, transaction_count: 0, avg_transaction_value: 0,
     total_items_sold: 0, total_bookings: 0, completed_bookings: 0, pending: 0,
     confirmed: 0, confirmed_dp: 0, completed: 0, cancelled: 0,

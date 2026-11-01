@@ -213,6 +213,11 @@ class CustomerPhotoListCreateView(views.APIView):
 class CustomerPhotoDownloadView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        if getattr(self.request.user, 'role', None) == 'STAFF':
+            return [IsStaffOrAdmin()]
+        return super().get_permissions()
+
     def get(self, request, pk):
         photos = CustomerPhoto.objects.filter(pk=pk).select_related('booking__customer')
         if request.user.role not in {'STAFF', 'ADMIN'}:

@@ -229,6 +229,7 @@ class DashboardAnalyticsView(views.APIView):
                 'total_revenue_change': pct_change(total_rev, prev_total_rev),
                 'previous_period_revenue': money(prev_total_rev),
                 'pos_revenue': money(pos_rev),
+                'cafe_income': money(pos_rev),
                 'booking_revenue': money(booking_rev),
                 'booking_payment_revenue': money(booking_payment_revenue),
                 'transaction_count': total_tx,

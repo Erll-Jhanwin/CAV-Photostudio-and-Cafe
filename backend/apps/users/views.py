@@ -33,7 +33,7 @@ from users.serializers import (
     PasswordResetVerifySerializer,
     PasswordResetConfirmSerializer,
 )
-from users.models import Customer, PasswordResetOTP, PrivacyConsent, PrivacyRequest
+from users.models import Customer, PasswordResetOTP, PrivacyConsent, PrivacyRequest, StaffAccessProfile
 from users.permissions import IsAdmin
 from users.sms_delivery import IProgSMSDeliveryError, send_password_reset_otp, verify_password_reset_otp
 from users.phone_numbers import normalize_philippine_mobile_number
@@ -256,6 +256,17 @@ def admin_mfa_is_valid(token, otp, user):
     return True
 
 
+def admin_mfa_challenge_matches(token, user):
+    pending = cache.get(f'admin_mfa:{token}')
+    return bool(
+        pending
+        and user.role == 'ADMIN'
+        and pending.get('user_id') == user.pk
+        and pending.get('method') == 'sms'
+        and timezone.now().timestamp() < pending.get('expires_at', 0)
+    )
+
+
 def begin_admin_mfa(request, user):
     methods = get_admin_mfa_methods(user)
     if not methods:
@@ -292,9 +303,6 @@ class AdminMFAResendView(views.APIView):
     throttle_scope = 'auth'
 
     def post(self, request):
-        recaptcha_error = validate_recaptcha(request)
-        if recaptcha_error:
-            return recaptcha_error
         serializer = AdminMFAResendSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         token = serializer.validated_data['mfa_token']
@@ -374,12 +382,19 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     throttle_scope = 'auth'
 
     def post(self, request, *args, **kwargs):
-        recaptcha_error = validate_recaptcha(request)
-        if recaptcha_error:
-            return recaptcha_error
+        if not request.data.get('mfa_token'):
+            recaptcha_error = validate_recaptcha(request)
+            if recaptcha_error:
+                return recaptcha_error
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.user
+        # Skip reCAPTCHA only for the same live admin challenge that was issued
+        # after CAPTCHA and password verification. Other login paths still run it.
+        if request.data.get('mfa_token') and not admin_mfa_challenge_matches(request.data.get('mfa_token'), user):
+            recaptcha_error = validate_recaptcha(request)
+            if recaptcha_error:
+                return recaptcha_error
         if user.role == 'ADMIN' and not request.data.get('mfa_token'):
             return begin_admin_mfa(request, user)
         if user.role == 'ADMIN':
@@ -700,9 +715,6 @@ class GoogleAuthView(views.APIView):
     throttle_scope = 'auth'
 
     def post(self, request):
-        recaptcha_error = validate_recaptcha(request)
-        if recaptcha_error:
-            return recaptcha_error
         credential = request.data.get('credential', '').strip()
         if not credential:
             return Response({"detail": "Google credential is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -748,6 +760,11 @@ class GoogleAuthView(views.APIView):
                 return Response({'phone_number': 'Phone number already exists.'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = User.objects.filter(email__iexact=email).first()
+        challenge_matches = bool(user and admin_mfa_challenge_matches(request.data.get('mfa_token'), user))
+        if not challenge_matches:
+            recaptcha_error = validate_recaptcha(request)
+            if recaptcha_error:
+                return recaptcha_error
         created = False
         if not user:
             if not request.data.get('privacy_consent'):
@@ -1065,6 +1082,57 @@ class PrivacyExportView(views.APIView):
         }
         AuditLog.objects.create(user=user, action='PRIVACY_EXPORT', description='User data export generated.', ip_address=get_client_ip(request))
         return Response(export)
+
+class StaffAccessPolicyView(views.APIView):
+    permission_classes = [IsAdmin]
+
+    TABS = {'dashboard', 'bookings', 'payments', 'inventory', 'catalog', 'pos', 'sales', 'reports', 'chatbot', 'reviews'}
+    ACTIONS = {'booking_manage', 'payment_verify', 'inventory_manage', 'pos_manage', 'reports_manage', 'chatbot_manage'}
+
+    def get_permissions(self):
+        if self.request.path.endswith('/me/'):
+            return [permissions.IsAuthenticated()]
+        return super().get_permissions()
+
+    def get(self, request):
+        if request.path.endswith('/me/'):
+            if request.user.role != 'STAFF':
+                return Response({'detail': 'Staff account required.'}, status=status.HTTP_403_FORBIDDEN)
+            profile = StaffAccessProfile.objects.filter(user=request.user).first()
+            return Response({
+                'on_duty': bool(profile and profile.on_duty),
+                'allowed_tabs': profile.allowed_tabs if profile else [],
+                'allowed_actions': profile.allowed_actions if profile else [],
+            })
+        staff = User.objects.filter(role='STAFF').order_by('username')
+        profiles = {profile.user_id: profile for profile in StaffAccessProfile.objects.filter(user__in=staff)}
+        return Response([{
+            'id': user.id,
+            'username': user.username,
+            'name': user.get_full_name() or user.username,
+            'on_duty': profiles.get(user.id).on_duty if user.id in profiles else False,
+            'allowed_tabs': profiles.get(user.id).allowed_tabs if user.id in profiles else [],
+            'allowed_actions': profiles.get(user.id).allowed_actions if user.id in profiles else [],
+        } for user in staff])
+
+    def patch(self, request, pk):
+        user = User.objects.filter(pk=pk, role='STAFF').first()
+        if not user:
+            return Response({'detail': 'Staff account not found.'}, status=status.HTTP_404_NOT_FOUND)
+        profile, _ = StaffAccessProfile.objects.get_or_create(user=user)
+        if 'on_duty' in request.data:
+            if not isinstance(request.data['on_duty'], bool):
+                return Response({'on_duty': 'Expected a boolean value.'}, status=status.HTTP_400_BAD_REQUEST)
+            profile.on_duty = request.data['on_duty']
+        for field, allowed in (('allowed_tabs', self.TABS), ('allowed_actions', self.ACTIONS)):
+            if field in request.data:
+                values = request.data[field]
+                if not isinstance(values, list) or any(value not in allowed for value in values):
+                    return Response({field: f'Choose values from: {", ".join(sorted(allowed))}.'}, status=status.HTTP_400_BAD_REQUEST)
+                setattr(profile, field, list(dict.fromkeys(values)))
+        profile.save()
+        return Response({'id': user.id, 'on_duty': profile.on_duty, 'allowed_tabs': profile.allowed_tabs, 'allowed_actions': profile.allowed_actions})
+
 
 class StaffListView(generics.ListCreateAPIView):
     serializer_class = UserSerializer

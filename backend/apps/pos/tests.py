@@ -12,6 +12,7 @@ from payment.models import Payment
 from pos.models import Order, POSStockAction
 from pos.receipt_printing import RECEIPT_WIDTH, _end_of_day_text, _escpos_receipt_bytes, _receipt_text
 from pos.views import json_safe_report_data
+from users.models import StaffAccessProfile
 
 
 class ReceiptPrintingTests(SimpleTestCase):
@@ -251,11 +252,17 @@ class PosIdempotencyTests(TestCase):
             password='Staff123!pass',
             role='STAFF',
         )
+        StaffAccessProfile.objects.create(
+            user=self.staff, on_duty=True,
+            allowed_tabs=['pos', 'inventory', 'sales'],
+            allowed_actions=['pos_manage', 'inventory_manage'],
+        )
         self.product = Product.objects.create(
             name='Idempotent Latte',
             sku='IDEMPOTENT-LATTE',
             item_type=Product.PRODUCT,
             price=Decimal('125.00'),
+            cost=Decimal('40.00'),
             stock_level=5,
             reorder_point=1,
         )
@@ -402,6 +409,7 @@ class PosIdempotencyTests(TestCase):
         self.assertEqual(row['wastage'], 1)
         self.assertEqual(row['ending_stock'], 2)
         self.assertEqual(row['revenue'], '250.00')
+        self.assertEqual(row['loss'], '165.00')
 
         too_many = self.client.post(f'/api/pos/orders/{order_id}/returns/', {
             'product_id': self.product.id, 'quantity': 3, 'disposition': 'WASTED',
@@ -438,6 +446,11 @@ class POSStockActionApiTests(TestCase):
             password='Staff123!pass',
             role='STAFF',
         )
+        StaffAccessProfile.objects.create(
+            user=self.staff, on_duty=True,
+            allowed_tabs=['pos', 'inventory', 'sales'],
+            allowed_actions=['pos_manage', 'inventory_manage'],
+        )
         self.customer = get_user_model().objects.create_user(
             username='stock-action-customer',
             email='stock-action-customer@example.com',
@@ -449,6 +462,7 @@ class POSStockActionApiTests(TestCase):
             sku='ACTION-AMERICANO',
             item_type=Product.PRODUCT,
             price=Decimal('125.00'),
+            cost=Decimal('40.00'),
             stock_level=10,
             reorder_point=1,
         )
@@ -500,6 +514,7 @@ class POSStockActionApiTests(TestCase):
         self.assertEqual(row['wastage'], 1)
         self.assertEqual(row['ending_stock'], 7)
         self.assertEqual(row['revenue'], '250.00')
+        self.assertEqual(row['loss'], '40.00')
 
         report_date = timezone.localdate().isoformat()
         sales_records = self.client.get('/api/inventory/product-sales/transactions/', {
@@ -562,6 +577,7 @@ class POSStockActionApiTests(TestCase):
         self.assertEqual(row['wastage'], 1)
         self.assertEqual(row['ending_stock'], 6)
         self.assertEqual(row['revenue'], '375.00')
+        self.assertEqual(row['loss'], '165.00')
 
         wastage_records = self.client.get('/api/inventory/product-sales/transactions/', {
             'product_id': self.product.id,
@@ -594,6 +610,7 @@ class POSStockActionApiTests(TestCase):
         self.assertEqual(row['quantity_sold'], 3)
         self.assertEqual(row['wastage'], 0)
         self.assertEqual(row['ending_stock'], 7)
+        self.assertEqual(row['loss'], '125.00')
 
     def test_reason_transaction_quantity_and_transaction_membership_are_validated(self):
         sale = self.create_sale(quantity=1)

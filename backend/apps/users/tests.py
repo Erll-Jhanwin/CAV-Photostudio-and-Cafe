@@ -551,9 +551,10 @@ class AccountCrudTests(TestCase):
         self.assertEqual(response.headers['Access-Control-Allow-Credentials'], 'true')
 
     @override_settings(IPROG_SMS_API_TOKEN='test-token')
+    @patch('users.views.validate_recaptcha', return_value=None)
     @patch('users.views.verify_password_reset_otp', side_effect=[False, True])
     @patch('users.views.send_password_reset_otp')
-    def test_admin_login_requires_valid_sms_otp(self, mocked_send, mocked_verify):
+    def test_admin_login_requires_valid_sms_otp(self, mocked_send, mocked_verify, mocked_recaptcha):
         cache.clear()
         self.admin.phone_number = '09171234567'
         self.admin.save(update_fields=['phone_number'])
@@ -610,6 +611,7 @@ class AccountCrudTests(TestCase):
         self.assertEqual(login_response.status_code, 200)
         self.assertEqual(mocked_verify.call_args_list[0].args, ('639171234567', '000000'))
         self.assertEqual(mocked_verify.call_args_list[1].args, ('639171234567', '123456'))
+        mocked_recaptcha.assert_called_once()
         self.assertTrue(login_response.cookies['cav_access']['httponly'])
 
     @override_settings(IPROG_SMS_API_TOKEN='test-token')

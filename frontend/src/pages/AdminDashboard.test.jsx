@@ -32,7 +32,7 @@ jest.mock('../api/client', () => ({
     if (url.includes('/api/dashboard/analytics/')) {
       return Promise.resolve({
         data: {
-          metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+          metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
           sales_history_chart: [],
           recent_bookings: [],
           recent_pos_transactions: [],
@@ -91,7 +91,7 @@ describe('AdminDashboard', () => {
       if (url === '/api/inventory/product-sales/') return Promise.resolve({ data: [salesRow] });
       if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
       return Promise.resolve({ data: {
-        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
         sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
         top_selling_products: [], top_booked_packages: [], inventory_status_counts: {}, low_stock_alerts: [], inventory_alerts: [],
       } });
@@ -153,7 +153,7 @@ describe('AdminDashboard', () => {
       if (url.includes('/api/bookings/payments/')) return Promise.resolve({ data: [payment] });
       if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
       return Promise.resolve({ data: {
-        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
         sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
         top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
         low_stock_alerts: [], inventory_alerts: [],
@@ -201,7 +201,7 @@ describe('AdminDashboard', () => {
       if (url.includes('/api/bookings/payments/')) return Promise.resolve({ data: payments });
       if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
       return Promise.resolve({ data: {
-        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
         sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
         top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
         low_stock_alerts: [], inventory_alerts: [],
@@ -251,6 +251,8 @@ describe('AdminDashboard', () => {
 
     expect(await screen.findByText('Business Overview')).toBeInTheDocument();
     expect(screen.getAllByText('Booking Income').length).toBeGreaterThan(0);
+    expect(screen.getByText('Café Income')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Photo Gallery' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Accounts' }));
     expect(await screen.findByText('Existing Accounts')).toBeInTheDocument();
@@ -264,7 +266,7 @@ describe('AdminDashboard', () => {
         return new Promise(resolve => { resolveForecast = resolve; });
       }
       return Promise.resolve({ data: {
-        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
         sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
         top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
         low_stock_alerts: [], inventory_alerts: [],
@@ -314,7 +316,7 @@ describe('AdminDashboard', () => {
     getCached.mockImplementation(url => url.includes('/api/forecasting/predictions/')
       ? Promise.resolve({ data: report })
       : Promise.resolve({ data: {
-        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
         sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
         top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
         low_stock_alerts: [], inventory_alerts: [],
@@ -387,7 +389,7 @@ describe('AdminDashboard', () => {
     expect(screen.getByRole('combobox', { name: 'Sort expired ingredients' })).toBeInTheDocument();
   });
 
-  it('shows full-width booking details in responsive columns on the calendar', async () => {
+  it('keeps Live Bookings separate and excludes bookings without an approved downpayment', async () => {
     const bookingMonth = getManilaMonthValue();
     getCached.mockImplementation(url => {
       if (url.includes('/api/bookings/studio-unavailable-dates/')) return Promise.resolve({ data: [] });
@@ -398,16 +400,22 @@ describe('AdminDashboard', () => {
           package_details: { name: 'Portrait Session', price: '2500.00', inclusions: 'One printed portrait' },
           scheduled_date: `${bookingMonth}-15`,
           scheduled_time: '10:30:00',
-          status: 'PENDING',
+          status: 'CONFIRMED_DP',
           required_down_payment: '1250.00',
           items: [{ name: 'Printed photo', quantity: 2, price: '150.00' }],
           notes: 'Please call upon arrival.',
-          payments: [{ id: 11, amount: '1250.00', method_label: 'GCash', status: 'PENDING_VERIFICATION', reference_number: 'GC-48' }],
+          payments: [{ id: 11, amount: '1250.00', method_label: 'GCash', status: 'APPROVED', reference_number: 'GC-48' }],
+        }, {
+          id: 49,
+          customer: { email: 'pending@example.com' },
+          package_details: { name: 'Portrait Session', price: '2500.00' },
+          scheduled_date: `${bookingMonth}-16`, scheduled_time: '11:30:00', status: 'PENDING',
+          payments: [{ id: 12, amount: '1250.00', status: 'PENDING_VERIFICATION' }],
         }] });
       }
       if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
       return Promise.resolve({ data: {
-        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
         sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
         top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
         low_stock_alerts: [], inventory_alerts: [],
@@ -417,14 +425,17 @@ describe('AdminDashboard', () => {
     render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Booking Calendar' }));
 
-    expect(await screen.findByText('Live Bookings')).toBeInTheDocument();
+    expect(screen.queryByText('jamie@example.com')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Live Bookings' }));
+    expect(await screen.findByText('Ready for service')).toBeInTheDocument();
     expect(await screen.findByText('jamie@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('pending@example.com')).not.toBeInTheDocument();
     expect(screen.getByText('+639171234567')).toBeInTheDocument();
     expect(screen.getByText('Down payment: PHP 1,250')).toBeInTheDocument();
     expect(screen.getByText('Printed photo × 2 · PHP 150')).toBeInTheDocument();
     expect(screen.getByText('Please call upon arrival.')).toBeInTheDocument();
     expect(screen.getByText('Includes: One printed portrait')).toBeInTheDocument();
-    expect(screen.getByText('PHP 1,250 · GCash · PENDING VERIFICATION · Ref GC-48')).toBeInTheDocument();
+    expect(screen.getByText('PHP 1,250 · GCash · APPROVED · Ref GC-48')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Booking 48 status' })).toBeInTheDocument();
 
     const bookingCard = screen.getByText('Booking items').closest('.rounded-2xl');
@@ -487,7 +498,7 @@ describe('AdminDashboard', () => {
       }] });
       if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
       return Promise.resolve({ data: {
-        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
         sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
         top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
         low_stock_alerts: [], inventory_alerts: [],
@@ -531,7 +542,7 @@ describe('AdminDashboard', () => {
       }] });
       if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
       return Promise.resolve({ data: {
-        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
         sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
         top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
         low_stock_alerts: [], inventory_alerts: [],
@@ -585,7 +596,7 @@ describe('AdminDashboard', () => {
       if (url.includes('/api/auth/users/')) return Promise.resolve({ data: accounts });
       if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
       return Promise.resolve({ data: {
-        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
         sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
         top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
         low_stock_alerts: [], inventory_alerts: [],
@@ -603,7 +614,7 @@ describe('AdminDashboard', () => {
     expect(screen.queryByText('staff.01')).not.toBeInTheDocument();
     expect(screen.getByText('Showing 1-2 of 2')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /^Staff/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Staff\s+\d+$/ }));
     expect(screen.getByText('Showing 1-10 of 11')).toBeInTheDocument();
     expect(screen.queryByText('staff.11')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
@@ -635,7 +646,7 @@ describe('AdminDashboard', () => {
       if (url.includes('/api/chatbot/faqs/')) return new Promise(resolve => { resolveFaqs = resolve; });
       if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
       return Promise.resolve({ data: {
-        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0 },
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
         sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
         top_selling_products: [], top_booked_packages: [], inventory_status_counts: {},
         low_stock_alerts: [], inventory_alerts: [],

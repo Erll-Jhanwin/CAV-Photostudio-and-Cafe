@@ -103,6 +103,11 @@ class PackageListView(generics.ListAPIView):
 class BookingAvailabilityView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        if getattr(self.request.user, 'role', None) == 'STAFF':
+            return [IsStaffOrAdmin()]
+        return super().get_permissions()
+
     def get(self, request, *args, **kwargs):
         package_id = request.query_params.get('package')
         month = request.query_params.get('month')
@@ -270,6 +275,11 @@ class BookingListCreateView(generics.ListCreateAPIView):
     filter_backends = []
     search_fields = ['customer__username', 'customer__email']
 
+    def get_permissions(self):
+        if getattr(self.request.user, 'role', None) == 'STAFF':
+            return [IsStaffOrAdmin()]
+        return super().get_permissions()
+
     def get_queryset(self):
         user = self.request.user
         if user.role in ['STAFF', 'ADMIN']:
@@ -292,6 +302,12 @@ class BookingListCreateView(generics.ListCreateAPIView):
                     raise ValidationError({'month': 'Use YYYY-MM format.'})
             if status_param:
                 queryset = queryset.filter(status=status_param)
+            if self.request.query_params.get('ready_for_service') == 'true':
+                queryset = queryset.filter(
+                    status__in=['CONFIRMED', 'CONFIRMED_DP'],
+                    payments__payment_type=Payment.BOOKING,
+                    payments__status__in=['APPROVED', 'PAID'],
+                ).distinct()
             if self.request.query_params.get('active') == 'true':
                 queryset = queryset.filter(status__in=['PENDING', 'CONFIRMED', 'CONFIRMED_DP'])
             if self.request.query_params.get('search'):
@@ -483,6 +499,11 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = BookingSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        if getattr(self.request.user, 'role', None) == 'STAFF':
+            return [IsStaffOrAdmin()]
+        return super().get_permissions()
+
     def get_queryset(self):
         queryset = Booking.objects.all().select_related('customer', 'package', 'package__service', 'review').prefetch_related('payments').distinct()
         user = self.request.user
@@ -670,6 +691,11 @@ class BookingReviewCreateView(generics.CreateAPIView):
     serializer_class = BookingReviewSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        if getattr(self.request.user, 'role', None) == 'STAFF':
+            return [IsStaffOrAdmin()]
+        return super().get_permissions()
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -752,6 +778,11 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     filter_backends = []
     search_fields = ['reference_number', 'booking__customer__username', 'booking__customer__email']
+
+    def get_permissions(self):
+        if getattr(self.request.user, 'role', None) == 'STAFF':
+            return [IsStaffOrAdmin()]
+        return super().get_permissions()
 
     def get_queryset(self):
         user = self.request.user
@@ -878,6 +909,11 @@ class BookingPaymentMethodsView(views.APIView):
 class BookingPaymentReceiptView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        if getattr(self.request.user, 'role', None) == 'STAFF':
+            return [IsStaffOrAdmin()]
+        return super().get_permissions()
+
     def get(self, request, pk):
         queryset = Payment.objects.filter(pk=pk, payment_type=Payment.BOOKING).select_related('booking__customer')
         if request.user.role not in ['STAFF', 'ADMIN']:
@@ -909,6 +945,11 @@ class BookingPaymentReceiptView(views.APIView):
 
 class BookingPaymentReferenceCheckView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if getattr(self.request.user, 'role', None) == 'STAFF':
+            return [IsStaffOrAdmin()]
+        return super().get_permissions()
 
     def get(self, request):
         reference_number = (request.query_params.get('reference_number') or '').strip()

@@ -67,7 +67,9 @@ describe('responsive authentication layout', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New to CAV? Create an account' }));
 
     expect(screen.getByRole('heading', { name: 'Join CAV today' })).toBeInTheDocument();
-    expect(marketingPanel).toHaveClass('hidden', 'lg:flex');
+    expect(screen.queryByRole('heading', { name: 'Welcome to your CAV experience.' })).not.toBeInTheDocument();
+    // eslint-disable-next-line testing-library/no-node-access
+    expect(screen.getByRole('heading', { name: 'Join CAV today' }).closest('section').querySelector('.max-w-2xl')).toHaveClass('w-full', 'min-w-0');
     const registrationPassword = screen.getByLabelText('Password');
     const registrationRecaptcha = screen.getByTestId('recaptcha-widget');
     const consentCheckbox = screen.getByRole('checkbox');
@@ -273,7 +275,8 @@ describe('OTP resend flows', () => {
     fireEvent.click(resendButton);
 
     expect(await screen.findByText(/A new admin verification code was sent/)).toBeInTheDocument();
-    expect(client.post).toHaveBeenCalledWith('/api/auth/login/mfa/resend/', { mfa_token: 'admin-mfa-token', recaptcha_token: 'test-recaptcha-token' });
+    expect(client.post).toHaveBeenCalledWith('/api/auth/login/mfa/resend/', { mfa_token: 'admin-mfa-token' });
+    expect(screen.queryByTestId('recaptcha-widget')).not.toBeInTheDocument();
     expect(screen.getByLabelText('SMS one-time code')).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Resend code in 60s' })).toBeDisabled();
   });
@@ -325,7 +328,6 @@ describe('OTP resend flows', () => {
       expect(mockLoginWithGoogle).toHaveBeenLastCalledWith('google-id-token', '', {
         mfa_token: 'google-admin-mfa-token',
         mfa_code: '123456',
-        recaptcha_token: 'test-recaptcha-token',
       });
       expect(mockLogin).not.toHaveBeenCalled();
     } finally {

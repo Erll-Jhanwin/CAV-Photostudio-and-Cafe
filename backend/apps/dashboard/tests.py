@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from booking.models import Booking, Package, Service
 from payment.models import Payment
 from pos.models import Order
+from users.models import StaffAccessProfile
 
 
 class DashboardAnalyticsTests(TestCase):
@@ -26,6 +27,7 @@ class DashboardAnalyticsTests(TestCase):
             password='Staff123!',
             role='STAFF',
         )
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True, allowed_tabs=['dashboard'])
         self.customer = get_user_model().objects.create_user(
             username='dashboard-customer',
             email='dashboard-customer@example.com',
@@ -57,6 +59,25 @@ class DashboardAnalyticsTests(TestCase):
                 self.client.force_authenticate(user)
                 response = self.client.get('/api/dashboard/analytics/')
                 self.assertEqual(response.status_code, expected_status)
+
+    def test_staff_duty_and_tab_restrictions_apply_to_existing_sessions(self):
+        self.client.force_authenticate(self.admin)
+        updated = self.client.patch(f'/api/auth/staff-access/{self.staff.id}/', {
+            'on_duty': True,
+            'allowed_tabs': ['dashboard'],
+            'allowed_actions': [],
+        }, format='json')
+        self.assertEqual(updated.status_code, 200)
+
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.client.get('/api/dashboard/analytics/').status_code, 200)
+        self.assertEqual(self.client.get('/api/bookings/').status_code, 403)
+
+        self.client.force_authenticate(self.admin)
+        disabled = self.client.patch(f'/api/auth/staff-access/{self.staff.id}/', {'on_duty': False}, format='json')
+        self.assertEqual(disabled.status_code, 200)
+        self.client.force_authenticate(self.staff)
+        self.assertEqual(self.client.get('/api/dashboard/analytics/').status_code, 403)
 
     def test_recent_bookings_are_not_limited_by_the_reporting_range(self):
         booking = Booking.objects.create(
@@ -129,8 +150,38 @@ class DashboardAnalyticsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['metrics']['booking_revenue'], 500.0)
         self.assertEqual(response.data['metrics']['booking_payment_revenue'], 500.0)
+        self.assertEqual(response.data['metrics']['cafe_income'], 0.0)
         self.assertEqual(response.data['metrics']['total_revenue'], 500.0)
         self.assertEqual(response.data['sales_history_chart'][0]['booking_revenue'], 500.0)
+
+    def test_cafe_income_uses_selected_range_and_excludes_booking_orders(self):
+        today = timezone.localdate()
+        Order.objects.create(payment_status='PAID', order_type='WALK_IN', total='125.00', subtotal='125.00')
+        Order.objects.create(payment_status='PAID', order_type='BOOKING_LINKED', total='450.00', subtotal='450.00')
+        Order.objects.create(payment_status='PENDING', order_type='WALK_IN', total='900.00', subtotal='900.00')
+        outside_range = Order.objects.create(payment_status='PAID', order_type='WALK_IN', total='750.00', subtotal='750.00')
+        Order.objects.filter(pk=outside_range.pk).update(created_at=timezone.now() - timedelta(days=2))
+
+        response = self.client.get('/api/dashboard/analytics/', {'start': today.isoformat(), 'end': today.isoformat()})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['metrics']['cafe_income'], 125.0)
+        self.assertEqual(response.data['metrics']['booking_revenue'], 450.0)
+
+    def test_ready_for_service_bookings_require_confirmed_status_and_approved_payment(self):
+        ready = Booking.objects.create(customer=self.customer, package=self.package, scheduled_date=timezone.localdate(), scheduled_time='10:00', status='CONFIRMED_DP')
+        pending = Booking.objects.create(customer=self.customer, package=self.package, scheduled_date=timezone.localdate(), scheduled_time='11:00', status='PENDING')
+        rejected = Booking.objects.create(customer=self.customer, package=self.package, scheduled_date=timezone.localdate(), scheduled_time='12:00', status='CONFIRMED')
+        completed = Booking.objects.create(customer=self.customer, package=self.package, scheduled_date=timezone.localdate(), scheduled_time='13:00', status='COMPLETED')
+        Payment.objects.create(payment_type=Payment.BOOKING, booking=ready, amount='500.00', status='APPROVED')
+        Payment.objects.create(payment_type=Payment.BOOKING, booking=pending, amount='500.00', status='APPROVED')
+        Payment.objects.create(payment_type=Payment.BOOKING, booking=rejected, amount='500.00', status='REJECTED')
+        Payment.objects.create(payment_type=Payment.BOOKING, booking=completed, amount='500.00', status='PAID')
+
+        response = self.client.get('/api/bookings/', {'ready_for_service': 'true'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row['id'] for row in response.data], [ready.id])
 
     def test_paid_booking_cash_and_approved_payments_count_once_and_pending_is_excluded(self):
         booking = Booking.objects.create(

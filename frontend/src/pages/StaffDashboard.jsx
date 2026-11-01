@@ -215,6 +215,8 @@ export default function StaffDashboard() {
   const navigate = useNavigate();
   const confirm = useStyledConfirm();
   const [activeTab, setActiveTab] = useState('pos');
+  const [staffAccess, setStaffAccess] = useState(null);
+  const [staffAccessReady, setStaffAccessReady] = useState(false);
   const [staffBookings, setStaffBookings] = useState([]);
   const [walkInBookingOpen, setWalkInBookingOpen] = useState(false);
   const [bookingsPage, setBookingsPage] = useState(1);
@@ -448,8 +450,41 @@ export default function StaffDashboard() {
       navigate('/login');
       return;
     }
+    if (user.role === 'STAFF' && (!staffAccessReady || !staffAccess?.on_duty || !(staffAccess.allowed_tabs || []).includes(activeTab))) return;
     loadTabData(activeTab);
-  }, [user, navigate, activeTab, loadTabData]);
+  }, [user, navigate, activeTab, loadTabData, staffAccessReady, staffAccess]);
+
+  useEffect(() => {
+    if (!user || user.role !== 'STAFF') {
+      setStaffAccessReady(true);
+      return undefined;
+    }
+    let mounted = true;
+    const refreshAccess = async () => {
+      try {
+        const response = await client.get('/api/auth/staff-access/me/');
+        if (mounted) {
+          setStaffAccess(response.data || { on_duty: false, allowed_tabs: [], allowed_actions: [] });
+          setStaffAccessReady(true);
+        }
+      } catch {
+        if (mounted) {
+          setStaffAccess({ on_duty: false, allowed_tabs: [], allowed_actions: [] });
+          setStaffAccessReady(true);
+        }
+      }
+    };
+    setStaffAccessReady(false);
+    void refreshAccess();
+    const intervalId = window.setInterval(refreshAccess, 10000);
+    return () => { mounted = false; window.clearInterval(intervalId); };
+  }, [user]);
+
+  useEffect(() => {
+    if (!staffAccessReady || !staffAccess?.on_duty) return;
+    const permittedTabs = staffAccess.allowed_tabs || [];
+    if (!permittedTabs.includes(activeTab) && permittedTabs.length) setActiveTab(permittedTabs[0]);
+  }, [staffAccessReady, staffAccess, activeTab]);
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) return undefined;
@@ -1419,7 +1454,7 @@ export default function StaffDashboard() {
     navigate('/login', { replace: true });
   }, [logout, navigate]);
 
-  const navItems = [
+  const allNavItems = [
     { key: 'pos', label: 'POS Terminal', icon: ShoppingBag, active: activeTab === 'pos', onClick: () => setActiveTab('pos') },
     { key: 'bookings', label: 'Bookings', icon: Calendar, active: activeTab === 'bookings', onClick: () => setActiveTab('bookings') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
@@ -1427,6 +1462,8 @@ export default function StaffDashboard() {
     { key: 'catalog', label: 'Catalog & Purchasing', icon: ClipboardList, active: activeTab === 'catalog', onClick: () => setActiveTab('catalog') },
     { key: 'sales', label: 'Daily Sales Logs', icon: DollarSign, active: activeTab === 'sales', onClick: () => setActiveTab('sales') },
   ];
+  const navItems = user?.role === 'STAFF' ? allNavItems.filter(item => (staffAccess?.allowed_tabs || []).includes(item.key)) : allNavItems;
+  const canStaffAction = action => user?.role !== 'STAFF' || (staffAccess?.allowed_actions || []).includes(action);
 
   const pageTitles = { pos: 'POS Terminal', bookings: 'Bookings', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs' };
   const pagedStaffBookings = paginateRows(sortRows(staffBookings, { key: 'scheduled_date', dir: 'desc', accessor: row => `${row.scheduled_date || ''} ${row.scheduled_time || ''}` }), bookingsPage, TABLE_PAGE_SIZE);
@@ -1584,12 +1621,24 @@ export default function StaffDashboard() {
   const isInventoryTab = activeTab === 'inventory';
   const isCatalogTab = activeTab === 'catalog';
   const isViewportBoundTab = isSalesTab || isPosTab || isBookingsTab || isPaymentsTab || isInventoryTab || isCatalogTab;
+  const hasNoStaffTabs = user?.role === 'STAFF' && staffAccessReady && staffAccess?.on_duty && !(staffAccess.allowed_tabs || []).length;
 
-  if (!initialDataReady && (loading || isCurrentTabLoading) && !isBookingsTab && !isPaymentsTab) {
+  if (!initialDataReady && (loading || isCurrentTabLoading) && !isBookingsTab && !isPaymentsTab
+    && !(user?.role === 'STAFF' && staffAccessReady && (!staffAccess?.on_duty || hasNoStaffTabs))) {
     return <StaffSkeleton />;
   }
 
   return (
+    user?.role === 'STAFF' && staffAccessReady && (!staffAccess?.on_duty || hasNoStaffTabs) ? (
+      <div className="flex min-h-screen items-center justify-center bg-cream p-6">
+        <div className="w-full max-w-md rounded-3xl border border-espresso/10 bg-white p-8 text-center shadow-xl">
+          <ShieldAlert className="mx-auto h-10 w-10 text-gold-dark" />
+          <h1 className="mt-4 text-xl font-black text-espresso">{hasNoStaffTabs ? 'No staff tabs assigned' : 'You are off duty'}</h1>
+          <p className="mt-2 text-sm text-espresso/60">Ask an administrator to assign your shift and access.</p>
+          <Button className="mt-5" variant="outline" onClick={handleLogout}>Sign out</Button>
+        </div>
+      </div>
+    ) : (
     <div className={`dashboard-shell ${isViewportBoundTab ? 'h-dvh overflow-hidden' : 'min-h-screen'} bg-cream flex flex-col md:flex-row`} aria-busy={loading}>
       <Sidebar
         brand="CAV Terminal"
@@ -1935,7 +1984,7 @@ export default function StaffDashboard() {
 
                         </div>
                       </div>
-                      <Button type="button" variant="gold" size="lg" className="w-full shrink-0" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading}>
+                      <Button type="button" variant="gold" size="lg" className="w-full shrink-0" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading || !canStaffAction('pos_manage')}>
                         {showCheckoutLoading ? 'Finalizing Sale...' : `Complete Sale - ${formatReceiptCurrency(getCartTotal())}`}
                       </Button>
                     </div>
@@ -1980,7 +2029,7 @@ export default function StaffDashboard() {
               <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div><h1 className="heading-page text-espresso">Bookings</h1><p className="mt-1 text-xs text-espresso/50">Live reservations, including customer and walk-in bookings.</p></div>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" icon={Plus} onClick={() => setWalkInBookingOpen(true)}>Walk-in Booking</Button>
+                  {canStaffAction('booking_manage') && <Button size="sm" icon={Plus} onClick={() => setWalkInBookingOpen(true)}>Walk-in Booking</Button>}
                   <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData('bookings', true)} loading={!!loadingResources.bookings}>Refresh bookings</Button>
                 </div>
               </div>
@@ -2102,10 +2151,10 @@ export default function StaffDashboard() {
                                 <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
                                   {isPending ? (
                                     <>
-                                      <Button size="sm" variant="success" icon={Check} loading={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}>
+                                      <Button size="sm" variant="success" icon={Check} loading={verifyingPaymentId === payment.id} disabled={!canStaffAction('payment_verify')} onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}>
                                         Confirm Payment
                                       </Button>
-                                      <Button size="sm" variant="danger" icon={X} disabled={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}>
+                                      <Button size="sm" variant="danger" icon={X} disabled={verifyingPaymentId === payment.id || !canStaffAction('payment_verify')} onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}>
                                         Flag Payment Issue
                                       </Button>
                                     </>
@@ -2325,6 +2374,10 @@ export default function StaffDashboard() {
                 <section role="tabpanel" id="inventory-panel-product-sales" aria-labelledby="inventory-tab-product-sales" className="flex min-h-0 flex-1 flex-col overflow-hidden">
                   <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">
                     <CardHeader title="Today’s Product Sales, Returns & Wastage" subtitle="Serving counts reconcile to the beginning stock snapshot. A returned wasted drink remains consumed stock while its sale is removed from net sold and revenue." className="mb-3 shrink-0" />
+                    <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-red-100 bg-red-50/70 px-3 py-2">
+                      <span className="text-xs font-bold text-espresso/65">Wastage cost plus refunded sales</span>
+                      <span className="text-sm font-black tabular-nums text-red-800">Total loss {formatCurrency(productSalesInventory.reduce((total, row) => total + Number(row.loss || 0), 0))}</span>
+                    </div>
                     <div ref={productSalesTableAreaRef} className="min-h-0 flex-1">
                       <DataTable
                         columns={[
@@ -2333,6 +2386,7 @@ export default function StaffDashboard() {
                           { key: 'quantity_sold', label: 'Sold', align: 'right', render: row => <button type="button" onClick={() => setSelectedProductActivity({ product: row, type: 'sales' })} aria-label={`View ${row.quantity_sold} sold transactions for ${row.product_name}`} className="rounded-lg px-2 py-1 font-black text-gold-dark underline decoration-gold/40 underline-offset-2 hover:bg-gold/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold">{row.quantity_sold}</button> },
                           { key: 'wastage', label: 'Wastage', align: 'right', render: row => <button type="button" onClick={() => setSelectedProductActivity({ product: row, type: 'wastage' })} aria-label={`View ${row.wastage} wastage records for ${row.product_name}`} className="rounded-lg px-2 py-1 font-black text-amber-800 underline decoration-amber-400/50 underline-offset-2 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold">{row.wastage}</button> },
                           { key: 'ending_stock', label: 'Ending', align: 'right' },
+                          { key: 'loss', label: 'Loss (₱)', align: 'right', render: row => <span className={Number(row.loss) > 0 ? 'font-bold tabular-nums text-red-700' : 'tabular-nums text-espresso/55'}>{formatCurrency(row.loss || 0)}</span> },
                           { key: 'revenue', label: 'Net revenue', align: 'right', render: row => formatCurrency(row.revenue) },
                           { key: 'profit_loss', label: 'Profit / loss', align: 'right', render: row => <span className={Number(row.profit_loss) < 0 ? 'text-red-700' : 'text-emerald-700'}>{formatCurrency(row.profit_loss)}</span> },
                         ]}
@@ -2340,7 +2394,7 @@ export default function StaffDashboard() {
                         emptyIcon={Package}
                         emptyTitle="No active products"
                         emptyDescription="Add café or studio products to track serving counts."
-                        minWidth={900}
+                        minWidth={980}
                         containerClassName="h-full"
                         emptyStateClassName="h-full !py-4"
                       />
@@ -2457,7 +2511,7 @@ export default function StaffDashboard() {
                       <h2 className="heading-section text-espresso">Sellable Catalog</h2>
                       <p className="text-xs text-espresso/50 mt-1">Changes here flow to the POS after the next refresh.</p>
                     </div>
-                    <Button variant="primary" size="sm" icon={Plus} onClick={() => openCatalogProductModal()}>Add Product</Button>
+                    {canStaffAction('inventory_manage') && <Button variant="primary" size="sm" icon={Plus} onClick={() => openCatalogProductModal()}>Add Product</Button>}
                   </div>
                   <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                     <div className="relative min-w-0 flex-1">
@@ -2556,6 +2610,7 @@ export default function StaffDashboard() {
                     <Input
                       label="Search customer"
                       icon={Search}
+                      className="!py-2 !pl-10 !pr-2 text-xs"
                       value={salesCustomerSearch}
                       onChange={event => setSalesCustomerSearch(event.target.value)}
                       placeholder="Customer name"
@@ -3136,5 +3191,6 @@ export default function StaffDashboard() {
         onSubmit={handleStockActionSubmit}
       />
     </div>
+    )
   );
 }

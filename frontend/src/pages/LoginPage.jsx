@@ -367,10 +367,10 @@ export default function LoginPage() {
     setFormErrors(errors);
     if (Object.keys(errors).length) return;
     const captchaToken = getRecaptchaToken();
-    if (!captchaToken) return;
+    if (!adminMfaStep && !captchaToken) return;
     setLoading(true);
     const verification = adminMfaStep
-      ? { mfa_token: adminMfaToken, mfa_code: adminMfaOtp, recaptcha_token: captchaToken }
+      ? { mfa_token: adminMfaToken, mfa_code: adminMfaOtp }
       : { recaptcha_token: captchaToken };
     const res = adminMfaStep && adminMfaProvider === 'google'
       ? await loginWithGoogle(adminMfaGoogleCredential, '', verification)
@@ -632,13 +632,11 @@ export default function LoginPage() {
 
   const handleAdminMfaResend = async () => {
     if (loading || !adminMfaToken || adminMfaResendCooldown > 0) return;
-    const captchaToken = getRecaptchaToken();
-    if (!captchaToken) return;
     setLoading(true);
     setError('');
     setSuccess('');
     try {
-      const response = await client.post('/api/auth/login/mfa/resend/', { mfa_token: adminMfaToken, recaptcha_token: captchaToken });
+      const response = await client.post('/api/auth/login/mfa/resend/', { mfa_token: adminMfaToken });
       resetRecaptcha();
       setAdminMfaOtp('');
       setAdminMfaOtpExpiresMinutes(response.data?.expires_in_minutes || 10);
@@ -716,7 +714,7 @@ export default function LoginPage() {
   const activeForgotStepIndex = forgotSteps.findIndex((step) => step.key === forgotStep);
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-cream px-4 py-8 sm:px-6 lg:px-8 page-transition">
+    <div className={`relative flex min-h-screen items-center justify-center ${isRegister ? 'overflow-x-hidden overflow-y-auto' : 'overflow-hidden'} bg-cream px-4 py-6 sm:px-6 lg:px-8 page-transition`}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(212,175,55,0.18),transparent_34%),linear-gradient(135deg,#fdfbf7_0%,#f5ece1_45%,#2e1a11_45%,#1c0f0a_100%)]" />
       <div className="absolute right-8 top-8 hidden h-40 w-40 rounded-full border border-gold/20 lg:block" />
       <div className="absolute bottom-10 left-10 hidden h-28 w-28 rounded-full border border-espresso/10 lg:block" />
@@ -728,8 +726,8 @@ export default function LoginPage() {
         <ArrowLeft className="h-4 w-4" /> Return Home
       </button>
 
-      <div className="relative z-10 grid w-full min-w-0 max-w-6xl overflow-hidden rounded-[28px] bg-espresso-dark shadow-[0_36px_90px_rgba(46,26,17,0.28)] lg:min-h-[720px] lg:grid-cols-[1.08fr_0.92fr]">
-        <section className="relative hidden min-h-[360px] flex-col justify-between overflow-hidden bg-espresso p-8 text-cream sm:p-10 lg:flex lg:p-12">
+      <div className={`relative z-10 grid w-full min-w-0 ${isRegister ? 'max-w-3xl overflow-visible rounded-[28px] bg-white shadow-[0_30px_80px_rgba(46,26,17,0.16)]' : 'max-w-6xl overflow-hidden rounded-[28px] bg-espresso-dark shadow-[0_36px_90px_rgba(46,26,17,0.28)] lg:min-h-[720px] lg:grid-cols-[1.08fr_0.92fr]'}`}>
+        {!isRegister && <section className="relative hidden min-h-[360px] flex-col justify-between overflow-hidden bg-espresso p-8 text-cream sm:p-10 lg:flex lg:p-12">
           <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(212,175,55,0.22),transparent_32%),radial-gradient(circle_at_82%_22%,rgba(255,255,255,0.12),transparent_24%)]" />
           <div className="absolute -bottom-24 -right-20 h-72 w-72 rounded-full border border-gold/20" />
           <div className="absolute bottom-12 right-12 h-28 w-28 rounded-full bg-gold/10 blur-2xl" />
@@ -782,17 +780,17 @@ export default function LoginPage() {
               <Coffee className="h-3.5 w-3.5 text-gold" /> Cafe service
             </span>
           </div>
-        </section>
+        </section>}
 
-        <section className="flex min-w-0 items-center bg-cream px-4 py-8 sm:px-8 lg:px-10">
-          <div className="mx-auto w-full min-w-0 max-w-md space-y-6">
+        <section className={`flex min-w-0 items-center justify-center bg-cream px-4 py-6 sm:px-8 ${isRegister ? 'rounded-[28px] lg:px-10' : 'lg:px-10'}`}>
+          <div className={`mx-auto w-full min-w-0 ${isRegister ? 'max-w-2xl space-y-4' : 'max-w-md space-y-6'}`}>
             <div className="space-y-2">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-gold">{formKicker}</p>
               <h2 className="text-3xl font-black tracking-tight text-espresso sm:text-4xl">{formTitle}</h2>
               <p className="text-sm leading-relaxed text-espresso/62">{formDescription}</p>
             </div>
 
-            <div className="space-y-6 rounded-[24px] border border-espresso/[0.06] bg-white p-5 shadow-[0_24px_65px_rgba(46,26,17,0.10)] sm:p-6">
+            <div className={`${isRegister ? 'space-y-4 rounded-[24px] border border-espresso/[0.06] bg-white p-4 shadow-[0_18px_50px_rgba(46,26,17,0.08)] sm:p-5' : 'space-y-6 rounded-[24px] border border-espresso/[0.06] bg-white p-5 shadow-[0_24px_65px_rgba(46,26,17,0.10)] sm:p-6'}`}>
               {error && (
                 <div className="flex items-start gap-2.5 rounded-xl border border-red-500/20 bg-red-500/10 p-3.5 text-xs text-red-700" role="alert">
                   <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -999,7 +997,7 @@ export default function LoginPage() {
                   </div>
                 </form>
               ) : (
-                <form onSubmit={isRegister ? handleRegisterSubmit : handleLoginSubmit} className="space-y-4" noValidate>
+                <form onSubmit={isRegister ? handleRegisterSubmit : handleLoginSubmit} className={isRegister ? 'space-y-3' : 'space-y-4'} noValidate>
                   {isRegister && registerStep === 'otp' ? (
                     <div className="space-y-4">
                       <div className="flex items-center gap-3 rounded-2xl border border-gold/20 bg-gold/5 p-4">
@@ -1088,13 +1086,10 @@ export default function LoginPage() {
                           {adminMfaResendCooldown > 0 ? `Resend code in ${adminMfaResendCooldown}s` : 'Resend code'}
                         </button>
                       </div>
-                      <RecaptchaChallenge
-                        onTokenChange={handleRecaptchaToken}
-                        resetKey={recaptchaResetKey}
-                      />
                     </div>
                   ) : (
                     <>
+                      <div className={isRegister ? 'grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2' : 'space-y-4'}>
                       <Input
                         label="Username"
                         icon={User}
@@ -1118,7 +1113,7 @@ export default function LoginPage() {
                             placeholder="name@example.com"
                             error={formErrors.email}
                           />
-                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div className="grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2">
                             <Input
                               label="First Name"
                               value={form.firstName}
@@ -1132,25 +1127,30 @@ export default function LoginPage() {
                               placeholder="Last"
                             />
                           </div>
-                          <Input
-                            label="Mobile number"
-                            type="tel"
-                            value={form.phone}
-                            onChange={update('phone')}
-                            placeholder="+63 917 123 4567"
-                            error={formErrors.phone}
-                          />
-                          <p className="-mt-3 text-[11px] leading-relaxed text-espresso/50">Required for regular sign-up. Google sign-up can continue without a number; add one before booking.</p>
+                          <div className="space-y-1">
+                            <Input
+                              label="Mobile number"
+                              type="tel"
+                              value={form.phone}
+                              onChange={update('phone')}
+                              placeholder="+63 917 123 4567"
+                              error={formErrors.phone}
+                            />
+                            <p className="text-[10px] leading-snug text-espresso/50">Required for regular sign-up. Google sign-up can continue without a number; add one before booking.</p>
+                          </div>
                           <Textarea
                             label="Address"
                             value={form.address}
                             onChange={update('address')}
                             placeholder="Enter your address"
                             rows={2}
+                            containerClassName="sm:col-span-1"
                           />
                         </>
                       )}
+                      </div>
 
+                      <div className={isRegister ? 'grid grid-cols-1 gap-3 sm:grid-cols-2' : 'space-y-4'}>
                       <Input
                         label="Password"
                         icon={Key}
@@ -1185,6 +1185,12 @@ export default function LoginPage() {
                             placeholder="Re-enter password"
                             error={formErrors.passwordConfirm}
                           />
+                        </>
+                      )}
+                      </div>
+
+                      {isRegister && (
+                        <>
                           <PasswordStrength password={form.password} />
                           <RecaptchaChallenge
                             onTokenChange={handleRecaptchaToken}

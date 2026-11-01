@@ -273,6 +273,7 @@ class ProductSalesInventoryView(views.APIView):
                     'restocked': 0,
                     'revenue': Decimal('0.00'),
                     'cost': Decimal('0.00'),
+                    'loss': Decimal('0.00'),
                 })
                 quantity = int(line.get('quantity') or 0)
                 returned = int(line.get('returned_quantity') or 0)
@@ -285,6 +286,13 @@ class ProductSalesInventoryView(views.APIView):
                 refunded = Decimal(str(line.get('refunded_amount') or '0'))
                 entry['revenue'] += max(line_revenue - refunded, Decimal('0.00'))
                 entry['cost'] += Decimal(str(line.get('cost') or '0')) * max(quantity - restocked, 0)
+                # These line totals are the canonical rollup of return_events and
+                # wastage_events. Reading the event arrays as well would count the
+                # same stock action twice.
+                entry['loss'] += (
+                    Decimal(str(line.get('cost') or '0')) * wasted
+                    + refunded
+                )
         ingredient_ids = {int(row.get('ingredient')) for product in products for row in (product.recipe_data or []) if row.get('ingredient')}
         ingredients = {row.id: row for row in Product.objects.filter(id__in=ingredient_ids, item_type=Product.INGREDIENT)}
         result = []
@@ -315,6 +323,7 @@ class ProductSalesInventoryView(views.APIView):
             ending = live_ending if day == timezone.localdate() else max(beginning - sold - wasted, 0)
             revenue = entry.get('revenue') or Decimal('0.00')
             cost = entry.get('cost') or Decimal('0.00')
+            loss = entry.get('loss') or Decimal('0.00')
             result.append({
                 'product_id': product.id,
                 'product_name': product.name,
@@ -325,6 +334,7 @@ class ProductSalesInventoryView(views.APIView):
                 'ending_stock': ending,
                 'revenue': str(revenue.quantize(Decimal('0.01'))),
                 'cost': str(cost.quantize(Decimal('0.01'))),
+                'loss': str(loss.quantize(Decimal('0.01'))),
                 'profit_loss': str((revenue - cost).quantize(Decimal('0.01'))),
             })
         return Response(result)

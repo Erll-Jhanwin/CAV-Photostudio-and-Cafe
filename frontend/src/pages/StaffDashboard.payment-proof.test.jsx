@@ -3,6 +3,11 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import client, { getCached } from '../api/client';
 
 const mockStaffUser = { id: 2, username: 'staff', role: 'STAFF' };
+const staffAccessPolicy = {
+  on_duty: true,
+  allowed_tabs: ['pos', 'bookings', 'payments', 'inventory', 'catalog', 'sales'],
+  allowed_actions: ['booking_manage', 'payment_verify', 'inventory_manage', 'pos_manage'],
+};
 const mockConfirm = jest.fn();
 
 jest.mock('../context/AuthContext', () => ({
@@ -32,6 +37,9 @@ import StaffDashboard from './StaffDashboard';
 beforeEach(() => {
   mockConfirm.mockReset();
   mockConfirm.mockResolvedValue(false);
+  client.get.mockImplementation(url => url === '/api/auth/staff-access/me/'
+    ? Promise.resolve({ data: staffAccessPolicy })
+    : Promise.resolve({ data: {} }));
   localStorage.clear();
   sessionStorage.clear();
 });
@@ -49,11 +57,23 @@ const payment = {
   status: 'PENDING_VERIFICATION', receipt_url: '/api/bookings/payments/18/receipt/',
 };
 
+test('off-duty staff sessions do not render protected tabs or load their data', async () => {
+  client.get.mockResolvedValue({ data: { on_duty: false, allowed_tabs: [], allowed_actions: [] } });
+
+  render(<StaffDashboard />);
+
+  expect(await screen.findByRole('heading', { name: 'You are off duty' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'POS Terminal' })).not.toBeInTheDocument();
+  expect(getCached).not.toHaveBeenCalled();
+});
+
 test('Staff payment verification opens proof on demand and keeps its verify actions available', async () => {
   getCached.mockImplementation(url => (
     url.includes('/api/bookings/payments/') ? Promise.resolve({ data: [payment] }) : Promise.resolve({ data: [] })
   ));
-  client.get.mockReturnValue(new Promise(() => {}));
+  client.get.mockImplementation(url => url === '/api/auth/staff-access/me/'
+    ? Promise.resolve({ data: staffAccessPolicy })
+    : new Promise(() => {}));
 
   const { unmount } = render(<StaffDashboard />);
   expect(await screen.findByRole('heading', { name: 'POS Terminal' })).toBeInTheDocument();
@@ -62,7 +82,7 @@ test('Staff payment verification opens proof on demand and keeps its verify acti
   const proofButton = await screen.findByRole('button', { name: 'View proof of payment for booking 48' });
   expect(screen.getByRole('button', { name: 'Confirm Payment' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Flag Payment Issue' })).toBeInTheDocument();
-  expect(client.get).not.toHaveBeenCalled();
+  expect(client.get).not.toHaveBeenCalledWith('/api/bookings/payments/18/receipt/', { responseType: 'blob' });
   expect(screen.queryByRole('img', { name: 'Payment proof for booking 48' })).not.toBeInTheDocument();
 
   fireEvent.click(proofButton);
@@ -98,7 +118,9 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   getCached.mockImplementation(url => (
     url === '/api/bookings/payments/' ? Promise.resolve({ data: payments }) : Promise.resolve({ data: [] })
   ));
-  client.get.mockResolvedValue({ data: new Blob(['proof'], { type: 'image/png' }) });
+  client.get.mockImplementation(url => url === '/api/auth/staff-access/me/'
+    ? Promise.resolve({ data: staffAccessPolicy })
+    : Promise.resolve({ data: new Blob(['proof'], { type: 'image/png' }) }));
   client.patch.mockImplementation((url, payload) => {
     const paymentId = Number(url.match(/payments\/(\d+)\/verify\//)?.[1]);
     const original = payments.find(row => row.id === paymentId);
@@ -162,7 +184,9 @@ test('Staff Live Inventory opens dated product sales and wastage records', async
       ? Promise.resolve({ data: [salesRow] })
       : Promise.resolve({ data: [] })
   ));
-  client.get.mockImplementation((_url, { params }) => Promise.resolve({ data: params.type === 'sales' ? [{
+  client.get.mockImplementation((url, { params } = {}) => url === '/api/auth/staff-access/me/'
+    ? Promise.resolve({ data: staffAccessPolicy })
+    : Promise.resolve({ data: params.type === 'sales' ? [{
     id: 'sale-6', transaction_id: 'POS-20261030-0006', date_time: '2026-10-30T02:15:00Z', quantity: 2, staff_name: 'Sam Cashier', sale_amount: '180.00',
   }] : [{
     id: 'waste-6', transaction_id: 'POS-20261030-0006', date_time: '2026-10-30T03:00:00Z', quantity: 1, staff_name: 'Sam Cashier', reason: 'Preparation spill',
@@ -203,7 +227,9 @@ test('Staff POS cart displays and edits items, completes checkout, and records w
         : [],
   }));
   client.get.mockImplementation((url, config = {}) => Promise.resolve({
-    data: url === '/api/inventory/products/'
+    data: url === '/api/auth/staff-access/me/'
+      ? staffAccessPolicy
+      : url === '/api/inventory/products/'
       ? products
       : url === '/api/pos/orders/' && transactionRecord
         && (!config.params?.transaction_id || config.params.transaction_id.toLowerCase() === transactionRecord.transaction_id.toLowerCase())

@@ -1,5 +1,5 @@
 export const DASHBOARD_METRIC_FIELDS = [
-  'total_revenue', 'previous_period_revenue', 'pos_revenue', 'booking_revenue',
+  'total_revenue', 'previous_period_revenue', 'pos_revenue', 'cafe_income', 'booking_revenue',
   'booking_payment_revenue', 'transaction_count', 'avg_transaction_value',
   'total_items_sold', 'total_bookings', 'completed_bookings', 'pending',
   'confirmed', 'confirmed_dp', 'completed', 'cancelled',

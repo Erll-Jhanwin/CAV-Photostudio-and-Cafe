@@ -255,3 +255,32 @@ test('notification status and type filters combine immediately and preserve unre
   expect(await screen.findByRole('button', { name: 'Unread notification: Booking request received' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Read notification: Payment approved' })).toBeInTheDocument();
 });
+
+test('notifications paginate inside the dashboard while filters remain available', async () => {
+  const notificationRows = Array.from({ length: 12 }, (_, index) => ({
+    id: 180 + index,
+    notification_type: 'BOOKING_CREATED',
+    title: `Booking update ${index + 1}`,
+    message: 'Your booking has an update.',
+    is_read: index > 2,
+    created_at: '2026-10-20T04:00:00Z',
+  }));
+  const defaultGet = client.get.getMockImplementation();
+  client.get.mockImplementation((url, options) => url === '/api/notifications/'
+    ? Promise.resolve({ data: notificationRows })
+    : defaultGet(url, options));
+  const defaultCachedGet = getCached.getMockImplementation();
+  getCached.mockImplementation((url, ...args) => url === '/api/notifications/'
+    ? Promise.resolve({ data: notificationRows })
+    : defaultCachedGet(url, ...args));
+
+  render(<CustomerDashboard />);
+  fireEvent.click(await screen.findByRole('button', { name: /Notifications/ }));
+  expect(await screen.findByRole('button', { name: 'Unread notification: Booking update 1' })).toBeInTheDocument();
+  expect(screen.getByText('Page 1 of 2 · 12 notifications')).toBeInTheDocument();
+  expect(screen.getByLabelText('Filter by notification type')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  expect(await screen.findByRole('button', { name: 'Read notification: Booking update 11' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Unread notification: Booking update 1' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
+});

@@ -54,6 +54,17 @@ class CustomUser(AbstractUser):
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
 
+
+class StaffAccessProfile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='staff_access')
+    on_duty = models.BooleanField(default=False)
+    allowed_tabs = models.JSONField(default=list, blank=True)
+    allowed_actions = models.JSONField(default=list, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Staff access for {self.user.username}"
+
 class Customer(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='customer_profile')
     points = models.IntegerField(default=0)

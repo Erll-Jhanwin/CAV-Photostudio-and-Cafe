@@ -47,18 +47,20 @@ const loadRecaptcha = () => {
 
 export default function RecaptchaChallenge({ onTokenChange, resetKey = 0 }) {
   const containerRef = useRef(null);
+  const widgetRef = useRef(null);
   const widgetIdRef = useRef(null);
   const [loadError, setLoadError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [scale, setScale] = useState(1);
   const siteKey = process.env.REACT_APP_RECAPTCHA_SITE_KEY?.trim();
 
   useEffect(() => {
     let active = true;
-    if (!siteKey || !containerRef.current) return undefined;
+    if (!siteKey || !widgetRef.current) return undefined;
     setLoadError('');
     loadRecaptcha().then((grecaptcha) => {
-      if (!active || !containerRef.current || widgetIdRef.current !== null) return;
-      widgetIdRef.current = grecaptcha.render(containerRef.current, {
+      if (!active || !widgetRef.current || widgetIdRef.current !== null) return;
+      widgetIdRef.current = grecaptcha.render(widgetRef.current, {
         sitekey: siteKey,
         callback: (token) => onTokenChange(token, ''),
         'expired-callback': () => onTokenChange('', 'The security check expired. Complete it again to retry.'),
@@ -69,6 +71,20 @@ export default function RecaptchaChallenge({ onTokenChange, resetKey = 0 }) {
     });
     return () => { active = false; };
   }, [siteKey, attempt, onTokenChange]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+    const updateScale = () => {
+      const availableWidth = container.clientWidth;
+      if (availableWidth > 0) setScale(Math.min(1, availableWidth / 304));
+    };
+    updateScale();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (widgetIdRef.current === null || !window.grecaptcha?.reset) return;
@@ -83,8 +99,10 @@ export default function RecaptchaChallenge({ onTokenChange, resetKey = 0 }) {
   }
 
   return (
-    <div className="space-y-2" aria-label="Security verification">
-      <div ref={containerRef} className="min-h-[78px]" />
+    <div className="min-w-0 space-y-2" aria-label="Security verification">
+      <div ref={containerRef} className="flex min-h-0 w-full justify-center overflow-hidden" style={{ height: `${78 * scale}px` }}>
+        <div ref={widgetRef} className="shrink-0" style={{ width: 304, height: 78, transform: `scale(${scale})`, transformOrigin: 'top center' }} />
+      </div>
       {loadError && <div className="flex flex-wrap items-center gap-2 text-xs text-red-700" role="alert">
         <span>{loadError}</span>
         <button type="button" onClick={() => setAttempt((value) => value + 1)} className="font-bold underline">Retry check</button>

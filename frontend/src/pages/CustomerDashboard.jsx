@@ -324,6 +324,7 @@ export default function CustomerDashboard() {
   const [notifications, setNotifications] = useState([]);
   const [notificationStatusFilter, setNotificationStatusFilter] = useState('all');
   const [notificationTypeFilter, setNotificationTypeFilter] = useState('all');
+  const [notificationPage, setNotificationPage] = useState(1);
   const [pushState, setPushState] = useState({ supported: false, enabled: false, permission: 'default', loading: false, error: '' });
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
@@ -1473,6 +1474,16 @@ export default function CustomerDashboard() {
   const readNotificationCount = notifications.length - unreadNotificationCount;
   const notificationCategories = getNotificationCategories(notifications);
   const filteredNotifications = filterNotifications(notifications, notificationStatusFilter, notificationTypeFilter);
+  const notificationPageSize = 10;
+  const notificationPageCount = Math.max(1, Math.ceil(filteredNotifications.length / notificationPageSize));
+  const visibleNotifications = filteredNotifications.slice((notificationPage - 1) * notificationPageSize, notificationPage * notificationPageSize);
+  const completedBookingCount = bookings.filter(booking => ['COMPLETED', 'DONE'].includes(String(booking.status || '').toUpperCase())).length;
+  const activeBookingCount = bookings.filter(booking => !['COMPLETED', 'DONE', 'CANCELLED', 'REJECTED'].includes(String(booking.status || '').toUpperCase())).length;
+  const memberSince = user?.date_joined ? new Date(user.date_joined).toLocaleDateString('en-PH', { month: 'short', year: 'numeric' }) : 'Active member';
+
+  useEffect(() => {
+    setNotificationPage(current => Math.min(current, notificationPageCount));
+  }, [notificationPageCount]);
 
   const navItems = [
     { key: 'book', label: 'Book a Session', icon: Plus, active: activeTab === 'book', onClick: () => setActiveTab('book') },
@@ -2861,8 +2872,8 @@ export default function CustomerDashboard() {
                 </div>
 
                 <div className="min-h-0 md:col-span-5">
-                  <section className="rounded-3xl border border-espresso/[0.07] bg-white p-5 shadow-[0_18px_45px_rgba(46,26,17,0.07)] sm:p-6" aria-labelledby="member-benefits-title">
-                    <div className="mb-5 flex items-center gap-3 border-b border-espresso/5 pb-4">
+                  <section className="flex h-full min-h-0 flex-col rounded-3xl border border-espresso/[0.07] bg-white p-4 shadow-[0_18px_45px_rgba(46,26,17,0.07)] sm:p-5" aria-labelledby="member-benefits-title">
+                    <div className="mb-3 flex shrink-0 items-center gap-3 border-b border-espresso/5 pb-3">
                       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold-dark"><Sparkles className="h-5 w-5" /></span>
                       <div>
                         <h2 id="member-benefits-title" className="text-base font-black text-espresso">Member Benefits</h2>
@@ -2870,28 +2881,29 @@ export default function CustomerDashboard() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="rounded-2xl border border-espresso/5 bg-cream/75 p-4">
+                    <div className="grid flex-1 grid-cols-1 content-start gap-2 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-espresso/5 bg-cream/75 p-3">
                         <div className="flex items-center gap-2 text-espresso/55"><Camera className="h-4 w-4 text-gold-dark" /><span className="text-[10px] font-black uppercase tracking-wider">Photo sessions</span></div>
-                        <p className="mt-3 text-3xl font-black leading-none text-espresso">{bookings.length}</p>
-                        <p className="mt-1 text-[11px] font-medium text-espresso/50">Bookings on your account</p>
+                        <p className="mt-2 text-3xl font-black leading-none text-espresso">{bookings.length}</p>
+                        <p className="mt-1 text-[11px] font-medium text-espresso/50">Total studio bookings</p>
                       </div>
-                      <div className="rounded-2xl border border-gold/20 bg-gold/[0.08] p-4">
+                      <div className="rounded-2xl border border-gold/20 bg-gold/[0.08] p-3">
                         <div className="flex items-center gap-2 text-espresso/55"><Star className="h-4 w-4 text-gold-dark" /><span className="text-[10px] font-black uppercase tracking-wider">Loyalty points</span></div>
-                        <p className="mt-3 text-3xl font-black leading-none text-gold-dark">{points}</p>
+                        <p className="mt-2 text-3xl font-black leading-none text-gold-dark">{points}</p>
                         <p className="mt-1 text-[11px] font-medium text-espresso/50">Current points balance</p>
                       </div>
                     </div>
 
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-espresso/5 bg-white px-4 py-3">
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-espresso/5 bg-white px-3 py-2.5">
                       <div className="flex items-center gap-2 text-xs font-semibold text-espresso/60"><BadgeCheck className="h-4 w-4 text-gold-dark" /><span>Membership tier</span></div>
                       <span className="rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-gold-dark">{loyaltyTier}</span>
                     </div>
 
-                    <div className="mt-3 flex items-center justify-between gap-3 px-1 py-2 text-xs">
-                      <div className="flex items-center gap-2 font-semibold text-espresso/55"><Coffee className="h-4 w-4 text-gold-dark" /><span>Cafe orders</span></div>
-                      <span className="text-right font-bold text-espresso/60">Tracked through cafe POS</span>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl bg-cream/70 px-3 py-2.5"><p className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Upcoming / active</p><p className="mt-1 text-lg font-black text-espresso">{activeBookingCount}</p></div>
+                      <div className="rounded-xl bg-cream/70 px-3 py-2.5"><p className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Completed</p><p className="mt-1 text-lg font-black text-espresso">{completedBookingCount}</p></div>
                     </div>
+                    <p className="mt-2 shrink-0 text-right text-[10px] font-semibold text-espresso/45">Member since {memberSince}</p>
                   </section>
                 </div>
               </div>
@@ -2900,14 +2912,14 @@ export default function CustomerDashboard() {
 
           {/* NOTIFICATIONS */}
           {activeTab === 'notifications' && (
-            <div className="space-y-6 animate-in-up" key="notifications">
-              <div>
+            <div className="flex h-[calc(100dvh-7rem)] min-h-0 flex-col gap-3 overflow-hidden animate-in-up md:h-[calc(100dvh-4rem)]" key="notifications">
+              <div className="shrink-0">
                 <h1 className="heading-page text-espresso">Your Notifications</h1>
                 <p className="text-xs text-espresso/50 mt-1">Stay updated on your booking approvals and changes.</p>
               </div>
 
               {pushState.supported && (
-                <div className="bg-white rounded-2xl border border-espresso/5 shadow-sm p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="shrink-0 bg-white rounded-2xl border border-espresso/5 shadow-sm p-3 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <div className="bg-gold/15 text-gold-dark p-2.5 rounded-xl shrink-0">
                       <Bell className="w-5 h-5" />
@@ -2953,7 +2965,7 @@ export default function CustomerDashboard() {
                       key={filter}
                       type="button"
                       aria-pressed={notificationStatusFilter === filter}
-                      onClick={() => setNotificationStatusFilter(filter)}
+                      onClick={() => { setNotificationStatusFilter(filter); setNotificationPage(1); }}
                       className={`min-h-10 rounded-lg px-3 py-2 text-xs font-black transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-1 ${notificationStatusFilter === filter ? 'bg-espresso text-gold shadow-sm' : 'text-espresso/60 hover:bg-white hover:text-espresso'}`}
                     >
                       {label} <span className={notificationStatusFilter === filter ? 'text-gold/80' : 'text-espresso/40'}>{count}</span>
@@ -2967,7 +2979,7 @@ export default function CustomerDashboard() {
                       id="notification-type-filter"
                       aria-label="Filter by notification type"
                       value={notificationTypeFilter}
-                      onChange={event => setNotificationTypeFilter(event.target.value)}
+                      onChange={event => { setNotificationTypeFilter(event.target.value); setNotificationPage(1); }}
                       className="min-h-10 w-full appearance-none rounded-xl border border-espresso/15 bg-cream px-3 py-2 pr-9 text-xs font-bold text-espresso shadow-sm outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/25 sm:min-w-44"
                     >
                       <option value="all">All Types</option>
@@ -2978,9 +2990,10 @@ export default function CustomerDashboard() {
                 </label>
               </div>
 
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin">
               {filteredNotifications.length > 0 ? (
                 <div className="space-y-3">
-                  {filteredNotifications.map((n, i) => {
+                  {visibleNotifications.map((n, i) => {
                     const unread = !n.is_read;
                     return (
                     <button
@@ -3017,6 +3030,16 @@ export default function CustomerDashboard() {
                 </div>
               ) : (
                 <EmptyState icon={Bell} title="No notifications" description="You're all caught up!" />
+              )}
+              </div>
+              {filteredNotifications.length > notificationPageSize && (
+                <div className="flex shrink-0 items-center justify-between border-t border-espresso/10 pt-2 text-xs">
+                  <span className="font-semibold text-espresso/55">Page {notificationPage} of {notificationPageCount} · {filteredNotifications.length} notifications</span>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setNotificationPage(page => Math.max(1, page - 1))} disabled={notificationPage <= 1} className="rounded-lg border border-espresso/10 bg-white px-3 py-2 font-bold text-espresso/70 disabled:opacity-40">Previous</button>
+                    <button type="button" onClick={() => setNotificationPage(page => Math.min(notificationPageCount, page + 1))} disabled={notificationPage >= notificationPageCount} className="rounded-lg border border-espresso/10 bg-white px-3 py-2 font-bold text-espresso/70 disabled:opacity-40">Next</button>
+                  </div>
+                </div>
               )}
             </div>
           )}

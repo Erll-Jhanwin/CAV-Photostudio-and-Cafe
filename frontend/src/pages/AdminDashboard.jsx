@@ -6,7 +6,7 @@ import {
   AlertTriangle, DollarSign, Check, Plus, Trash2, Edit,
   X, Calendar, CreditCard, ClipboardCheck, ShoppingBag, ArrowUpRight,
   ArrowDownRight, Camera, Printer, Upload, ChevronLeft, ChevronRight,
-  Star, Quote, ThumbsUp, ThumbsDown, Minus, ClipboardList, Search
+  Star, ThumbsUp, ThumbsDown, Minus, ClipboardList, Search
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -38,7 +38,6 @@ import {
   zoomSalesChartRange,
 } from './salesForecastChartData';
 import AuditLogsPage from './admin/AuditLogsPage';
-import GalleryManager from './admin/GalleryManager';
 import IngredientStatusModal from '../components/admin/IngredientStatusModal';
 import LiveInventoryPage from './admin/LiveInventoryPage';
 import {
@@ -506,6 +505,7 @@ export default function AdminDashboard() {
   const [forecast, setForecast] = useState(null);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [staffList, setStaffList] = useState([]);
+  const [staffAccessProfiles, setStaffAccessProfiles] = useState([]);
   const [inventoryIngredients, setInventoryIngredients] = useState([]);
   const [productSalesInventory, setProductSalesInventory] = useState([]);
   const [faqs, setFaqs] = useState([]);
@@ -625,10 +625,10 @@ export default function AdminDashboard() {
     if (tab === 'analytics') return;
     setTabLoading(current => ({ ...current, [tab]: true }));
     try {
-      if (tab === 'calendar') {
+      if (tab === 'calendar' || tab === 'live') {
         const [bookingsRes, unavailableRes] = await Promise.all([
-          getCached('/api/bookings/', { params: { month: bookingCalendarMonth, limit: 500 } }, { force }),
-          getCached('/api/bookings/studio-unavailable-dates/', { params: { month: bookingCalendarMonth } }, { force }),
+          getCached('/api/bookings/', { params: { month: bookingCalendarMonth, limit: 500, ...(tab === 'live' ? { ready_for_service: 'true' } : {}) } }, { force }),
+          tab === 'calendar' ? getCached('/api/bookings/studio-unavailable-dates/', { params: { month: bookingCalendarMonth } }, { force }) : Promise.resolve({ data: [] }),
         ]);
         setCalendarBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
         setStudioUnavailableDates(normalizeRowsById(unavailableRes.data, row => row?.date));
@@ -641,6 +641,9 @@ export default function AdminDashboard() {
       } else if (tab === 'staff') {
         const response = await getCached('/api/auth/users/', {}, { force });
         setStaffList(normalizeRowsById(response.data, row => row?.username || row?.email));
+      } else if (tab === 'staff-access') {
+        const response = await getCached('/api/auth/staff-access/', {}, { force });
+        setStaffAccessProfiles(normalizeRowsById(response.data, row => row?.id));
       } else if (tab === 'faq') {
         const response = await getCached('/api/chatbot/faqs/', {}, { force });
         setFaqs(normalizeRowsById(response.data, row => row?.question));
@@ -757,7 +760,7 @@ export default function AdminDashboard() {
       fetchData({ background: true });
       loadAdminTabData(activeTab, { force: true });
     };
-    const refreshInterval = activeTab === 'calendar' || activeTab === 'payments' ? 5000 : 30000;
+    const refreshInterval = activeTab === 'calendar' || activeTab === 'live' || activeTab === 'payments' ? 5000 : 30000;
     const intervalId = window.setInterval(refresh, refreshInterval);
     window.addEventListener('focus', refresh);
 
@@ -1388,20 +1391,36 @@ export default function AdminDashboard() {
     logout();
     navigate('/login', { replace: true });
   }, [logout, navigate]);
+  const updateStaffAccess = async (profile, updates) => {
+    const nextProfile = { ...profile, ...updates };
+    setStaffAccessProfiles(current => current.map(item => item.id === profile.id ? nextProfile : item));
+    try {
+      await client.patch(`/api/auth/staff-access/${profile.id}/`, {
+        on_duty: nextProfile.on_duty,
+        allowed_tabs: nextProfile.allowed_tabs || [],
+        allowed_actions: nextProfile.allowed_actions || [],
+      });
+    } catch (error) {
+      setDataError(getApiErrorMessage(error, 'Could not save staff access restrictions.'));
+      void loadAdminTabData('staff-access', { force: true });
+    }
+  };
+
   const navItems = [
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
     { key: 'calendar', label: 'Booking Calendar', icon: Calendar, active: activeTab === 'calendar', onClick: () => setActiveTab('calendar') },
+    { key: 'live', label: 'Live Bookings', icon: ClipboardCheck, active: activeTab === 'live', onClick: () => setActiveTab('live') },
     { key: 'reports', label: 'End-of-Day Reports', icon: Printer, active: activeTab === 'reports', onClick: () => setActiveTab('reports') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
     { key: 'staff', label: 'Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
+    { key: 'staff-access', label: 'Staff Restrictions', icon: ClipboardCheck, active: activeTab === 'staff-access', onClick: () => setActiveTab('staff-access') },
     { key: 'faq', label: 'Chatbot Manager', icon: MessageSquare, active: activeTab === 'faq', onClick: () => setActiveTab('faq') },
     { key: 'reviews', label: 'Reviews & Feedback', icon: Star, active: activeTab === 'reviews', onClick: () => setActiveTab('reviews') },
-    { key: 'gallery', label: 'Photo Gallery', icon: Camera, active: activeTab === 'gallery', onClick: () => setActiveTab('gallery') },
     { key: 'audit', label: 'Audit Logs', icon: ClipboardList, active: activeTab === 'audit', onClick: () => setActiveTab('audit') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', inventory: 'Live Inventory', staff: 'Accounts', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', gallery: 'Photo Gallery', audit: 'Audit Logs' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', live: 'Live Bookings', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', inventory: 'Live Inventory', staff: 'Accounts', 'staff-access': 'Staff Restrictions', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', audit: 'Audit Logs' };
   const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
   const expectedAnalyticsRange = getDashboardRangeDates(datePreset, customStart, customEnd);
   const analyticsRangeMatches = analytics?.range?.start === expectedAnalyticsRange.start
@@ -1621,16 +1640,16 @@ export default function AdminDashboard() {
     acc[review.sentiment] = (acc[review.sentiment] || 0) + 1;
     return acc;
   }, {});
-  const keyComments = [...reviews]
-    .filter(review => review.feedback || review.suggestions)
-    .sort((a, b) => (Math.abs(Number(b.rating) - 3) - Math.abs(Number(a.rating) - 3)) || String(b.created_at).localeCompare(String(a.created_at)))
-    .slice(0, 3);
   const paymentStatusCounts = bookingPayments.reduce((acc, payment) => {
     acc[payment.status] = (acc[payment.status] || 0) + 1;
     return acc;
   }, {});
   const calendarDays = getCalendarDays(bookingCalendarMonth);
   const calendarMonthBookings = calendarBookings.filter(booking => String(booking.scheduled_date || '').startsWith(bookingCalendarMonth));
+  const liveBookings = calendarMonthBookings.filter(booking =>
+    ['CONFIRMED', 'CONFIRMED_DP'].includes(booking.status) &&
+    (booking.payments || []).some(payment => ['APPROVED', 'PAID'].includes(payment.status))
+  );
   const isEventBooking = (booking) => {
     const packageName = (booking.package_details?.name || '').toLowerCase();
     return packageName.includes('event') || packageName.includes('photo service');
@@ -1767,7 +1786,7 @@ export default function AdminDashboard() {
                 </p>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 md:gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 md:gap-4">
                 {[
                   {
                     label: 'Total Sales',
@@ -1788,6 +1807,14 @@ export default function AdminDashboard() {
                     icon: Camera,
                     trend: ArrowUpRight,
                     trendClass: 'text-gold-dark bg-gold/10',
+                  },
+                  {
+                    label: 'Café Income',
+                    value: analyticsDataAvailable ? formatCurrency(metrics.cafe_income) : '—',
+                    detail: 'Paid café POS orders in the selected date range',
+                    icon: ShoppingBag,
+                    trend: ArrowUpRight,
+                    trendClass: 'text-emerald-700 bg-emerald-50',
                   },
                   {
                     label: 'Total Bookings',
@@ -2271,8 +2298,10 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {activeTab === 'calendar' && (
-            <div className="w-full space-y-4 animate-in-up" key="calendar">
+          {(activeTab === 'calendar' || activeTab === 'live') && (
+            <div className="w-full space-y-4 animate-in-up" key={activeTab}>
+              {activeTab === 'live' && <h1 className="heading-page text-espresso">Live Bookings</h1>}
+              {activeTab === 'calendar' && <>
               <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.24em] text-gold-dark font-black mb-1">Live Scheduling</p>
@@ -2467,10 +2496,11 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="min-w-0 rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
-                <CardHeader title="Live Bookings" subtitle="Studio sessions and off-site event photoshoots for this month." className="mb-3" />
+              </>}
+              {activeTab === 'live' && <div className="min-w-0 rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
+                <CardHeader title={activeTab === 'live' ? 'Ready for service' : 'Bookings this month'} subtitle="Confirmed sessions and downpayment status." className="mb-3" />
                 <div className="grid min-w-0 grid-cols-1 gap-3">
-                  {calendarMonthBookings.length ? calendarMonthBookings.map(booking => (
+                  {(activeTab === 'live' ? liveBookings : calendarMonthBookings).length ? (activeTab === 'live' ? liveBookings : calendarMonthBookings).map(booking => (
                     <div key={booking.id} className="min-w-0 rounded-2xl border border-espresso/10 bg-cream/40 p-4 text-xs sm:p-5">
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         <div className="grid min-w-0 flex-1 grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -2557,10 +2587,10 @@ export default function AdminDashboard() {
                       )}
                     </div>
                   )) : (
-                    <EmptyState icon={Calendar} title="No bookings this month" description="Studio and event bookings will appear here as they are created." />
+                    <EmptyState icon={Calendar} title={activeTab === 'live' ? 'No bookings ready for service' : 'No bookings this month'} description={activeTab === 'live' ? 'Approved downpayments and confirmed service bookings appear here.' : 'Studio and event bookings will appear here as they are created.'} />
                   )}
                 </div>
-              </div>
+              </div>}
             </div>
           )}
 
@@ -2817,6 +2847,54 @@ export default function AdminDashboard() {
           )}
 
           {/* ACCOUNTS */}
+          {activeTab === 'staff-access' && (
+            <div className="w-full space-y-4 animate-in-up" key="staff-access">
+              <div>
+                <h1 className="heading-page text-espresso">Staff Restrictions</h1>
+                <p className="mt-1 text-xs text-espresso/55">Set who is on duty and which staff tabs and actions their current sessions can use.</p>
+              </div>
+              {staffAccessProfiles.map(profile => (
+                <Card key={profile.id} className="!p-4 md:!p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="text-sm font-black text-espresso">{profile.name} <span className="font-semibold text-espresso/45">@{profile.username}</span></h2>
+                    <label className="flex items-center gap-2 text-xs font-bold text-espresso">
+                      <input type="checkbox" checked={profile.on_duty} onChange={event => updateStaffAccess(profile, { on_duty: event.target.checked })} />
+                      On duty
+                    </label>
+                  </div>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    {[['Permitted tabs', 'allowed_tabs', [
+                      ['dashboard', 'Business Overview'], ['bookings', 'Bookings'], ['payments', 'Payment Verification'],
+                      ['inventory', 'Live Inventory'], ['catalog', 'Catalog & Purchasing'], ['pos', 'POS Terminal'],
+                      ['sales', 'Daily Sales Logs'], ['reports', 'End-of-Day Reports'], ['chatbot', 'Chatbot Manager'], ['reviews', 'Reviews'],
+                    ]], ['Permitted actions', 'allowed_actions', [
+                      ['booking_manage', 'Create and update bookings'], ['payment_verify', 'Verify downpayments'],
+                      ['inventory_manage', 'Update inventory and catalog'], ['pos_manage', 'Create POS orders and returns'],
+                      ['reports_manage', 'Create closeout reports'], ['chatbot_manage', 'Edit chatbot FAQs'],
+                    ]]].map(([title, field, options]) => (
+                      <fieldset key={field} className="rounded-xl border border-espresso/10 p-3">
+                        <legend className="px-1 text-[10px] font-black uppercase tracking-wider text-espresso/55">{title}</legend>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {options.map(([key, label]) => (
+                            <label key={key} className="flex items-start gap-2 text-xs font-semibold text-espresso/75">
+                              <input type="checkbox" checked={(profile[field] || []).includes(key)} onChange={event => {
+                                const values = new Set(profile[field] || []);
+                                if (event.target.checked) values.add(key); else values.delete(key);
+                                updateStaffAccess(profile, { [field]: [...values] });
+                              }} />
+                              {label}
+                            </label>
+                          ))}
+                        </div>
+                      </fieldset>
+                    ))}
+                  </div>
+                </Card>
+              ))}
+              {!staffAccessProfiles.length && <EmptyState icon={Users} title="No staff accounts" description="Create a staff account first, then assign its shift access here." />}
+            </div>
+          )}
+
           {activeTab === 'staff' && (
             <div className="flex min-h-0 w-full flex-1 flex-col animate-in-up" key="staff">
               <Modal
@@ -3177,26 +3255,6 @@ export default function AdminDashboard() {
                 ))}
               </div>
 
-              {keyComments.length > 0 && (
-                <Card className="!p-4 md:!p-5">
-                  <CardHeader title="Key comments" />
-                  <div className="grid gap-3 lg:grid-cols-3">
-                    {keyComments.map(review => (
-                      <div key={review.id} className="rounded-2xl border border-gold/20 bg-gold/5 p-4">
-                        <Quote className="mb-2 h-4 w-4 text-gold-dark" />
-                        <p className="line-clamp-4 text-sm font-semibold leading-relaxed text-espresso/80">
-                          “{review.feedback || review.suggestions}”
-                        </p>
-                        <div className="mt-3 flex items-center justify-between gap-2 text-[10px] font-bold text-espresso/50">
-                          <span className="truncate">{review.customer_details?.name || 'Customer'}</span>
-                          <span className="shrink-0 text-gold-dark">{review.rating}/5</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-
               <Card className="!p-4 md:!p-5">
                 <CardHeader title="All customer reviews" />
                 {reviewPageRows.length > 0 ? (
@@ -3252,7 +3310,6 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {activeTab === 'gallery' && <GalleryManager />}
 
           {activeTab === 'audit' && <AuditLogsPage />}
           {activeTab === 'inventory' && (
