@@ -110,7 +110,7 @@ export default function MachineLearningPage() {
           Synthetic dataset: CAV_Three_Year_Synthetic_Sales-Daily sales.csv. Results from synthetic data do not establish real-world forecasting accuracy.
         </div>
         {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</div>}
-        {loading && <p role="status" className="rounded-xl bg-white p-5 text-sm font-semibold text-espresso/60">Loading saved forecast records…</p>}
+        {loading && !report && <div className="min-h-24 animate-pulse rounded-xl bg-white" aria-hidden="true" />}
         {!loading && !report && <Card><p className="font-bold text-espresso">No forecast run saved yet.</p><p className="mt-1 text-sm text-espresso/60">Generate a forecast to validate the synthetic dataset, evaluate the holdout, and calculate future sales.</p></Card>}
 
         {report && <>

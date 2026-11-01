@@ -64,7 +64,7 @@ test('keeps the table frame, headers, and pager visible while loading and with n
   client.get.mockReturnValueOnce(new Promise(resolve => { resolveRequest = resolve; }));
   const { container } = render(<AuditLogsPage />);
 
-  expect(await screen.findByText('Loading audit activity…')).toBeInTheDocument();
+  expect(container.querySelector('[data-audit-state]')).toHaveAttribute('aria-hidden', 'true');
   expect(screen.getByRole('columnheader', { name: 'Timestamp' })).toBeInTheDocument();
   expect(screen.getByText('Page 1 of 1')).toBeInTheDocument();
   expect(container.firstChild).toHaveClass('h-full', 'min-h-0');

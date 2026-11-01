@@ -59,6 +59,7 @@ import {
 import { formatManilaDateTime, MANILA_TIME_ZONE } from '../utils/dateTime';
 import { getDashboardRangeDates } from '../utils/dashboardDateRange';
 import { hasDashboardOperationalRecords, validateDashboardAnalytics } from '../utils/dashboardAnalytics';
+import { useGlobalLoadingProgressSuppression } from '../utils/globalLoadingProgress';
 import {
   getLocalPrinters,
   getLocalPrintingSetupMessage,
@@ -621,26 +622,16 @@ export default function AdminDashboard() {
   const [localPrintStatus, setLocalPrintStatus] = useState('Detect the cashier printer before printing a closeout.');
   const [tabLoading, setTabLoading] = useState({});
   const [liveBookingsReady, setLiveBookingsReady] = useState(false);
-  const [liveBookingsProgressVisible, setLiveBookingsProgressVisible] = useState(false);
+  useGlobalLoadingProgressSuppression('admin-dashboard-skeleton', loading && !initialDataReady);
+  useGlobalLoadingProgressSuppression('admin-live-bookings-skeleton', activeTab === 'live' && !liveBookingsReady);
   const dashboardFetchSeqRef = useRef(0);
   const forecastFetchSeqRef = useRef(0);
   const endOfDayDetailsRequestRef = useRef(0);
-  const liveBookingsRequestCountRef = useRef(0);
-  const liveBookingsProgressTimerRef = useRef(null);
   const salesChartInteractionElementRef = useRef(null);
   const salesChartInteractionRef = useRef(null);
 
   const loadAdminTabData = useCallback(async (tab, { force = false } = {}) => {
     if (tab === 'analytics') return;
-    const isLiveBookingsRequest = tab === 'live';
-    if (isLiveBookingsRequest) {
-      liveBookingsRequestCountRef.current += 1;
-      if (liveBookingsRequestCountRef.current === 1) {
-        liveBookingsProgressTimerRef.current = window.setTimeout(() => {
-          setLiveBookingsProgressVisible(true);
-        }, 300);
-      }
-    }
     setTabLoading(current => ({ ...current, [tab]: true }));
     try {
       if (tab === 'calendar' || tab === 'live') {
@@ -680,25 +671,9 @@ export default function AdminDashboard() {
       setDataError(getApiErrorMessage(error, `Could not load ${tab} data.`));
     } finally {
       setTabLoading(current => ({ ...current, [tab]: false }));
-      if (isLiveBookingsRequest) {
-        setLiveBookingsReady(true);
-        liveBookingsRequestCountRef.current = Math.max(0, liveBookingsRequestCountRef.current - 1);
-        if (liveBookingsRequestCountRef.current === 0) {
-          if (liveBookingsProgressTimerRef.current !== null) {
-            window.clearTimeout(liveBookingsProgressTimerRef.current);
-            liveBookingsProgressTimerRef.current = null;
-          }
-          setLiveBookingsProgressVisible(false);
-        }
-      }
+      if (tab === 'live') setLiveBookingsReady(true);
     }
   }, [bookingCalendarMonth]);
-
-  useEffect(() => () => {
-    if (liveBookingsProgressTimerRef.current !== null) {
-      window.clearTimeout(liveBookingsProgressTimerRef.current);
-    }
-  }, []);
 
   const loadForecast = useCallback(async ({ force = false } = {}) => {
     const requestSeq = forecastFetchSeqRef.current + 1;
@@ -1434,7 +1409,6 @@ export default function AdminDashboard() {
   ];
 
   const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', live: 'Live Bookings', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', inventory: 'Live Inventory', staff: 'Accounts', 'staff-access': 'Staff Restrictions', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', audit: 'Audit Logs' };
-  const isActiveTabLoading = activeTab === 'analytics' ? loading : Boolean(tabLoading[activeTab]);
   const expectedAnalyticsRange = getDashboardRangeDates(datePreset, customStart, customEnd);
   const analyticsRangeMatches = analytics?.range?.start === expectedAnalyticsRange.start
     && analytics?.range?.end === expectedAnalyticsRange.end;
@@ -1726,19 +1700,6 @@ export default function AdminDashboard() {
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
               <p className="flex-1 text-xs font-semibold">{dataError}</p>
               <Button variant="outline" size="sm" onClick={() => fetchData()} className="border-red-200 bg-white text-red-800 hover:bg-red-100">Retry</Button>
-            </div>
-          )}
-
-          {activeTab === 'live' && liveBookingsProgressVisible && (
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 overflow-hidden bg-gold/20" role="status" aria-label="Refreshing live bookings">
-              <div className="live-bookings-progress h-full w-1/3 bg-gold-dark" />
-            </div>
-          )}
-
-          {isActiveTabLoading && activeTab !== 'live' && (
-            <div className="mb-4 flex items-center gap-3 rounded-xl border border-espresso/[0.08] bg-white px-4 py-3" role="status">
-              <LoadingSpinner size="sm" className="text-gold-dark" label={`Loading ${pageTitles[activeTab]}`} />
-              <span className="text-xs font-bold text-espresso/60">Loading {pageTitles[activeTab]}...</span>
             </div>
           )}
 
@@ -2512,7 +2473,6 @@ export default function AdminDashboard() {
 
               </>}
               {activeTab === 'live' && <div className="min-w-0 rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
-                <CardHeader title="Live Booking Queue" subtitle="Today’s confirmed sessions are ordered by scheduled time. Payment tracking stays independent." className="mb-4" />
                 <BookingQueue
                   bookings={liveBookings}
                   loading={!liveBookingsReady}

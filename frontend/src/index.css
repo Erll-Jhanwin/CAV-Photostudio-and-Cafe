@@ -373,18 +373,18 @@
   to { transform: scaleX(1); }
 }
 
-@keyframes liveBookingsProgress {
+@keyframes globalLoadingProgress {
   0% { transform: translateX(-110%); }
   55% { transform: translateX(170%); }
   100% { transform: translateX(350%); }
 }
 
-.live-bookings-progress {
-  animation: liveBookingsProgress 1.1s ease-in-out infinite;
+.global-loading-progress {
+  animation: globalLoadingProgress 1.1s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .live-bookings-progress {
+  .global-loading-progress {
     animation-duration: 2.5s;
   }
 }

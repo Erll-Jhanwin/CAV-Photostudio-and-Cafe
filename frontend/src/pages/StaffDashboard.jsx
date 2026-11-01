@@ -31,6 +31,7 @@ import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
 import BookingQueue from '../components/bookings/BookingQueue';
+import { useGlobalLoadingProgressSuppression } from '../utils/globalLoadingProgress';
 
 export function StaffSkeleton() {
   return (
@@ -1615,9 +1616,12 @@ export default function StaffDashboard() {
   const isInventoryTab = activeTab === 'inventory';
   const isCatalogTab = activeTab === 'catalog';
   const isViewportBoundTab = isSalesTab || isPosTab || isBookingsTab || isPaymentsTab || isInventoryTab || isCatalogTab;
+  const showStaffSkeleton = !initialDataReady && (loading || isCurrentTabLoading) && !isBookingsTab && !isPaymentsTab
+    && !(user?.role === 'STAFF' && staffAccessReady && !staffAccess?.on_duty);
+  useGlobalLoadingProgressSuppression('staff-dashboard-skeleton', showStaffSkeleton);
+  useGlobalLoadingProgressSuppression('staff-bookings-skeleton', isBookingsTab && !!loadingResources.bookings && staffBookings.length === 0);
 
-  if (!initialDataReady && (loading || isCurrentTabLoading) && !isBookingsTab && !isPaymentsTab
-    && !(user?.role === 'STAFF' && staffAccessReady && !staffAccess?.on_duty)) {
+  if (showStaffSkeleton) {
     return <StaffSkeleton />;
   }
 
@@ -1686,13 +1690,6 @@ export default function StaffDashboard() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-            </div>
-          )}
-
-          {isCurrentTabLoading && !isBookingsTab && !isPaymentsTab && (
-            <div className="mb-4 flex items-center gap-3 rounded-xl border border-gold/20 bg-gold/10 px-4 py-3" role="status">
-              <LoadingSpinner size="sm" className="text-gold-dark" label={`Loading ${pageTitles[activeTab]}`} />
-              <span className="text-xs font-bold text-espresso">Loading {pageTitles[activeTab]}...</span>
             </div>
           )}
 
@@ -2027,10 +2024,6 @@ export default function StaffDashboard() {
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div><h2 className="text-sm font-black text-espresso">Live Booking Queue</h2><p className="mt-1 text-[11px] text-espresso/55">Today’s confirmed sessions are ordered by scheduled time. Payment tracking stays independent.</p></div>
-                  <span className="rounded-full bg-cream px-3 py-1 text-[10px] font-black text-espresso/60">{staffBookings.length} total</span>
-                </div>
                 <BookingQueue
                   bookings={staffBookings}
                   loading={!!loadingResources.bookings}

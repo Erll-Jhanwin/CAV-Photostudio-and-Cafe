@@ -9,7 +9,6 @@ import { StatusBadge } from '../ui/Badge';
 import { getManilaDateInputValue } from '../../utils/dateTime';
 
 const ACTIVE_STATUSES = new Set(['PENDING', 'CONFIRMED', 'CONFIRMED_DP']);
-const CONFIRMED_STATUSES = new Set(['CONFIRMED', 'CONFIRMED_DP']);
 const timeKey = booking => `${booking.scheduled_time || ''}`.slice(0, 8);
 const scheduleKey = booking => `${booking.scheduled_date || ''} ${timeKey(booking)} ${String(booking.id).padStart(12, '0')}`;
 const customerName = booking => booking.customer_name || booking.contact_name || `${booking.customer?.first_name || ''} ${booking.customer?.last_name || ''}`.trim() || booking.customer?.username || 'Customer';
@@ -20,17 +19,14 @@ const paymentSummary = booking => {
 
 const groupBookings = (bookings, today) => {
   const sorted = [...bookings].sort((a, b) => scheduleKey(a).localeCompare(scheduleKey(b)));
-  const todayConfirmed = sorted.filter(row => row.scheduled_date === today && CONFIRMED_STATUSES.has(row.status));
   return {
-    todayConfirmed,
-    todayPending: sorted.filter(row => row.scheduled_date === today && row.status === 'PENDING'),
-    upcoming: sorted.filter(row => row.scheduled_date > today && ACTIVE_STATUSES.has(row.status)),
+    live: sorted.filter(row => row.scheduled_date >= today && ACTIVE_STATUSES.has(row.status)),
     pastActive: sorted.filter(row => row.scheduled_date < today && ACTIVE_STATUSES.has(row.status)),
     history: sorted.filter(row => ['COMPLETED', 'CANCELLED'].includes(row.status)),
   };
 };
 
-function BookingCard({ booking, queueNumber, queueLabel, busy, onComplete, onCancel, onDelete }) {
+function BookingCard({ booking, busy, onComplete, onCancel, onDelete }) {
   return (
     <article className="rounded-2xl border border-espresso/10 bg-cream/40 p-4 text-xs sm:p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -38,8 +34,6 @@ function BookingCard({ booking, queueNumber, queueLabel, busy, onComplete, onCan
           <div className="min-w-0">
             <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Booking</p>
             <div className="flex flex-wrap items-center gap-2">
-              {queueNumber != null && <span className="rounded-full bg-gold/20 px-2.5 py-1 text-[10px] font-black text-gold-dark">Queue #{queueNumber}</span>}
-              {queueLabel && <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${queueLabel === 'Next' ? 'bg-emerald-100 text-emerald-800' : 'bg-espresso/5 text-espresso/65'}`}>{queueLabel}</span>}
               <StatusBadge status={booking.status} />
             </div>
             <p className="mt-2 font-black text-espresso">Booking #{booking.id}</p>
@@ -76,19 +70,17 @@ function BookingCard({ booking, queueNumber, queueLabel, busy, onComplete, onCan
   );
 }
 
-function BookingSection({ title, subtitle, bookings, empty, queue = false, busyId, onComplete, onCancel, onDelete }) {
+function BookingSection({ title, subtitle, bookings, empty, busyId, onComplete, onCancel, onDelete }) {
   return (
     <section className="space-y-3" aria-label={title}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div><h3 className="text-sm font-black text-espresso">{title}</h3>{subtitle && <p className="mt-0.5 text-[11px] text-espresso/50">{subtitle}</p>}</div>
         <span className="rounded-full bg-cream px-2.5 py-1 text-[10px] font-black text-espresso/55">{bookings.length}</span>
       </div>
-      {bookings.length ? bookings.map((booking, index) => (
+      {bookings.length ? bookings.map(booking => (
         <BookingCard
           key={booking.id}
           booking={booking}
-          queueNumber={queue ? index + 1 : null}
-          queueLabel={queue ? (index === 0 ? 'Next' : 'Waiting') : null}
           busy={busyId === booking.id ? 'busy' : null}
           onComplete={onComplete}
           onCancel={onCancel}
@@ -129,9 +121,7 @@ export default function BookingQueue({ bookings = [], loading = false, onBooking
   };
 
   const sections = [
-    { title: "Today's confirmed queue", subtitle: 'Scheduled sessions in time order.', bookings: groups.todayConfirmed, empty: 'No confirmed sessions are scheduled for today.', queue: true },
-    { title: "Today's bookings awaiting confirmation", bookings: groups.todayPending, empty: 'No bookings are awaiting confirmation today.' },
-    { title: 'Upcoming bookings', subtitle: 'Future bookings are listed separately from today’s queue.', bookings: groups.upcoming, empty: 'No upcoming bookings.' },
+    { title: 'Live Booking List', bookings: groups.live, empty: 'No active bookings are scheduled for today or upcoming days.' },
     { title: 'Past bookings needing an update', subtitle: 'Past sessions remain available until marked done or canceled.', bookings: groups.pastActive, empty: 'No past bookings need an update.' },
     { title: 'History', subtitle: 'Completed and canceled records are retained here.', bookings: groups.history, empty: 'Completed and canceled bookings will appear here.' },
   ];

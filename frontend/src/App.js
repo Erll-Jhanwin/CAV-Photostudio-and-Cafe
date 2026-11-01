@@ -5,7 +5,8 @@ import { StyledAlertProvider } from './components/ui/StyledAlert';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { brandAssets } from './utils/cavAssets';
 import { API_BASE_URL } from './api/config';
-import { LoadingSpinner } from './components/ui/Skeleton';
+import { GlobalLoadingProgress } from './components/ui/GlobalLoadingProgress';
+import { useGlobalLoadingProgressSignal } from './utils/globalLoadingProgress';
 import AdminDashboard from './pages/AdminDashboard';
 
 const LandingPage = lazy(() => lazyWithRetry(() => import('./pages/LandingPage')));
@@ -55,13 +56,9 @@ const reportClientRuntimeError = (error, errorInfo) => {
 };
 
 function AppLoader() {
+  useGlobalLoadingProgressSignal(true);
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <LoadingSpinner size="lg" className="text-gold" label="Loading application" />
-        <p className="text-xs text-espresso/40 font-medium">Loading...</p>
-      </div>
-    </div>
+    <div className="min-h-screen bg-cream" aria-busy="true" aria-label="Loading page" />
   );
 }
 
@@ -211,6 +208,7 @@ function App() {
           <a href="#main-content" className="skip-link">Skip to main content</a>
           <AppErrorBoundary>
             <StartupSplashGate>
+              <GlobalLoadingProgress />
               <Suspense fallback={<AppLoader />}>
                 <div id="main-content" tabIndex="-1">
                 <Routes>

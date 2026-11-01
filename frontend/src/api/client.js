@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { API_BASE_URL } from './config';
+import { beginGlobalLoadingProgress, endGlobalLoadingProgress } from '../utils/globalLoadingProgress';
 
 export const DATA_CHANGED_EVENT = 'cav:data-changed';
 const DATA_CHANGED_STORAGE_KEY = 'cav:data-change';
@@ -47,6 +48,12 @@ let authGeneration = 0;
 const queryCache = new Map();
 const pendingQueries = new Map();
 let queryCacheGeneration = 0;
+
+const finishGlobalProgressRequest = (config) => {
+  if (!config?.__globalProgressToken) return;
+  endGlobalLoadingProgress(config.__globalProgressToken);
+  config.__globalProgressToken = null;
+};
 
 const getCsrfCookie = () => {
   if (typeof document === 'undefined') return '';
@@ -184,6 +191,9 @@ client.interceptors.request.use(
         config.headers['X-CSRFToken'] = csrfToken;
       }
     }
+    if (['get', 'head'].includes(method) && !config.suppressGlobalProgress && !config.__globalProgressToken) {
+      config.__globalProgressToken = beginGlobalLoadingProgress();
+    }
     return config;
   },
   (error) => {
@@ -202,6 +212,7 @@ client.interceptors.response.use(
         url: response.config?.url || '',
       });
     }
+    finishGlobalProgressRequest(response.config);
     return response;
   },
   async (error) => {
@@ -249,6 +260,7 @@ client.interceptors.response.use(
           return client(originalRequest);
         }
       } catch (refreshError) {
+        finishGlobalProgressRequest(originalRequest);
         if (originalRequest.authGeneration === authGeneration && !originalRequest.skipAuthRedirect) {
           redirectToLogin();
         }
@@ -260,6 +272,7 @@ client.interceptors.response.use(
       }
     }
 
+    finishGlobalProgressRequest(originalRequest);
     error.userMessage = getApiErrorMessage(error);
     return Promise.reject(error);
   }

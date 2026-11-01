@@ -10,7 +10,7 @@ import { API_BASE_URL } from '../api/config';
 import { getCached } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
-import { LoadingSpinner, Skeleton, SkeletonCard } from '../components/ui/Skeleton';
+import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
 import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
 import SiteFooter from '../components/SiteFooter';
 import { normalizeGalleryImages, normalizeRowsById, normalizeServices, recordKey, uniqueBy } from '../utils/uniqueRecords';
@@ -19,10 +19,6 @@ import { brandAssets, businessAssets, decorateServicesWithAssets, localGalleryIm
 export function LandingSkeleton() {
   return (
     <div className="min-h-screen bg-cream">
-      <div className="flex items-center justify-center gap-2 py-3 text-xs font-bold text-espresso/60" role="status">
-        <LoadingSpinner size="sm" className="text-gold-dark" label="Loading website" />
-        Loading website...
-      </div>
       <header className="sticky top-0 z-40 bg-white border-b border-espresso/[0.08] shadow-[0_8px_24px_rgba(46,26,17,0.06)]">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -253,9 +249,8 @@ function CafeCarousel({ items = [], loading = false }) {
 
   if (!items.length && loading) {
     return (
-      <div className="flex min-h-40 items-center justify-center gap-3 rounded-3xl border border-gold/15 bg-espresso-dark/95 p-8 text-sm font-bold text-cream/70" role="status" aria-label="Loading café menu">
-        <LoadingSpinner className="text-gold" label="Loading café menu" />
-        Loading café menu...
+      <div className="flex min-h-40 items-center justify-center rounded-3xl border border-gold/15 bg-espresso-dark/95 p-8" aria-hidden="true">
+        <Skeleton className="h-4 w-36 rounded-md bg-white/10" />
       </div>
     );
   }
@@ -876,15 +871,6 @@ export default function LandingPage({ page = 'home' }) {
           </div>
         )}
       </header>
-
-      {!loaded && (
-        <div className="sticky top-16 z-30 border-b border-gold/15 bg-cream/95 px-4 py-2 backdrop-blur" role="status">
-          <div className="mx-auto flex max-w-7xl items-center gap-3">
-            <LoadingSpinner size="sm" className="text-gold-dark" label="Loading services and café menu" />
-            <span className="text-xs font-bold text-espresso/60">Loading services and café menu...</span>
-          </div>
-        </div>
-      )}
 
       {/* Hero Section */}
       {page === 'home' && <section id="hero" className="relative flex-grow flex items-center min-h-[calc(100vh-4rem)] premium-section bg-gradient-to-br from-espresso-dark via-espresso to-espresso-light text-cream overflow-hidden">

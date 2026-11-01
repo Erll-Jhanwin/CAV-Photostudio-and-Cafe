@@ -4,7 +4,6 @@ import client, { getApiErrorMessage } from '../../api/client';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Input, Select } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
-import { LoadingSpinner } from '../../components/ui/Skeleton';
 import { formatManilaDateTime } from '../../utils/dateTime';
 import { calculateSalesRowsPerPage } from '../salesLogLayout';
 
@@ -275,7 +274,7 @@ export default function AuditLogsPage() {
               </tr></thead>
               <tbody>
                 {loading ? (
-                  <tr data-audit-state><td colSpan={6}><div className="flex min-h-24 items-center justify-center gap-2 text-sm font-semibold text-espresso/55"><LoadingSpinner size="sm" /> Loading audit activity…</div></td></tr>
+                  <tr data-audit-state aria-hidden="true"><td colSpan={6}><div className="min-h-24 animate-pulse rounded-xl bg-cream/70" /></td></tr>
                 ) : error ? (
                   <tr data-audit-state><td colSpan={6}><div className="p-8 text-center text-xs font-semibold text-espresso/55">Audit rows are unavailable until the request succeeds.</div></td></tr>
                 ) : payload.results?.length ? payload.results.map(row => (

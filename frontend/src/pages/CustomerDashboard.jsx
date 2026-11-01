@@ -37,6 +37,7 @@ import {
   syncPushSubscription,
 } from '../utils/pushNotifications';
 import { filterNotifications, getNotificationCategories } from '../utils/notificationFilters';
+import { useGlobalLoadingProgressSuppression } from '../utils/globalLoadingProgress';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -329,6 +330,7 @@ export default function CustomerDashboard() {
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
   const [dashboardError, setDashboardError] = useState('');
+  useGlobalLoadingProgressSuppression('customer-dashboard-skeleton', loading && !initialDataReady);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -1616,7 +1618,7 @@ export default function CustomerDashboard() {
   }
 
   return (
-    <div className="dashboard-shell min-h-screen bg-cream flex flex-col md:flex-row" aria-busy={loading}>
+    <div className="dashboard-shell min-h-screen bg-cream flex flex-col md:flex-row">
       <Sidebar
         brand="CAV Portal"
         brandSubtitle="Customer Console"
@@ -1635,12 +1637,6 @@ export default function CustomerDashboard() {
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(previous => !previous)} user={user} menuOpen={sidebarOpen} />
 
         <main className="dashboard-main flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto scrollbar-thin">
-          {loading && (
-            <div className="mb-4 flex items-center gap-3 rounded-xl border border-espresso/[0.08] bg-white px-4 py-3" role="status">
-              <LoadingSpinner size="sm" className="text-gold-dark" label="Loading account and booking information" />
-              <span className="text-xs font-bold text-espresso/60">Loading account and booking information...</span>
-            </div>
-          )}
           {dashboardError && (
             <div className="mb-6 flex items-start gap-3 border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm" role="alert">
               <XCircle className="mt-0.5 h-5 w-5 shrink-0" />
