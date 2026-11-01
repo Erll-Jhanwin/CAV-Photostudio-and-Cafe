@@ -24,6 +24,7 @@ test('walk-in success offers two receipt copies and reprinting never resubmits b
   const onCreated = jest.fn();
   const onClose = jest.fn();
   const print = jest.spyOn(window, 'print').mockImplementation(() => {});
+  const localBridge = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('Local print bridge unavailable.'));
 
   render(<WalkInBookingModal open onCreated={onCreated} onClose={onClose} />);
   fireEvent.change(await screen.findByLabelText('Package'), { target: { value: '3' } });
@@ -38,8 +39,8 @@ test('walk-in success offers two receipt copies and reprinting never resubmits b
   expect(await screen.findByRole('status')).toHaveTextContent('Walk-in booking #55 saved successfully.');
   expect(screen.getByRole('button', { name: 'Print Customer Copy' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Print Your Copy' })).toBeInTheDocument();
-  expect(screen.getByText('₱1,000.00')).toBeInTheDocument();
-  expect(screen.getAllByText('₱500.00')).toHaveLength(2);
+  expect(screen.getByText('PHP 1,000.00')).toBeInTheDocument();
+  expect(screen.getAllByText('PHP 500.00')).toHaveLength(2);
 
   fireEvent.click(screen.getByRole('button', { name: 'Print Customer Copy' }));
   await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
@@ -52,4 +53,5 @@ test('walk-in success offers two receipt copies and reprinting never resubmits b
   expect(onClose).not.toHaveBeenCalled();
 
   print.mockRestore();
+  localBridge.mockRestore();
 });

@@ -114,6 +114,7 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   }));
   const alerts = jest.spyOn(window, 'alert').mockImplementation(() => {});
   const print = jest.spyOn(window, 'print').mockImplementation(() => {});
+  const localBridge = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('Local print bridge unavailable.'));
   mockConfirm.mockResolvedValue(true);
   getCached.mockImplementation(url => (
     url === '/api/bookings/payments/' ? Promise.resolve({ data: payments }) : Promise.resolve({ data: [] })
@@ -163,6 +164,7 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/api/bookings/payments/70/verify/', { status: 'APPROVED' }));
   const receiptDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
   expect(within(receiptDialog).getByText(/Booking reference/)).toBeInTheDocument();
+  expect(within(receiptDialog).getByRole('button', { name: 'Print Customer Copy' })).toBeInTheDocument();
   expect(alerts).toHaveBeenCalledWith('Payment approved successfully.');
   await waitFor(() => expect(print).toHaveBeenCalled());
   fireEvent.click(within(receiptDialog).getByRole('button', { name: 'Done' }));
@@ -171,6 +173,7 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   expect(screen.getByText('Payment Customer 1').closest('div')).toBeInTheDocument();
   alerts.mockRestore();
   print.mockRestore();
+  localBridge.mockRestore();
 });
 
 test('Staff Live Inventory opens dated product sales and wastage records', async () => {

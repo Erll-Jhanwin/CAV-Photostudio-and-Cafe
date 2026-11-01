@@ -72,6 +72,7 @@ class BookingLifecycleTests(WorkflowFixtures, TestCase):
             response = self.client.patch(f'/api/bookings/payments/{payment.id}/verify/', {'status': state}, format='json')
             self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['booking_details']['total_amount'], Decimal('1500.00'))
+        self.assertEqual(response.data['booking_details']['amount_paid'], Decimal('500.00'))
         self.assertEqual(response.data['booking_details']['remaining_balance'], Decimal('1000.00'))
         self.assertEqual(response.data['booking_details']['customer_phone'], self.customer.phone_number)
         booking.refresh_from_db()

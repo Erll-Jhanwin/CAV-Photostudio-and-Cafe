@@ -5,6 +5,14 @@ const SAME_ORIGIN_BRIDGE_URL = '/local-print';
 export const LOCAL_STAFF_CONSOLE_URL = 'http://127.0.0.1:3001/staff';
 const LOCAL_STAFF_CONSOLE_BRIDGE_URL = 'http://127.0.0.1:3001/local-print';
 
+export const RECEIPT_BUSINESS = {
+  logoUrl: '/assets/pics/icon/ICON.jpg',
+  logoText: 'CAV',
+  name: 'CAV PHOTO STUDIO & CAFE',
+  address: '028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas',
+  contactNumber: '+639171234567',
+};
+
 export const isLocalStaffConsole = () => (
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   && window.location.port === '3001'
@@ -187,6 +195,36 @@ export const buildReceiptText = (order, business, user) => {
     .join('\n\n') + '\n\n\n';
 };
 
+export const buildBookingReceiptText = (receipt, business = RECEIPT_BUSINESS, copyLabel = 'Staff/Admin Copy') => {
+  const header = [
+    ...center(business.logoText || 'CAV'),
+    ...center(business.name || 'CAV PHOTO STUDIO & CAFE'),
+    ...center(business.address || ''),
+    ...pair('CONTACT', business.contactNumber || ''),
+  ];
+  const booking = [
+    ...center('BOOKING RECEIPT'),
+    ...center(String(copyLabel || '').toUpperCase()),
+    line(),
+    ...pair('BOOKING REF', `#${receipt?.bookingId || ''}`),
+    ...pair('CUSTOMER', receipt?.customerName || 'Not provided'),
+    ...pair('SERVICE', receipt?.serviceName || 'Photo Studio'),
+    ...pair('PACKAGE', receipt?.packageName || 'Not provided'),
+    ...pair('SESSION DATE', receipt?.scheduledDate || 'Not provided'),
+    ...pair('SESSION TIME', receipt?.scheduledTime || 'Not provided'),
+  ];
+  const payment = [
+    line(),
+    ...pair('TOTAL AMOUNT', money(receipt?.totalAmount)),
+    ...pair('PAYMENT RECEIVED', money(receipt?.amountPaid)),
+    ...pair('BALANCE DUE', money(receipt?.remainingBalance)),
+    ...pair('PAYMENT METHOD', receipt?.paymentMethod || 'Not recorded'),
+    ...(receipt?.paymentReference ? pair('PAYMENT REF', receipt.paymentReference) : []),
+  ];
+  const footer = [line(), ...center('Thank You')];
+  return [header, booking, payment, footer].map(section => section.join('\n')).join('\n\n') + '\n\n\n';
+};
+
 export const buildEndOfDayReportText = (report) => {
   const header = [
     ...center('CAV PHOTO STUDIO & CAFE'),
@@ -255,6 +293,11 @@ const printLocalText = async ({ content, printerName }) => {
 
 export const printLocalReceipt = ({ order, business, user, printerName }) => printLocalText({
   content: buildReceiptText(order, business, user),
+  printerName,
+});
+
+export const printLocalBookingReceipt = ({ receipt, printerName, copyLabel = 'Staff/Admin Copy', business = RECEIPT_BUSINESS }) => printLocalText({
+  content: buildBookingReceiptText(receipt, business, copyLabel),
   printerName,
 });
 

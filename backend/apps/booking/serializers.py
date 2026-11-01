@@ -166,6 +166,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             'package_name': booking.package.name,
             'package_price': booking.package.price,
             'total_amount': total_amount,
+            'amount_paid': amount_paid,
             'remaining_balance': max(Decimal('0.00'), total_amount - amount_paid),
             'service_name': booking.package.service.name,
         }

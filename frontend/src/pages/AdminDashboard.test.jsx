@@ -59,7 +59,7 @@ describe('AdminDashboard', () => {
       booking_details: {
         id: 48, customer_name: 'Jamie Reyes', customer_phone: '09171234567', customer_email: 'jamie@example.test',
         service_name: 'Studio', package_name: 'Portrait Session', scheduled_date: '2026-11-15', scheduled_time: '10:30',
-        total_amount: '2500.00', remaining_balance: '1250.00',
+        total_amount: '2500.00', amount_paid: '1250.00', remaining_balance: '1250.00',
       },
     };
     mockConfirm.mockResolvedValue(true);
@@ -73,6 +73,7 @@ describe('AdminDashboard', () => {
     client.patch.mockResolvedValue({ data: { ...payment, status: 'APPROVED', verified_at: '2026-10-28T11:00:00Z' } });
     const alert = jest.spyOn(window, 'alert').mockImplementation(() => {});
     const print = jest.spyOn(window, 'print').mockImplementation(() => {});
+    const localBridge = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('Local print bridge unavailable.'));
 
     render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
@@ -82,12 +83,21 @@ describe('AdminDashboard', () => {
     expect(alert).toHaveBeenCalledWith('Payment approved successfully.');
     expect(within(receiptDialog).getByText('Payment reference')).toBeInTheDocument();
     expect(within(receiptDialog).getByText('Jamie Reyes')).toBeInTheDocument();
-    expect(within(receiptDialog).getByText('₱2,500.00')).toBeInTheDocument();
+    expect(within(receiptDialog).getByText('Studio')).toBeInTheDocument();
+    expect(within(receiptDialog).getByText('Portrait Session')).toBeInTheDocument();
+    expect(within(receiptDialog).getByText('2026-11-15')).toBeInTheDocument();
+    expect(within(receiptDialog).getByText('10:30')).toBeInTheDocument();
+    expect(within(receiptDialog).getByText('PHP 2,500.00')).toBeInTheDocument();
+    expect(within(receiptDialog).getByText('Payment received')).toBeInTheDocument();
+    expect(within(receiptDialog).getAllByText('PHP 1,250.00')).toHaveLength(2);
+    expect(within(receiptDialog).getByText('GCash')).toBeInTheDocument();
+    expect(within(receiptDialog).getByRole('button', { name: 'Print Customer Copy' })).toBeInTheDocument();
     await waitFor(() => expect(print).toHaveBeenCalled());
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(screen.queryByRole('dialog', { name: 'Booking receipt' })).not.toBeInTheDocument();
     alert.mockRestore();
     print.mockRestore();
+    localBridge.mockRestore();
   });
 
   it('assigns staff access with a single on-duty checkbox', async () => {

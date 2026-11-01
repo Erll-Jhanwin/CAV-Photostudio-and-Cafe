@@ -1,16 +1,16 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Printer } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Modal } from './ui/Modal';
-import { formatManilaDateTime } from '../utils/dateTime';
+import { printLocalBookingReceipt, RECEIPT_BUSINESS } from '../utils/localPrinting';
 
-const peso = value => `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const peso = value => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const textValue = value => String(value || '').trim() || 'Not provided';
 
 export const bookingReceiptFromPayment = payment => {
   const details = payment?.booking_details || {};
   const totalAmount = Number(details.total_amount ?? details.package_price ?? 0);
-  const amountPaid = Number(payment?.amount || 0);
+  const amountPaid = Number(details.amount_paid ?? payment?.amount ?? 0);
   return {
     bookingId: payment?.booking || details.id,
     customerName: details.customer_name,
@@ -29,71 +29,102 @@ export const bookingReceiptFromPayment = payment => {
   };
 };
 
-export function printBookingReceipt() {
+export async function printBookingReceipt({ receipt, printerName = '', copyLabel = 'Staff/Admin Copy' } = {}) {
+  if (receipt) {
+    try {
+      return await printLocalBookingReceipt({ receipt, printerName, copyLabel });
+    } catch {
+      // Fall back to the browser's thermal-sized print preview when the local bridge is unavailable.
+    }
+  }
   window.setTimeout(() => window.print(), 120);
+  return null;
 }
 
-export function BookingReceiptDocument({ receipt, copyLabel }) {
+export function BookingReceiptDocument({ receipt, copyLabel, business = RECEIPT_BUSINESS }) {
   return (
-    <article id="booking-receipt-print-area" className="booking-receipt-paper mx-auto w-full max-w-xl rounded-xl border border-espresso/10 bg-white p-5 text-espresso shadow-sm sm:p-7" aria-label={`${copyLabel} booking receipt`}>
-      <header className="border-b-2 border-espresso pb-4 text-center">
-        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-gold-dark">CAV Photo Studio &amp; Cafe</p>
-        <h2 className="mt-2 text-xl font-black tracking-wide">BOOKING RECEIPT</h2>
-        <p className="mt-2 inline-flex rounded-full border border-gold/30 bg-gold/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-espresso">{copyLabel}</p>
+    <article id="booking-receipt-print-area" className="booking-receipt-paper mx-auto w-[58mm] max-w-full bg-white p-2 font-mono text-[9px] font-bold leading-tight text-black" aria-label={`${copyLabel} booking receipt`}>
+      <header className="space-y-1 border-b border-dashed border-black pb-2 text-center">
+        <img src={business.logoUrl} alt="" className="mx-auto h-[12mm] w-[12mm] object-contain grayscale" />
+        <p className="text-[10px] font-black uppercase leading-tight">{business.name}</p>
+        <p className="text-[8px] font-semibold leading-tight">{business.address}</p>
+        <p className="text-[8px] font-semibold">Contact: {business.contactNumber}</p>
+        <p className="pt-1 text-[10px] font-black uppercase">Booking Receipt</p>
+        <p className="text-[8px] font-black uppercase">{copyLabel}</p>
       </header>
 
-      <section className="space-y-2 border-b border-dashed border-espresso/25 py-4 text-xs">
-        <ReceiptRow label="Booking reference" value={`#${textValue(receipt.bookingId)}`} strong />
-        {receipt.paymentReference && <ReceiptRow label="Payment reference" value={receipt.paymentReference} />}
-        <ReceiptRow label="Transaction date" value={formatManilaDateTime(receipt.transactionDate)} />
-      </section>
-
-      <section className="space-y-2 border-b border-dashed border-espresso/25 py-4 text-xs">
-        <h3 className="mb-3 text-[10px] font-black uppercase tracking-[0.16em] text-espresso/55">Customer</h3>
-        <ReceiptRow label="Name" value={textValue(receipt.customerName)} strong />
-        <ReceiptRow label="Phone" value={textValue(receipt.customerPhone)} />
-        <ReceiptRow label="Email" value={textValue(receipt.customerEmail)} />
-      </section>
-
-      <section className="space-y-2 border-b border-dashed border-espresso/25 py-4 text-xs">
-        <h3 className="mb-3 text-[10px] font-black uppercase tracking-[0.16em] text-espresso/55">Session</h3>
-        <ReceiptRow label="Service" value={textValue(receipt.serviceName)} strong />
+      <section className="space-y-1 border-b border-dashed border-black py-2 text-[8px]">
+        <ReceiptRow label="Booking reference" value={`#${textValue(receipt.bookingId)}`} />
+        <ReceiptRow label="Customer" value={textValue(receipt.customerName)} />
+        <ReceiptRow label="Service" value={textValue(receipt.serviceName)} />
         <ReceiptRow label="Package" value={textValue(receipt.packageName)} />
-        <ReceiptRow label="Schedule" value={`${textValue(receipt.scheduledDate)} · ${textValue(receipt.scheduledTime)}`} />
+        <ReceiptRow label="Session date" value={textValue(receipt.scheduledDate)} />
+        <ReceiptRow label="Session time" value={textValue(receipt.scheduledTime)} />
       </section>
 
-      <section className="space-y-2 py-4 text-xs">
+      <section className="space-y-1 py-2 text-[8px]">
         <ReceiptRow label="Total amount" value={peso(receipt.totalAmount)} strong />
-        <ReceiptRow label="Amount paid" value={peso(receipt.amountPaid)} />
+        <ReceiptRow label="Payment received" value={peso(receipt.amountPaid)} strong />
         <ReceiptRow label="Remaining balance" value={peso(receipt.remainingBalance)} strong />
         <ReceiptRow label="Payment method" value={textValue(receipt.paymentMethod)} />
+        {receipt.paymentReference && <ReceiptRow label="Payment reference" value={textValue(receipt.paymentReference)} />}
       </section>
-      <footer className="border-t-2 border-espresso pt-3 text-center text-[10px] font-semibold text-espresso/60">Thank you. Please keep this receipt for your records.</footer>
+      <footer className="border-t border-dashed border-black pt-2 text-center text-[8px] font-semibold">Thank you</footer>
     </article>
   );
 }
 
 function ReceiptRow({ label, value, strong = false }) {
-  return <div className="flex items-start justify-between gap-4">
-    <span className="shrink-0 text-espresso/55">{label}</span>
-    <span className={`min-w-0 break-words text-right ${strong ? 'font-black text-espresso' : 'font-semibold text-espresso/80'}`}>{value}</span>
+  return <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-1">
+    <span className="min-w-0 break-words">{label}</span>
+    <span className={`max-w-[30mm] break-words text-right ${strong ? 'font-black' : 'font-semibold'}`}>{value}</span>
   </div>;
 }
 
-export default function BookingReceiptPrintDialog({ open, receipt, onClose }) {
+export default function BookingReceiptPrintDialog({ open, receipt, onClose, printerName = '' }) {
+  const [copyLabel, setCopyLabel] = useState('Staff/Admin Copy');
+  const [printError, setPrintError] = useState('');
+  const [printing, setPrinting] = useState(false);
+  const autoPrintKeyRef = useRef(null);
+
+  const handlePrint = useCallback(async copy => {
+    setCopyLabel(copy);
+    setPrintError('');
+    setPrinting(true);
+    try {
+      const result = await printLocalBookingReceipt({ receipt, printerName, copyLabel: copy });
+      if (!result?.printed) throw new Error('The local printer did not accept the receipt.');
+    } catch (error) {
+      setPrintError(`Local receipt printing was unavailable${error?.message ? `: ${error.message}` : ''}. Opening browser print preview.`);
+      window.setTimeout(() => window.print(), 120);
+    } finally {
+      setPrinting(false);
+    }
+  }, [printerName, receipt]);
+
   useEffect(() => {
-    if (!open || !receipt) return undefined;
-    const timer = window.setTimeout(() => window.print(), 250);
+    if (!open || !receipt) {
+      autoPrintKeyRef.current = null;
+      return undefined;
+    }
+    const receiptKey = `${receipt.bookingId}:${receipt.paymentReference || ''}`;
+    if (autoPrintKeyRef.current === receiptKey) return undefined;
+    autoPrintKeyRef.current = receiptKey;
+    const timer = window.setTimeout(() => { void handlePrint('Staff/Admin Copy'); }, 250);
     return () => window.clearTimeout(timer);
-  }, [open, receipt]);
+  }, [handlePrint, open, receipt]);
 
   return (
     <Modal open={open} onClose={onClose} title="Booking receipt" size="2xl" bodyClassName="bg-cream/60">
       {receipt && <div className="space-y-4">
-        <BookingReceiptDocument receipt={receipt} copyLabel="Staff/Admin Copy" />
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end print:hidden">
+        <div className="max-h-[65vh] overflow-y-auto rounded-xl bg-white p-3">
+          <BookingReceiptDocument receipt={receipt} copyLabel={copyLabel} />
+        </div>
+        {printError && <p role="status" className="rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-900">{printError}</p>}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end print:hidden">
           <Button variant="outline" onClick={onClose}>Done</Button>
-          <Button variant="gold" icon={Printer} onClick={printBookingReceipt}>Print again</Button>
+          <Button variant="outline" icon={Printer} loading={printing && copyLabel === 'Customer Copy'} disabled={printing} onClick={() => void handlePrint('Customer Copy')}>Print Customer Copy</Button>
+          <Button variant="gold" icon={Printer} loading={printing && copyLabel === 'Staff/Admin Copy'} disabled={printing} onClick={() => void handlePrint('Staff/Admin Copy')}>Print Your Copy</Button>
         </div>
       </div>}
     </Modal>

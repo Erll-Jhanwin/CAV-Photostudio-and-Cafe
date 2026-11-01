@@ -10,7 +10,7 @@ import { BookingReceiptDocument, printBookingReceipt } from '../components/Booki
 const idempotencyKey = () => `walk-in-${window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`}`.slice(0, 100);
 const peso = value => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export default function WalkInBookingModal({ open, onClose, onCreated }) {
+export default function WalkInBookingModal({ open, onClose, onCreated, printerName = '' }) {
   const [services, setServices] = useState([]);
   const [serviceId, setServiceId] = useState('');
   const [packageId, setPackageId] = useState('');
@@ -134,11 +134,11 @@ export default function WalkInBookingModal({ open, onClose, onCreated }) {
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button type="button" variant="outline" icon={Printer} onClick={() => {
               setReceiptCopy('Customer Copy');
-              window.setTimeout(printBookingReceipt, 120);
+              void printBookingReceipt({ receipt: savedReceipt, printerName, copyLabel: 'Customer Copy' });
             }}>Print Customer Copy</Button>
             <Button type="button" variant="gold" icon={Printer} onClick={() => {
               setReceiptCopy('Staff/Admin Copy');
-              window.setTimeout(printBookingReceipt, 120);
+              void printBookingReceipt({ receipt: savedReceipt, printerName, copyLabel: 'Staff/Admin Copy' });
             }}>Print Your Copy</Button>
           </div>
           <BookingReceiptDocument receipt={savedReceipt} copyLabel={receiptCopy} />

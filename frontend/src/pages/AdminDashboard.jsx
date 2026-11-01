@@ -2488,6 +2488,7 @@ export default function AdminDashboard() {
               </div>}
               {activeTab === 'live' && <WalkInBookingModal
                 open={walkInBookingOpen}
+                printerName={selectedLocalPrinter}
                 onClose={() => setWalkInBookingOpen(false)}
                 onCreated={() => {
                   void loadAdminTabData('calendar', { force: true });
@@ -3374,7 +3375,7 @@ export default function AdminDashboard() {
         error={endOfDayDetailError}
       />
 
-      <BookingReceiptPrintDialog open={Boolean(bookingReceipt)} receipt={bookingReceipt} onClose={() => setBookingReceipt(null)} />
+      <BookingReceiptPrintDialog open={Boolean(bookingReceipt)} receipt={bookingReceipt} printerName={selectedLocalPrinter} onClose={() => setBookingReceipt(null)} />
 
       <IngredientStatusModal
         open={ingredientStatusOpen}

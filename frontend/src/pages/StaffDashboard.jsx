@@ -25,8 +25,7 @@ import ProductActivityModal from '../components/inventory/ProductActivityModal';
 import { DataTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
-import { getLocalPrinters, getLocalPrintingSetupMessage, isLocalStaffConsole, openLocalStaffConsole, printLocalReceipt } from '../utils/localPrinting';
-import { brandAssets } from '../utils/cavAssets';
+import { getLocalPrinters, getLocalPrintingSetupMessage, isLocalStaffConsole, openLocalStaffConsole, printLocalReceipt, RECEIPT_BUSINESS } from '../utils/localPrinting';
 import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
@@ -83,13 +82,6 @@ const STAFF_CACHE_TTL_MS = 60 * 1000;
 const PRODUCT_PAGE_SIZE = 6;
 const TABLE_PAGE_SIZE = 10;
 const DISCOUNT_OPTIONS = [10, 20, 30];
-const RECEIPT_BUSINESS = {
-  logoUrl: brandAssets.logo,
-  logoText: 'CAV',
-  name: 'CAV PHOTO STUDIO & CAFE',
-  address: '028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas',
-  contactNumber: '+639171234567',
-};
 const LOCAL_PRINTING_ENABLED_KEY = 'staff:localPrintingEnabled';
 const LOCAL_PRINTING_PRINTER_KEY = 'staff:localPrintingPrinter';
 
@@ -2030,7 +2022,7 @@ export default function StaffDashboard() {
                   onBookingsChange={booking => setStaffBookings(current => normalizeRowsById(current.map(item => item.id === booking.id ? booking : item), row => row?.id))}
                 />
               </div>
-              <WalkInBookingModal open={walkInBookingOpen} onClose={() => setWalkInBookingOpen(false)} onCreated={() => loadTabData('bookings', true)} />
+              <WalkInBookingModal open={walkInBookingOpen} printerName={selectedLocalPrinter} onClose={() => setWalkInBookingOpen(false)} onCreated={() => loadTabData('bookings', true)} />
             </div>
           )}
 
@@ -3164,7 +3156,7 @@ export default function StaffDashboard() {
         onLookupTransaction={lookupStockActionTransaction}
         onSubmit={handleStockActionSubmit}
       />
-      <BookingReceiptPrintDialog open={Boolean(bookingReceipt)} receipt={bookingReceipt} onClose={() => setBookingReceipt(null)} />
+      <BookingReceiptPrintDialog open={Boolean(bookingReceipt)} receipt={bookingReceipt} printerName={selectedLocalPrinter} onClose={() => setBookingReceipt(null)} />
     </div>
     )
   );

@@ -401,7 +401,7 @@
 }
 
 @page booking-receipt {
-  size: 80mm 240mm;
+  size: 58mm 140mm;
   margin: 0;
 }
 
@@ -427,10 +427,10 @@
   body:has(#booking-receipt-print-area) #booking-receipt-print-area {
     position: absolute !important;
     inset: 0 auto auto 0 !important;
-    width: 76mm !important;
-    max-width: 76mm !important;
+    width: 58mm !important;
+    max-width: 58mm !important;
     margin: 0 !important;
-    padding: 3mm !important;
+    padding: 2mm !important;
     border: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
