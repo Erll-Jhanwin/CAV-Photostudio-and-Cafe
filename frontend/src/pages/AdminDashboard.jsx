@@ -29,6 +29,7 @@ import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
+import BookingQueue from '../components/bookings/BookingQueue';
 import WalkInBookingModal from './WalkInBookingModal';
 import {
   aggregateSalesChartData,
@@ -619,19 +620,32 @@ export default function AdminDashboard() {
   const [localPrinterLoading, setLocalPrinterLoading] = useState(false);
   const [localPrintStatus, setLocalPrintStatus] = useState('Detect the cashier printer before printing a closeout.');
   const [tabLoading, setTabLoading] = useState({});
+  const [liveBookingsReady, setLiveBookingsReady] = useState(false);
+  const [liveBookingsProgressVisible, setLiveBookingsProgressVisible] = useState(false);
   const dashboardFetchSeqRef = useRef(0);
   const forecastFetchSeqRef = useRef(0);
   const endOfDayDetailsRequestRef = useRef(0);
+  const liveBookingsRequestCountRef = useRef(0);
+  const liveBookingsProgressTimerRef = useRef(null);
   const salesChartInteractionElementRef = useRef(null);
   const salesChartInteractionRef = useRef(null);
 
   const loadAdminTabData = useCallback(async (tab, { force = false } = {}) => {
     if (tab === 'analytics') return;
+    const isLiveBookingsRequest = tab === 'live';
+    if (isLiveBookingsRequest) {
+      liveBookingsRequestCountRef.current += 1;
+      if (liveBookingsRequestCountRef.current === 1) {
+        liveBookingsProgressTimerRef.current = window.setTimeout(() => {
+          setLiveBookingsProgressVisible(true);
+        }, 300);
+      }
+    }
     setTabLoading(current => ({ ...current, [tab]: true }));
     try {
       if (tab === 'calendar' || tab === 'live') {
         const [bookingsRes, unavailableRes] = await Promise.all([
-          getCached('/api/bookings/', { params: { month: bookingCalendarMonth, limit: 500, ...(tab === 'live' ? { ready_for_service: 'true' } : {}) } }, { force }),
+          getCached('/api/bookings/', { params: { ...(tab === 'live' ? { queue: 'true' } : { month: bookingCalendarMonth }), limit: 500 } }, { force }),
           tab === 'calendar' ? getCached('/api/bookings/studio-unavailable-dates/', { params: { month: bookingCalendarMonth } }, { force }) : Promise.resolve({ data: [] }),
         ]);
         setCalendarBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
@@ -666,8 +680,25 @@ export default function AdminDashboard() {
       setDataError(getApiErrorMessage(error, `Could not load ${tab} data.`));
     } finally {
       setTabLoading(current => ({ ...current, [tab]: false }));
+      if (isLiveBookingsRequest) {
+        setLiveBookingsReady(true);
+        liveBookingsRequestCountRef.current = Math.max(0, liveBookingsRequestCountRef.current - 1);
+        if (liveBookingsRequestCountRef.current === 0) {
+          if (liveBookingsProgressTimerRef.current !== null) {
+            window.clearTimeout(liveBookingsProgressTimerRef.current);
+            liveBookingsProgressTimerRef.current = null;
+          }
+          setLiveBookingsProgressVisible(false);
+        }
+      }
     }
   }, [bookingCalendarMonth]);
+
+  useEffect(() => () => {
+    if (liveBookingsProgressTimerRef.current !== null) {
+      window.clearTimeout(liveBookingsProgressTimerRef.current);
+    }
+  }, []);
 
   const loadForecast = useCallback(async ({ force = false } = {}) => {
     const requestSeq = forecastFetchSeqRef.current + 1;
@@ -1124,29 +1155,6 @@ export default function AdminDashboard() {
       alert('Studio unavailable date removed.');
     } catch (err) {
       setStudioCalendarError(err.response?.data?.detail || 'Could not remove studio unavailable date.');
-    }
-  };
-
-  const handleCalendarBookingStatus = async (booking, newStatus) => {
-    if (!newStatus || newStatus === booking.status) return;
-    const confirmed = await confirm({
-      title: 'Update Booking Status',
-      message: `Set booking #${booking.id} to ${newStatus}?`,
-      confirmLabel: 'Update Status',
-      type: 'warning',
-    });
-    if (!confirmed) return;
-    try {
-      const res = await client.patch(`/api/bookings/${booking.id}/`, { status: newStatus });
-      setCalendarBookings(current => normalizeRowsById(current.map(item => item.id === booking.id ? res.data : item), row => row?.id));
-      setAnalytics(current => current ? normalizeDashboardAnalytics({
-        ...current,
-        recent_bookings: (current.recent_bookings || []).map(item => item.id === booking.id ? { ...item, ...res.data } : item),
-      }) : current);
-      fetchData({ background: true });
-      alert('Booking status updated.');
-    } catch (err) {
-      setStudioCalendarError(err.response?.data?.detail || err.response?.data?.status || 'Could not update booking status.');
     }
   };
 
@@ -1645,16 +1653,9 @@ export default function AdminDashboard() {
     acc[review.sentiment] = (acc[review.sentiment] || 0) + 1;
     return acc;
   }, {});
-  const paymentStatusCounts = bookingPayments.reduce((acc, payment) => {
-    acc[payment.status] = (acc[payment.status] || 0) + 1;
-    return acc;
-  }, {});
   const calendarDays = getCalendarDays(bookingCalendarMonth);
   const calendarMonthBookings = calendarBookings.filter(booking => String(booking.scheduled_date || '').startsWith(bookingCalendarMonth));
-  const liveBookings = calendarMonthBookings.filter(booking =>
-    ['CONFIRMED', 'CONFIRMED_DP'].includes(booking.status) &&
-    (booking.payments || []).some(payment => ['APPROVED', 'PAID'].includes(payment.status))
-  );
+  const liveBookings = calendarBookings;
   const isEventBooking = (booking) => {
     const packageName = (booking.package_details?.name || '').toLowerCase();
     return packageName.includes('event') || packageName.includes('photo service');
@@ -1678,7 +1679,6 @@ export default function AdminDashboard() {
     if (isEventBooking(booking)) acc.add(booking.scheduled_date);
     return acc;
   }, new Set());
-  const calendarBookingStatusOptions = ['PENDING', 'CONFIRMED', 'CONFIRMED_DP', 'COMPLETED', 'CANCELLED'];
   const displayedEndOfDayExpectedCash = endOfDayExpectedCash || getEndOfDayExpectedCashValue().toFixed(2);
 
   if (loading && !initialDataReady) {
@@ -1701,10 +1701,10 @@ export default function AdminDashboard() {
         onSignOutConfirm={handleLogout}
       />
 
-      <div className={`flex-1 flex flex-col overflow-hidden ${['staff', 'faq', 'gallery', 'audit', 'inventory', 'payments'].includes(activeTab) ? 'h-dvh min-h-0' : 'min-h-screen'}`}>
+      <div className={`flex-1 flex flex-col overflow-hidden ${['staff', 'faq', 'gallery', 'audit', 'inventory', 'payments', 'reviews'].includes(activeTab) ? 'h-dvh min-h-0' : 'min-h-screen'}`}>
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(previous => !previous)} user={user} menuOpen={sidebarOpen} />
 
-        <main className={`dashboard-main flex-1 min-h-0 min-w-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${['reports', 'staff', 'faq', 'gallery', 'audit', 'inventory', 'payments'].includes(activeTab) ? 'overflow-hidden' : 'overflow-y-auto'} ${['staff', 'faq', 'gallery', 'audit', 'inventory', 'payments'].includes(activeTab) ? 'flex flex-col' : ''}`}>
+        <main className={`dashboard-main relative flex-1 min-h-0 min-w-0 p-3 sm:p-4 lg:p-5 scrollbar-thin ${['reports', 'staff', 'faq', 'gallery', 'audit', 'inventory', 'payments', 'reviews'].includes(activeTab) ? 'overflow-hidden' : 'overflow-y-auto'} ${['staff', 'faq', 'gallery', 'audit', 'inventory', 'payments', 'reviews'].includes(activeTab) ? 'flex flex-col' : ''}`}>
           {['staff', 'faq'].includes(activeTab) && (
             <h1 className="heading-page mb-4 shrink-0 text-espresso">{pageTitles[activeTab]}</h1>
           )}
@@ -1729,7 +1729,13 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {isActiveTabLoading && (
+          {activeTab === 'live' && liveBookingsProgressVisible && (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 overflow-hidden bg-gold/20" role="status" aria-label="Refreshing live bookings">
+              <div className="live-bookings-progress h-full w-1/3 bg-gold-dark" />
+            </div>
+          )}
+
+          {isActiveTabLoading && activeTab !== 'live' && (
             <div className="mb-4 flex items-center gap-3 rounded-xl border border-espresso/[0.08] bg-white px-4 py-3" role="status">
               <LoadingSpinner size="sm" className="text-gold-dark" label={`Loading ${pageTitles[activeTab]}`} />
               <span className="text-xs font-bold text-espresso/60">Loading {pageTitles[activeTab]}...</span>
@@ -2506,98 +2512,19 @@ export default function AdminDashboard() {
 
               </>}
               {activeTab === 'live' && <div className="min-w-0 rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
-                <CardHeader title={activeTab === 'live' ? 'Ready for service' : 'Bookings this month'} subtitle="Confirmed sessions and downpayment status." className="mb-3" />
-                <div className="grid min-w-0 grid-cols-1 gap-3">
-                  {(activeTab === 'live' ? liveBookings : calendarMonthBookings).length ? (activeTab === 'live' ? liveBookings : calendarMonthBookings).map(booking => (
-                    <div key={booking.id} className="min-w-0 rounded-2xl border border-espresso/10 bg-cream/40 p-4 text-xs sm:p-5">
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="grid min-w-0 flex-1 grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2 xl:grid-cols-4">
-                          <div className="min-w-0">
-                            <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Booking</p>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${isEventBooking(booking) ? 'bg-blue-100 text-blue-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                                {isEventBooking(booking) ? 'Off-site Event' : 'Studio Session'}
-                              </span>
-                              <StatusBadge status={booking.status} />
-                            </div>
-                            <p className="mt-2 break-words font-black text-espresso">Booking #{booking.id}</p>
-                          </div>
-                          <div className="min-w-0">
-                            <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Customer</p>
-                            <p className="break-words font-bold text-espresso/75">{getCalendarBookingName(booking)}</p>
-                            {booking.customer?.email && <p className="mt-1 break-all text-espresso/60">{booking.customer.email}</p>}
-                            {booking.customer?.phone_number && <p className="mt-1 text-espresso/60">{booking.customer.phone_number}</p>}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Schedule</p>
-                            <p className="font-bold text-espresso/75">{booking.scheduled_date || 'Date not set'}</p>
-                            <p className="mt-1 font-bold text-espresso/60">{String(booking.scheduled_time || '').slice(0, 5) || 'Time not set'}</p>
-                          </div>
-                          <div className="min-w-0">
-                            <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Package</p>
-                            <p className="break-words font-bold text-espresso/75">{booking.package_details?.name || 'Booking package'}</p>
-                            {booking.package_details?.price != null && <p className="mt-1 font-bold text-espresso/60">{formatCurrency(booking.package_details.price)}</p>}
-                            {booking.required_down_payment != null && <p className="mt-1 text-espresso/55">Down payment: {formatCurrency(booking.required_down_payment)}</p>}
-                            {booking.package_details?.inclusions && <p className="mt-1 break-words leading-relaxed text-espresso/55">Includes: {booking.package_details.inclusions}</p>}
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center justify-between gap-3 sm:w-40 sm:flex-col sm:items-stretch">
-                          <select
-                            aria-label={`Booking ${booking.id} status`}
-                            value={booking.status}
-                            onChange={e => handleCalendarBookingStatus(booking, e.target.value)}
-                            className="min-w-0 flex-1 rounded-xl border border-espresso/10 bg-white px-3 py-2 text-xs font-bold text-espresso focus:outline-none focus:ring-4 focus:ring-gold/15 sm:w-full"
-                          >
-                            {calendarBookingStatusOptions.map(option => (
-                              <option key={option} value={option}>{option.replace('_', ' ')}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteBooking({ ...booking, customer_name: getCalendarBookingName(booking) })}
-                            className="shrink-0 rounded-lg p-2 text-red-500 hover:bg-red-50"
-                            aria-label={`Delete booking ${booking.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                      {(booking.items?.length > 0 || booking.notes || booking.payments?.length > 0) && (
-                        <div className="mt-4 grid grid-cols-1 gap-3 border-t border-espresso/10 pt-3 md:grid-cols-2">
-                          {booking.items?.length > 0 && (
-                            <div className="min-w-0">
-                              <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Booking items</p>
-                              <p className="break-words font-bold leading-relaxed text-espresso/65">
-                                {booking.items.map(item => `${item.name || 'Item'}${item.quantity ? ` × ${item.quantity}` : ''}${item.price != null ? ` · ${formatCurrency(item.price)}` : ''}`).join(', ')}
-                              </p>
-                            </div>
-                          )}
-                          {booking.notes && (
-                            <div className="min-w-0">
-                              <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Notes</p>
-                              <p className="whitespace-pre-wrap break-words font-medium leading-relaxed text-espresso/65">{booking.notes}</p>
-                            </div>
-                          )}
-                          {booking.payments?.length > 0 && (
-                            <div className="min-w-0">
-                              <p className="mb-1 text-[9px] font-black uppercase tracking-wider text-espresso/45">Payment submissions</p>
-                              <div className="space-y-1">
-                                {booking.payments.map(payment => (
-                                  <p key={payment.id || payment.reference_number} className="break-words font-medium leading-relaxed text-espresso/65">
-                                    {formatCurrency(payment.amount)} · {payment.method_label || payment.method || 'Payment'} · {String(payment.status || 'Pending').replace(/_/g, ' ')}
-                                    {payment.reference_number ? ` · Ref ${payment.reference_number}` : ''}
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )) : (
-                    <EmptyState icon={Calendar} title={activeTab === 'live' ? 'No bookings ready for service' : 'No bookings this month'} description={activeTab === 'live' ? 'Approved downpayments and confirmed service bookings appear here.' : 'Studio and event bookings will appear here as they are created.'} />
-                  )}
-                </div>
+                <CardHeader title="Live Booking Queue" subtitle="Today’s confirmed sessions are ordered by scheduled time. Payment tracking stays independent." className="mb-4" />
+                <BookingQueue
+                  bookings={liveBookings}
+                  loading={!liveBookingsReady}
+                  onBookingsChange={booking => {
+                    setCalendarBookings(current => normalizeRowsById(current.map(item => item.id === booking.id ? booking : item), row => row?.id));
+                    setAnalytics(current => current ? normalizeDashboardAnalytics({
+                      ...current,
+                      recent_bookings: (current.recent_bookings || []).map(item => item.id === booking.id ? { ...item, ...booking } : item),
+                    }) : current);
+                  }}
+                  onDeleteBooking={booking => handleDeleteBooking({ ...booking, customer_name: getCalendarBookingName(booking) })}
+                />
               </div>}
               {activeTab === 'live' && <WalkInBookingModal
                 open={walkInBookingOpen}
@@ -2643,19 +2570,6 @@ export default function AdminDashboard() {
                     Detect Printers
                   </Button>
                 </div>
-              </div>
-
-              <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[
-                  ['Saved Reports', endOfDayReports.length, 'bg-white text-espresso border-espresso/[0.06]'],
-                  ['Last Gross Sales', endOfDayReports[0] ? formatCurrency(endOfDayReports[0].gross_sales) : formatCurrency(0), 'bg-emerald-50 text-emerald-700 border-emerald-200'],
-                  ['Last Cash Difference', endOfDayReports[0] ? formatCurrency(endOfDayReports[0].cash_difference) : formatCurrency(0), 'bg-amber-50 text-amber-700 border-amber-200'],
-                ].map(([label, value, className]) => (
-                  <div key={label} className={`rounded-2xl border p-4 shadow-sm ${className}`}>
-                    <p className="text-[10px] uppercase tracking-[0.18em] font-black opacity-80">{label}</p>
-                    <p className="text-2xl font-black mt-2">{value}</p>
-                  </div>
-                ))}
               </div>
 
               <Card padding={false} className="min-h-0 flex-1 overflow-hidden">
@@ -2723,27 +2637,13 @@ export default function AdminDashboard() {
 
           {/* PAYMENT BOOKING VERIFICATION */}
           {activeTab === 'payments' && (
-            <div className="flex min-h-0 w-full flex-1 flex-col gap-3 animate-in-up" key="payments">
-              <div className="grid shrink-0 grid-cols-3 gap-2">
-                {[
-                  ['Pending Verification', paymentStatusCounts.PENDING_VERIFICATION || 0, 'bg-amber-50 text-amber-700 border-amber-200'],
-                  ['Approved', paymentStatusCounts.APPROVED || 0, 'bg-emerald-50 text-emerald-700 border-emerald-200'],
-                  ['Rejected', paymentStatusCounts.REJECTED || 0, 'bg-red-50 text-red-700 border-red-200'],
-                ].map(([label, value, className]) => (
-                  <div key={label} className={`rounded-2xl border px-3 py-2.5 shadow-sm ${className}`}>
-                    <p className="text-[9px] uppercase tracking-[0.16em] font-black opacity-80">{label}</p>
-                    <p className="text-2xl font-black leading-tight mt-1">{value}</p>
-                  </div>
-                ))}
-              </div>
-
+            <div className="flex h-full min-h-0 w-full flex-1 flex-col animate-in-up" key="payments">
               <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="flex min-h-0 flex-1 flex-col p-3 sm:p-4 md:p-5">
-                  <CardHeader
-                    title="Booking Payment Verification"
-                    subtitle="Review the booking details, then match the reference number and amount with the selected payment provider before approving."
-                    className="mb-2 shrink-0 gap-2 sm:flex-col sm:items-start"
-                  />
+                  <div className="mb-3 shrink-0">
+                    <h1 className="heading-page text-espresso">Booking Payment Verification</h1>
+                    <p className="mt-1 text-xs text-espresso/55">Review booking details and verify payment references and amounts before approval.</p>
+                  </div>
                   <div role="group" aria-label="Booking payment status filter" className="mb-3 flex shrink-0 gap-1 overflow-x-auto rounded-xl bg-cream/70 p-1 scrollbar-thin">
                     {[
                       ['ALL', 'All'],
@@ -3219,8 +3119,8 @@ export default function AdminDashboard() {
 
           {/* REVIEWS & FEEDBACK */}
           {activeTab === 'reviews' && (
-            <div className="w-full space-y-4 animate-in-up" key="reviews">
-              <div>
+            <div className="flex h-full min-h-0 w-full flex-1 flex-col gap-4 animate-in-up" key="reviews">
+              <div className="shrink-0">
                 <p className="mb-1 text-[10px] font-black uppercase tracking-[0.24em] text-gold-dark">Customer Voice</p>
                 <h1 className="heading-page text-espresso">Reviews &amp; Feedback</h1>
                 <p className="mt-1 max-w-2xl text-xs leading-relaxed text-espresso/55">
@@ -3228,7 +3128,7 @@ export default function AdminDashboard() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-4">
                 {[
                   { label: 'All reviews', value: reviews.length, icon: MessageSquare, className: 'text-espresso' },
                   { label: 'Positive', value: reviewCounts.Positive || 0, icon: ThumbsUp, className: 'text-emerald-600' },
@@ -3244,11 +3144,12 @@ export default function AdminDashboard() {
                 ))}
               </div>
 
-              <Card className="!p-4 md:!p-5">
-                <CardHeader title="All customer reviews" />
+              <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col p-4 md:p-5">
+                <CardHeader title="All customer reviews" className="mb-3 shrink-0" />
                 {reviewPageRows.length > 0 ? (
                   <>
-                    <div className="space-y-3">
+                    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1 scrollbar-thin">
                       {reviewPageRows.map((review, index) => {
                         const booking = review.booking_details || {};
                         const sentimentStyles = {
@@ -3290,11 +3191,16 @@ export default function AdminDashboard() {
                         );
                       })}
                     </div>
-                    <PaginationControls page={reviewPage} setPage={setReviewPage} total={reviews.length} pageSize={reviewPageSize} setPageSize={setReviewPageSize} />
+                    <div className="shrink-0 pt-3">
+                      <PaginationControls page={reviewPage} setPage={setReviewPage} total={reviews.length} pageSize={reviewPageSize} setPageSize={setReviewPageSize} />
+                    </div>
                   </>
                 ) : (
-                  <EmptyState icon={Star} title="No reviews yet" description="Customer reviews will appear here after completed bookings are submitted." />
+                  <div className="flex min-h-0 flex-1 items-center justify-center">
+                    <EmptyState icon={Star} title="No reviews yet" description="Customer reviews will appear here after completed bookings are submitted." />
+                  </div>
                 )}
+                </div>
               </Card>
             </div>
           )}

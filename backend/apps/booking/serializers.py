@@ -319,6 +319,7 @@ class BookingSerializer(serializers.ModelSerializer):
     payments = BookingPaymentSerializer(many=True, read_only=True)
     review = serializers.SerializerMethodField()
     change_history = serializers.JSONField(read_only=True)
+    cancellation_reason = serializers.CharField(read_only=True)
     required_down_payment = serializers.SerializerMethodField()
     remaining_balance = serializers.SerializerMethodField()
     can_edit = serializers.BooleanField(source='is_customer_editable', read_only=True)
@@ -337,7 +338,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'id', 'customer', 'package', 'package_details', 'scheduled_date', 
             'is_walk_in', 'contact_name', 'contact_email', 'contact_phone', 'created_by',
             'created_by_name', 'booking_type', 'customer_name', 'customer_email', 'customer_phone',
-            'scheduled_time', 'status', 'notes', 'created_at', 'items',
+            'scheduled_time', 'status', 'cancellation_reason', 'notes', 'created_at', 'items',
             'payments', 'required_down_payment', 'remaining_balance', 'change_history',
             'review',
             'can_edit', 'edit_locked_reason', 'edit_deadline',

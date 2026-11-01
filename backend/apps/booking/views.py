@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch
+from django.db.models import Case, IntegerField, Prefetch, Value, When
 from rest_framework import generics, permissions, status, filters, views
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -302,6 +302,20 @@ class BookingListCreateView(generics.ListCreateAPIView):
                     raise ValidationError({'month': 'Use YYYY-MM format.'})
             if status_param:
                 queryset = queryset.filter(status=status_param)
+            queue_mode = self.request.query_params.get('queue') == 'true'
+            if queue_mode:
+                today = timezone.localdate()
+                queryset = queryset.order_by(
+                    Case(
+                        When(scheduled_date=today, status__in=['CONFIRMED', 'CONFIRMED_DP'], then=Value(0)),
+                        When(scheduled_date=today, status='PENDING', then=Value(1)),
+                        When(scheduled_date__gt=today, status__in=ACTIVE_BOOKING_STATUSES, then=Value(2)),
+                        When(scheduled_date__lt=today, status__in=ACTIVE_BOOKING_STATUSES, then=Value(3)),
+                        default=Value(4),
+                        output_field=IntegerField(),
+                    ),
+                    'scheduled_date', 'scheduled_time', 'id',
+                )
             if self.request.query_params.get('ready_for_service') == 'true':
                 queryset = queryset.filter(
                     status__in=['CONFIRMED', 'CONFIRMED_DP'],
@@ -312,7 +326,9 @@ class BookingListCreateView(generics.ListCreateAPIView):
                 queryset = queryset.filter(status__in=['PENDING', 'CONFIRMED', 'CONFIRMED_DP'])
             if self.request.query_params.get('search'):
                 queryset = filters.SearchFilter().filter_queryset(self.request, queryset, self)
-            return apply_limit(queryset.order_by('scheduled_date', 'scheduled_time', 'id'), self.request, default=100, maximum=500)
+            if not queue_mode:
+                queryset = queryset.order_by('scheduled_date', 'scheduled_time', 'id')
+            return apply_limit(queryset, self.request, default=100, maximum=500)
         # Customers only see their own bookings
         queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service', 'review').prefetch_related('payments').distinct().order_by('-scheduled_date', '-created_at', '-id')
         if self.request.query_params.get('search'):
@@ -516,6 +532,7 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         booking = self.get_object()
         booking = Booking.objects.select_for_update().get(pk=booking.pk)
         previous_status = booking.status
+        previous_cancellation_reason = booking.cancellation_reason
         updated_booking = booking
         user = request.user
         is_staff_user = user.role in ['STAFF', 'ADMIN']
@@ -531,6 +548,12 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         valid_statuses = {choice[0] for choice in Booking.STATUS_CHOICES}
         if new_status and new_status not in valid_statuses:
             return Response({"status": "Invalid booking status."}, status=status.HTTP_400_BAD_REQUEST)
+        cancellation_reason = str(request.data.get('cancellation_reason') or '').strip()
+        if is_staff_user and new_status == 'CANCELLED' and booking.status != 'CANCELLED':
+            if not cancellation_reason:
+                return Response({"cancellation_reason": "A cancellation reason is required."}, status=status.HTTP_400_BAD_REQUEST)
+            if len(cancellation_reason) > 500:
+                return Response({"cancellation_reason": "Cancellation reasons must be 500 characters or less."}, status=status.HTTP_400_BAD_REQUEST)
         if not is_staff_user and new_status and (requested_edit_fields or requested_customer_fields):
             return Response({"detail": "Change booking status separately from booking edits."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -546,6 +569,10 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
             
             booking.status = new_status
             status_changed = True
+            if new_status == 'CANCELLED':
+                booking.cancellation_reason = cancellation_reason
+            elif previous_status == 'CANCELLED':
+                booking.cancellation_reason = ''
 
         if not is_staff_user and (requested_edit_fields or requested_customer_fields):
             if booking.customer_id != user.id:
@@ -559,6 +586,9 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                 return Response({"detail": "Booking status cannot be changed with booking edits."}, status=status.HTTP_400_BAD_REQUEST)
 
         old_values = {}
+        if status_changed:
+            old_values['status'] = previous_status
+            old_values['cancellation_reason'] = previous_cancellation_reason or ''
         for field in requested_edit_fields:
             value = getattr(booking, f"{field}_id", None) if field == 'package' else getattr(booking, field, None)
             old_values[field] = str(value) if value is not None else ''
@@ -629,6 +659,9 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                         new_values[field] = getattr(updated_booking.customer, field, '') or ''
             if 'package' in requested_edit_fields:
                 new_values['total_price'] = str(updated_booking.package.price)
+            if status_changed:
+                new_values['status'] = updated_booking.status
+                new_values['cancellation_reason'] = updated_booking.cancellation_reason or ''
 
             changed_values = {
                 key: {'from': old_values.get(key, ''), 'to': new_values.get(key, '')}
@@ -638,13 +671,21 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
             if changed_values:
                 history = list(updated_booking.change_history or [])
+                history_reason = request.data.get('change_reason')
+                if not history_reason:
+                    if status_changed and updated_booking.status == 'CANCELLED' and cancellation_reason:
+                        history_reason = f"Booking cancelled: {cancellation_reason}"
+                    elif status_changed:
+                        history_reason = f"Booking status changed to {updated_booking.status}"
+                    else:
+                        history_reason = 'Customer updated booking details'
                 history.insert(0, {
                     "id": len(history) + 1,
                     "changed_by": user.id,
                     "changed_by_name": user.get_full_name() or user.username,
                     "old_values": {key: value['from'] for key, value in changed_values.items()},
                     "new_values": {key: value['to'] for key, value in changed_values.items()},
-                    "reason": str(request.data.get('change_reason') or 'Customer updated booking details')[:220],
+                    "reason": str(history_reason)[:220],
                     "created_at": timezone.now().isoformat(),
                 })
                 updated_booking.change_history = history

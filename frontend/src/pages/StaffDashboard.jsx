@@ -30,6 +30,7 @@ import { brandAssets } from '../utils/cavAssets';
 import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
+import BookingQueue from '../components/bookings/BookingQueue';
 
 export function StaffSkeleton() {
   return (
@@ -220,7 +221,6 @@ export default function StaffDashboard() {
   const [staffAccessReady, setStaffAccessReady] = useState(false);
   const [staffBookings, setStaffBookings] = useState([]);
   const [walkInBookingOpen, setWalkInBookingOpen] = useState(false);
-  const [bookingsPage, setBookingsPage] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
 
@@ -403,7 +403,7 @@ export default function StaffDashboard() {
         const paymentsRes = await getCached('/api/bookings/payments/', { params: { limit: 100 } }, { force });
         setBookingPayments(normalizePayments(paymentsRes.data));
       } else if (tab === 'bookings') {
-        const bookingsRes = await getCached('/api/bookings/', { params: { limit: 500 } }, { force });
+        const bookingsRes = await getCached('/api/bookings/', { params: { limit: 500, queue: 'true' } }, { force });
         setStaffBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
       } else if (tab === 'inventory') {
         await loadStaticInventoryOptions(force);
@@ -517,7 +517,6 @@ export default function StaffDashboard() {
 
   useEffect(() => { setProductPage(1); }, [posSearch]);
   useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
-  useEffect(() => { setBookingsPage(1); }, [staffBookings.length]);
   useEffect(() => { setInventoryPage(1); }, [invSearch, inventoryFilter]);
   useEffect(() => { setSalesPage(1); }, [salesPaymentFilter, salesStartDate, salesEndDate, salesCustomerSearch]);
 
@@ -1462,7 +1461,6 @@ export default function StaffDashboard() {
   const navItems = allNavItems;
 
   const pageTitles = { pos: 'POS Terminal', bookings: 'Bookings', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs' };
-  const pagedStaffBookings = paginateRows(sortRows(staffBookings, { key: 'scheduled_date', dir: 'desc', accessor: row => `${row.scheduled_date || ''} ${row.scheduled_time || ''}` }), bookingsPage, TABLE_PAGE_SIZE);
   const isCurrentTabLoading = !!loadingResources[activeTab];
   const toggleSort = (current, setter, key, column = {}) => {
     setter(current.key === key
@@ -2028,29 +2026,17 @@ export default function StaffDashboard() {
                   <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData('bookings', true)} loading={!!loadingResources.bookings}>Refresh bookings</Button>
                 </div>
               </div>
-              <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 md:p-4">
-                <section aria-label="Bookings table" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <DataTable
-                  columns={[
-                    { key: 'id', label: 'Booking', render: booking => `#${booking.id}` },
-                    { key: 'customer.username', label: 'Customer', render: booking => <><span>{booking.customer_name || `${booking.customer?.first_name || ''} ${booking.customer?.last_name || ''}`.trim() || 'Customer'}</span><span className="block text-[10px] text-espresso/45">{booking.customer_email || booking.customer?.email || booking.customer?.username || booking.customer_phone || 'No account'}</span>{booking.is_walk_in && <span className="mt-1 inline-flex rounded-full bg-gold/15 px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-gold-dark">Walk-in · {booking.created_by_name || 'Staff'}</span>}</> },
-                    { key: 'package_details.name', label: 'Package', render: booking => booking.package_details?.name || `Package #${booking.package}` },
-                    { key: 'scheduled_date', label: 'Schedule', render: booking => `${booking.scheduled_date} · ${booking.scheduled_time}` },
-                    { key: 'status', label: 'Booking status', render: booking => <StatusBadge status={booking.status} /> },
-                    { key: 'payments', label: 'Payment', render: booking => booking.payments?.length ? booking.payments.map(payment => payment.status).join(', ') : 'No payment submitted' },
-                  ]}
-                  rows={pagedStaffBookings}
-                  emptyIcon={Calendar}
-                  emptyTitle={isCurrentTabLoading ? 'Loading bookings' : 'No bookings yet'}
-                  emptyDescription={isCurrentTabLoading ? 'Live reservations are loading.' : 'Customer reservations will appear here as soon as they are saved.'}
-                  minWidth={950}
-                  containerClassName="min-h-0 flex-1 overflow-y-auto"
-                  emptyStateClassName="min-h-0 flex-1"
-                  showEmptyTable
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div><h2 className="text-sm font-black text-espresso">Live Booking Queue</h2><p className="mt-1 text-[11px] text-espresso/55">Today’s confirmed sessions are ordered by scheduled time. Payment tracking stays independent.</p></div>
+                  <span className="rounded-full bg-cream px-3 py-1 text-[10px] font-black text-espresso/60">{staffBookings.length} total</span>
+                </div>
+                <BookingQueue
+                  bookings={staffBookings}
+                  loading={!!loadingResources.bookings}
+                  onBookingsChange={booking => setStaffBookings(current => normalizeRowsById(current.map(item => item.id === booking.id ? booking : item), row => row?.id))}
                 />
-                </section>
-                <PaginationControls page={bookingsPage} setPage={setBookingsPage} total={staffBookings.length} pageSize={TABLE_PAGE_SIZE} compact alwaysVisible />
-              </Card>
+              </div>
               <WalkInBookingModal open={walkInBookingOpen} onClose={() => setWalkInBookingOpen(false)} onCreated={() => loadTabData('bookings', true)} />
             </div>
           )}

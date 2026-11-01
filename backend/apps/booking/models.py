@@ -63,6 +63,7 @@ class Booking(models.Model):
     scheduled_date = models.DateField()
     scheduled_time = models.TimeField()
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='PENDING')
+    cancellation_reason = models.TextField(blank=True, default='')
     notes = models.TextField(blank=True, null=True)
     items = models.JSONField(default=list, blank=True)
     change_history = models.JSONField(default=list, blank=True)
