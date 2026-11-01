@@ -51,6 +51,26 @@ jest.mock('../api/client', () => ({
 import AdminDashboard from './AdminDashboard';
 
 describe('AdminDashboard', () => {
+  it('assigns staff access with a single on-duty checkbox', async () => {
+    getCached.mockImplementation(url => url === '/api/auth/staff-access/'
+      ? Promise.resolve({ data: [{ id: 7, username: 'alex.staff', name: 'Alex Staff', on_duty: false }] })
+      : Promise.resolve({ data: {
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
+        sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
+        top_selling_products: [], top_booked_packages: [], inventory_status_counts: {}, low_stock_alerts: [], inventory_alerts: [],
+      } }));
+    client.patch.mockResolvedValue({ data: { id: 7, on_duty: true } });
+
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Staff Restrictions' }));
+    const dutyToggle = await screen.findByRole('checkbox', { name: 'On duty' });
+    expect(screen.getByText('Alex Staff')).toBeInTheDocument();
+    expect(screen.queryByText('Permitted tabs')).not.toBeInTheDocument();
+    expect(screen.queryByText('Permitted actions')).not.toBeInTheDocument();
+    fireEvent.click(dutyToggle);
+    await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/api/auth/staff-access/7/', { on_duty: true }));
+  });
+
   it('opens Live Inventory with staff inventory data and both paginated views', async () => {
     const ingredient = {
       id: 91,
@@ -389,7 +409,7 @@ describe('AdminDashboard', () => {
     expect(screen.getByRole('combobox', { name: 'Sort expired ingredients' })).toBeInTheDocument();
   });
 
-  it('keeps Live Bookings separate and excludes bookings without an approved downpayment', async () => {
+  it('groups calendar and live bookings under Booking and excludes unapproved downpayments', async () => {
     const bookingMonth = getManilaMonthValue();
     getCached.mockImplementation(url => {
       if (url.includes('/api/bookings/studio-unavailable-dates/')) return Promise.resolve({ data: [] });
@@ -423,10 +443,15 @@ describe('AdminDashboard', () => {
     });
 
     render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
-    fireEvent.click(await screen.findByRole('button', { name: 'Booking Calendar' }));
+    const bookingMenu = await screen.findByRole('button', { name: 'Booking' });
+    expect(bookingMenu).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Live Inventory' })).toBeInTheDocument();
+    fireEvent.click(bookingMenu);
+    expect(bookingMenu).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Booking Calendar' }));
 
     expect(screen.queryByText('jamie@example.com')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Live Bookings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Live Booking List' }));
     expect(await screen.findByText('Ready for service')).toBeInTheDocument();
     expect(await screen.findByText('jamie@example.com')).toBeInTheDocument();
     expect(screen.queryByText('pending@example.com')).not.toBeInTheDocument();

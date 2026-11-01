@@ -27,7 +27,7 @@ class DashboardAnalyticsTests(TestCase):
             password='Staff123!',
             role='STAFF',
         )
-        StaffAccessProfile.objects.create(user=self.staff, on_duty=True, allowed_tabs=['dashboard'])
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         self.customer = get_user_model().objects.create_user(
             username='dashboard-customer',
             email='dashboard-customer@example.com',
@@ -60,24 +60,32 @@ class DashboardAnalyticsTests(TestCase):
                 response = self.client.get('/api/dashboard/analytics/')
                 self.assertEqual(response.status_code, expected_status)
 
-    def test_staff_duty_and_tab_restrictions_apply_to_existing_sessions(self):
+    def test_staff_duty_toggle_applies_to_existing_sessions_without_tab_restrictions(self):
         self.client.force_authenticate(self.admin)
         updated = self.client.patch(f'/api/auth/staff-access/{self.staff.id}/', {
             'on_duty': True,
-            'allowed_tabs': ['dashboard'],
-            'allowed_actions': [],
         }, format='json')
         self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.data, {'id': self.staff.id, 'on_duty': True})
 
         self.client.force_authenticate(self.staff)
         self.assertEqual(self.client.get('/api/dashboard/analytics/').status_code, 200)
-        self.assertEqual(self.client.get('/api/bookings/').status_code, 403)
+        self.assertEqual(self.client.get('/api/bookings/').status_code, 200)
 
         self.client.force_authenticate(self.admin)
         disabled = self.client.patch(f'/api/auth/staff-access/{self.staff.id}/', {'on_duty': False}, format='json')
         self.assertEqual(disabled.status_code, 200)
         self.client.force_authenticate(self.staff)
         self.assertEqual(self.client.get('/api/dashboard/analytics/').status_code, 403)
+        self.assertEqual(self.client.get('/api/auth/profile/').status_code, 200)
+
+    def test_staff_access_api_rejects_individual_permission_settings(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(f'/api/auth/staff-access/{self.staff.id}/', {
+            'on_duty': True,
+            'allowed_tabs': ['dashboard'],
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
 
     def test_recent_bookings_are_not_limited_by_the_reporting_range(self):
         booking = Booking.objects.create(

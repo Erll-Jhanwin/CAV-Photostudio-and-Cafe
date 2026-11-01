@@ -450,7 +450,7 @@ export default function StaffDashboard() {
       navigate('/login');
       return;
     }
-    if (user.role === 'STAFF' && (!staffAccessReady || !staffAccess?.on_duty || !(staffAccess.allowed_tabs || []).includes(activeTab))) return;
+    if (user.role === 'STAFF' && (!staffAccessReady || !staffAccess?.on_duty)) return;
     loadTabData(activeTab);
   }, [user, navigate, activeTab, loadTabData, staffAccessReady, staffAccess]);
 
@@ -464,12 +464,12 @@ export default function StaffDashboard() {
       try {
         const response = await client.get('/api/auth/staff-access/me/');
         if (mounted) {
-          setStaffAccess(response.data || { on_duty: false, allowed_tabs: [], allowed_actions: [] });
+          setStaffAccess(response.data || { on_duty: false });
           setStaffAccessReady(true);
         }
       } catch {
         if (mounted) {
-          setStaffAccess({ on_duty: false, allowed_tabs: [], allowed_actions: [] });
+          setStaffAccess({ on_duty: false });
           setStaffAccessReady(true);
         }
       }
@@ -479,12 +479,6 @@ export default function StaffDashboard() {
     const intervalId = window.setInterval(refreshAccess, 10000);
     return () => { mounted = false; window.clearInterval(intervalId); };
   }, [user]);
-
-  useEffect(() => {
-    if (!staffAccessReady || !staffAccess?.on_duty) return;
-    const permittedTabs = staffAccess.allowed_tabs || [];
-    if (!permittedTabs.includes(activeTab) && permittedTabs.length) setActiveTab(permittedTabs[0]);
-  }, [staffAccessReady, staffAccess, activeTab]);
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) return undefined;
@@ -1462,8 +1456,7 @@ export default function StaffDashboard() {
     { key: 'catalog', label: 'Catalog & Purchasing', icon: ClipboardList, active: activeTab === 'catalog', onClick: () => setActiveTab('catalog') },
     { key: 'sales', label: 'Daily Sales Logs', icon: DollarSign, active: activeTab === 'sales', onClick: () => setActiveTab('sales') },
   ];
-  const navItems = user?.role === 'STAFF' ? allNavItems.filter(item => (staffAccess?.allowed_tabs || []).includes(item.key)) : allNavItems;
-  const canStaffAction = action => user?.role !== 'STAFF' || (staffAccess?.allowed_actions || []).includes(action);
+  const navItems = allNavItems;
 
   const pageTitles = { pos: 'POS Terminal', bookings: 'Bookings', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs' };
   const pagedStaffBookings = paginateRows(sortRows(staffBookings, { key: 'scheduled_date', dir: 'desc', accessor: row => `${row.scheduled_date || ''} ${row.scheduled_time || ''}` }), bookingsPage, TABLE_PAGE_SIZE);
@@ -1621,20 +1614,19 @@ export default function StaffDashboard() {
   const isInventoryTab = activeTab === 'inventory';
   const isCatalogTab = activeTab === 'catalog';
   const isViewportBoundTab = isSalesTab || isPosTab || isBookingsTab || isPaymentsTab || isInventoryTab || isCatalogTab;
-  const hasNoStaffTabs = user?.role === 'STAFF' && staffAccessReady && staffAccess?.on_duty && !(staffAccess.allowed_tabs || []).length;
 
   if (!initialDataReady && (loading || isCurrentTabLoading) && !isBookingsTab && !isPaymentsTab
-    && !(user?.role === 'STAFF' && staffAccessReady && (!staffAccess?.on_duty || hasNoStaffTabs))) {
+    && !(user?.role === 'STAFF' && staffAccessReady && !staffAccess?.on_duty)) {
     return <StaffSkeleton />;
   }
 
   return (
-    user?.role === 'STAFF' && staffAccessReady && (!staffAccess?.on_duty || hasNoStaffTabs) ? (
+    user?.role === 'STAFF' && staffAccessReady && !staffAccess?.on_duty ? (
       <div className="flex min-h-screen items-center justify-center bg-cream p-6">
         <div className="w-full max-w-md rounded-3xl border border-espresso/10 bg-white p-8 text-center shadow-xl">
           <ShieldAlert className="mx-auto h-10 w-10 text-gold-dark" />
-          <h1 className="mt-4 text-xl font-black text-espresso">{hasNoStaffTabs ? 'No staff tabs assigned' : 'You are off duty'}</h1>
-          <p className="mt-2 text-sm text-espresso/60">Ask an administrator to assign your shift and access.</p>
+          <h1 className="mt-4 text-xl font-black text-espresso">You are off duty</h1>
+          <p className="mt-2 text-sm text-espresso/60">Your account remains available for login. Ask an administrator to enable your shift to access the staff dashboard.</p>
           <Button className="mt-5" variant="outline" onClick={handleLogout}>Sign out</Button>
         </div>
       </div>
@@ -1984,7 +1976,7 @@ export default function StaffDashboard() {
 
                         </div>
                       </div>
-                      <Button type="button" variant="gold" size="lg" className="w-full shrink-0" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading || !canStaffAction('pos_manage')}>
+                      <Button type="button" variant="gold" size="lg" className="w-full shrink-0" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading}>
                         {showCheckoutLoading ? 'Finalizing Sale...' : `Complete Sale - ${formatReceiptCurrency(getCartTotal())}`}
                       </Button>
                     </div>
@@ -2029,7 +2021,7 @@ export default function StaffDashboard() {
               <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div><h1 className="heading-page text-espresso">Bookings</h1><p className="mt-1 text-xs text-espresso/50">Live reservations, including customer and walk-in bookings.</p></div>
                 <div className="flex flex-wrap gap-2">
-                  {canStaffAction('booking_manage') && <Button size="sm" icon={Plus} onClick={() => setWalkInBookingOpen(true)}>Walk-in Booking</Button>}
+                  <Button size="sm" icon={Plus} onClick={() => setWalkInBookingOpen(true)}>Walk-in Booking</Button>
                   <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData('bookings', true)} loading={!!loadingResources.bookings}>Refresh bookings</Button>
                 </div>
               </div>
@@ -2151,10 +2143,10 @@ export default function StaffDashboard() {
                                 <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
                                   {isPending ? (
                                     <>
-                                      <Button size="sm" variant="success" icon={Check} loading={verifyingPaymentId === payment.id} disabled={!canStaffAction('payment_verify')} onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}>
+                                      <Button size="sm" variant="success" icon={Check} loading={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}>
                                         Confirm Payment
                                       </Button>
-                                      <Button size="sm" variant="danger" icon={X} disabled={verifyingPaymentId === payment.id || !canStaffAction('payment_verify')} onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}>
+                                      <Button size="sm" variant="danger" icon={X} disabled={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}>
                                         Flag Payment Issue
                                       </Button>
                                     </>
@@ -2511,7 +2503,7 @@ export default function StaffDashboard() {
                       <h2 className="heading-section text-espresso">Sellable Catalog</h2>
                       <p className="text-xs text-espresso/50 mt-1">Changes here flow to the POS after the next refresh.</p>
                     </div>
-                    {canStaffAction('inventory_manage') && <Button variant="primary" size="sm" icon={Plus} onClick={() => openCatalogProductModal()}>Add Product</Button>}
+                    <Button variant="primary" size="sm" icon={Plus} onClick={() => openCatalogProductModal()}>Add Product</Button>
                   </div>
                   <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                     <div className="relative min-w-0 flex-1">

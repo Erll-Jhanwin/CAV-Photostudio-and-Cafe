@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LogOut } from 'lucide-react';
+import { ChevronDown, LogOut } from 'lucide-react';
 import { Button } from './Button';
 import { Modal } from './Modal';
 import client from '../../api/client';
@@ -23,6 +23,7 @@ export function Sidebar({
   const { updateStoredUser } = useAuth();
   const confirm = useStyledConfirm();
   const [photoSaving, setPhotoSaving] = useState(false);
+  const [expandedItems, setExpandedItems] = useState({});
 
   const updateProfilePhoto = async ({ file, remove = false }) => {
     if (photoSaving) return;
@@ -112,6 +113,39 @@ export function Sidebar({
         <nav className="flex-1 space-y-1 py-6 overflow-y-auto scrollbar-thin">
           {navItems.map((item) => {
             const Icon = item.icon;
+            const expanded = expandedItems[item.key] ?? Boolean(item.active);
+            if (item.children?.length) {
+              return (
+                <div key={item.key}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedItems(current => ({ ...current, [item.key]: !expanded }))}
+                    className={`w-full rounded-xl px-4 py-3 text-left text-sm font-semibold flex items-center gap-3 transition-all duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold ${item.active ? 'bg-white/10 text-cream' : 'text-cream/70 hover:bg-white/5 hover:text-cream'}`}
+                    aria-expanded={expanded}
+                    aria-controls={`${item.key}-submenu`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="flex-1">{item.label}</span>
+                    <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+                  </button>
+                  {expanded && (
+                    <div id={`${item.key}-submenu`} className="ml-5 mt-1 space-y-1 border-l border-white/15 pl-3">
+                      {item.children.map(child => (
+                        <button
+                          key={child.key}
+                          type="button"
+                          onClick={() => { child.onClick?.(); onMobileClose?.(); }}
+                          className={`w-full rounded-lg px-3 py-2.5 text-left text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold ${child.active ? 'bg-gold text-espresso' : 'text-cream/65 hover:bg-white/5 hover:text-cream'}`}
+                          aria-current={child.active ? 'page' : undefined}
+                        >
+                          {child.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             return (
               <button
                 type="button"

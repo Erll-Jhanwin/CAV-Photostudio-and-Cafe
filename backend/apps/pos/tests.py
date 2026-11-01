@@ -252,11 +252,7 @@ class PosIdempotencyTests(TestCase):
             password='Staff123!pass',
             role='STAFF',
         )
-        StaffAccessProfile.objects.create(
-            user=self.staff, on_duty=True,
-            allowed_tabs=['pos', 'inventory', 'sales'],
-            allowed_actions=['pos_manage', 'inventory_manage'],
-        )
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         self.product = Product.objects.create(
             name='Idempotent Latte',
             sku='IDEMPOTENT-LATTE',
@@ -446,11 +442,7 @@ class POSStockActionApiTests(TestCase):
             password='Staff123!pass',
             role='STAFF',
         )
-        StaffAccessProfile.objects.create(
-            user=self.staff, on_duty=True,
-            allowed_tabs=['pos', 'inventory', 'sales'],
-            allowed_actions=['pos_manage', 'inventory_manage'],
-        )
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         self.customer = get_user_model().objects.create_user(
             username='stock-action-customer',
             email='stock-action-customer@example.com',

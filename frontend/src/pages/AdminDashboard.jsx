@@ -1397,8 +1397,6 @@ export default function AdminDashboard() {
     try {
       await client.patch(`/api/auth/staff-access/${profile.id}/`, {
         on_duty: nextProfile.on_duty,
-        allowed_tabs: nextProfile.allowed_tabs || [],
-        allowed_actions: nextProfile.allowed_actions || [],
       });
     } catch (error) {
       setDataError(getApiErrorMessage(error, 'Could not save staff access restrictions.'));
@@ -1408,8 +1406,10 @@ export default function AdminDashboard() {
 
   const navItems = [
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
-    { key: 'calendar', label: 'Booking Calendar', icon: Calendar, active: activeTab === 'calendar', onClick: () => setActiveTab('calendar') },
-    { key: 'live', label: 'Live Bookings', icon: ClipboardCheck, active: activeTab === 'live', onClick: () => setActiveTab('live') },
+    { key: 'booking', label: 'Booking', icon: Calendar, active: ['calendar', 'live'].includes(activeTab), children: [
+      { key: 'calendar', label: 'Booking Calendar', active: activeTab === 'calendar', onClick: () => setActiveTab('calendar') },
+      { key: 'live', label: 'Live Booking List', active: activeTab === 'live', onClick: () => setActiveTab('live') },
+    ] },
     { key: 'reports', label: 'End-of-Day Reports', icon: Printer, active: activeTab === 'reports', onClick: () => setActiveTab('reports') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
@@ -2851,43 +2851,16 @@ export default function AdminDashboard() {
             <div className="w-full space-y-4 animate-in-up" key="staff-access">
               <div>
                 <h1 className="heading-page text-espresso">Staff Restrictions</h1>
-                <p className="mt-1 text-xs text-espresso/55">Set who is on duty and which staff tabs and actions their current sessions can use.</p>
+                <p className="mt-1 text-xs text-espresso/55">Turn staff dashboard access on or off. Off-duty staff can still sign in to their accounts.</p>
               </div>
               {staffAccessProfiles.map(profile => (
                 <Card key={profile.id} className="!p-4 md:!p-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="text-sm font-black text-espresso">{profile.name} <span className="font-semibold text-espresso/45">@{profile.username}</span></h2>
-                    <label className="flex items-center gap-2 text-xs font-bold text-espresso">
+                    <label className="flex min-h-10 items-center gap-2 rounded-xl border border-espresso/10 px-3 text-xs font-bold text-espresso">
                       <input type="checkbox" checked={profile.on_duty} onChange={event => updateStaffAccess(profile, { on_duty: event.target.checked })} />
                       On duty
                     </label>
-                  </div>
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    {[['Permitted tabs', 'allowed_tabs', [
-                      ['dashboard', 'Business Overview'], ['bookings', 'Bookings'], ['payments', 'Payment Verification'],
-                      ['inventory', 'Live Inventory'], ['catalog', 'Catalog & Purchasing'], ['pos', 'POS Terminal'],
-                      ['sales', 'Daily Sales Logs'], ['reports', 'End-of-Day Reports'], ['chatbot', 'Chatbot Manager'], ['reviews', 'Reviews'],
-                    ]], ['Permitted actions', 'allowed_actions', [
-                      ['booking_manage', 'Create and update bookings'], ['payment_verify', 'Verify downpayments'],
-                      ['inventory_manage', 'Update inventory and catalog'], ['pos_manage', 'Create POS orders and returns'],
-                      ['reports_manage', 'Create closeout reports'], ['chatbot_manage', 'Edit chatbot FAQs'],
-                    ]]].map(([title, field, options]) => (
-                      <fieldset key={field} className="rounded-xl border border-espresso/10 p-3">
-                        <legend className="px-1 text-[10px] font-black uppercase tracking-wider text-espresso/55">{title}</legend>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {options.map(([key, label]) => (
-                            <label key={key} className="flex items-start gap-2 text-xs font-semibold text-espresso/75">
-                              <input type="checkbox" checked={(profile[field] || []).includes(key)} onChange={event => {
-                                const values = new Set(profile[field] || []);
-                                if (event.target.checked) values.add(key); else values.delete(key);
-                                updateStaffAccess(profile, { [field]: [...values] });
-                              }} />
-                              {label}
-                            </label>
-                          ))}
-                        </div>
-                      </fieldset>
-                    ))}
                   </div>
                 </Card>
               ))}

@@ -1086,9 +1086,6 @@ class PrivacyExportView(views.APIView):
 class StaffAccessPolicyView(views.APIView):
     permission_classes = [IsAdmin]
 
-    TABS = {'dashboard', 'bookings', 'payments', 'inventory', 'catalog', 'pos', 'sales', 'reports', 'chatbot', 'reviews'}
-    ACTIONS = {'booking_manage', 'payment_verify', 'inventory_manage', 'pos_manage', 'reports_manage', 'chatbot_manage'}
-
     def get_permissions(self):
         if self.request.path.endswith('/me/'):
             return [permissions.IsAuthenticated()]
@@ -1099,11 +1096,7 @@ class StaffAccessPolicyView(views.APIView):
             if request.user.role != 'STAFF':
                 return Response({'detail': 'Staff account required.'}, status=status.HTTP_403_FORBIDDEN)
             profile = StaffAccessProfile.objects.filter(user=request.user).first()
-            return Response({
-                'on_duty': bool(profile and profile.on_duty),
-                'allowed_tabs': profile.allowed_tabs if profile else [],
-                'allowed_actions': profile.allowed_actions if profile else [],
-            })
+            return Response({'on_duty': bool(profile and profile.on_duty)})
         staff = User.objects.filter(role='STAFF').order_by('username')
         profiles = {profile.user_id: profile for profile in StaffAccessProfile.objects.filter(user__in=staff)}
         return Response([{
@@ -1111,27 +1104,22 @@ class StaffAccessPolicyView(views.APIView):
             'username': user.username,
             'name': user.get_full_name() or user.username,
             'on_duty': profiles.get(user.id).on_duty if user.id in profiles else False,
-            'allowed_tabs': profiles.get(user.id).allowed_tabs if user.id in profiles else [],
-            'allowed_actions': profiles.get(user.id).allowed_actions if user.id in profiles else [],
         } for user in staff])
 
     def patch(self, request, pk):
         user = User.objects.filter(pk=pk, role='STAFF').first()
         if not user:
             return Response({'detail': 'Staff account not found.'}, status=status.HTTP_404_NOT_FOUND)
+        unknown_fields = set(request.data) - {'on_duty'}
+        if unknown_fields:
+            return Response({'detail': 'Only the on_duty field can be updated.'}, status=status.HTTP_400_BAD_REQUEST)
         profile, _ = StaffAccessProfile.objects.get_or_create(user=user)
         if 'on_duty' in request.data:
             if not isinstance(request.data['on_duty'], bool):
                 return Response({'on_duty': 'Expected a boolean value.'}, status=status.HTTP_400_BAD_REQUEST)
             profile.on_duty = request.data['on_duty']
-        for field, allowed in (('allowed_tabs', self.TABS), ('allowed_actions', self.ACTIONS)):
-            if field in request.data:
-                values = request.data[field]
-                if not isinstance(values, list) or any(value not in allowed for value in values):
-                    return Response({field: f'Choose values from: {", ".join(sorted(allowed))}.'}, status=status.HTTP_400_BAD_REQUEST)
-                setattr(profile, field, list(dict.fromkeys(values)))
         profile.save()
-        return Response({'id': user.id, 'on_duty': profile.on_duty, 'allowed_tabs': profile.allowed_tabs, 'allowed_actions': profile.allowed_actions})
+        return Response({'id': user.id, 'on_duty': profile.on_duty})
 
 
 class StaffListView(generics.ListCreateAPIView):

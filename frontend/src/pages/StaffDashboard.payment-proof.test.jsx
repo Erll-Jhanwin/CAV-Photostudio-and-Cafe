@@ -3,11 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import client, { getCached } from '../api/client';
 
 const mockStaffUser = { id: 2, username: 'staff', role: 'STAFF' };
-const staffAccessPolicy = {
-  on_duty: true,
-  allowed_tabs: ['pos', 'bookings', 'payments', 'inventory', 'catalog', 'sales'],
-  allowed_actions: ['booking_manage', 'payment_verify', 'inventory_manage', 'pos_manage'],
-};
+const staffAccessPolicy = { on_duty: true };
 const mockConfirm = jest.fn();
 
 jest.mock('../context/AuthContext', () => ({
@@ -58,7 +54,7 @@ const payment = {
 };
 
 test('off-duty staff sessions do not render protected tabs or load their data', async () => {
-  client.get.mockResolvedValue({ data: { on_duty: false, allowed_tabs: [], allowed_actions: [] } });
+  client.get.mockResolvedValue({ data: { on_duty: false } });
 
   render(<StaffDashboard />);
 
@@ -77,6 +73,9 @@ test('Staff payment verification opens proof on demand and keeps its verify acti
 
   const { unmount } = render(<StaffDashboard />);
   expect(await screen.findByRole('heading', { name: 'POS Terminal' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Bookings' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Live Inventory' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Daily Sales Logs' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Payment Booking Verification' }));
 
   const proofButton = await screen.findByRole('button', { name: 'View proof of payment for booking 48' });
