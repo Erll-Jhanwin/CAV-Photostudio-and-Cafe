@@ -174,6 +174,9 @@ class OrderListCreateView(generics.ListCreateAPIView):
         customer_name = str(self.request.query_params.get('customer_name') or '').strip()[:200]
         if customer_name:
             queryset = queryset.filter(customer_name__icontains=customer_name)
+        transaction_id = str(self.request.query_params.get('transaction_id') or '').strip()[:24]
+        if transaction_id:
+            queryset = queryset.filter(transaction_id__iexact=transaction_id)
         if user.role in ['STAFF', 'ADMIN']:
             return apply_limit(queryset.order_by('-created_at'), self.request)
         return apply_limit(queryset.filter(booking__customer=user).order_by('-created_at'), self.request)

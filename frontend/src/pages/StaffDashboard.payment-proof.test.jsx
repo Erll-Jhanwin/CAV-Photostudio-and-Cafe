@@ -202,7 +202,14 @@ test('Staff POS cart displays and edits items, completes checkout, and records w
         ? [transactionRecord]
         : [],
   }));
-  client.get.mockResolvedValue({ data: products });
+  client.get.mockImplementation((url, config = {}) => Promise.resolve({
+    data: url === '/api/inventory/products/'
+      ? products
+      : url === '/api/pos/orders/' && transactionRecord
+        && (!config.params?.transaction_id || config.params.transaction_id.toLowerCase() === transactionRecord.transaction_id.toLowerCase())
+        ? [transactionRecord]
+        : [],
+  }));
   client.post.mockImplementation((url, payload) => {
     if (url === '/api/pos/orders/') {
       transactionRecord = {
@@ -259,26 +266,30 @@ test('Staff POS cart displays and edits items, completes checkout, and records w
 
   fireEvent.click(screen.getByRole('button', { name: 'Wastage' }));
   const wastageDialog = await screen.findByRole('dialog', { name: 'Record Wastage' });
-  fireEvent.change(within(wastageDialog).getByLabelText('Transaction ID'), { target: { value: 'POS-WASTE-1' } });
+  fireEvent.change(within(wastageDialog).getByLabelText('Transaction ID'), { target: { value: 'POS-TEST-20' } });
+  fireEvent.click(within(wastageDialog).getByRole('button', { name: 'Load sale items' }));
+  await within(wastageDialog).findByText(/Eligible products from POS-TEST-20/);
   fireEvent.change(within(wastageDialog).getByLabelText('Reason'), { target: { value: 'Preparation spill' } });
   fireEvent.click(await within(wastageDialog).findByRole('button', { name: /Americano Add/ }));
   fireEvent.click(within(wastageDialog).getByRole('button', { name: 'Confirm Wastage' }));
   await waitFor(() => expect(client.post).toHaveBeenCalledWith('/api/pos/stock-actions/', expect.objectContaining({
     action_type: 'WASTAGE',
-    transaction_id: 'POS-WASTE-1',
+    transaction_id: 'POS-TEST-20',
     items: [{ product_id: 2, quantity: 1 }],
   })));
 
   fireEvent.click(screen.getByRole('button', { name: 'Refund' }));
   const refundDialog = await screen.findByRole('dialog', { name: 'Record Refund' });
-  fireEvent.change(within(refundDialog).getByLabelText('Transaction ID'), { target: { value: 'POS-REFUND-1' } });
+  fireEvent.change(within(refundDialog).getByLabelText('Transaction ID'), { target: { value: 'POS-TEST-20' } });
+  fireEvent.click(within(refundDialog).getByRole('button', { name: 'Load sale items' }));
+  await within(refundDialog).findByText(/Eligible products from POS-TEST-20/);
   fireEvent.change(within(refundDialog).getByLabelText('Reason'), { target: { value: 'Customer return' } });
   fireEvent.click(await within(refundDialog).findByRole('button', { name: /Americano Add/ }));
   fireEvent.change(within(refundDialog).getByLabelText('Americano restock disposition'), { target: { value: 'RESTOCKED' } });
   fireEvent.click(within(refundDialog).getByRole('button', { name: 'Confirm Refund' }));
   await waitFor(() => expect(client.post).toHaveBeenCalledWith('/api/pos/stock-actions/', expect.objectContaining({
     action_type: 'REFUND',
-    transaction_id: 'POS-REFUND-1',
+    transaction_id: 'POS-TEST-20',
     items: [{ product_id: 2, quantity: 1, disposition: 'RESTOCKED' }],
   })));
 

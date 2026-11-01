@@ -852,6 +852,17 @@ export default function StaffDashboard() {
     }
   };
 
+  const searchStockActionTransactions = useCallback(async (customerName) => {
+    const response = await client.get('/api/pos/orders/', { params: { customer_name: customerName, limit: 100 } });
+    return Array.isArray(response.data) ? response.data : response.data?.results || [];
+  }, []);
+
+  const lookupStockActionTransaction = useCallback(async (id) => {
+    const response = await client.get('/api/pos/orders/', { params: { transaction_id: id, limit: 1 } });
+    const rows = Array.isArray(response.data) ? response.data : response.data?.results || [];
+    return rows[0] || null;
+  }, []);
+
   const handleAdjustInventory = async () => {
     if (!manualAdjIngredient || adjustingStock) return;
     const quantity = Number(adjQty || 0);
@@ -1726,7 +1737,7 @@ export default function StaffDashboard() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 auto-rows-fr gap-3 sm:grid-cols-3 md:gap-4 xl:grid-cols-4 lg:min-h-0 lg:flex-1">
+                <div className="grid grid-cols-2 auto-rows-max content-start items-start gap-3 sm:grid-cols-3 md:gap-4 xl:grid-cols-4 lg:min-h-0 lg:flex-1">
                   {pagedProducts.map((prod, i) => {
                     const availableServings = getProductAvailable(prod);
                     return (
@@ -1735,7 +1746,7 @@ export default function StaffDashboard() {
                       type="button"
                       aria-label={`Add ${prod.name} to cart`}
                       onClick={() => addToCart(prod)}
-                      className={`h-full min-h-0 bg-white rounded-2xl border border-espresso/5 shadow-sm text-left flex flex-col overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group relative ${availableServings <= 0 && prod.is_cafe_item ? 'opacity-50 cursor-not-allowed' : ''} animate-in-up`}
+                      className={`h-[14rem] sm:h-[15rem] bg-white rounded-2xl border border-espresso/5 shadow-sm text-left flex flex-col overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group relative ${availableServings <= 0 && prod.is_cafe_item ? 'opacity-50 cursor-not-allowed' : ''} animate-in-up`}
                       style={{ animationDelay: `${i * 30}ms` }}
                     >
                       {/* Drink image */}
@@ -1768,7 +1779,7 @@ export default function StaffDashboard() {
 
                       {/* Info row */}
                       <div className="p-3 flex flex-col gap-1 flex-1">
-                        <h3 className="heading-card text-espresso transition-colors group-hover:text-gold">{prod.name}</h3>
+                        <h3 className="heading-card line-clamp-2 text-espresso transition-colors group-hover:text-gold">{prod.name}</h3>
                         <div className="flex items-center justify-between mt-auto pt-1">
                           <span className="text-xs text-gold font-bold">₱{prod.price}</span>
                           {prod.is_cafe_item && (
@@ -1793,8 +1804,9 @@ export default function StaffDashboard() {
                 <Card padding={false} className="flex min-h-0 flex-col overflow-hidden p-4 lg:h-full">
                   <CardHeader title="Active Cart" subtitle={`${cart.length} item${cart.length !== 1 ? 's' : ''}`} className="mb-3 shrink-0 lg:mb-3" />
                   {cart.length > 0 ? (
-                    <div className="flex min-h-0 flex-1 flex-col gap-2">
-                      <div role="list" aria-label="Cart items" className="min-h-[7rem] max-h-64 shrink-0 space-y-2 overflow-y-auto overscroll-contain scrollbar-thin pr-1 lg:max-h-none lg:min-h-[7rem] lg:flex-[0_1_13rem]">
+                    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+                      <div aria-label="Cart items and checkout details" className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 scrollbar-thin">
+                        <div role="list" aria-label="Cart items" className="space-y-2">
                         {cart.map(item => (
                           <div key={item.id} role="listitem" aria-label={`${item.name}, quantity ${item.quantity}, ${formatReceiptCurrency(item.price)} each`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-cream p-2.5 text-xs sm:p-3">
                             <div className="min-w-0">
@@ -1814,9 +1826,8 @@ export default function StaffDashboard() {
                             </div>
                           </div>
                         ))}
-                      </div>
-
-                      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain border-t border-espresso/5 pt-3 scrollbar-thin lg:space-y-2">
+                        </div>
+                        <div className="space-y-3 border-t border-espresso/5 pt-3 lg:space-y-2">
                         <Input
                           label="Customer Name"
                           value={customerName}
@@ -1922,6 +1933,7 @@ export default function StaffDashboard() {
                           </div>
                         )}
 
+                        </div>
                       </div>
                       <Button type="button" variant="gold" size="lg" className="w-full shrink-0" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading}>
                         {showCheckoutLoading ? 'Finalizing Sale...' : `Complete Sale - ${formatReceiptCurrency(getCartTotal())}`}
@@ -3119,6 +3131,8 @@ export default function StaffDashboard() {
         error={stockActionError}
         onClose={() => { if (!stockActionSubmitting) setStockActionType(null); }}
         onRetryProducts={loadStockActionProducts}
+        onSearchTransactions={searchStockActionTransactions}
+        onLookupTransaction={lookupStockActionTransaction}
         onSubmit={handleStockActionSubmit}
       />
     </div>

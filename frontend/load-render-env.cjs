@@ -14,7 +14,7 @@ const publicKeys = new Set([
 
 const runtimeValues = Object.fromEntries(
   [...publicKeys]
-    .filter((key) => process.env[key] !== undefined)
+    .filter((key) => typeof process.env[key] === 'string' && process.env[key].trim() !== '')
     .map((key) => [key, process.env[key]]),
 );
 
@@ -36,6 +36,12 @@ Object.assign(process.env, runtimeValues);
 const command = process.argv[2];
 if (!['start', 'build'].includes(command)) {
   throw new Error('Usage: node load-render-env.cjs <start|build>');
+}
+
+if (command === 'build' && !process.env.REACT_APP_RECAPTCHA_SITE_KEY?.trim()) {
+  throw new Error(
+    `Missing REACT_APP_RECAPTCHA_SITE_KEY. Set a valid Google reCAPTCHA v2 site key in ${path.relative(process.cwd(), exportPath)} or the Render frontend service environment before building.`,
+  );
 }
 
 const reactScripts = require.resolve('react-scripts/scripts/' + command, { paths: [__dirname] });

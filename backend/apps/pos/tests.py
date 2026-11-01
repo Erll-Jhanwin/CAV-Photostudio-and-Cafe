@@ -302,6 +302,8 @@ class PosIdempotencyTests(TestCase):
 
         listed = self.client.get('/api/pos/orders/?customer_name=taylor')
         self.assertEqual([row['customer_name'] for row in listed.data], ['Taylor Reyes'])
+        by_transaction = self.client.get(f"/api/pos/orders/?transaction_id={order.transaction_id.lower()}&limit=1")
+        self.assertEqual([row['id'] for row in by_transaction.data], [order.id])
         details = self.client.get(f"/api/pos/orders/{order.pk}/")
         self.assertEqual(details.data['customer_name'], 'Taylor Reyes')
 

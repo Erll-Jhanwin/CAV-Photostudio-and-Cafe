@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import PosStockActionModal from './PosStockActionModal';
 
 const products = [
@@ -10,14 +10,40 @@ const products = [
   { id: 4, name: 'Milk', item_type: 'INGREDIENT', is_active: true },
 ];
 
-function fillReferenceAndReason() {
+const sale = {
+  id: 11,
+  customer_name: 'Taylor Smith',
+  transaction_id: 'POS-20261029-001',
+  completed_at: '2026-10-29T10:00:00Z',
+  total: '185.00',
+  payment_status: 'PAID',
+  order_type: 'WALK_IN',
+  items: [
+    { product: 1, quantity: 2, returned_quantity: 0, wasted_quantity: 0, product_details: { name: 'Americano' } },
+    { product: 2, quantity: 1, returned_quantity: 0, wasted_quantity: 0, product_details: { name: 'Matcha' } },
+  ],
+};
+
+function renderModal(props = {}) {
+  return render(<PosStockActionModal
+    open actionType="WASTAGE" products={products}
+    onSearchTransactions={jest.fn().mockResolvedValue([sale])}
+    onLookupTransaction={jest.fn().mockResolvedValue(sale)}
+    onSubmit={jest.fn()} onClose={jest.fn()}
+    {...props}
+  />);
+}
+
+async function fillReferenceAndReason() {
   fireEvent.change(screen.getByLabelText('Transaction ID'), { target: { value: 'POS-20261029-001' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Load sale items' }));
+  await waitFor(() => expect(screen.getByText(/Eligible products from POS-20261029-001/)).toBeInTheDocument());
   fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Test workflow reason' } });
 }
 
-test('wastage modal searches products, adjusts and removes selected quantities, and submits a reason and transaction', () => {
+test('wastage modal searches products, adjusts and removes selected quantities, and submits a reason and transaction', async () => {
   const onSubmit = jest.fn();
-  render(<PosStockActionModal open actionType="WASTAGE" products={products} onSubmit={onSubmit} onClose={jest.fn()} />);
+  renderModal({ onSubmit });
 
   expect(screen.getByRole('button', { name: /Americano Add/ })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /Matcha Add/ })).toBeInTheDocument();
@@ -36,9 +62,9 @@ test('wastage modal searches products, adjusts and removes selected quantities, 
   fireEvent.click(screen.getByRole('button', { name: 'Remove Americano' }));
   expect(screen.getByText('0 selected')).toBeInTheDocument();
 
+  await fillReferenceAndReason();
   fireEvent.click(screen.getByRole('button', { name: /Americano Add/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Increase Americano quantity' }));
-  fillReferenceAndReason();
   fireEvent.click(screen.getByRole('button', { name: 'Confirm Wastage' }));
 
   expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -51,10 +77,10 @@ test('wastage modal searches products, adjusts and removes selected quantities, 
   expect(onSubmit.mock.calls[0][0].idempotency_key).toMatch(/^pos-stock-action-/);
 });
 
-test('refund requires an explicit restock disposition and submits only the selected products', () => {
+test('refund requires an explicit restock disposition and submits only the selected products', async () => {
   const onSubmit = jest.fn();
-  render(<PosStockActionModal open actionType="REFUND" products={products} onSubmit={onSubmit} onClose={jest.fn()} />);
-  fillReferenceAndReason();
+  renderModal({ actionType: 'REFUND', onSubmit });
+  await fillReferenceAndReason();
   fireEvent.click(screen.getByRole('button', { name: /Matcha Add/ }));
 
   const submit = screen.getByRole('button', { name: 'Confirm Refund' });
@@ -72,14 +98,38 @@ test('refund requires an explicit restock disposition and submits only the selec
   });
 });
 
-test('both actions stay disabled until transaction, reason, and a product are supplied', () => {
+test('both actions stay disabled until a loaded transaction, reason, and a product are supplied', async () => {
   const onSubmit = jest.fn();
-  render(<PosStockActionModal open actionType="WASTAGE" products={products} onSubmit={onSubmit} onClose={jest.fn()} />);
+  renderModal({ onSubmit });
   expect(screen.getByRole('button', { name: 'Confirm Wastage' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Transaction ID'), { target: { value: 'POS-20261029-001' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Load sale items' }));
+  await waitFor(() => expect(screen.getByText(/Eligible products from POS-20261029-001/)).toBeInTheDocument());
   fireEvent.click(screen.getByRole('button', { name: /Americano Add/ }));
   expect(screen.getByRole('button', { name: 'Confirm Wastage' })).toBeDisabled();
-  fillReferenceAndReason();
+  fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Test workflow reason' } });
   expect(screen.getByRole('button', { name: 'Confirm Wastage' })).toBeEnabled();
+});
+
+test('customer autocomplete distinguishes matching purchases, loads the selected sale, and clears it when the query changes', async () => {
+  const secondSale = { ...sale, id: 12, transaction_id: 'POS-20261030-004', created_at: '2026-10-30T12:30:00Z', total: '420.00', items: [{ product: 2, quantity: 3, returned_quantity: 0, product_details: { name: 'Matcha' } }] };
+  const onSearchTransactions = jest.fn().mockResolvedValue([sale, secondSale]);
+  const onSubmit = jest.fn();
+  renderModal({ onSearchTransactions, onSubmit });
+
+  fireEvent.change(screen.getByLabelText('Search transactions by customer name'), { target: { value: 'Taylor' } });
+  const suggestion = await screen.findByRole('option', { name: /Taylor Smith.*POS-20261030-004.*420\.00/ });
+  expect(screen.getByRole('option', { name: /POS-20261029-001.*185\.00/ })).toBeInTheDocument();
+  fireEvent.click(suggestion);
+
+  await waitFor(() => expect(screen.getByLabelText('Transaction ID')).toHaveValue('POS-20261030-004'));
+  expect(screen.getByRole('button', { name: /Matcha Add/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Americano Add/ })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Search transactions by customer name'), { target: { value: 'Taylor S' } });
+  expect(screen.getByLabelText('Transaction ID')).toHaveValue('');
+  expect(screen.queryByText(/Eligible products from POS-20261030-004/)).not.toBeInTheDocument();
+  expect(screen.getByText('0 selected')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Confirm Wastage' })).toBeDisabled();
 });
 
 test('product loading and failure have explicit status and retry states', () => {

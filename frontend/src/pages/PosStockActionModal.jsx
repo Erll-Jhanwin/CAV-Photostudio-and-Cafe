@@ -19,19 +19,33 @@ export default function PosStockActionModal({
   initialValues = null,
   onClose,
   onRetryProducts,
+  onSearchTransactions,
+  onLookupTransaction,
   onSubmit,
 }) {
   const [search, setSearch] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [matchedTransactions, setMatchedTransactions] = useState([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [transactionLookupLoading, setTransactionLookupLoading] = useState(false);
+  const [transactionLookupError, setTransactionLookupError] = useState('');
+  const [matchedTransaction, setMatchedTransaction] = useState(null);
   const [transactionId, setTransactionId] = useState('');
   const [reason, setReason] = useState('');
   const [selectedItems, setSelectedItems] = useState([]);
   const idempotencyKeyRef = useRef('');
+  const transactionRequestRef = useRef(0);
   const isRefund = actionType === 'REFUND';
   const title = isRefund ? 'Record Refund' : 'Record Wastage';
 
   useEffect(() => {
     if (!open) return;
     setSearch('');
+    setCustomerSearch('');
+    setMatchedTransactions([]);
+    setSuggestionsOpen(false);
+    setMatchedTransaction(null);
+    setTransactionLookupError('');
     setTransactionId(initialValues?.transactionId || '');
     setReason('');
     const initialProduct = initialValues?.productId
@@ -51,22 +65,86 @@ export default function PosStockActionModal({
     idempotencyKeyRef.current = makeIdempotencyKey();
   }, [open, actionType, initialValues]);
 
+  useEffect(() => {
+    if (!open || !customerSearch.trim() || !onSearchTransactions) {
+      return undefined;
+    }
+    const requestId = ++transactionRequestRef.current;
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const rows = await onSearchTransactions(customerSearch.trim());
+        if (transactionRequestRef.current !== requestId) return;
+        setMatchedTransactions((rows || []).filter(row => row.payment_status === 'PAID' && row.order_type !== 'END_OF_DAY_REPORT'));
+        setSuggestionsOpen(true);
+      } catch {
+        if (transactionRequestRef.current === requestId) setMatchedTransactions([]);
+      }
+    }, 250);
+    return () => window.clearTimeout(timeoutId);
+  }, [open, customerSearch, onSearchTransactions]);
+
+  useEffect(() => {
+    if (!open || !initialValues?.transactionId || !onLookupTransaction) return undefined;
+    let active = true;
+    const requestId = ++transactionRequestRef.current;
+    setTransactionLookupLoading(true);
+    onLookupTransaction(initialValues.transactionId).then(order => {
+      if (!active || transactionRequestRef.current !== requestId) return;
+      if (order) {
+        setMatchedTransaction(order);
+        const initialProductId = Number(initialValues.productId);
+        if (initialProductId) {
+          const line = (order.items || []).find(item => Number(item.product) === initialProductId);
+          if (line) setSelectedItems([{
+            product_id: initialProductId,
+            name: line.product_details?.name || initialValues.productName || `Product #${initialProductId}`,
+            quantity: Math.min(Number(initialValues.quantity || 1), Math.max(Number(line.quantity || 0) - Number(line.returned_quantity || 0), 1)),
+            available_quantity: Math.max(Number(line.quantity || 0) - Number(line.returned_quantity || 0), 0),
+            ...(actionType === 'REFUND' ? { disposition: '' } : {}),
+          }]);
+        }
+      } else {
+        setTransactionLookupError('No completed sale matches that transaction ID. Check it and try again.');
+      }
+    }).catch(() => {
+      if (active && transactionRequestRef.current === requestId) setTransactionLookupError('Could not load this transaction. Check your connection and try again.');
+    }).finally(() => {
+      if (active && transactionRequestRef.current === requestId) setTransactionLookupLoading(false);
+    });
+    return () => { active = false; };
+  }, [open, initialValues, onLookupTransaction, actionType]);
+
   const activeProducts = useMemo(() => products
     // /api/inventory/products/ is already restricted to PRODUCT rows. The
     // ProductSerializer intentionally omits item_type, so accept that shape.
     .filter(product => product.item_type !== 'INGREDIENT' && product.is_active !== false)
     .sort((left, right) => left.name.localeCompare(right.name)), [products]);
+  const eligibleProducts = useMemo(() => {
+    if (!matchedTransaction) return activeProducts;
+    return (matchedTransaction.items || []).filter(line => {
+      const sold = Number(line.quantity || 0);
+      const used = Number(isRefund ? line.returned_quantity || 0 : line.wasted_quantity || 0);
+      return sold > used;
+    }).map(line => ({
+      id: Number(line.product),
+      name: line.product_details?.name || `Product #${line.product}`,
+      is_active: true,
+      available_quantity: Math.max(Number(line.quantity || 0) - Number(isRefund ? line.returned_quantity || 0 : line.wasted_quantity || 0), 0),
+    }));
+  }, [activeProducts, matchedTransaction, isRefund]);
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
-    if (!query) return activeProducts;
-    return activeProducts.filter(product => `${product.name} ${product.sku || ''}`.toLocaleLowerCase().includes(query));
-  }, [activeProducts, search]);
+    if (!query || matchedTransaction) return eligibleProducts;
+    return eligibleProducts.filter(product => `${product.name} ${product.sku || ''}`.toLocaleLowerCase().includes(query));
+  }, [eligibleProducts, matchedTransaction, search]);
   const canSubmit = Boolean(
-    transactionId.trim()
+    matchedTransaction
+    && transactionId.trim()
     && reason.trim()
     && selectedItems.length
     && selectedItems.every(item => Number.isInteger(Number(item.quantity)) && Number(item.quantity) > 0
-      && (!isRefund || ['WASTED', 'RESTOCKED'].includes(item.disposition)))
+      && (!isRefund || ['WASTED', 'RESTOCKED'].includes(item.disposition))
+      && (item.available_quantity == null || Number(item.quantity) <= Number(item.available_quantity)))
     && !submitting,
   );
 
@@ -78,6 +156,7 @@ export default function PosStockActionModal({
         product_id: product.id,
         name: product.name,
         quantity: 1,
+        available_quantity: product.available_quantity,
         ...(isRefund ? { disposition: '' } : {}),
       }];
     });
@@ -86,6 +165,51 @@ export default function PosStockActionModal({
   const updateQuantity = (productId, quantity) => {
     if (!/^\d*$/.test(String(quantity))) return;
     setSelectedItems(current => current.map(item => item.product_id === productId ? { ...item, quantity } : item));
+  };
+
+  const clearMatchedTransaction = () => {
+    transactionRequestRef.current += 1;
+    setMatchedTransaction(null);
+    setSelectedItems([]);
+    setTransactionLookupError('');
+    setTransactionLookupLoading(false);
+  };
+
+  const loadTransaction = async (order = null) => {
+    const id = String(order?.transaction_id || transactionId).trim();
+    if (!id || !onLookupTransaction) return;
+    const requestId = ++transactionRequestRef.current;
+    setTransactionLookupLoading(true);
+    setTransactionLookupError('');
+    setMatchedTransaction(null);
+    setSelectedItems([]);
+    try {
+      const loadedOrder = order || await onLookupTransaction(id);
+      if (transactionRequestRef.current !== requestId) return;
+      if (!loadedOrder || loadedOrder.payment_status !== 'PAID') {
+        setTransactionLookupError('No completed sale matches that transaction ID. Check it and try again.');
+        return;
+      }
+      setTransactionId(loadedOrder.transaction_id || id);
+      setMatchedTransaction(loadedOrder);
+      setSuggestionsOpen(false);
+      const eligibleLines = (loadedOrder.items || []).filter(line => Number(line.quantity || 0) > Number(isRefund ? line.returned_quantity || 0 : line.wasted_quantity || 0));
+      setTransactionLookupError(eligibleLines.length ? '' : `This sale has no eligible items for ${isRefund ? 'a refund' : 'wastage'}.`);
+    } catch {
+      if (transactionRequestRef.current === requestId) setTransactionLookupError('Could not load this transaction. Check your connection and try again.');
+    } finally {
+      if (transactionRequestRef.current === requestId) setTransactionLookupLoading(false);
+    }
+  };
+
+  const selectTransaction = (order) => {
+    transactionRequestRef.current += 1;
+    setTransactionId(order.transaction_id || '');
+    setMatchedTransactions([]);
+    setSuggestionsOpen(false);
+    setMatchedTransaction(null);
+    setSelectedItems([]);
+    void loadTransaction(order);
   };
 
   const submit = (event) => {
@@ -115,18 +239,61 @@ export default function PosStockActionModal({
       bodyClassName="max-h-[calc(100vh-9rem)]"
     >
       <form onSubmit={submit} className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-xs font-bold text-espresso/70">
+          Customer name
+          <div className="relative mt-1.5">
+            <input
+              aria-label="Search transactions by customer name"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="pos-customer-transaction-list"
+              aria-expanded={suggestionsOpen && matchedTransactions.length > 0}
+              value={customerSearch}
+              onChange={event => {
+                setCustomerSearch(event.target.value);
+                setSearch('');
+                setTransactionId('');
+                setMatchedTransactions([]);
+                setSuggestionsOpen(false);
+                clearMatchedTransaction();
+              }}
+              onFocus={() => matchedTransactions.length > 0 && setSuggestionsOpen(true)}
+              placeholder="Type a customer name to find a sale"
+              className="w-full rounded-xl border border-espresso/10 bg-white px-3 py-2.5 text-sm font-normal text-espresso outline-none focus:border-gold focus:ring-2 focus:ring-gold/20"
+            />
+            {suggestionsOpen && matchedTransactions.length > 0 && (
+              <div id="pos-customer-transaction-list" role="listbox" aria-label="Matching customer transactions" className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-espresso/10 bg-white p-1.5 shadow-xl">
+                {matchedTransactions.map(order => (
+                  <button key={order.transaction_id || order.id} type="button" role="option" aria-selected="false" onClick={() => selectTransaction(order)} className="w-full rounded-lg px-3 py-2 text-left hover:bg-cream focus:bg-cream focus:outline-none focus:ring-2 focus:ring-gold/30">
+                    <span className="block truncate text-xs font-bold text-espresso">{order.customer_name || 'Walk-in Customer'}</span>
+                    <span className="mt-0.5 flex flex-wrap gap-x-2 text-[10px] text-espresso/55"><span>{order.transaction_id || `Order #${order.id}`}</span><span>{formatOrderDate(order.completed_at || order.created_at)}</span><span>₱{Number(order.total || 0).toFixed(2)}</span></span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </label>
+
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <label className="block text-xs font-bold text-espresso/70">
             Transaction ID <span className="text-red-600">*</span>
             <input
               aria-label="Transaction ID"
               required
               value={transactionId}
-              onChange={event => setTransactionId(event.target.value)}
+              onChange={event => {
+                setTransactionId(event.target.value);
+                clearMatchedTransaction();
+              }}
               placeholder="Enter the completed sale transaction ID"
               className="mt-1.5 w-full rounded-xl border border-espresso/10 bg-white px-3 py-2.5 text-sm font-normal text-espresso outline-none focus:border-gold focus:ring-2 focus:ring-gold/20"
             />
           </label>
+          <Button type="button" variant="outline" className="sm:mb-0.5" onClick={() => void loadTransaction()} disabled={!transactionId.trim() || transactionLookupLoading || !onLookupTransaction} loading={transactionLookupLoading}>
+            Load sale items
+          </Button>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className="block text-xs font-bold text-espresso/70">
             Reason <span className="text-red-600">*</span>
             <input
@@ -140,6 +307,10 @@ export default function PosStockActionModal({
             />
           </label>
         </div>
+
+        {transactionLookupError && <p role="status" className="-mt-2 text-xs text-amber-800">{transactionLookupError}</p>}
+        {matchedTransaction && <p role="status" className="-mt-2 text-xs text-espresso/55">Eligible products from {matchedTransaction.transaction_id} are loaded below.</p>}
+        {transactionLookupLoading && <p role="status" className="-mt-2 text-xs text-espresso/55">Loading transaction…</p>}
 
         <div>
           <label htmlFor="pos-stock-product-search" className="mb-1.5 block text-xs font-bold text-espresso/70">Find a product</label>
@@ -164,7 +335,7 @@ export default function PosStockActionModal({
                 className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-espresso hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-gold/30"
               >
                 <span className="font-semibold">{product.name}</span>
-                <span className="ml-2 flex shrink-0 items-center gap-1 text-xs font-bold text-gold-dark"><Plus aria-hidden="true" className="h-3.5 w-3.5" />Add</span>
+                <span className="ml-2 flex shrink-0 items-center gap-1 text-xs font-bold text-gold-dark"><Plus aria-hidden="true" className="h-3.5 w-3.5" />Add{product.available_quantity ? ` · ${product.available_quantity}` : ''}</span>
               </button>
             )) : productError && activeProducts.length === 0 ? <div className="px-3 py-3 text-center text-xs text-red-700"><p role="alert">{productError}</p><Button type="button" size="xs" variant="outline" className="mt-2" onClick={onRetryProducts}>Retry product list</Button></div>
               : <p className="px-3 py-4 text-center text-xs text-espresso/50">{activeProducts.length ? 'No matching products.' : 'No active products are available.'}</p>}
@@ -198,6 +369,7 @@ export default function PosStockActionModal({
                   aria-label={`${item.name} quantity`}
                   type="number"
                   min="1"
+                  max={eligibleProducts.find(product => product.id === item.product_id)?.available_quantity}
                   step="1"
                   value={item.quantity}
                   onChange={event => updateQuantity(item.product_id, event.target.value)}
@@ -220,4 +392,10 @@ export default function PosStockActionModal({
       </form>
     </Modal>
   );
+}
+
+function formatOrderDate(value) {
+  if (!value) return 'Date unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Date unavailable' : date.toLocaleString();
 }
