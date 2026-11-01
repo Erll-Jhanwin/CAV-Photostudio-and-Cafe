@@ -13,25 +13,25 @@
 <body>
 <main class="page">
 <section class="hero">
-<p class="eyebrow">Evidence-based audit · 26 October 2026</p>
+<p class="eyebrow">Evidence-based audit · 1 November 2026</p>
 <h1>CAV Photo Studio &amp; Café<br>Project Progress Dashboard</h1>
-<p class="sub">Implementation progress based on inspected source, routes, automated coverage, configuration and packaged assets. Refreshed 26 October 2026; includes the production-readiness fixes and verification recorded in the companion audit report.</p>
-<div class="meta"><span>Scope <strong>current working tree</strong></span><span>Validation <strong>isolated SQLite + frontend tests/build + security scans</strong></span><span>Production access <strong>not checked</strong></span></div>
-<div class="scorebox"><div><div class="label" style="color:#f6e9af">Weighted implementation progress</div><div class="score" id="score">78%</div><span style="color:#f6ede0b8;font-size:12px">Evidence-weighted estimate, rounded to a whole percent</span></div><div><div class="track" role="progressbar" aria-label="Overall implementation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="78"><div class="fill" id="overallbar" style="width:77.53%"></div></div><div class="legend"><span>0 · absent</span><span>Implemented locally; deployment and live-service gaps remain</span><span>100 · production-evidenced</span></div></div></div>
+<p class="sub">Implementation progress based on inspected source, routes, automated coverage, configuration and packaged assets. Refreshed 1 November 2026 using current frontend tests, backend tests, Django checks and migration-drift checks.</p>
+<div class="meta"><span>Scope <strong>current working tree</strong></span><span>Validation <strong>isolated SQLite + frontend tests + Django checks</strong></span><span>Production access <strong>not checked</strong></span></div>
+<div class="scorebox"><div><div class="label" style="color:#f6e9af">Weighted implementation progress</div><div class="score" id="score">76%</div><span style="color:#f6ede0b8;font-size:12px">Evidence-weighted estimate, rounded to a whole percent</span></div><div><div class="track" role="progressbar" aria-label="Overall implementation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="76"><div class="fill" id="overallbar" style="width:75.85%"></div></div><div class="legend"><span>0 · absent</span><span>Implemented locally; deployment and live-service gaps remain</span><span>100 · production-evidenced</span></div></div></div>
 </section>
 <section class="section grid kpis" aria-label="Verification summary">
-<div class="kpi"><div class="label">Backend suite</div><div class="value">141 pass</div><div class="muted">143 total; 2 skipped on SQLite</div></div>
-<div class="kpi"><div class="label">Frontend suite</div><div class="value">26 pass</div><div class="muted">8 suites; Dashboard focused recheck 5/5</div></div>
-<div class="kpi"><div class="label">Django checks</div><div class="value">PASS*</div><div class="muted">Release flags check clean; local dev config has expected warnings</div></div>
+<div class="kpi"><div class="label">Backend suite</div><div class="value">223 / 238</div><div class="muted">13 failed at off-duty staff checks; 2 SQLite skips</div></div>
+<div class="kpi"><div class="label">Frontend suite</div><div class="value">124 pass</div><div class="muted">23 suites; non-failing React act warnings</div></div>
+<div class="kpi"><div class="label">Django checks</div><div class="value">PASS</div><div class="muted">System check clean; no migration drift detected</div></div>
 <div class="kpi"><div class="label">Migration drift</div><div class="value">NONE</div><div class="muted">No model changes detected</div></div>
 <div class="kpi"><div class="label">Production build</div><div class="value">PASS</div><div class="muted">Final frontend build and artifact verification passed</div></div>
 <div class="kpi"><div class="label">Django domains</div><div class="value">13</div><div class="muted">Installed project apps</div></div>
 </section>
 <section class="section">
-<div class="head"><div><h2>Executive status</h2><p>Core customer, staff and admin paths have broad implementation. Backend and frontend suites, migration checks, production build, secret scan, Bandit and Python dependency audit passed. Production confidence remains limited by missing browser E2E, provider/storage/database verification and 18 high npm audit findings.</p></div><button class="print" onclick="window.print()">Print dashboard</button></div>
+<div class="head"><div><h2>Executive status</h2><p>Core customer, staff and admin paths have broad implementation. All frontend suites passed and Django/migration checks are clean. The backend suite is not green: 13 tests fail because staff fixtures reach endpoints with duty disabled; 2 PostgreSQL row-lock cases are skipped on SQLite. Browser E2E, live providers/storage/database, and release dependency findings remain open.</p></div><button class="print" onclick="window.print()">Print dashboard</button></div>
 <div class="grid statusgrid">
 <article class="status complete"><div class="label">Implemented locally</div><div class="value">5 / 15 modules</div><div class="muted">Public site, accounts/OTP, booking/payment flow, POS and inventory/purchasing have substantial working code paths and backend coverage.</div><ul><li>Booking filters, QR selection, proof access controls and loading/error handling are present in source.</li><li>QR image files for GCash, Maya and MariBank are bundled; account identity and ownership are unverified.</li><li>“Implemented locally” does not mean production acceptance.</li></ul></article>
-<article class="status ongoing"><div class="label">Partial / needs evidence</div><div class="value">9 / 15 modules</div><div class="muted">Admin, chatbot, forecasting, notifications, gallery, privacy controls, native packaging, release QA and integrations have material operational or evidence gaps.</div><ul><li>SMS, push and email need authorized provider credentials, schedules and recipient/device delivery checks.</li><li>Forecast logic is present, but bundled actual sales span only 11 distinct dates.</li><li>Production database, durable storage, deployment settings and native build remain unverified; npm audit has 18 high findings.</li></ul></article>
+<article class="status ongoing"><div class="label">Partial / needs evidence</div><div class="value">9 / 15 modules</div><div class="muted">Admin, chatbot, forecasting, notifications, gallery, privacy controls, native packaging, release QA and integrations have material operational or evidence gaps.</div><ul><li>13 backend tests currently fail on off-duty staff fixtures; correct the test setup and rerun before treating backend coverage as green.</li><li>SMS, push and email need authorized provider credentials, schedules and recipient/device delivery checks.</li><li>Forecast logic is present, but bundled actual sales span only 11 distinct dates; production database, durable storage and native build remain unverified.</li></ul></article>
 <article class="status pending"><div class="label">Pending feature areas</div><div class="value">1 / 15</div><div class="muted">The dedicated reports and sales Django apps are placeholder files.</div><ul><li>Current reports and sales summaries are served through other app domains.</li><li>Gallery management is implemented and locally tested; real bucket persistence remains to verify.</li><li>Additional delivery and launch work remains listed below.</li></ul></article>
 </div>
 </section>
@@ -51,7 +51,9 @@
 <li><strong>Privacy cases:</strong> admin review queue, role checks, notes-required completion/rejection and terminal-state protections are implemented and covered by backend tests.</li>
 <li><strong>Release security checks:</strong> secret scan, Bandit app/config scan and Python dependency audit pass; Capacitor Android critical advisory is cleared.</li>
 <li><strong>Forecast data guard:</strong> imports preserve other tables and reporting distinguishes observed data from imputed dates; 30 actual dates are not currently available.</li>
-<li><strong>Core operations:</strong> POS, shift closeouts, inventory, purchase orders, admin workflows, authentication/privacy endpoints and public content are present in source. The fresh 143-test backend run passed 141 tests; two were skipped on SQLite.</li>
+<li><strong>Booking receipts:</strong> approved payment verification and walk-in flows create printable customer and staff/admin copies with booking/payment details; 3 focused frontend suites passed in the preceding workflow review.</li>
+<li><strong>Staff duty controls:</strong> admin on-duty assignment and staff access gating are implemented; frontend tests cover on-duty/off-duty behavior. API enforcement is active.</li>
+<li><strong>Core operations:</strong> POS, shift closeouts, inventory, purchase orders, admin workflows, authentication/privacy endpoints and public content are present in source. The current backend suite passed 223 of 238 tests, with 13 duty-fixture failures and 2 SQLite skips.</li>
 </ul></article>
 <article class="card"><h2>Ongoing tasks</h2><ul class="list">
 <li>Validate and apply migrations against the intended deployed database; the fresh suite uses isolated SQLite and does not establish production schema state. Two PostgreSQL row-lock tests were skipped in this run.</li>
@@ -60,6 +62,7 @@
 <li>Provide a validated sales export with at least 30 observed sales dates; do not synthesize transactions to fill gaps.</li>
 <li>Verify production QR image URLs and confirm the codes resolve to the studio’s intended accounts.</li>
 <li>Run browser acceptance/accessibility checks, physical receipt printer checks, and a supported Android/Gradle build. The Dashboard test still emits non-failing React <code>act(...)</code> warnings.</li>
+<li>Update backend staff test fixtures that are intended to exercise on-duty behavior, then rerun the full suite; keep off-duty rejection tests explicitly off duty.</li>
 </ul></article>
 </section>
 <section class="section grid cols">
@@ -68,11 +71,12 @@
 <li><strong>End-to-end release evidence:</strong> no production-like browser journey, live notification receipt, or Android artifact was verified in this review.</li>
 </ul></article>
 <article class="card"><h2>Identified issues and limits</h2>
+<div class="issue"><span class="badge fail">Backend tests</span><div class="issue-title">13 backend tests fail before exercising staff endpoints</div><p>The full run reports 223 passed, 13 failed, and 2 skipped (238 total). The failures in forecasting, gallery, inventory and booking notifications receive the intended off-duty 403 because their staff fixtures do not enable duty. These are test-fixture/policy alignment failures; rerun after correcting fixtures to establish a green suite.</p></div>
 <div class="issue"><span class="badge warn">Data</span><div class="issue-title">Forecast history is too sparse for the 30-day target</div><p>Bundled July 2025 CSV: 24 transaction rows across 11 distinct recorded dates. Forecast code can report missing coverage, but real history must come from a validated business export.</p></div>
 <div class="issue"><span class="badge warn">Integrations</span><div class="issue-title">Provider acceptance is not live delivery</div><p>SMS, push, email and chatbot tests exercise local logic or mocked adapters. A controlled iProgSMS check recorded in the 18 Oct audit was rejected for a sender-name approval requirement; successful handset delivery is not evidenced.</p></div>
 <div class="issue"><span class="badge info">Database</span><div class="issue-title">Production migration state was not checked</div><p>Migration drift is clean and tests create an isolated database. No claim is made that the live database has applied the current migration graph.</p></div>
 <div class="issue"><span class="badge info">QA</span><div class="issue-title">Two backend tests are skipped on SQLite</div><p>They require PostgreSQL row-lock behavior. Run those cases against the target PostgreSQL engine before relying on concurrency guarantees.</p></div>
-<div class="issue"><span class="badge warn">Frontend QA</span><div class="issue-title">Browser acceptance remains unverified</div><p>Jest passed 8 suites / 26 tests and the production build passed. CustomerDashboard tests emit non-failing React <code>act(...)</code> warnings; browser console, responsive and accessibility checks need a browser runner.</p></div>
+<div class="issue"><span class="badge warn">Frontend QA</span><div class="issue-title">Browser acceptance remains unverified</div><p>Jest passed 23 suites / 124 tests. Login and CustomerDashboard tests emit non-failing React <code>act(...)</code> warnings; browser console, responsive and accessibility checks need a browser runner.</p></div>
 <div class="issue"><span class="badge warn">Deployment</span><div class="issue-title">Repository deployment blueprint defines only the frontend</div><p><code>render.yaml</code> configures a static site pointing at a separate backend URL; it does not provision backend deployment, persistent media or notification schedules. Those must be managed and checked separately.</p></div>
 <div class="issue"><span class="badge fail">Dependency audit</span><div class="issue-title">Frontend npm audit has 18 high findings</div><p>The audit reports 58 findings total (9 low, 31 moderate, 18 high, no critical). Remaining highs are chiefly in the pinned Create React App/Tailwind 3 toolchain; proposed forced fixes are breaking or invalid.</p></div>
 <div class="issue"><span class="badge info">Scope</span><div class="issue-title">Live deployment and provider gates remain open</div><p>Release-flag Django check, secret scan, Bandit and Python dependency audit passed. No production access, live provider delivery, persistent production database/storage or browser E2E was used.</p></div>
@@ -88,19 +92,20 @@
 <li><strong>Build native target:</strong> validate a supported JDK/Gradle pairing and produce an Android artifact.</li>
 </ol></article>
 <article class="card"><h2>Verification record</h2><div class="tablewrap"><table style="min-width:0"><thead><tr><th>Check</th><th>Result</th></tr></thead><tbody>
-<tr><td>Backend tests</td><td><span class="badge pass">141 passed of 143</span></td></tr>
-<tr><td>SQLite-only skips</td><td><span class="badge warn">2 skipped</span></td></tr>
-<tr><td>Frontend tests</td><td><span class="badge pass">8 suites / 26 passed; focused 5/5</span></td></tr>
+<tr><td>Backend tests</td><td><span class="badge fail">223 passed; 13 failed; 2 skipped of 238</span></td></tr>
+<tr><td>Backend failure cause</td><td><span class="badge warn">Staff fixtures off duty; API returns 403</span></td></tr>
+<tr><td>SQLite-only skips</td><td><span class="badge warn">2 skipped; PostgreSQL row locks required</span></td></tr>
+<tr><td>Frontend tests</td><td><span class="badge pass">23 suites / 124 passed</span></td></tr>
 <tr><td>Django system check</td><td><span class="badge pass">Clean</span></td></tr>
 <tr><td>Model/migration drift</td><td><span class="badge pass">None detected</span></td></tr>
-<tr><td>Frontend production build</td><td><span class="badge pass">Final build and artifact check passed</span></td></tr>
-<tr><td>Secret / Bandit / pip audits</td><td><span class="badge pass">Passed</span></td></tr>
-<tr><td>Frontend npm audit</td><td><span class="badge fail">18 high findings remain</span></td></tr>
+<tr><td>Frontend production build</td><td><span class="badge pass">Most recent build passed in preceding review</span></td></tr>
+<tr><td>Secret / Bandit / pip audits</td><td><span class="badge info">Last reported passed 26 Oct; not rerun today</span></td></tr>
+<tr><td>Frontend npm audit</td><td><span class="badge warn">Last reported 18 high findings on 26 Oct; refresh scan</span></td></tr>
 <tr><td>Production integrations/database</td><td><span class="badge blocked">Unverified</span></td></tr>
 </tbody></table></div></article>
 </section>
-<section class="section note"><strong>Scoring and scope.</strong> Each module has a weight based on its product scope and a 0–100 evidence score. Current total is <code>77.53%</code>, displayed as 78% after rounding the sum of <code>weight × module score</code>. Scores reflect inspected implementations, test coverage and evidence gaps; this is an evidence-based engineering estimate, not an exact count of all possible work. See <code>docs/production-readiness-audit-2026-10-26.md</code> for commands, findings and external blockers.</section>
-<footer class="foot">CAV Photo Studio &amp; Café · Project Progress Dashboard · Review date: 26 October 2026 · Open this file in a browser or print to PDF.</footer>
+<section class="section note"><strong>Scoring and scope.</strong> Each of 15 modules has a product-scope weight totaling 100 and a 0–100 evidence score based on inspected implementation, integration, current test evidence and external verification gaps. Current weighted total is <code>75.85%</code>, displayed as 76%. The CI/QA score was reduced from 66 to 42 to account for the current backend suite failures. Scores are an evidence-weighted engineering estimate, not an exact count of all possible work. Earlier release-readiness detail is in <code>docs/production-readiness-audit-2026-10-26.md</code>.</section>
+<footer class="foot">CAV Photo Studio &amp; Café · Project Progress Dashboard · Review date: 1 November 2026 · Open this file in a browser or print to PDF.</footer>
 </main>
 <script>
 const items=[
@@ -117,7 +122,7 @@ const items=[
 {name:'Audit, privacy & compliance',weight:6,score:88,status:'ongoing',evidence:'Audit logging, consent/privacy request paths, retention tooling and admin privacy review lifecycle have role/state tests.',remaining:'Verify deployed privacy process, deletion/export behavior and production controls with authorized operators.'},
 {name:'Dedicated reports & sales domains',weight:4,score:5,status:'pending',evidence:'POS shift closeout reports are implemented; the separate Django reports and sales apps have placeholder views.',remaining:'Implement dedicated domain endpoints/UI only if required by product scope.'},
 {name:'Android / Capacitor packaging',weight:3,score:35,status:'ongoing',evidence:'Capacitor configuration and Android project are present.',remaining:'A supported toolchain build and installable artifact were not verified.'},
-{name:'CI, QA & release readiness',weight:7,score:66,status:'ongoing',evidence:'Backend 143-test suite, frontend 8-suite run, build, secret scan, Bandit app/config scan, and pip-audit passed; Django release-flags check passed.',remaining:'18 high npm findings remain; browser E2E/accessibility and deployed release pipeline are unverified.'},
+{name:'CI, QA & release readiness',weight:7,score:42,status:'ongoing',evidence:'Frontend 23 suites / 124 tests pass; Django system check and migration-drift checks pass. Current backend run: 223 pass, 13 fail at off-duty staff guards, 2 PostgreSQL-only skips.',remaining:'Align staff test fixtures with duty policy and rerun backend suite; browser E2E/accessibility and deployed release pipeline are unverified. Dependency scan last reported 18 high npm findings on 26 Oct.'},
 {name:'Database & external integrations',weight:5,score:48,status:'ongoing',evidence:'Migrations apply and drift check passes on isolated SQLite; PostgreSQL, storage and provider adapters are wired and locally tested.',remaining:'Production PostgreSQL, durable gallery/proof storage, payment account identity and provider connectivity require authorized environment verification.'}
 ];
 const totalWeight=items.reduce((a,x)=>a+x.weight,0);

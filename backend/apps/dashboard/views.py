@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from django.db.models import Count, F, Prefetch, Sum
+from django.db.models import Count, F, Prefetch, Q, Sum
 from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
 from rest_framework import views
@@ -85,18 +85,24 @@ class DashboardAnalyticsView(views.APIView):
         previous_order_revenue = Order.objects.exclude(order_type='END_OF_DAY_REPORT').filter(
             payment_status='PAID', created_at__range=(prev_start_dt, prev_end_dt)
         ).aggregate(revenue=Sum(F('total') - F('returned_amount')))['revenue'] or Decimal('0.00')
-        booking_payments = Payment.objects.filter(
+        eligible_booking_payments = Payment.objects.filter(
             payment_type=Payment.BOOKING,
             status__in=('APPROVED', 'PAID'),
-        ).annotate(revenue_at=Coalesce('paid_at', 'created_at')).filter(
-            revenue_at__range=(start_dt, end_dt),
         )
-        booking_payment_revenue = booking_payments.aggregate(revenue=Sum('amount'))['revenue'] or Decimal('0.00')
-        previous_booking_payment_revenue = Payment.objects.filter(
-            payment_type=Payment.BOOKING,
-            status__in=('APPROVED', 'PAID'),
-        ).annotate(revenue_at=Coalesce('paid_at', 'created_at')).filter(
-            revenue_at__range=(prev_start_dt, prev_end_dt),
+
+        def booking_payment_period(start, end):
+            return eligible_booking_payments.filter(
+                Q(paid_at__range=(start, end))
+                | Q(paid_at__isnull=True, created_at__range=(start, end))
+            ).annotate(revenue_at=Coalesce('paid_at', 'created_at'))
+
+        booking_payments = booking_payment_period(start_dt, end_dt)
+        booking_payment_totals = booking_payments.aggregate(
+            revenue=Sum('amount'), count=Count('id')
+        )
+        booking_payment_revenue = booking_payment_totals['revenue'] or Decimal('0.00')
+        previous_booking_payment_revenue = booking_payment_period(
+            prev_start_dt, prev_end_dt
         ).aggregate(revenue=Sum('amount'))['revenue'] or Decimal('0.00')
 
         pos_metrics = paid_order_totals.get('WALK_IN', {})
@@ -242,7 +248,7 @@ class DashboardAnalyticsView(views.APIView):
             'record_counts': {
                 'paid_orders': sum(row['count'] for row in paid_order_totals.values()),
                 'pos_transactions': total_tx,
-                'booking_payments': booking_payments.count(),
+                'booking_payments': booking_payment_totals['count'],
                 'bookings': sum(grouped_booking_statuses.values()),
             },
             'sales_history_chart': sorted(buckets.values(), key=lambda row: row['date'], reverse=True),

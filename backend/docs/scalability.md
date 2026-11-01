@@ -54,3 +54,70 @@ This repository's `render.yaml` provisions only the static frontend. The
 backend service, its instance plan/autoscaling, environment variables, and
 background worker are managed outside this blueprint and must be checked in
 the Render dashboard before a production capacity target can be certified.
+
+## Local isolated performance run
+
+The repository includes a Windows-safe read-only load runner. It requires a
+separate SQLite file whose name contains `perf_load`; the test server refuses
+to start on any other database. It creates no bookings or payments during the
+run, and the seeder uses synthetic `example.invalid` accounts and data. For
+the dashboard scenario below, fixture rows are created only in that isolated
+database.
+
+From `backend`, set `TEST_DATABASE_URL` to an absolute local `perf_load`
+SQLite path, run `manage.py migrate --settings=config.test_settings`, then
+seed distinct synthetic identities and rows:
+
+```powershell
+$env:TEST_DATABASE_URL = 'sqlite:///C:/workspace/backend/tmp/perf_load.sqlite3'
+$env:LOAD_TEST_FIXTURE_ROWS = '2000'
+python manage.py migrate --noinput --settings=config.test_settings
+python tools/seed_load_test_users.py 1000 tmp/load-test-users.json STAFF
+python tools/run_perf_test_server.py
+```
+
+In a second terminal, run a synchronized dashboard burst or profile burst:
+
+```powershell
+$env:LOAD_TEST_BASE_URL = 'http://127.0.0.1:8107'
+$env:LOAD_TEST_USERS_FILE = 'tmp/load-test-users.json'
+$env:LOAD_TEST_VUS = '400'
+$env:LOAD_TEST_ONCE = 'true'
+$env:LOAD_TEST_PATHS = '/api/auth/profile/'
+node tools/load_test.mjs
+```
+
+Use `refresh_load_test_tokens.py` before a run if the short-lived test tokens
+have expired. The runner reports every HTTP error and connection failure and
+exits nonzero if any request fails. A local SQLite run is useful for code
+comparisons, but it does not reproduce PostgreSQL, Render's proxy, Gunicorn,
+instance autoscaling, or provider limits. A 1,000-VU run on one developer
+machine is therefore a diagnostic, not production certification. Run the same
+scenarios on isolated staging resources before asserting a 1,000-user target.
+
+## Optimizations and deployment requirements
+
+Booking list indexes now match the customer history ordering and staff
+schedule ordering. Dashboard booking-payment date filters separate payments
+with a `paid_at` timestamp from legacy rows that fall back to `created_at`;
+this keeps date predicates indexable. The selected-period payment count is
+returned by its revenue aggregate instead of issuing another count query.
+The frontend serves hashed `/static/*` bundles as immutable for one year and
+revalidates `/index.html` so browsers can reuse JS and CSS between visits.
+
+Keep database connections at zero persistent age when using the Supabase
+transaction pooler (port 6543), and budget direct/session connections against
+`instances * WEB_CONCURRENCY * WEB_THREADS` plus operational connections.
+`REDIS_URL` is required for consistent throttles and MFA state across multiple
+web workers or instances. Configure a Render background worker to run
+`process_notification_deliveries` before enabling asynchronous SMS; that
+command also drains the booking email queue. Push, OCR, and chatbot provider
+calls still need queueing or measured timeout budgets if they become hot paths.
+
+The current code defaults to two Gunicorn workers and four threads per
+instance, or eight active requests per instance. The backend service and
+database plans are not declared in `render.yaml`, so their current CPU, memory,
+connection, and autoscaling limits cannot be inferred from this repository.
+Do not advertise 1,000 simultaneous API requests until staging measurements
+show zero failed requests at that load and the selected plans can sustain the
+measured worker and database connection counts.

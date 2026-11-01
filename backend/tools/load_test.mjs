@@ -9,6 +9,8 @@ const userFile = process.env.LOAD_TEST_USERS_FILE;
 const users = userFile ? JSON.parse(await readFile(userFile, 'utf8')) : [];
 const bearerToken = process.env.LOAD_TEST_BEARER_TOKEN || '';
 const packageId = process.env.LOAD_TEST_PACKAGE_ID || '';
+const runOnce = /^(1|true|yes)$/i.test(process.env.LOAD_TEST_ONCE || '');
+const configuredPaths = (process.env.LOAD_TEST_PATHS || '').split(',').map((path) => path.trim()).filter(Boolean);
 const errors = [];
 const samples = [];
 const statuses = new Map();
@@ -19,6 +21,12 @@ if (!userFile && !bearerToken) {
 }
 if (userFile && users.length < concurrency) {
   throw new Error(`The user file must contain at least LOAD_TEST_VUS (${concurrency}) distinct synthetic accounts.`);
+}
+if (userFile) {
+  const identities = users.slice(0, concurrency).map((user) => user?.token || user?.username || '');
+  if (identities.some((identity) => !identity) || new Set(identities).size !== concurrency) {
+    throw new Error('The first LOAD_TEST_VUS entries must have distinct bearer tokens or usernames.');
+  }
 }
 
 async function request(path, { method = 'GET', body, cookie = '', token = '' } = {}) {
@@ -56,7 +64,7 @@ async function request(path, { method = 'GET', body, cookie = '', token = '' } =
   } catch (error) {
     const elapsed = performance.now() - started;
     samples.push(elapsed);
-    errors.push({ status, path, type: error.name, message: error.message });
+    errors.push({ status, path, type: error.name, message: error.message, cause: error.cause?.code || error.cause?.message || '' });
     return { response: null, responseBody: null };
   }
 }
@@ -70,6 +78,7 @@ function cookieHeader(response) {
 }
 
 function requestPaths(role) {
+  if (configuredPaths.length) return configuredPaths;
   const result = ['/api/auth/profile/'];
   if (role === 'ADMIN' || role === 'STAFF') {
     result.push('/api/dashboard/analytics/', '/api/bookings/?limit=100', '/api/notifications/?limit=100');
@@ -109,12 +118,12 @@ async function virtualUser(index) {
 
   const endpointList = requestPaths(role);
   const until = performance.now() + durationSeconds * 1000;
-  while (performance.now() < until) {
+  do {
     for (const path of endpointList) {
-      if (performance.now() >= until) break;
+      if (!runOnce && performance.now() >= until) break;
       await request(path, { cookie, token });
     }
-  }
+  } while (!runOnce && performance.now() < until);
 }
 
 const started = performance.now();
@@ -123,6 +132,10 @@ samples.sort((a, b) => a - b);
 const percentile = (ratio) => samples.length ? Math.round(samples[Math.min(samples.length - 1, Math.ceil(samples.length * ratio) - 1)]) : 0;
 const elapsed = (performance.now() - started) / 1000;
 const statusObject = (map) => Object.fromEntries([...map.entries()].sort((a, b) => a[0] - b[0]));
+const httpErrors = [...statuses.entries()].filter(([status]) => status >= 400).reduce((total, [, count]) => total + count, 0);
+const networkErrors = errors.filter((error) => error.status === 0).length;
+const successfulResponses = [...statuses.entries()].filter(([status]) => status >= 200 && status < 400).reduce((total, [, count]) => total + count, 0);
+const failedRequests = httpErrors + networkErrors;
 const report = {
   baseUrl,
   virtualUsers: concurrency,
@@ -130,7 +143,11 @@ const report = {
   wallSeconds: Number(elapsed.toFixed(2)),
   attemptedRequests: samples.length,
   completedResponses: [...statuses.values()].reduce((total, count) => total + count, 0),
+  successfulResponses,
+  failedRequests,
+  failureRatePercent: Number((samples.length ? failedRequests / samples.length * 100 : 0).toFixed(2)),
   requestsPerSecond: Number((samples.length / elapsed).toFixed(2)),
+  successfulRequestsPerSecond: Number((successfulResponses / elapsed).toFixed(2)),
   latencyMs: {
     p50: percentile(0.50),
     p95: percentile(0.95),
@@ -138,7 +155,8 @@ const report = {
     max: samples.length ? Math.round(samples.at(-1)) : 0,
   },
   statusCounts: statusObject(statuses),
-  networkErrors: errors.filter((error) => error.status === 0).length,
+  networkErrors,
+  httpErrors,
   http5xx: [...statuses.entries()].filter(([status]) => status >= 500).reduce((total, [, count]) => total + count, 0),
   http429: statuses.get(429) || 0,
   loginFailures: errors.filter((error) => error.type === 'LoginFailure').length,
@@ -151,3 +169,4 @@ const report = {
 };
 console.log(JSON.stringify(report, null, 2));
 if (errors.length) console.error(JSON.stringify({ sampleErrors: errors.slice(0, 20) }, null, 2));
+if (report.failedRequests > 0) process.exitCode = 1;

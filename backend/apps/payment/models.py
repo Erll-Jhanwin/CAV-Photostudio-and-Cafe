@@ -54,6 +54,15 @@ class Payment(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['payment_type', 'status', 'paid_at'], name='payment_type_status_date_idx'),
+            models.Index(
+                fields=['created_at'],
+                condition=models.Q(
+                    payment_type='BOOKING',
+                    status__in=['APPROVED', 'PAID'],
+                    paid_at__isnull=True,
+                ),
+                name='payment_book_created_null_idx',
+            ),
         ]
         constraints = [
             models.CheckConstraint(

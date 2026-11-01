@@ -89,6 +89,14 @@ class Booking(models.Model):
         ]
         indexes = [
             models.Index(fields=['created_at', 'status'], name='booking_created_status_idx'),
+            models.Index(
+                fields=['customer', '-scheduled_date', '-created_at', '-id'],
+                name='booking_customer_recent_idx',
+            ),
+            models.Index(
+                fields=['scheduled_date', 'scheduled_time', 'id'],
+                name='booking_staff_schedule_idx',
+            ),
         ]
 
     @property
