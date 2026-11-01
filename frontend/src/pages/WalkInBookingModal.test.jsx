@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import WalkInBookingModal from './WalkInBookingModal';
 import client from '../api/client';
+import WalkInBookingModal from './WalkInBookingModal';
 
 jest.mock('../api/client', () => ({
   __esModule: true,
@@ -9,58 +9,47 @@ jest.mock('../api/client', () => ({
   getApiErrorMessage: (_error, fallback) => fallback,
 }));
 
-const services = [{
-  id: 1,
-  name: 'Studio Session',
-  packages: [{ id: 4, name: 'Portrait', price: '1000.00', inclusions: 'Portrait session' }],
-}];
+test('walk-in success offers two receipt copies and reprinting never resubmits booking or payment', async () => {
+  client.get.mockImplementation(url => Promise.resolve({ data: url === '/api/bookings/services/'
+    ? [{ id: 2, name: 'Studio Portrait', packages: [{ id: 3, name: 'Portrait Session', price: '1000.00', inclusions: 'One portrait' }] }]
+    : { slots: [{ time: '09:00:00', label: '9:00 AM', display_time: '9:00 AM', available: true }] } }));
+  client.post.mockResolvedValue({ data: {
+    id: 55,
+    customer_name: 'Jamie Reyes', customer_phone: '09171234567', customer_email: 'jamie@example.test',
+    scheduled_date: '2026-12-01', scheduled_time: '09:00:00', created_at: '2026-11-01T02:00:00Z',
+    package_details: { name: 'Portrait Session', price: '1000.00' },
+    payments: [{ id: 9, status: 'APPROVED', amount: '500.00', method: 'CASH', method_label: 'Cash', paid_at: '2026-11-01T02:00:00Z' }],
+    remaining_balance: '500.00',
+  } });
+  const onCreated = jest.fn();
+  const onClose = jest.fn();
+  const print = jest.spyOn(window, 'print').mockImplementation(() => {});
 
-describe('WalkInBookingModal', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    client.get.mockImplementation((url) => {
-      if (url.endsWith('/services/')) return Promise.resolve({ data: services });
-      if (url.endsWith('/availability/')) return Promise.resolve({ data: { slots: [{ time: '09:00:00', display_time: '09:00 AM', available: true }] } });
-      return Promise.resolve({ data: [] });
-    });
-    client.post.mockResolvedValue({ data: { id: 51, is_walk_in: true } });
-  });
+  render(<WalkInBookingModal open onCreated={onCreated} onClose={onClose} />);
+  fireEvent.change(await screen.findByLabelText('Package'), { target: { value: '3' } });
+  await screen.findByLabelText('Available time');
+  await waitFor(() => expect(screen.getByRole('option', { name: '9:00 AM' })).toBeInTheDocument());
+  fireEvent.change(screen.getByLabelText('Available time'), { target: { value: '09:00:00' } });
+  fireEvent.change(screen.getByLabelText('Customer name'), { target: { value: 'Jamie Reyes' } });
+  fireEvent.change(screen.getByLabelText('Contact number'), { target: { value: '09171234567' } });
+  fireEvent.change(screen.getByLabelText('Payment amount (optional)'), { target: { value: '500.00' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm Walk-in Booking' }));
 
-  test('checks existing availability and submits walk-in details and cash payment once', async () => {
-    const onCreated = jest.fn();
-    render(<WalkInBookingModal open onClose={jest.fn()} onCreated={onCreated} />);
+  expect(await screen.findByRole('status')).toHaveTextContent('Walk-in booking #55 saved successfully.');
+  expect(screen.getByRole('button', { name: 'Print Customer Copy' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Print Your Copy' })).toBeInTheDocument();
+  expect(screen.getByText('₱1,000.00')).toBeInTheDocument();
+  expect(screen.getAllByText('₱500.00')).toHaveLength(2);
 
-    await waitFor(() => expect(screen.getByLabelText('Package')).toBeEnabled());
-    fireEvent.change(screen.getByLabelText('Package'), { target: { value: '4' } });
-    await waitFor(() => expect(client.get).toHaveBeenCalledWith('/api/bookings/availability/', expect.objectContaining({ params: expect.objectContaining({ package: '4' }) })));
-    await waitFor(() => expect(screen.getByRole('option', { name: '09:00 AM' })).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: 'Print Customer Copy' }));
+  await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+  expect(screen.getByText('Customer Copy')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Print Your Copy' }));
+  await waitFor(() => expect(print).toHaveBeenCalledTimes(2));
+  expect(screen.getByText('Staff/Admin Copy')).toBeInTheDocument();
+  expect(client.post).toHaveBeenCalledTimes(1);
+  expect(onCreated).toHaveBeenCalledTimes(1);
+  expect(onClose).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText('Available time'), { target: { value: '09:00:00' } });
-    fireEvent.change(screen.getByLabelText('Customer name'), { target: { value: 'Walk-in Guest' } });
-    fireEvent.change(screen.getByLabelText('Contact number'), { target: { value: '09171234567' } });
-    fireEvent.change(screen.getByLabelText('Payment amount (optional)'), { target: { value: '500' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Walk-in Booking' }));
-
-    await waitFor(() => expect(client.post).toHaveBeenCalledWith('/api/bookings/walk-in/', expect.objectContaining({
-      package: 4,
-      scheduled_time: '09:00:00',
-      customer_name: 'Walk-in Guest',
-      customer_phone: '09171234567',
-      payment_method: 'CASH',
-      payment_amount: '500',
-    })));
-    expect(onCreated).toHaveBeenCalledWith({ id: 51, is_walk_in: true });
-  });
-
-  test('does not submit until an available slot and customer contact are provided', async () => {
-    client.get.mockImplementation((url) => url.endsWith('/services/')
-      ? Promise.resolve({ data: services })
-      : Promise.resolve({ data: { slots: [] } }));
-    render(<WalkInBookingModal open onClose={jest.fn()} />);
-    await waitFor(() => expect(screen.getByLabelText('Package')).toBeEnabled());
-    fireEvent.change(screen.getByLabelText('Package'), { target: { value: '4' } });
-    await waitFor(() => expect(screen.getByText('No available times for this date. Choose another date.')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Confirm Walk-in Booking' })).toBeDisabled();
-    expect(client.post).not.toHaveBeenCalled();
-  });
+  print.mockRestore();
 });

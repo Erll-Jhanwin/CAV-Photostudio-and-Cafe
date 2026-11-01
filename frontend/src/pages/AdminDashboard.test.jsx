@@ -6,6 +6,7 @@ import { getManilaMonthValue } from '../utils/dateTime';
 const mockNavigate = jest.fn();
 const mockUser = { id: 1, username: 'admin', role: 'ADMIN' };
 const mockLogout = jest.fn();
+const mockConfirm = jest.fn().mockResolvedValue(false);
 
 jest.mock('react-router-dom', () => ({
   MemoryRouter: ({ children }) => children,
@@ -20,7 +21,7 @@ jest.mock('../context/AuthContext', () => ({
 }));
 
 jest.mock('../components/ui/StyledAlert', () => ({
-  useStyledConfirm: () => jest.fn().mockResolvedValue(false),
+  useStyledConfirm: () => mockConfirm,
 }));
 
 jest.mock('../api/client', () => ({
@@ -51,6 +52,44 @@ jest.mock('../api/client', () => ({
 import AdminDashboard from './AdminDashboard';
 
 describe('AdminDashboard', () => {
+  it('prints the booking receipt after an admin confirms a payment', async () => {
+    const payment = {
+      id: 18, booking: 48, status: 'PENDING_VERIFICATION', amount: '1250.00',
+      method: 'GCASH', method_label: 'GCash', reference_number: 'GC-48', paid_at: '2026-10-28T10:00:00Z',
+      booking_details: {
+        id: 48, customer_name: 'Jamie Reyes', customer_phone: '09171234567', customer_email: 'jamie@example.test',
+        service_name: 'Studio', package_name: 'Portrait Session', scheduled_date: '2026-11-15', scheduled_time: '10:30',
+        total_amount: '2500.00', remaining_balance: '1250.00',
+      },
+    };
+    mockConfirm.mockResolvedValue(true);
+    getCached.mockImplementation(url => url === '/api/bookings/payments/'
+      ? Promise.resolve({ data: [payment] })
+      : Promise.resolve({ data: {
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
+        sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
+        top_selling_products: [], top_booked_packages: [], inventory_status_counts: {}, low_stock_alerts: [], inventory_alerts: [],
+      } }));
+    client.patch.mockResolvedValue({ data: { ...payment, status: 'APPROVED', verified_at: '2026-10-28T11:00:00Z' } });
+    const alert = jest.spyOn(window, 'alert').mockImplementation(() => {});
+    const print = jest.spyOn(window, 'print').mockImplementation(() => {});
+
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm Payment' }));
+
+    const receiptDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
+    expect(alert).toHaveBeenCalledWith('Payment approved successfully.');
+    expect(within(receiptDialog).getByText('Payment reference')).toBeInTheDocument();
+    expect(within(receiptDialog).getByText('Jamie Reyes')).toBeInTheDocument();
+    expect(within(receiptDialog).getByText('₱2,500.00')).toBeInTheDocument();
+    await waitFor(() => expect(print).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByRole('dialog', { name: 'Booking receipt' })).not.toBeInTheDocument();
+    alert.mockRestore();
+    print.mockRestore();
+  });
+
   it('assigns staff access with a single on-duty checkbox', async () => {
     getCached.mockImplementation(url => url === '/api/auth/staff-access/'
       ? Promise.resolve({ data: [{ id: 7, username: 'alex.staff', name: 'Alex Staff', on_duty: false }] })

@@ -1,4 +1,5 @@
 from datetime import time, timedelta
+from decimal import Decimal
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
@@ -17,6 +18,7 @@ from users.email_delivery import EmailDeliveryError
 from notifications.models import Notification, NotificationDelivery as Delivery
 from notifications.services import dispatch_notification
 from payment.models import Payment
+from users.models import StaffAccessProfile
 
 
 class WorkflowFixtures:
@@ -28,6 +30,7 @@ class WorkflowFixtures:
             phone_number='09171234567', first_name='Workflow',
         )
         self.staff = get_user_model().objects.create_user(username='workflow-staff', role='STAFF')
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         service = Service.objects.create(name='Studio Session', duration_minutes=60, base_price='1000')
         self.package = Package.objects.create(service=service, name='Test Package', price='1000', inclusions='Session')
         self.day = timezone.localdate() + timedelta(days=20)
@@ -59,6 +62,8 @@ class WorkflowFixtures:
 class BookingLifecycleTests(WorkflowFixtures, TestCase):
     def test_full_lifecycle_emits_once_and_history_remains_available(self):
         booking = self.book()
+        booking.items = [{'name': 'Prints', 'price': '250.00', 'quantity': 2}]
+        booking.save(update_fields=['items'])
         payment = self.pay(booking)
         self.assertEqual(payment.status, 'PENDING_VERIFICATION')
         self.assertIsNone(payment.verified_by_id)
@@ -66,6 +71,9 @@ class BookingLifecycleTests(WorkflowFixtures, TestCase):
         for state in ['REJECTED', 'APPROVED', 'APPROVED']:
             response = self.client.patch(f'/api/bookings/payments/{payment.id}/verify/', {'status': state}, format='json')
             self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['booking_details']['total_amount'], Decimal('1500.00'))
+        self.assertEqual(response.data['booking_details']['remaining_balance'], Decimal('1000.00'))
+        self.assertEqual(response.data['booking_details']['customer_phone'], self.customer.phone_number)
         booking.refresh_from_db()
         self.assertEqual(booking.status, 'CONFIRMED_DP')
         for state in ['CONFIRMED', 'COMPLETED', 'COMPLETED']:

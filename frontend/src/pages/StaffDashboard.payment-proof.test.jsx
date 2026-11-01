@@ -113,6 +113,7 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
     },
   }));
   const alerts = jest.spyOn(window, 'alert').mockImplementation(() => {});
+  const print = jest.spyOn(window, 'print').mockImplementation(() => {});
   mockConfirm.mockResolvedValue(true);
   getCached.mockImplementation(url => (
     url === '/api/bookings/payments/' ? Promise.resolve({ data: payments }) : Promise.resolve({ data: [] })
@@ -160,10 +161,16 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
 
   fireEvent.click(within(list).getAllByRole('button', { name: 'Confirm Payment' })[0]);
   await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/api/bookings/payments/70/verify/', { status: 'APPROVED' }));
+  const receiptDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
+  expect(within(receiptDialog).getByText(/Booking reference/)).toBeInTheDocument();
+  expect(alerts).toHaveBeenCalledWith('Payment approved successfully.');
+  await waitFor(() => expect(print).toHaveBeenCalled());
+  fireEvent.click(within(receiptDialog).getByRole('button', { name: 'Done' }));
   fireEvent.click(within(list).getByRole('button', { name: 'Flag Payment Issue' }));
   await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/api/bookings/payments/73/verify/', { status: 'REJECTED' }));
   expect(screen.getByText('Payment Customer 1').closest('div')).toBeInTheDocument();
   alerts.mockRestore();
+  print.mockRestore();
 });
 
 test('Staff Live Inventory opens dated product sales and wastage records', async () => {

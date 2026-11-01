@@ -10,11 +10,13 @@ from unittest.mock import patch
 
 from booking.models import Booking, Package, Service
 from payment.models import Payment
+from users.models import StaffAccessProfile
 
 
 class WalkInBookingApiTests(TestCase):
     def setUp(self):
         self.staff = get_user_model().objects.create_user(username='walkin-staff', role='STAFF')
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         self.customer = get_user_model().objects.create_user(username='walkin-customer', role='CUSTOMER')
         service = Service.objects.create(name='Walk-in Studio', duration_minutes=60, base_price='1000')
         self.package = Package.objects.create(service=service, name='Portrait', price='1000', inclusions='Portrait session')

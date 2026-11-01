@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import logging
 import re
 from django.utils import timezone
@@ -12,6 +12,16 @@ from users.phone_numbers import normalize_philippine_mobile_number
 from users.uploads import receipt_upload_path, validate_receipt_upload
 
 logger = logging.getLogger(__name__)
+
+
+def get_booking_total_amount(booking):
+    total = Decimal(str(booking.package.price or 0))
+    for item in booking.items or []:
+        try:
+            total += Decimal(str(item.get('price') or 0)) * Decimal(str(item.get('quantity') or 0))
+        except (AttributeError, TypeError, ValueError, InvalidOperation):
+            continue
+    return total
 
 
 class PackageSerializer(serializers.ModelSerializer):
@@ -139,6 +149,11 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
 
     def get_booking_details(self, obj):
         booking = obj.booking
+        total_amount = get_booking_total_amount(booking)
+        amount_paid = sum(
+            (payment.amount for payment in booking.payments.all() if payment.status in {'APPROVED', 'PAID'}),
+            Decimal('0.00'),
+        )
         return {
             'id': booking.id,
             'status': booking.status,
@@ -146,9 +161,12 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             'scheduled_time': booking.scheduled_time,
             'customer_name': booking.contact_name or (booking.customer.get_full_name() or booking.customer.username if booking.customer_id else 'Walk-in customer'),
             'customer_email': booking.contact_email or (booking.customer.email if booking.customer_id else ''),
+            'customer_phone': booking.contact_phone or (booking.customer.phone_number if booking.customer_id else ''),
             'customer_profile_picture_url': UserSerializer(booking.customer, context=self.context).data.get('profile_picture_url', '') if booking.customer_id else '',
             'package_name': booking.package.name,
             'package_price': booking.package.price,
+            'total_amount': total_amount,
+            'remaining_balance': max(Decimal('0.00'), total_amount - amount_paid),
             'service_name': booking.package.service.name,
         }
 
@@ -341,7 +359,7 @@ class BookingSerializer(serializers.ModelSerializer):
             (payment.amount for payment in obj.payments.all() if payment.status in {'APPROVED', 'PAID'}),
             Decimal('0.00'),
         )
-        return max(Decimal('0.00'), obj.package.price - received)
+        return max(Decimal('0.00'), get_booking_total_amount(obj) - received)
 
     def get_customer_name(self, obj):
         if obj.contact_name:

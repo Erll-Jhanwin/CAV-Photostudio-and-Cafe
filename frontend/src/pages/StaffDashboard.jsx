@@ -18,6 +18,7 @@ import { LoadingSpinner, Skeleton, SkeletonTable, SkeletonProfileCard } from '..
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import PaymentProofPreview from '../components/PaymentProofPreview';
+import BookingReceiptPrintDialog, { bookingReceiptFromPayment } from '../components/BookingReceipt';
 import PosStockActionModal from './PosStockActionModal';
 import WalkInBookingModal from './WalkInBookingModal';
 import ProductActivityModal from '../components/inventory/ProductActivityModal';
@@ -233,6 +234,7 @@ export default function StaffDashboard() {
   const [catalogSuppliers, setCatalogSuppliers] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
+  const [bookingReceipt, setBookingReceipt] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
@@ -805,6 +807,7 @@ export default function StaffDashboard() {
       const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
       setBookingPayments(current => normalizePayments(current.map(item => item.id === payment.id ? res.data : item)));
       alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'} successfully.`);
+      if (newStatus === 'APPROVED') setBookingReceipt(bookingReceiptFromPayment(res.data));
     } catch (err) {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
     } finally {
@@ -3182,6 +3185,7 @@ export default function StaffDashboard() {
         onLookupTransaction={lookupStockActionTransaction}
         onSubmit={handleStockActionSubmit}
       />
+      <BookingReceiptPrintDialog open={Boolean(bookingReceipt)} receipt={bookingReceipt} onClose={() => setBookingReceipt(null)} />
     </div>
     )
   );

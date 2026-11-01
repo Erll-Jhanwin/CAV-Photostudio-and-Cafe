@@ -22,12 +22,14 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { LoadingSpinner, Skeleton, SkeletonChart, SkeletonStatsCard, SkeletonTable, SkeletonProfileCard } from '../components/ui/Skeleton';
 import { Sidebar } from '../components/ui/Sidebar';
 import PaymentProofPreview from '../components/PaymentProofPreview';
+import BookingReceiptPrintDialog, { bookingReceiptFromPayment } from '../components/BookingReceipt';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { DataTable as DashboardTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
+import WalkInBookingModal from './WalkInBookingModal';
 import {
   aggregateSalesChartData,
   buildSalesForecastChartData,
@@ -593,6 +595,8 @@ export default function AdminDashboard() {
   const [deletingBookingId, setDeletingBookingId] = useState(null);
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
+  const [bookingReceipt, setBookingReceipt] = useState(null);
+  const [walkInBookingOpen, setWalkInBookingOpen] = useState(false);
   const [receiptPrintError, setReceiptPrintError] = useState('');
   const [endOfDayModalOpen, setEndOfDayModalOpen] = useState(false);
   const [selectedEndOfDayReport, setSelectedEndOfDayReport] = useState(null);
@@ -1162,6 +1166,7 @@ export default function AdminDashboard() {
       setBookingPayments(current => normalizePayments(current.map(item => item.id === payment.id ? res.data : item)));
       fetchData({ background: true });
       alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'} successfully.`);
+      if (newStatus === 'APPROVED') setBookingReceipt(bookingReceiptFromPayment(res.data));
     } catch (err) {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
     } finally {
@@ -2300,7 +2305,10 @@ export default function AdminDashboard() {
 
           {(activeTab === 'calendar' || activeTab === 'live') && (
             <div className="w-full space-y-4 animate-in-up" key={activeTab}>
-              {activeTab === 'live' && <h1 className="heading-page text-espresso">Live Bookings</h1>}
+              {activeTab === 'live' && <div className="flex flex-wrap items-center justify-between gap-3">
+                <h1 className="heading-page text-espresso">Live Bookings</h1>
+                <Button size="sm" icon={Plus} onClick={() => setWalkInBookingOpen(true)}>Walk-in Booking</Button>
+              </div>}
               {activeTab === 'calendar' && <>
               <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
                 <div>
@@ -2591,6 +2599,14 @@ export default function AdminDashboard() {
                   )}
                 </div>
               </div>}
+              {activeTab === 'live' && <WalkInBookingModal
+                open={walkInBookingOpen}
+                onClose={() => setWalkInBookingOpen(false)}
+                onCreated={() => {
+                  void loadAdminTabData('calendar', { force: true });
+                  void loadAdminTabData('live', { force: true });
+                }}
+              />}
             </div>
           )}
 
@@ -3491,6 +3507,8 @@ export default function AdminDashboard() {
         isLoading={endOfDayDetailLoading}
         error={endOfDayDetailError}
       />
+
+      <BookingReceiptPrintDialog open={Boolean(bookingReceipt)} receipt={bookingReceipt} onClose={() => setBookingReceipt(null)} />
 
       <IngredientStatusModal
         open={ingredientStatusOpen}

@@ -384,7 +384,47 @@
   margin: 0;
 }
 
+@page booking-receipt {
+  size: 80mm 240mm;
+  margin: 0;
+}
+
+#booking-receipt-print-area {
+  page: booking-receipt;
+}
+
 @media print {
+  body:has(#booking-receipt-print-area) {
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  body:has(#booking-receipt-print-area) * {
+    visibility: hidden !important;
+  }
+
+  body:has(#booking-receipt-print-area) #booking-receipt-print-area,
+  body:has(#booking-receipt-print-area) #booking-receipt-print-area * {
+    visibility: visible !important;
+  }
+
+  body:has(#booking-receipt-print-area) #booking-receipt-print-area {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 76mm !important;
+    max-width: 76mm !important;
+    margin: 0 !important;
+    padding: 3mm !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    color: #000 !important;
+    background: #fff !important;
+    overflow: visible !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
   body:has(#receipt-print-area) {
     margin: 0 !important;
     background: #fff !important;

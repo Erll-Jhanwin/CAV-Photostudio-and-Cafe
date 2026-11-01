@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Calendar, Check, Clock, UserPlus } from 'lucide-react';
+import { Calendar, Check, Clock, Printer, UserPlus } from 'lucide-react';
 import client, { getApiErrorMessage } from '../api/client';
 import { Button } from '../components/ui/Button';
 import { Input, Select, Textarea } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { getManilaDateInputValue } from '../utils/dateTime';
+import { BookingReceiptDocument, printBookingReceipt } from '../components/BookingReceipt';
 
 const idempotencyKey = () => `walk-in-${window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`}`.slice(0, 100);
 const peso = value => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -21,6 +22,8 @@ export default function WalkInBookingModal({ open, onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [savedReceipt, setSavedReceipt] = useState(null);
+  const [receiptCopy, setReceiptCopy] = useState('Customer Copy');
   const [form, setForm] = useState({ name: '', email: '', phone: '', notes: '', paymentAmount: '', paymentMethod: 'CASH', paymentReference: '' });
   const inFlight = useRef(false);
 
@@ -84,11 +87,28 @@ export default function WalkInBookingModal({ open, onClose, onCreated }) {
     }
     try {
       const { data } = await client.post('/api/bookings/walk-in/', payload);
-      setNotice(data.payments?.length
-        ? `Walk-in booking #${data.id} saved. Downpayment received and verified; remaining balance ${peso(data.remaining_balance)}.`
-        : `Walk-in booking #${data.id} saved in the schedule.`);
+      const payment = (data.payments || []).find(item => ['APPROVED', 'PAID'].includes(item.status));
+      const totalAmount = Number(data.package_details?.price ?? selectedPackage?.price ?? 0);
+      const amountPaid = (data.payments || []).filter(item => ['APPROVED', 'PAID'].includes(item.status))
+        .reduce((total, item) => total + Number(item.amount || 0), 0);
+      setReceiptCopy('Customer Copy');
+      setSavedReceipt({
+        bookingId: data.id,
+        customerName: data.customer_name || form.name.trim(),
+        customerPhone: data.customer_phone || form.phone.trim(),
+        customerEmail: data.customer_email || form.email.trim(),
+        serviceName: selectedService?.name || 'Photo Studio',
+        packageName: selectedPackage?.name || data.package_details?.name,
+        scheduledDate: data.scheduled_date || date,
+        scheduledTime: data.scheduled_time || time,
+        totalAmount,
+        amountPaid,
+        remainingBalance: data.remaining_balance ?? Math.max(totalAmount - amountPaid, 0),
+        paymentMethod: payment?.method_label || payment?.method || 'Not recorded',
+        paymentReference: payment?.reference_number || '',
+        transactionDate: payment?.paid_at || data.created_at,
+      });
       onCreated?.(data);
-      window.setTimeout(() => onClose?.(), 700);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Could not save this walk-in booking. Check availability and try again.'));
     } finally {
@@ -99,12 +119,31 @@ export default function WalkInBookingModal({ open, onClose, onCreated }) {
 
   const resetClose = () => {
     if (saving) return;
-    setError(''); setNotice(''); setPackageId(''); setTime(''); setForm({ name: '', email: '', phone: '', notes: '', paymentAmount: '', paymentMethod: 'CASH', paymentReference: '' });
+    setError(''); setNotice(''); setSavedReceipt(null); setReceiptCopy('Customer Copy'); setPackageId(''); setTime(''); setForm({ name: '', email: '', phone: '', notes: '', paymentAmount: '', paymentMethod: 'CASH', paymentReference: '' });
     onClose?.();
   };
 
   return (
-    <Modal open={open} onClose={resetClose} title="Create Walk-in Booking" size="2xl" bodyClassName="max-h-[calc(100vh-12rem)]">
+    <Modal open={open} onClose={resetClose} title={savedReceipt ? 'Booking saved successfully' : 'Create Walk-in Booking'} size="2xl" bodyClassName="max-h-[calc(100vh-12rem)]">
+      {savedReceipt ? (
+        <div className="space-y-4">
+          <div role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center">
+            <p className="text-sm font-black text-emerald-900">Walk-in booking #{savedReceipt.bookingId} saved successfully.</p>
+            <p className="mt-1 text-xs text-emerald-800">The booking and any payment are recorded. Printing or closing this window will not change them.</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button type="button" variant="outline" icon={Printer} onClick={() => {
+              setReceiptCopy('Customer Copy');
+              window.setTimeout(printBookingReceipt, 120);
+            }}>Print Customer Copy</Button>
+            <Button type="button" variant="gold" icon={Printer} onClick={() => {
+              setReceiptCopy('Staff/Admin Copy');
+              window.setTimeout(printBookingReceipt, 120);
+            }}>Print Your Copy</Button>
+          </div>
+          <BookingReceiptDocument receipt={savedReceipt} copyLabel={receiptCopy} />
+        </div>
+      ) : (
       <form onSubmit={submit} className="space-y-5">
         <div className="flex items-start gap-3 rounded-2xl border border-gold/20 bg-gold/10 p-3 text-sm text-espresso">
           <UserPlus className="mt-0.5 h-4 w-4 shrink-0 text-gold-dark" />
@@ -138,6 +177,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated }) {
           <Button type="submit" icon={Check} loading={saving} disabled={!selectedPackage || !date || !time || loadingSlots || !form.name.trim() || !form.phone.trim()}>{saving ? 'Saving booking…' : 'Confirm Walk-in Booking'}</Button>
         </div>
       </form>
+      )}
     </Modal>
   );
 }

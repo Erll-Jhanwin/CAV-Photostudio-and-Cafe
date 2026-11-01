@@ -792,7 +792,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             'booking__package',
             'booking__package__service',
             'verified_by'
-        ).distinct().order_by('-created_at', '-id')
+        ).prefetch_related('booking__payments').distinct().order_by('-created_at', '-id')
         status_param = self.request.query_params.get('status')
         if status_param:
             queryset = queryset.filter(status=status_param)
