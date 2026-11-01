@@ -18,7 +18,10 @@ from django.core.exceptions import ImproperlyConfigured
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(BASE_DIR / '.env')
+# Render injects service variables directly. For local development, use the
+# backend export kept outside the frontend build context. Existing process
+# variables (including Render's) take precedence over the export.
+load_dotenv(BASE_DIR.parent / 'cav_env' / 'CAV-Photostudio-and-Cafe-backend.env')
 
 # Add apps folder to Python path
 sys.path.insert(0, os.path.join(BASE_DIR, 'apps'))
@@ -45,6 +48,13 @@ if not SECRET_KEY:
 APP_TIME_ZONE = os.environ.get('TIME_ZONE', 'Asia/Manila')
 ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS', ['localhost', '127.0.0.1', '[::1]', 'testserver'])
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+RECAPTCHA_ENABLED = env_bool('RECAPTCHA_ENABLED', True)
+RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '').strip()
+RECAPTCHA_ALLOWED_HOSTS = env_list('RECAPTCHA_ALLOWED_HOSTS', [
+    'localhost',
+    '127.0.0.1',
+    'cav-photostudio-and-cafe-frontend.onrender.com',
+])
 PASSWORD_RESET_OTP_TTL_MINUTES = int(os.environ.get('PASSWORD_RESET_OTP_TTL_MINUTES', '10'))
 PASSWORD_RESET_OTP_MAX_ATTEMPTS = int(os.environ.get('PASSWORD_RESET_OTP_MAX_ATTEMPTS', '5'))
 PASSWORD_RESET_TOKEN_TTL_MINUTES = int(os.environ.get('PASSWORD_RESET_TOKEN_TTL_MINUTES', '10'))

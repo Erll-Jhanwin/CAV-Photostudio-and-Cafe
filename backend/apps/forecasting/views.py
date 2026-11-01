@@ -14,7 +14,7 @@ from ml.linear_regression_forecasting import MODEL_VERSION, create_forecast_run,
 from forecasting.models import ForecastRun
 from users.permissions import IsStaffOrAdmin
 
-FORECAST_CACHE_SECONDS = 20
+FORECAST_CACHE_SECONDS = max(60, int(os.environ.get('FORECAST_CACHE_SECONDS', '900')))
 
 
 def forecast_cache_key():

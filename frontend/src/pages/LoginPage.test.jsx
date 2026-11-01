@@ -11,6 +11,14 @@ jest.mock('../context/AuthContext', () => ({
   useAuth: () => ({ login: mockLogin, loginWithGoogle: mockLoginWithGoogle, register: mockRegister }),
 }));
 
+jest.mock('../components/RecaptchaChallenge', () => {
+  const React = require('react');
+  return function MockRecaptchaChallenge({ onTokenChange, resetKey }) {
+    React.useEffect(() => onTokenChange('test-recaptcha-token', ''), [onTokenChange, resetKey]);
+    return null;
+  };
+});
+
 jest.mock('../api/client', () => ({
   __esModule: true,
   default: { post: jest.fn() },
@@ -82,8 +90,8 @@ describe('Google registration', () => {
       await act(async () => { googleCallback({ credential: 'verified-google-id-token' }); });
 
       await waitFor(() => expect(mockLoginWithGoogle).toHaveBeenCalledTimes(2));
-      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(1, 'verified-google-id-token', '', { privacy_consent: false });
-      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(2, 'verified-google-id-token', '', { privacy_consent: true });
+      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(1, 'verified-google-id-token', '', { privacy_consent: false, recaptcha_token: 'test-recaptcha-token' });
+      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(2, 'verified-google-id-token', '', { privacy_consent: true, recaptcha_token: 'test-recaptcha-token' });
       expect(window.alert).toHaveBeenCalledWith('google.customer logged in successfully.');
     } finally {
       if (originalClientId === undefined) delete process.env.REACT_APP_GOOGLE_CLIENT_ID;
@@ -133,7 +141,7 @@ describe('OTP resend flows', () => {
     fireEvent.click(resendButton);
 
     expect(await screen.findByText(/A new admin verification code was sent/)).toBeInTheDocument();
-    expect(client.post).toHaveBeenCalledWith('/api/auth/login/mfa/resend/', { mfa_token: 'admin-mfa-token' });
+    expect(client.post).toHaveBeenCalledWith('/api/auth/login/mfa/resend/', { mfa_token: 'admin-mfa-token', recaptcha_token: 'test-recaptcha-token' });
     expect(screen.getByLabelText('SMS one-time code')).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Resend code in 60s' })).toBeDisabled();
   });
@@ -183,6 +191,7 @@ describe('OTP resend flows', () => {
       expect(mockLoginWithGoogle).toHaveBeenLastCalledWith('google-id-token', '', {
         mfa_token: 'google-admin-mfa-token',
         mfa_code: '123456',
+        recaptcha_token: 'test-recaptcha-token',
       });
       expect(mockLogin).not.toHaveBeenCalled();
     } finally {
@@ -218,7 +227,11 @@ describe('OTP resend flows', () => {
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'SecureCustomer#2026' } });
     fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'SecureCustomer#2026' } });
     fireEvent.click(screen.getByRole('checkbox'));
-    fireEvent.click(screen.getByRole('button', { name: 'Send Verification Code' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send Verification Code' }));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(mockRegister).toHaveBeenCalledWith(expect.objectContaining({ recaptcha_token: 'test-recaptcha-token' })));
     expect(await screen.findByLabelText('One-Time OTP')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Resend code in 1s' })).toBeDisabled();
 
@@ -230,6 +243,7 @@ describe('OTP resend flows', () => {
     expect(await screen.findByText(/A new verification code was sent/)).toBeInTheDocument();
     expect(client.post).toHaveBeenCalledWith('/api/auth/register/resend/', {
       registration_token: 'registration-token-with-more-than-32-characters',
+      recaptcha_token: 'test-recaptcha-token',
     });
     expect(screen.getByLabelText('One-Time OTP')).toHaveValue('');
     expect(screen.getByRole('button', { name: 'Resend code in 60s' })).toBeDisabled();

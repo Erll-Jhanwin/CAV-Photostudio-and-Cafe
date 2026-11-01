@@ -36,6 +36,104 @@ class IProgSMSServicesTests(TestCase):
         self.assertEqual(verify_payload['otp'], '123456')
 
 
+@override_settings(
+    RECAPTCHA_ENABLED=True,
+    RECAPTCHA_SECRET_KEY='test-only-secret',
+    RECAPTCHA_ALLOWED_HOSTS=['testserver'],
+)
+class RecaptchaAuthTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(
+            username='captcha-customer',
+            email='captcha-customer@example.com',
+            password='CaptchaCustomer123!',
+            role='CUSTOMER',
+        )
+
+    @patch('users.views.requests.post')
+    def test_login_rejects_a_missing_captcha_token_before_authentication(self, mocked_verify):
+        response = self.client.post('/api/auth/login/', {
+            'username': self.user.username,
+            'password': 'CaptchaCustomer123!',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Complete the security check', response.data['detail'])
+        mocked_verify.assert_not_called()
+
+    @patch('users.views.requests.post')
+    def test_valid_captcha_allows_login_and_only_sends_secret_to_google(self, mocked_verify):
+        mocked_verify.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={'success': True, 'hostname': 'testserver'}),
+        )
+        response = self.client.post('/api/auth/login/', {
+            'username': self.user.username,
+            'password': 'CaptchaCustomer123!',
+            'recaptcha_token': 'one-use-test-token',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIn(settings.AUTH_ACCESS_COOKIE_NAME, response.cookies)
+        self.assertEqual(mocked_verify.call_args.args[0], 'https://www.google.com/recaptcha/api/siteverify')
+        self.assertEqual(mocked_verify.call_args.kwargs['data'], {
+            'secret': 'test-only-secret',
+            'response': 'one-use-test-token',
+        })
+
+    @patch('users.views.requests.post')
+    def test_expired_or_reused_token_is_rejected_with_retry_message(self, mocked_verify):
+        mocked_verify.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={'success': False, 'error-codes': ['timeout-or-duplicate']}),
+        )
+        response = self.client.post('/api/auth/login/', {
+            'username': self.user.username,
+            'password': 'CaptchaCustomer123!',
+            'recaptcha_token': 'expired-test-token',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('expired or was already used', response.data['detail'])
+        self.assertIn('Complete it again', response.data['detail'])
+
+    @patch('users.views.send_password_reset_otp')
+    @patch('users.views.requests.post')
+    def test_registration_starts_after_successful_captcha_verification(self, mocked_verify, mocked_sms):
+        mocked_verify.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={'success': True, 'hostname': 'testserver'}),
+        )
+        response = self.client.post('/api/auth/register/', {
+            'username': 'captcha-new-customer',
+            'password': 'CaptchaCustomer123!',
+            'email': 'captcha-new@example.com',
+            'phone_number': '09171234567',
+            'privacy_consent': True,
+            'recaptcha_token': 'registration-test-token',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIn('Verification code sent', response.data['message'])
+        mocked_sms.assert_called_once()
+
+    @patch('users.views.requests.post')
+    def test_captcha_rejects_unconfigured_hostname(self, mocked_verify):
+        mocked_verify.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={'success': True, 'hostname': 'attacker.example'}),
+        )
+        response = self.client.post('/api/auth/login/', {
+            'username': self.user.username,
+            'password': 'CaptchaCustomer123!',
+            'recaptcha_token': 'wrong-host-token',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('could not be verified for this website', response.data['detail'])
+
+
 class PasswordResetSMSTests(TestCase):
     def setUp(self):
         cache.clear()

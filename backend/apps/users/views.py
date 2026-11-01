@@ -59,6 +59,60 @@ ADMIN_MFA_TTL_MINUTES = int(getattr(settings, 'ADMIN_MFA_TTL_MINUTES', 10))
 ADMIN_MFA_MAX_ATTEMPTS = int(getattr(settings, 'ADMIN_MFA_MAX_ATTEMPTS', 5))
 
 
+def validate_recaptcha(request):
+    """Verify a one-use Google reCAPTCHA token before processing auth actions."""
+    if not settings.RECAPTCHA_ENABLED:
+        return None
+
+    token = str(request.data.get('recaptcha_token') or '').strip()
+    if not token:
+        return Response(
+            {'detail': 'Complete the security check, then try again.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    secret = settings.RECAPTCHA_SECRET_KEY
+    if not secret:
+        return Response(
+            {'detail': 'Security verification is not configured. Please contact support.'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    try:
+        verification = requests.post(
+            'https://www.google.com/recaptcha/api/siteverify',
+            data={'secret': secret, 'response': token},
+            timeout=5,
+        )
+        verification.raise_for_status()
+        result = verification.json()
+    except (requests.RequestException, ValueError):
+        return Response(
+            {'detail': 'Security verification is temporarily unavailable. Please retry the check.'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    if result.get('success'):
+        hostname = str(result.get('hostname') or '').strip().lower()
+        allowed_hosts = {str(host).strip().lower() for host in settings.RECAPTCHA_ALLOWED_HOSTS if str(host).strip()}
+        if hostname and hostname in allowed_hosts:
+            return None
+        return Response(
+            {'detail': 'Security check could not be verified for this website. Please try again.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    error_codes = set(result.get('error-codes') or [])
+    if 'timeout-or-duplicate' in error_codes:
+        detail = 'The security check expired or was already used. Complete it again and retry.'
+    elif 'missing-input-secret' in error_codes or 'invalid-input-secret' in error_codes:
+        detail = 'Security verification is not configured correctly. Please contact support.'
+        return Response({'detail': detail}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    else:
+        detail = 'Security check failed. Complete it again and retry.'
+    return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+
+
 class OTPResendRateLimited(Exception):
     def __init__(self, retry_after):
         self.retry_after = max(1, int(retry_after or PASSWORD_RESET_RESEND_COOLDOWN_SECONDS))
@@ -221,6 +275,9 @@ class AdminMFAResendView(views.APIView):
     throttle_scope = 'auth'
 
     def post(self, request):
+        recaptcha_error = validate_recaptcha(request)
+        if recaptcha_error:
+            return recaptcha_error
         serializer = AdminMFAResendSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         token = serializer.validated_data['mfa_token']
@@ -300,6 +357,9 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     throttle_scope = 'auth'
 
     def post(self, request, *args, **kwargs):
+        recaptcha_error = validate_recaptcha(request)
+        if recaptcha_error:
+            return recaptcha_error
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.user
@@ -377,6 +437,9 @@ class RegisterView(generics.CreateAPIView):
     throttle_scope = 'auth'
 
     def create(self, request, *args, **kwargs):
+        recaptcha_error = validate_recaptcha(request)
+        if recaptcha_error:
+            return recaptcha_error
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -437,6 +500,9 @@ class RegistrationOTPResendView(views.APIView):
     throttle_scope = 'auth'
 
     def post(self, request):
+        recaptcha_error = validate_recaptcha(request)
+        if recaptcha_error:
+            return recaptcha_error
         serializer = RegistrationOTPResendSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         cache_key = f"registration_otp:{serializer.validated_data['registration_token']}"
@@ -488,6 +554,9 @@ class RegistrationOTPVerifyView(views.APIView):
     throttle_scope = 'auth'
 
     def post(self, request):
+        recaptcha_error = validate_recaptcha(request)
+        if recaptcha_error:
+            return recaptcha_error
         serializer = RegistrationOTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         token = serializer.validated_data['registration_token']
@@ -614,6 +683,9 @@ class GoogleAuthView(views.APIView):
     throttle_scope = 'auth'
 
     def post(self, request):
+        recaptcha_error = validate_recaptcha(request)
+        if recaptcha_error:
+            return recaptcha_error
         credential = request.data.get('credential', '').strip()
         if not credential:
             return Response({"detail": "Google credential is required."}, status=status.HTTP_400_BAD_REQUEST)

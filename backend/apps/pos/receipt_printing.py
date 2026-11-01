@@ -98,6 +98,7 @@ def _receipt_sections(receipt):
         *_pair("OR NO.", receipt_id),
         *_pair("TRANSACTION NO.", transaction_number),
         *_pair("DATE & TIME", receipt.get("created_at_display") or receipt.get("created_at", "")),
+        *_pair("CUSTOMER", receipt.get("customer_name") or "Walk-in Customer"),
         *_pair("CASHIER", receipt.get("staff_name") or ""),
     ]
     items = [

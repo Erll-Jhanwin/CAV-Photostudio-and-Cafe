@@ -116,7 +116,7 @@ export const AuthProvider = ({ children }) => {
       const userData = await completeLogin({ id, username, email, role, profile_picture_url });
       return { success: true, user: userData };
     } catch (error) {
-      console.error("Login failed:", error);
+      console.error('Login request failed.');
       const message = error.response?.status === 401
         ? (error.config?.skipAuthRedirect
           ? 'Your credentials were accepted, but the authenticated session could not be established. Please try again.'
@@ -145,7 +145,7 @@ export const AuthProvider = ({ children }) => {
       const userData = await completeLogin({ id, username, email, role, profile_picture_url });
       return { success: true, user: userData, created: response.data.created };
     } catch (error) {
-      console.error("Google login failed:", error);
+      console.error('Google login request failed.');
       const message = error.response?.data?.detail || getApiErrorMessage(error, 'Google authentication failed.');
       return { success: false, error: message, errors: error.response?.data || {} };
     } finally {
@@ -184,7 +184,7 @@ export const AuthProvider = ({ children }) => {
       const response = await client.post('/api/auth/register/', registerData);
       return { success: true, ...response.data };
     } catch (error) {
-      console.error("Registration failed:", error);
+      console.error('Registration request failed.');
       const errors = error.response?.data || { detail: "Registration failed." };
       return { success: false, errors };
     }

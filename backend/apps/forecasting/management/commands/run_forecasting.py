@@ -1,6 +1,8 @@
 import json
 
+from django.core.cache import cache
 from django.core.management.base import BaseCommand
+from forecasting.views import FORECAST_CACHE_SECONDS, forecast_cache_key
 from ml.forecasting_engine import generate_forecast_report
 
 class Command(BaseCommand):
@@ -10,6 +12,7 @@ class Command(BaseCommand):
         self.stdout.write('Starting ML forecasting training and predictions...')
         
         report = generate_forecast_report()
+        cache.set(forecast_cache_key(), report, timeout=FORECAST_CACHE_SECONDS)
         self.stdout.write(json.dumps({
             'status': report.get('status'),
             'source_file': report.get('source_file'),

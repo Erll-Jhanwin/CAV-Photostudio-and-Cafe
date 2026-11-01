@@ -21,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import { Input, Textarea } from '../components/ui/Input';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
+import RecaptchaChallenge from '../components/RecaptchaChallenge';
 import client, { getApiErrorMessage } from '../api/client';
 import {
   getConfirmPasswordError,
@@ -70,6 +71,8 @@ export default function LoginPage() {
   const [forgotResendCooldown, setForgotResendCooldown] = useState(0);
   const [forgotOtpExpiresMinutes, setForgotOtpExpiresMinutes] = useState(10);
   const [error, setError] = useState('');
+  const [recaptchaToken, setRecaptchaToken] = useState('');
+  const [recaptchaResetKey, setRecaptchaResetKey] = useState(0);
   const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -81,6 +84,20 @@ export default function LoginPage() {
   const isNativeApp = Capacitor.isNativePlatform();
   const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID
     || (isNativeApp ? NATIVE_GOOGLE_WEB_CLIENT_ID : '');
+
+  const handleRecaptchaToken = useCallback((token, challengeError = '') => {
+    setRecaptchaToken(token || '');
+    if (challengeError) setError(challengeError);
+  }, []);
+  const getRecaptchaToken = useCallback(() => {
+    if (recaptchaToken) return recaptchaToken;
+    setError('Complete the security check, then try again.');
+    return '';
+  }, [recaptchaToken]);
+  const resetRecaptcha = useCallback(() => {
+    setRecaptchaToken('');
+    setRecaptchaResetKey((key) => key + 1);
+  }, []);
 
   const [form, setForm] = useState({
     username: '', password: '', passwordConfirm: '', email: '',
@@ -153,12 +170,16 @@ export default function LoginPage() {
       setError('Google did not return a sign-in token. Please try again.');
       return;
     }
+    const captchaToken = getRecaptchaToken();
+    if (!captchaToken) return;
     setError('');
     setSuccess('');
     setLoading(true);
     const res = await loginWithGoogle(credential, isRegister ? form.phone : '', {
       privacy_consent: isRegister ? registrationConsent : false,
+      recaptcha_token: captchaToken,
     });
+    resetRecaptcha();
     setLoading(false);
     if (res.pendingVerification) {
       setIsRegister(true);
@@ -197,7 +218,7 @@ export default function LoginPage() {
       }
       setError(res.error);
     }
-  }, [form.phone, isRegister, loginWithGoogle, navigateAfterAuth, registrationConsent]);
+  }, [form.phone, getRecaptchaToken, isRegister, loginWithGoogle, navigateAfterAuth, registrationConsent, resetRecaptcha]);
 
   useEffect(() => {
     if (!googleClientId) return undefined;
@@ -269,6 +290,8 @@ export default function LoginPage() {
 
   const handleNativeGoogleLogin = async () => {
     if (!googleReady || loading) return;
+    const captchaToken = getRecaptchaToken();
+    if (!captchaToken) return;
     setError('');
     setSuccess('');
     setLoading(true);
@@ -286,7 +309,9 @@ export default function LoginPage() {
       }
       const res = await loginWithGoogle(credential, isRegister ? form.phone : '', {
         privacy_consent: isRegister ? registrationConsent : false,
+        recaptcha_token: captchaToken,
       });
+      resetRecaptcha();
       if (res.pendingVerification) {
         setIsRegister(true);
         setRegisterStep('otp');
@@ -324,8 +349,9 @@ export default function LoginPage() {
         }
         setError(res.error);
       }
-    } catch (nativeError) {
-      console.error('Native Google login failed:', nativeError);
+    } catch {
+      resetRecaptcha();
+      console.error('Native Google login failed.');
       setError('Google sign-in was cancelled or could not be completed. Please try again.');
     } finally {
       setLoading(false);
@@ -340,13 +366,16 @@ export default function LoginPage() {
       : validateLoginForm();
     setFormErrors(errors);
     if (Object.keys(errors).length) return;
+    const captchaToken = getRecaptchaToken();
+    if (!captchaToken) return;
     setLoading(true);
     const verification = adminMfaStep
-      ? { mfa_token: adminMfaToken, mfa_code: adminMfaOtp }
-      : {};
+      ? { mfa_token: adminMfaToken, mfa_code: adminMfaOtp, recaptcha_token: captchaToken }
+      : { recaptcha_token: captchaToken };
     const res = adminMfaStep && adminMfaProvider === 'google'
       ? await loginWithGoogle(adminMfaGoogleCredential, '', verification)
       : await login(form.username, form.password, verification);
+    resetRecaptcha();
     setLoading(false);
     if (res.mfaRequired) {
       const contactHint = String(res.contact_hint || '');
@@ -384,13 +413,17 @@ export default function LoginPage() {
         setFormErrors({ otp: 'Enter the 6-digit verification code.' });
         return;
       }
+      const captchaToken = getRecaptchaToken();
+      if (!captchaToken) return;
       setLoading(true);
       try {
         const response = await client.post('/api/auth/register/verify/', {
           registration_token: registrationToken,
           otp: registrationOtp,
           privacy_consent: registrationConsent,
+          recaptcha_token: captchaToken,
         });
+        resetRecaptcha();
         setSuccess(response.data?.message || 'Account created successfully! Please log in.');
         setIsRegister(false);
         setRegisterStep('details');
@@ -402,6 +435,7 @@ export default function LoginPage() {
         setForm((f) => ({ ...f, password: '', passwordConfirm: '' }));
         setFormErrors({});
       } catch (err) {
+        resetRecaptcha();
         setError(getApiErrorMessage(err, 'Invalid or expired OTP. Registration was not completed.'));
       } finally {
         setLoading(false);
@@ -412,14 +446,18 @@ export default function LoginPage() {
     const errors = validateRegisterForm();
     setFormErrors(errors);
     if (Object.keys(errors).length) return;
+    const captchaToken = getRecaptchaToken();
+    if (!captchaToken) return;
     setLoading(true);
     const regData = {
       username: form.username, password: form.password, email: form.email,
       first_name: form.firstName, last_name: form.lastName,
       phone_number: form.phone, address: form.address,
       privacy_consent: registrationConsent,
+      recaptcha_token: captchaToken,
     };
     const res = await register(regData);
+    resetRecaptcha();
     setLoading(false);
     if (res.success) {
       setRegistrationToken(res.registration_token || '');
@@ -549,17 +587,21 @@ export default function LoginPage() {
 
   const handleRegistrationResend = async () => {
     if (loading || !registrationToken || registrationResendCooldown > 0) return;
+    const captchaToken = getRecaptchaToken();
+    if (!captchaToken) return;
     setLoading(true);
     setError('');
     setSuccess('');
     try {
-      const response = await client.post('/api/auth/register/resend/', { registration_token: registrationToken });
+      const response = await client.post('/api/auth/register/resend/', { registration_token: registrationToken, recaptcha_token: captchaToken });
+      resetRecaptcha();
       setRegistrationOtp('');
       setRegistrationContactHint(response.data?.contact_hint || registrationContactHint);
       setRegistrationOtpExpiresMinutes(response.data?.expires_in_minutes || 10);
       setRegistrationResendCooldown(response.data?.resend_cooldown_seconds || 60);
       setSuccess(`A new verification code was sent to ${response.data?.contact_hint || registrationContactHint}. It expires in ${response.data?.expires_in_minutes || registrationOtpExpiresMinutes} minutes.`);
     } catch (err) {
+      resetRecaptcha();
       const retryAfter = Number(err.response?.data?.retry_after_seconds);
       if (retryAfter > 0) setRegistrationResendCooldown(retryAfter);
       setError(getApiErrorMessage(err, 'Unable to resend the verification code. Please try again later.'));
@@ -588,16 +630,20 @@ export default function LoginPage() {
 
   const handleAdminMfaResend = async () => {
     if (loading || !adminMfaToken || adminMfaResendCooldown > 0) return;
+    const captchaToken = getRecaptchaToken();
+    if (!captchaToken) return;
     setLoading(true);
     setError('');
     setSuccess('');
     try {
-      const response = await client.post('/api/auth/login/mfa/resend/', { mfa_token: adminMfaToken });
+      const response = await client.post('/api/auth/login/mfa/resend/', { mfa_token: adminMfaToken, recaptcha_token: captchaToken });
+      resetRecaptcha();
       setAdminMfaOtp('');
       setAdminMfaOtpExpiresMinutes(response.data?.expires_in_minutes || 10);
       setAdminMfaResendCooldown(response.data?.resend_cooldown_seconds || 60);
       setSuccess(`A new admin verification code was sent to ${adminMfaContactHint}. It expires in ${response.data?.expires_in_minutes || 10} minutes.`);
     } catch (err) {
+      resetRecaptcha();
       const retryAfter = Number(err.response?.data?.retry_after_seconds);
       if (retryAfter > 0) setAdminMfaResendCooldown(retryAfter);
       setError(getApiErrorMessage(err, 'Unable to resend the admin verification code. Please try again later.'));
@@ -788,6 +834,13 @@ export default function LoginPage() {
                     <div className="h-px flex-1 bg-espresso/10" />
                   </div>
                 </div>
+              )}
+
+              {!showForgotPassword && (
+                <RecaptchaChallenge
+                  onTokenChange={handleRecaptchaToken}
+                  resetKey={recaptchaResetKey}
+                />
               )}
 
               {showForgotPassword ? (

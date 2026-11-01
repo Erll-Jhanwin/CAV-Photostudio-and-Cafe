@@ -23,12 +23,13 @@ class OrderSerializer(serializers.ModelSerializer):
     items = serializers.JSONField(source='line_items', read_only=True)
     payments = PaymentSerializer(many=True, read_only=True)
     staff_name = serializers.CharField(source='staff.username', read_only=True)
+    customer_name = serializers.CharField(read_only=True)
     booking_customer_name = serializers.CharField(source='booking.customer.username', read_only=True, default='')
 
     class Meta:
         model = Order
         fields = [
-            'id', 'staff', 'staff_name', 'booking', 'booking_customer_name',
+            'id', 'staff', 'staff_name', 'customer_name', 'booking', 'booking_customer_name',
             'subtotal', 'discount_type', 'discount_value', 'discount_amount',
             'total', 'returned_amount', 'return_events', 'transaction_id', 'completed_at', 'payment_status',
             'order_type', 'created_at', 'items', 'payments'

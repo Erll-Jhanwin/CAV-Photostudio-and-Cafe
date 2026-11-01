@@ -239,6 +239,7 @@ export default function StaffDashboard() {
   const [error, setError] = useState('');
 
   const [cart, setCart] = useState([]);
+  const [customerName, setCustomerName] = useState('Walk-in Customer');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [transactionId, setTransactionId] = useState('');
   const [amountReceived, setAmountReceived] = useState('');
@@ -276,10 +277,12 @@ export default function StaffDashboard() {
   const [adjMovementType, setAdjMovementType] = useState('IN');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
+  const paymentListRef = useRef(null);
   const [inventoryFilter, setInventoryFilter] = useState('ALL');
   const [inventorySection, setInventorySection] = useState('management');
   const [selectedProductActivity, setSelectedProductActivity] = useState(null);
   const [salesPaymentFilter, setSalesPaymentFilter] = useState('ALL');
+  const [salesCustomerSearch, setSalesCustomerSearch] = useState('');
   const [salesStartDate, setSalesStartDate] = useState('');
   const [salesEndDate, setSalesEndDate] = useState('');
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -287,6 +290,7 @@ export default function StaffDashboard() {
   const [purchaseOrderStatusFilter, setPurchaseOrderStatusFilter] = useState('ALL');
   const [productPage, setProductPage] = useState(1);
   const [paymentPage, setPaymentPage] = useState(1);
+  const [paymentPageSize, setPaymentPageSize] = useState(10);
   const [inventoryPage, setInventoryPage] = useState(1);
   const [productSalesPage, setProductSalesPage] = useState(1);
   const [inventoryRowsPerPage, setInventoryRowsPerPage] = useState(TABLE_PAGE_SIZE);
@@ -422,7 +426,9 @@ export default function StaffDashboard() {
         setSuppliers(nextCatalogSuppliers.filter(row => row.is_active !== false));
         setPurchaseOrders(normalizeRowsById(purchaseOrdersRes.data, row => row?.id));
       } else if (tab === 'sales') {
-        const ordersRes = await getCached('/api/pos/orders/', { params: { limit: 100 } }, { force });
+        const params = { limit: 200 };
+        if (salesCustomerSearch.trim()) params.customer_name = salesCustomerSearch.trim();
+        const ordersRes = await getCached('/api/pos/orders/', { params }, { force });
         setOrders(normalizeRowsById(ordersRes.data, row => row?.transaction_id || row?.created_at));
       }
 
@@ -435,7 +441,7 @@ export default function StaffDashboard() {
       setLoading(false);
       setInitialDataReady(true);
     }
-  }, [activeTab, loadedTabs, ensureDefaultRecipesOnce, loadStaticInventoryOptions, user?.id]);
+  }, [activeTab, loadedTabs, ensureDefaultRecipesOnce, loadStaticInventoryOptions, salesCustomerSearch, user?.id]);
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) {
@@ -482,7 +488,26 @@ export default function StaffDashboard() {
   useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
   useEffect(() => { setBookingsPage(1); }, [staffBookings.length]);
   useEffect(() => { setInventoryPage(1); }, [invSearch, inventoryFilter]);
-  useEffect(() => { setSalesPage(1); }, [salesPaymentFilter, salesStartDate, salesEndDate]);
+  useEffect(() => { setSalesPage(1); }, [salesPaymentFilter, salesStartDate, salesEndDate, salesCustomerSearch]);
+
+  useEffect(() => {
+    if (activeTab !== 'sales' || !loadedTabs.sales) return undefined;
+    let active = true;
+    const timeout = window.setTimeout(async () => {
+      try {
+        const params = { limit: 200 };
+        if (salesCustomerSearch.trim()) params.customer_name = salesCustomerSearch.trim();
+        const response = await getCached('/api/pos/orders/', { params }, { force: true });
+        if (active) setOrders(normalizeRowsById(response.data, row => row?.transaction_id || row?.created_at));
+      } catch {
+        // Keep the last available sales rows visible if the search request fails.
+      }
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [activeTab, loadedTabs.sales, salesCustomerSearch]);
   useEffect(() => { setCatalogPage(1); }, [catalogSearch, catalogStatusFilter]);
   useEffect(() => { setPurchaseOrderPage(1); }, [purchaseOrderStatusFilter]);
 
@@ -676,6 +701,7 @@ export default function StaffDashboard() {
       }
       const payload = {
         items: cart.map(item => ({ product_id: item.id, quantity: item.quantity, discount: { type: 'PERCENT', value: Number(item.discountValue || 0) } })),
+        customer_name: customerName.trim() || 'Walk-in Customer',
         order_type: 'WALK_IN',
         print_receipt: false,
         discount: { type: 'PERCENT', value: discountNumber },
@@ -719,6 +745,7 @@ export default function StaffDashboard() {
         }) };
       }), row => row?.name));
       setCart([]);
+      setCustomerName('Walk-in Customer');
       setTransactionId('');
       setAmountReceived('');
       setDiscountValue('');
@@ -1422,9 +1449,10 @@ export default function StaffDashboard() {
     const createdAt = new Date(order.completed_at || order.created_at);
     const isCompletedSale = order.payment_status === 'PAID';
     const matchesPayment = salesPaymentFilter === 'ALL' || order.payments?.some(payment => payment.method === salesPaymentFilter);
+    const matchesCustomer = String(order.customer_name || 'Walk-in Customer').toLocaleLowerCase().includes(salesCustomerSearch.trim().toLocaleLowerCase());
     const matchesStart = !salesStart || createdAt >= salesStart;
     const matchesEnd = !salesEnd || createdAt <= salesEnd;
-    return isCompletedSale && matchesPayment && matchesStart && matchesEnd;
+    return isCompletedSale && matchesPayment && matchesStart && matchesEnd && matchesCustomer;
   });
   const sortedOrders = sortRows(filteredOrders, salesSort);
   const pagedOrders = paginateRows(sortedOrders, salesPage, salesRowsPerPage);
@@ -1486,7 +1514,11 @@ export default function StaffDashboard() {
   const filteredBookingPayments = bookingPayments.filter(payment => (
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
   ));
-  const pagedBookingPayments = paginateRows(filteredBookingPayments, paymentPage, TABLE_PAGE_SIZE);
+  const pagedBookingPayments = paginateRows(filteredBookingPayments, paymentPage, paymentPageSize);
+  const paymentStatusCounts = bookingPayments.reduce((counts, payment) => {
+    counts[payment.status] = (counts[payment.status] || 0) + 1;
+    return counts;
+  }, {});
   const filteredCatalogProducts = catalogProducts.filter(product => {
     const search = catalogSearch.toLowerCase();
     const matchesSearch = [product.name, product.sku, product.category_details?.name, product.supplier_details?.name]
@@ -1536,11 +1568,13 @@ export default function StaffDashboard() {
     }));
   const isSalesTab = activeTab === 'sales';
   const isPosTab = activeTab === 'pos';
+  const isBookingsTab = activeTab === 'bookings';
+  const isPaymentsTab = activeTab === 'payments';
   const isInventoryTab = activeTab === 'inventory';
   const isCatalogTab = activeTab === 'catalog';
-  const isViewportBoundTab = isSalesTab || isPosTab || isInventoryTab || isCatalogTab;
+  const isViewportBoundTab = isSalesTab || isPosTab || isBookingsTab || isPaymentsTab || isInventoryTab || isCatalogTab;
 
-  if (!initialDataReady && (loading || isCurrentTabLoading)) {
+  if (!initialDataReady && (loading || isCurrentTabLoading) && !isBookingsTab && !isPaymentsTab) {
     return <StaffSkeleton />;
   }
 
@@ -1563,7 +1597,7 @@ export default function StaffDashboard() {
       <div className={`flex-1 flex flex-col overflow-hidden ${isViewportBoundTab ? 'h-dvh min-h-0' : 'min-h-screen'}`}>
         <MobileHeader title={pageTitles[activeTab]} onMenuToggle={() => setSidebarOpen(true)} user={user} />
 
-        <main className={`flex-1 p-4 md:p-6 lg:p-8 ${isSalesTab || isInventoryTab || isCatalogTab ? 'flex min-h-0 flex-col overflow-hidden' : isPosTab ? 'overflow-y-auto scrollbar-thin lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden' : 'overflow-y-auto scrollbar-thin'}`}>
+        <main className={`flex-1 p-4 md:p-6 lg:p-8 ${isSalesTab || isBookingsTab || isPaymentsTab || isInventoryTab || isCatalogTab ? 'flex min-h-0 flex-col overflow-hidden' : isPosTab ? 'overflow-y-auto scrollbar-thin lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden' : 'overflow-y-auto scrollbar-thin'}`}>
           {error && (
             <div className="bg-red-50 border border-red-100 text-red-800 p-5 rounded-2xl mb-6 flex items-start gap-3 shadow-sm">
               <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5" />
@@ -1602,7 +1636,7 @@ export default function StaffDashboard() {
             </div>
           )}
 
-          {isCurrentTabLoading && (
+          {isCurrentTabLoading && !isBookingsTab && !isPaymentsTab && (
             <div className="mb-4 flex items-center gap-3 rounded-xl border border-gold/20 bg-gold/10 px-4 py-3" role="status">
               <LoadingSpinner size="sm" className="text-gold-dark" label={`Loading ${pageTitles[activeTab]}`} />
               <span className="text-xs font-bold text-espresso">Loading {pageTitles[activeTab]}...</span>
@@ -1679,7 +1713,7 @@ export default function StaffDashboard() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:items-stretch">
+              <div className="grid grid-cols-1 gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-12 lg:grid-rows-1 lg:items-stretch">
                 <section aria-label="Products" className="flex min-h-0 flex-col gap-4 lg:col-span-8">
                 <div className="relative">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-espresso/30" />
@@ -1698,6 +1732,8 @@ export default function StaffDashboard() {
                     return (
                     <button
                       key={prod.id}
+                      type="button"
+                      aria-label={`Add ${prod.name} to cart`}
                       onClick={() => addToCart(prod)}
                       className={`h-full min-h-0 bg-white rounded-2xl border border-espresso/5 shadow-sm text-left flex flex-col overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group relative ${availableServings <= 0 && prod.is_cafe_item ? 'opacity-50 cursor-not-allowed' : ''} animate-in-up`}
                       style={{ animationDelay: `${i * 30}ms` }}
@@ -1754,38 +1790,46 @@ export default function StaffDashboard() {
                 </section>
 
               <div className="min-h-0 lg:col-span-4">
-                <Card className="lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:p-4">
-                  <CardHeader title="Active Cart" subtitle={`${cart.length} item${cart.length !== 1 ? 's' : ''}`} className="lg:mb-4 lg:shrink-0" />
+                <Card padding={false} className="flex min-h-0 flex-col overflow-hidden p-4 lg:h-full">
+                  <CardHeader title="Active Cart" subtitle={`${cart.length} item${cart.length !== 1 ? 's' : ''}`} className="mb-3 shrink-0 lg:mb-3" />
                   {cart.length > 0 ? (
-                    <div className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-                      <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-thin pr-1 lg:max-h-none lg:min-h-0 lg:flex-1">
+                    <div className="flex min-h-0 flex-1 flex-col gap-2">
+                      <div role="list" aria-label="Cart items" className="min-h-[7rem] max-h-64 shrink-0 space-y-2 overflow-y-auto overscroll-contain scrollbar-thin pr-1 lg:max-h-none lg:min-h-[7rem] lg:flex-[0_1_13rem]">
                         {cart.map(item => (
-                          <div key={item.id} className="flex items-center justify-between bg-cream p-3 rounded-xl text-xs">
-                            <div className="min-w-0 flex-1 pr-2">
-                              <p className="font-bold text-espresso truncate">{item.name}</p>
-                              <p className="text-espresso/50 mt-0.5">PHP {item.price} each</p>
-                              <label className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-espresso/55">Item discount
+                          <div key={item.id} role="listitem" aria-label={`${item.name}, quantity ${item.quantity}, ${formatReceiptCurrency(item.price)} each`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-cream p-2.5 text-xs sm:p-3">
+                            <div className="min-w-0">
+                              <p className="truncate font-bold text-espresso" title={item.name}>{item.name}</p>
+                              <p className="mt-0.5 text-[11px] text-espresso/55">{formatReceiptCurrency(item.price)} each · {item.quantity} × {formatReceiptCurrency(item.price)} = <span className="font-bold text-espresso">{formatReceiptCurrency(Number(item.price || 0) * item.quantity)}</span></p>
+                              <label className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-espresso/55">Item discount
                                 <select aria-label={`${item.name} discount`} value={item.discountValue || 0} onChange={event => setCart(current => current.map(row => row.id === item.id ? { ...row, discountValue: Number(event.target.value) } : row))} className="rounded-md border border-espresso/10 bg-white px-1.5 py-1 text-[10px] text-espresso">
                                   <option value={0}>None</option>{DISCOUNT_OPTIONS.map(value => <option key={value} value={value}>{value}%</option>)}
                                 </select>
                               </label>
                             </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button onClick={() => updateCartQty(item.id, -1)} className="bg-white border border-espresso/10 p-1 rounded-lg hover:bg-espresso/5 transition-colors"><Minus className="w-3 h-3" /></button>
-                              <span className="font-bold w-5 text-center">{item.quantity}</span>
-                              <button onClick={() => updateCartQty(item.id, 1)} className="bg-white border border-espresso/10 p-1 rounded-lg hover:bg-espresso/5 transition-colors"><Plus className="w-3 h-3" /></button>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button type="button" aria-label={`Decrease ${item.name} quantity`} onClick={() => updateCartQty(item.id, -1)} className="rounded-lg border border-espresso/10 bg-white p-1.5 transition-colors hover:bg-espresso/5"><Minus aria-hidden="true" className="h-3.5 w-3.5" /></button>
+                              <span aria-label={`${item.name} quantity`} className="w-5 text-center font-bold">{item.quantity}</span>
+                              <button type="button" aria-label={`Increase ${item.name} quantity`} onClick={() => updateCartQty(item.id, 1)} className="rounded-lg border border-espresso/10 bg-white p-1.5 transition-colors hover:bg-espresso/5"><Plus aria-hidden="true" className="h-3.5 w-3.5" /></button>
+                              <button type="button" aria-label={`Remove ${item.name} from cart`} onClick={() => setCart(current => current.filter(row => row.id !== item.id))} className="ml-0.5 rounded-lg p-1.5 text-red-600 transition-colors hover:bg-red-50"><Trash2 aria-hidden="true" className="h-3.5 w-3.5" /></button>
                             </div>
                           </div>
                         ))}
                       </div>
 
-                      <div className="border-t border-espresso/5 pt-4 space-y-4 lg:shrink-0 lg:space-y-2">
+                      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain border-t border-espresso/5 pt-3 scrollbar-thin lg:space-y-2">
+                        <Input
+                          label="Customer Name"
+                          value={customerName}
+                          onChange={event => setCustomerName(event.target.value)}
+                          placeholder="Walk-in Customer"
+                          maxLength={200}
+                        />
                         <div className="flex justify-between font-bold text-sm">
                           <span className="text-espresso/70">Total:</span>
                           <span className="font-sans text-lg text-espresso">{formatReceiptCurrency(getCartTotal())}</span>
                         </div>
 
-                        <div className="rounded-xl border border-espresso/5 bg-cream/70 p-3 space-y-2 lg:p-2">
+                          <div className="rounded-xl border border-espresso/5 bg-cream/70 p-3 space-y-2 lg:p-2">
                           <div className="flex justify-between text-xs font-bold text-espresso/60">
                             <span>Subtotal</span>
                             <span>{formatReceiptCurrency(getCartSubtotal())}</span>
@@ -1878,13 +1922,13 @@ export default function StaffDashboard() {
                           </div>
                         )}
 
-                        <Button variant="gold" size="lg" className="w-full" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading}>
-                          {showCheckoutLoading ? 'Finalizing Sale...' : `Complete Sale - ${formatReceiptCurrency(getCartTotal())}`}
-                        </Button>
                       </div>
+                      <Button type="button" variant="gold" size="lg" className="w-full shrink-0" onClick={handleCheckout} loading={showCheckoutLoading} disabled={checkoutLoading}>
+                        {showCheckoutLoading ? 'Finalizing Sale...' : `Complete Sale - ${formatReceiptCurrency(getCartTotal())}`}
+                      </Button>
                     </div>
                     ) : (
-                      <div className="text-center py-8 space-y-4">
+                      <div className="flex-1 py-8 text-center space-y-4">
                         <div className="bg-cream w-16 h-16 mx-auto rounded-2xl flex items-center justify-center">
                           <ShoppingBag className="w-7 h-7 text-espresso/30" />
                         </div>
@@ -1894,7 +1938,7 @@ export default function StaffDashboard() {
                         </div>
                       </div>
                   )}
-                  <div className="mt-3 grid grid-cols-2 gap-2 border-t border-espresso/5 pt-3">
+                  <div className="mt-2 grid shrink-0 grid-cols-2 gap-2 border-t border-espresso/5 pt-2">
                     <Button
                       type="button"
                       variant="outline"
@@ -1920,15 +1964,16 @@ export default function StaffDashboard() {
 
           {/* PAYMENT BOOKING VERIFICATION */}
           {activeTab === 'bookings' && (
-            <div className="space-y-5 animate-in-up" key="bookings">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex h-full min-h-0 flex-1 flex-col gap-4 animate-in-up" key="bookings">
+              <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div><h1 className="heading-page text-espresso">Bookings</h1><p className="mt-1 text-xs text-espresso/50">Live reservations, including customer and walk-in bookings.</p></div>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" icon={Plus} onClick={() => setWalkInBookingOpen(true)}>Walk-in Booking</Button>
                   <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData('bookings', true)} loading={!!loadingResources.bookings}>Refresh bookings</Button>
                 </div>
               </div>
-              <Card>
+              <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 md:p-4">
+                <section aria-label="Bookings table" className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <DataTable
                   columns={[
                     { key: 'id', label: 'Booking', render: booking => `#${booking.id}` },
@@ -1940,121 +1985,147 @@ export default function StaffDashboard() {
                   ]}
                   rows={pagedStaffBookings}
                   emptyIcon={Calendar}
-                  emptyTitle="No bookings yet"
-                  emptyDescription="Customer reservations will appear here as soon as they are saved."
+                  emptyTitle={isCurrentTabLoading ? 'Loading bookings' : 'No bookings yet'}
+                  emptyDescription={isCurrentTabLoading ? 'Live reservations are loading.' : 'Customer reservations will appear here as soon as they are saved.'}
                   minWidth={950}
+                  containerClassName="min-h-0 flex-1 overflow-y-auto"
+                  emptyStateClassName="min-h-0 flex-1"
+                  showEmptyTable
                 />
-                <PaginationControls page={bookingsPage} setPage={setBookingsPage} total={staffBookings.length} pageSize={TABLE_PAGE_SIZE} />
+                </section>
+                <PaginationControls page={bookingsPage} setPage={setBookingsPage} total={staffBookings.length} pageSize={TABLE_PAGE_SIZE} compact alwaysVisible />
               </Card>
               <WalkInBookingModal open={walkInBookingOpen} onClose={() => setWalkInBookingOpen(false)} onCreated={() => loadTabData('bookings', true)} />
             </div>
           )}
 
           {activeTab === 'payments' && (
-              <div className="space-y-4 animate-in-up" key="payments">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                  <h1 className="heading-page text-espresso">Payment Booking Verification</h1>
-                  <p className="text-xs text-espresso/50 mt-1">Match each payment reference and amount with the selected payment provider before approval.</p>
-                </div>
-                <div className="w-full sm:w-64">
-                  <Select
-                    label="Payment Status"
-                    value={paymentStatusFilter}
-                    onChange={e => setPaymentStatusFilter(e.target.value)}
-                    options={[
-                      { value: 'PENDING_VERIFICATION', label: 'Pending Verification' },
-                      { value: 'APPROVED', label: 'Approved' },
-                      { value: 'REJECTED', label: 'Rejected' },
-                      { value: 'ALL', label: 'All Payments' },
-                    ]}
-                  />
-                </div>
+            <div className="flex h-full min-h-0 w-full flex-1 flex-col gap-3 animate-in-up" key="payments">
+              <div className="grid shrink-0 grid-cols-3 gap-2">
+                {[
+                  ['Pending Verification', paymentStatusCounts.PENDING_VERIFICATION || 0, 'bg-amber-50 text-amber-700 border-amber-200'],
+                  ['Approved', paymentStatusCounts.APPROVED || 0, 'bg-emerald-50 text-emerald-700 border-emerald-200'],
+                  ['Rejected', paymentStatusCounts.REJECTED || 0, 'bg-red-50 text-red-700 border-red-200'],
+                ].map(([label, value, className]) => (
+                  <div key={label} className={`rounded-2xl border px-3 py-2.5 shadow-sm ${className}`}>
+                    <p className="text-[9px] uppercase tracking-[0.16em] font-black opacity-80">{label}</p>
+                    <p className="text-2xl font-black leading-tight mt-1">{value}</p>
+                  </div>
+                ))}
               </div>
 
-              {filteredBookingPayments.length > 0 ? (
-                <div className="space-y-2">
-                  {pagedBookingPayments.map((payment, i) => {
-                    const details = payment.booking_details || {};
-                    const isPending = payment.status === 'PENDING_VERIFICATION';
-                    return (
-                      <div key={payment.id} className="overflow-hidden rounded-2xl border border-espresso/10 bg-white shadow-sm transition-shadow duration-200 hover:shadow-md animate-in-up" style={{ animationDelay: `${i * 40}ms` }}>
-                        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-espresso/[0.07] bg-cream/35 px-3 py-2.5 md:px-4">
-                          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                            <Avatar user={{ username: details.customer_name, profile_picture_url: details.customer_profile_picture_url }} size="sm" />
-                            <span className="min-w-0 font-sans font-extrabold text-espresso">{details.customer_name || 'N/A'}</span>
-                            <StatusBadge status={payment.status} />
-                          </div>
-                          <p className="text-xs font-black uppercase tracking-wide text-espresso/65">Booking <span className="text-espresso">#{payment.booking}</span></p>
-                        </div>
+              <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col p-3 sm:p-4 md:p-5">
+                  <CardHeader
+                    title="Booking Payment Verification"
+                    subtitle="Review the booking details, then match the reference number and amount with the selected payment provider before approving."
+                    className="mb-2 shrink-0 gap-2 sm:flex-col sm:items-start"
+                  />
+                  <div role="group" aria-label="Booking payment status filter" className="mb-3 flex shrink-0 gap-1 overflow-x-auto rounded-xl bg-cream/70 p-1 scrollbar-thin">
+                    {[
+                      ['ALL', 'All'],
+                      ['PENDING_VERIFICATION', 'Pending Verification'],
+                      ['APPROVED', 'Approved'],
+                      ['REJECTED', 'Rejected'],
+                    ].map(([value, label]) => {
+                      const active = paymentStatusFilter === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => {
+                            setPaymentStatusFilter(value);
+                            setPaymentPage(1);
+                            if (paymentListRef.current) paymentListRef.current.scrollTop = 0;
+                          }}
+                          className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-[10px] font-black transition-colors sm:text-xs ${active ? 'bg-espresso text-gold shadow-sm' : 'text-espresso/60 hover:bg-white hover:text-espresso'}`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                        <div className="grid grid-cols-1 gap-3 px-3 py-3 text-xs sm:grid-cols-2 md:grid-cols-3 md:gap-0 md:px-4">
-                          <section className="min-w-0 md:pr-4">
-                            <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Booking Details</h3>
-                            <dl className="space-y-1.5">
-                              <div><dt className="inline text-espresso/50">Service: </dt><dd className="inline font-bold text-espresso">{details.service_name || 'N/A'}</dd></div>
-                              <div><dt className="inline text-espresso/50">Package: </dt><dd className="inline font-bold text-espresso">{details.package_name || details.package_details?.name || 'N/A'}</dd></div>
-                              <div><dt className="inline text-espresso/50">Schedule: </dt><dd className="inline font-bold text-espresso">{details.scheduled_date} · {details.scheduled_time}</dd></div>
-                            </dl>
-                          </section>
-
-                          <section className="min-w-0 border-t border-espresso/10 pt-3 sm:border-t-0 sm:pt-0 md:border-l md:border-t-0 md:px-4 md:pt-0">
-                            <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Payment Details</h3>
-                            <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                              <div className="min-w-0"><dt className="text-espresso/50">Method</dt><dd className="break-words font-bold text-espresso">{payment.method_label || payment.method || 'Unknown'}</dd></div>
-                              <div className="min-w-0"><dt className="text-espresso/50">Reference</dt><dd className="break-all font-bold text-espresso">{payment.reference_number}</dd></div>
-                              <div><dt className="text-espresso/50">Amount Paid</dt><dd className="font-black text-gold-dark">{formatCurrency(payment.amount)}</dd></div>
-                              <div><dt className="text-espresso/50">Required DP</dt><dd className="font-bold text-espresso">{formatCurrency(payment.required_down_payment)}</dd></div>
-                              <div className="col-span-2"><dt className="inline text-espresso/50">Paid At: </dt><dd className="inline font-bold text-espresso">{formatManilaDateTime(payment.paid_at)}</dd></div>
-                              <div className="col-span-2 pt-0.5"><PaymentProofPreview payment={payment} /></div>
-                            </dl>
-                          </section>
-
-                          <section className="min-w-0 border-t border-espresso/10 pt-3 sm:col-span-2 md:col-span-1 md:border-l md:border-t-0 md:px-4 md:pt-0">
-                            <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Verification</h3>
-                            <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
-                            {isPending ? (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="success"
-                                  icon={Check}
-                                  loading={verifyingPaymentId === payment.id}
-                                  onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}
-                                >
-                                  Confirm Payment
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="danger"
-                                  icon={X}
-                                  disabled={verifyingPaymentId === payment.id}
-                                  onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}
-                                >
-                                  Flag Payment Issue
-                                </Button>
-                              </>
-                            ) : (
-                              <div className="text-xs text-espresso/60">
-                                <p className="font-black text-espresso">Verified by</p>
-                                <div className="mt-1.5 flex items-center gap-2">
-                                  <Avatar user={payment.verified_by_details} size="xs" />
-                                  <p>{payment.verified_by_details?.username || 'N/A'}</p>
-                                </div>
-                                <p>{payment.verified_at ? formatManilaDateTime(payment.verified_at) : 'No timestamp'}</p>
+                  <div ref={paymentListRef} aria-label="Booking payment list" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 scrollbar-thin">
+                    {filteredBookingPayments.length > 0 ? <div className="space-y-2 pb-1">
+                      {pagedBookingPayments.map((payment, i) => {
+                        const details = payment.booking_details || {};
+                        const isPending = payment.status === 'PENDING_VERIFICATION';
+                        return (
+                          <div key={payment.id} className="overflow-hidden rounded-2xl border border-espresso/10 bg-white shadow-sm animate-in-up" style={{ animationDelay: `${i * 35}ms` }}>
+                            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-espresso/[0.07] bg-cream/35 px-3 py-2.5 md:px-4">
+                              <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                                <Avatar user={{ username: details.customer_name, email: details.customer_email, profile_picture_url: details.customer_profile_picture_url }} size="sm" />
+                                <p className="min-w-0 font-black text-espresso">{details.customer_name || 'N/A'}</p>
+                                <StatusBadge status={payment.status} />
                               </div>
-                            )}
+                              <p className="text-xs font-black uppercase tracking-wide text-espresso/65">Booking <span className="text-espresso">#{payment.booking}</span></p>
                             </div>
-                          </section>
+
+                            <div className="grid grid-cols-1 gap-3 px-3 py-3 text-xs sm:grid-cols-2 md:grid-cols-3 md:gap-0 md:px-4">
+                              <section className="min-w-0 md:pr-4">
+                                <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Booking Details</h3>
+                                <dl className="space-y-1.5">
+                                  <div><dt className="inline text-espresso/50">Package: </dt><dd className="inline font-bold text-espresso">{details.service_name ? `${details.service_name} · ` : ''}{details.package_name || details.package_details?.name || 'N/A'}</dd></div>
+                                  <div><dt className="inline text-espresso/50">Schedule: </dt><dd className="inline font-bold text-espresso">{details.scheduled_date} at {details.scheduled_time}</dd></div>
+                                  <div className="min-w-0"><dt className="inline text-espresso/50">Email: </dt><dd className="break-all font-bold text-espresso">{details.customer_email || 'No email'}</dd></div>
+                                </dl>
+                              </section>
+
+                              <section className="min-w-0 border-t border-espresso/10 pt-3 sm:border-t-0 sm:pt-0 md:border-l md:border-t-0 md:px-4 md:pt-0">
+                                <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Payment Details</h3>
+                                <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                                  <div className="min-w-0"><dt className="text-espresso/50">Method</dt><dd className="break-words font-bold text-espresso">{payment.method_label || payment.method || 'Unknown'}</dd></div>
+                                  <div className="min-w-0"><dt className="text-espresso/50">Reference</dt><dd className="break-all font-bold text-espresso">{payment.reference_number}</dd></div>
+                                  <div><dt className="text-espresso/50">Amount Paid</dt><dd className="font-black text-gold-dark">{formatCurrency(payment.amount)}</dd></div>
+                                  <div><dt className="text-espresso/50">Required DP</dt><dd className="font-bold text-espresso">{formatCurrency(payment.required_down_payment)}</dd></div>
+                                  <div className="col-span-2"><dt className="inline text-espresso/50">Paid At: </dt><dd className="inline font-bold text-espresso">{formatManilaDateTime(payment.paid_at)}</dd></div>
+                                  <div className="col-span-2 pt-0.5"><PaymentProofPreview payment={payment} /></div>
+                                </dl>
+                              </section>
+
+                              <section className="min-w-0 border-t border-espresso/10 pt-3 sm:col-span-2 md:col-span-1 md:border-l md:border-t-0 md:px-4 md:pt-0">
+                                <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Verification</h3>
+                                <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
+                                  {isPending ? (
+                                    <>
+                                      <Button size="sm" variant="success" icon={Check} loading={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}>
+                                        Confirm Payment
+                                      </Button>
+                                      <Button size="sm" variant="danger" icon={X} disabled={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}>
+                                        Flag Payment Issue
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <div className="text-xs text-espresso/60">
+                                      <p className="font-black text-espresso">Verified by</p>
+                                      <div className="mt-1.5 flex items-center gap-2">
+                                        <Avatar user={payment.verified_by_details} size="xs" />
+                                        <p>{payment.verified_by_details?.username || 'N/A'}</p>
+                                      </div>
+                                      <p>{payment.verified_at ? formatManilaDateTime(payment.verified_at) : 'No timestamp'}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </section>
+                            </div>
                           </div>
+                        );
+                      })}
+                    </div> : (
+                      <div className="flex min-h-full items-center justify-center">
+                        <EmptyState icon={CreditCard} title={isCurrentTabLoading ? 'Loading payments' : 'No payments found'} description={isCurrentTabLoading ? 'Submitted booking payments are loading.' : 'Booking payments will appear here when customers submit their reference numbers.'} />
                       </div>
-                    );
-                  })}
-                  <div className="pt-1"><PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={TABLE_PAGE_SIZE} /></div>
+                    )}
+                  </div>
+                  {filteredBookingPayments.length > 0 && (
+                    <div className="mt-2 shrink-0 border-t border-espresso/[0.06] pt-2">
+                      <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={paymentPageSize} setPageSize={setPaymentPageSize} />
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <EmptyState icon={CreditCard} title="No payments found" description="Booking payments will appear here when customers submit their reference numbers." />
-              )}
+              </Card>
             </div>
           )}
 
@@ -2468,7 +2539,17 @@ export default function StaffDashboard() {
                   <h1 className="heading-page text-espresso">Daily Sales Logs</h1>
                   <p className="mt-1 hidden text-xs text-espresso/50 sm:block">Review historical transactions and receipt details.</p>
                 </div>
-                <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-end sm:gap-3">
+                <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
+                  <div className="w-full sm:w-52">
+                    <Input
+                      label="Search customer"
+                      icon={Search}
+                      value={salesCustomerSearch}
+                      onChange={event => setSalesCustomerSearch(event.target.value)}
+                      placeholder="Customer name"
+                      aria-label="Search transactions by customer name"
+                    />
+                  </div>
                   <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
                     <Input
                       label="From"
@@ -2519,6 +2600,7 @@ export default function StaffDashboard() {
                 <DataTable
                   columns={[
                     { key: 'transaction_id', label: 'Transaction ID', render: order => order.transaction_id || 'Transaction pending' },
+                    { key: 'customer_name', label: 'Customer', render: order => order.customer_name || 'Walk-in Customer' },
                     {
                       key: 'created_at',
                       label: 'Date & Time',
@@ -2550,8 +2632,8 @@ export default function StaffDashboard() {
                   actionLabel="Receipt"
                   emptyIcon={DollarSign}
                   emptyTitle="No transactions"
-                  emptyDescription="No sales match the selected payment method or date range."
-                  minWidth={700}
+                  emptyDescription="No sales match the customer name, payment method, or date range."
+                  minWidth={820}
                   containerClassName="h-full"
                   emptyStateClassName="h-full !py-4"
                 />
@@ -2925,6 +3007,10 @@ export default function StaffDashboard() {
                   <span className="text-right">{getReceiptDateTime(receiptOrder)}</span>
                 </div>
                 <div className="grid grid-cols-[20mm_1fr] gap-1">
+                  <span className="font-black">Customer</span>
+                  <span className="break-words text-right">{receiptOrder?.customer_name || 'Walk-in Customer'}</span>
+                </div>
+                <div className="grid grid-cols-[20mm_1fr] gap-1">
                   <span className="font-black">Cashier</span>
                   <span className="break-all text-right">{receiptOrder?.staff_name || user?.username}</span>
                 </div>
@@ -2991,6 +3077,7 @@ export default function StaffDashboard() {
         {receiptOrder && (
           <div className="mt-4 space-y-3 rounded-2xl border border-espresso/[0.08] bg-cream/45 p-4 text-xs">
             <h3 className="font-black text-espresso">Transaction breakdown</h3>
+            <p className="text-espresso/65"><span className="font-bold text-espresso">Customer:</span> {receiptOrder.customer_name || 'Walk-in Customer'}</p>
             <div className="space-y-2">
               {(receiptOrder.items || []).map((item, index) => {
                 const returned = Number(item.returned_quantity || 0);

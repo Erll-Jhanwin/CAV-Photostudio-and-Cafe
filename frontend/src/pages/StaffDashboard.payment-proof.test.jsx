@@ -1,8 +1,9 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import client, { getCached } from '../api/client';
 
 const mockStaffUser = { id: 2, username: 'staff', role: 'STAFF' };
+const mockConfirm = jest.fn();
 
 jest.mock('../context/AuthContext', () => ({
   useAuth: () => ({ user: mockStaffUser, logout: jest.fn() }),
@@ -23,10 +24,17 @@ jest.mock('../api/client', () => ({
 }));
 
 jest.mock('../components/ui/StyledAlert', () => ({
-  useStyledConfirm: () => jest.fn().mockResolvedValue(false),
+  useStyledConfirm: () => mockConfirm,
 }));
 
 import StaffDashboard from './StaffDashboard';
+
+beforeEach(() => {
+  mockConfirm.mockReset();
+  mockConfirm.mockResolvedValue(false);
+  localStorage.clear();
+  sessionStorage.clear();
+});
 
 const payment = {
   id: 18,
@@ -55,6 +63,7 @@ test('Staff payment verification opens proof on demand and keeps its verify acti
   expect(screen.getByRole('button', { name: 'Confirm Payment' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Flag Payment Issue' })).toBeInTheDocument();
   expect(client.get).not.toHaveBeenCalled();
+  expect(screen.queryByRole('img', { name: 'Payment proof for booking 48' })).not.toBeInTheDocument();
 
   fireEvent.click(proofButton);
   expect(await screen.findByRole('dialog', { name: 'Payment proof · Booking #48' })).toBeInTheDocument();
@@ -62,6 +71,78 @@ test('Staff payment verification opens proof on demand and keeps its verify acti
     '/api/bookings/payments/18/receipt/', { responseType: 'blob' },
   ));
   unmount();
+});
+
+test('Staff payment filters, proof modal, approval and rejection work inside the responsive fixed panel', async () => {
+  const payments = ['PENDING_VERIFICATION', 'APPROVED', 'REJECTED', 'PENDING_VERIFICATION'].map((status, index) => ({
+    id: 70 + index,
+    booking: 170 + index,
+    amount: '500.00',
+    required_down_payment: '500.00',
+    method_label: 'GCash',
+    reference_number: `REF-${index}`,
+    paid_at: '2026-10-28T10:00:00Z',
+    status,
+    receipt_url: `/api/bookings/payments/${70 + index}/receipt/`,
+    verified_by_details: { username: 'Verifier' },
+    booking_details: {
+      customer_name: `Payment Customer ${index + 1}`,
+      customer_email: `customer${index + 1}@example.test`,
+      package_name: 'Portrait Session',
+      scheduled_date: '2026-11-15',
+      scheduled_time: '10:30',
+    },
+  }));
+  const alerts = jest.spyOn(window, 'alert').mockImplementation(() => {});
+  mockConfirm.mockResolvedValue(true);
+  getCached.mockImplementation(url => (
+    url === '/api/bookings/payments/' ? Promise.resolve({ data: payments }) : Promise.resolve({ data: [] })
+  ));
+  client.get.mockResolvedValue({ data: new Blob(['proof'], { type: 'image/png' }) });
+  client.patch.mockImplementation((url, payload) => {
+    const paymentId = Number(url.match(/payments\/(\d+)\/verify\//)?.[1]);
+    const original = payments.find(row => row.id === paymentId);
+    return Promise.resolve({ data: { ...original, status: payload.status, verified_by_details: { username: 'Verifier' } } });
+  });
+
+  render(<StaffDashboard />);
+  expect(await screen.findByRole('heading', { name: 'POS Terminal' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Payment Booking Verification' }));
+
+  const filters = await screen.findByRole('group', { name: 'Booking payment status filter' });
+  const list = screen.getByLabelText('Booking payment list');
+  expect(document.querySelector('main')).toHaveClass('flex', 'min-h-0', 'overflow-hidden');
+  expect(document.querySelector('main').parentElement).toHaveClass('h-dvh', 'min-h-0');
+  expect(filters).toHaveClass('shrink-0', 'overflow-x-auto');
+  expect(list).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto');
+  expect(within(filters).getByRole('button', { name: 'Pending Verification' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByText('Payment Customer 1')).toBeInTheDocument();
+  expect(screen.getByText('Payment Customer 4')).toBeInTheDocument();
+  expect(screen.queryByText('Payment Customer 2')).not.toBeInTheDocument();
+
+  list.scrollTop = 360;
+  fireEvent.click(within(filters).getByRole('button', { name: 'Approved' }));
+  expect(list.scrollTop).toBe(0);
+  expect(screen.getByText('Payment Customer 2')).toBeInTheDocument();
+  expect(screen.queryByText('Payment Customer 1')).not.toBeInTheDocument();
+  fireEvent.click(within(filters).getByRole('button', { name: 'Rejected' }));
+  expect(screen.getByText('Payment Customer 3')).toBeInTheDocument();
+  fireEvent.click(within(filters).getByRole('button', { name: 'All' }));
+  expect(screen.getByText('Payment Customer 1')).toBeInTheDocument();
+  expect(screen.getByText('Payment Customer 2')).toBeInTheDocument();
+  expect(screen.getByText('Payment Customer 3')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'View proof of payment for booking 170' }));
+  expect(await screen.findByRole('dialog', { name: 'Payment proof · Booking #170' })).toBeInTheDocument();
+  await waitFor(() => expect(client.get).toHaveBeenCalledWith('/api/bookings/payments/70/receipt/', { responseType: 'blob' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Close modal' }));
+
+  fireEvent.click(within(list).getAllByRole('button', { name: 'Confirm Payment' })[0]);
+  await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/api/bookings/payments/70/verify/', { status: 'APPROVED' }));
+  fireEvent.click(within(list).getByRole('button', { name: 'Flag Payment Issue' }));
+  await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/api/bookings/payments/73/verify/', { status: 'REJECTED' }));
+  expect(screen.getByText('Payment Customer 1').closest('div')).toBeInTheDocument();
+  alerts.mockRestore();
 });
 
 test('Staff Live Inventory opens dated product sales and wastage records', async () => {
@@ -103,4 +184,160 @@ test('Staff Live Inventory opens dated product sales and wastage records', async
   expect(client.get).toHaveBeenCalledWith('/api/inventory/product-sales/transactions/', {
     params: { product_id: 6, date: '2026-10-30', type: 'wastage' },
   });
+});
+
+test('Staff POS cart displays and edits items, completes checkout, and records wastage and refund', async () => {
+  const products = [
+    { id: 1, name: 'Iced Latte', price: '120.00', stock_level: 20, is_active: true, is_cafe_item: false },
+    { id: 2, name: 'Americano', price: '80.00', stock_level: 20, is_active: true, is_cafe_item: false },
+  ];
+  const alerts = jest.spyOn(window, 'alert').mockImplementation(() => {});
+  let transactionRecord = null;
+  sessionStorage.setItem('staff:recipesChecked', 'true');
+  getCached.mockImplementation((url, config = {}) => Promise.resolve({
+    data: url === '/api/inventory/products/'
+      ? products
+      : url === '/api/pos/orders/' && transactionRecord
+        && (!config.params?.customer_name || transactionRecord.customer_name.toLowerCase().includes(config.params.customer_name.toLowerCase()))
+        ? [transactionRecord]
+        : [],
+  }));
+  client.get.mockResolvedValue({ data: products });
+  client.post.mockImplementation((url, payload) => {
+    if (url === '/api/pos/orders/') {
+      transactionRecord = {
+        id: 20,
+        transaction_id: 'POS-TEST-20',
+        payment_status: 'PAID',
+        total: '80.00',
+        subtotal: '80.00',
+        discount_amount: '0.00',
+        customer_name: payload.customer_name,
+        created_at: '2026-11-01T12:00:00Z',
+        completed_at: '2026-11-01T12:00:00Z',
+        items: [{ id: 1, product: 2, quantity: 1, price: '80.00', subtotal: '80.00', product_details: { name: 'Americano' } }],
+        payments: [{ id: 1, amount: '100.00', method: 'CASH', timestamp: '2026-11-01T12:00:00Z' }],
+      };
+      return Promise.resolve({ data: {
+        ...transactionRecord,
+        receipt_print: { printed: true },
+      } });
+    }
+    if (url === '/api/pos/stock-actions/') {
+      return Promise.resolve({ data: { transaction_id: payload.transaction_id } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+
+  render(<StaffDashboard />);
+  expect(await screen.findByRole('heading', { name: 'POS Terminal' })).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('button', { name: 'Add Iced Latte to cart' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Add Americano to cart' }));
+  expect(screen.getByLabelText('Customer Name')).toHaveValue('Walk-in Customer');
+  fireEvent.change(screen.getByLabelText('Customer Name'), { target: { value: 'Taylor Reyes' } });
+
+  const cart = screen.getByRole('list', { name: 'Cart items' });
+  const latteRow = within(cart).getByRole('listitem', { name: /Iced Latte/ });
+  expect(within(latteRow).getByText(/120\.00 each/)).toBeInTheDocument();
+  fireEvent.click(within(latteRow).getByRole('button', { name: 'Increase Iced Latte quantity' }));
+  expect(within(latteRow).getByLabelText('Iced Latte quantity')).toHaveTextContent('2');
+  fireEvent.click(within(latteRow).getByRole('button', { name: 'Decrease Iced Latte quantity' }));
+  expect(within(latteRow).getByLabelText('Iced Latte quantity')).toHaveTextContent('1');
+  fireEvent.click(within(latteRow).getByRole('button', { name: 'Remove Iced Latte from cart' }));
+  expect(within(cart).queryByText('Iced Latte')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Complete Sale - PHP 80.00' })).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText('Amount Received'), { target: { value: '100' } });
+  mockConfirm.mockResolvedValueOnce(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Complete Sale - PHP 80.00' }));
+  await waitFor(() => expect(client.post).toHaveBeenCalledWith('/api/pos/orders/', expect.objectContaining({
+    items: [{ product_id: 2, quantity: 1, discount: { type: 'PERCENT', value: 0 } }],
+    customer_name: 'Taylor Reyes',
+    payment: expect.objectContaining({ amount: 100, method: 'CASH' }),
+  })));
+  expect(await screen.findByText('Your cart is empty')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Wastage' }));
+  const wastageDialog = await screen.findByRole('dialog', { name: 'Record Wastage' });
+  fireEvent.change(within(wastageDialog).getByLabelText('Transaction ID'), { target: { value: 'POS-WASTE-1' } });
+  fireEvent.change(within(wastageDialog).getByLabelText('Reason'), { target: { value: 'Preparation spill' } });
+  fireEvent.click(await within(wastageDialog).findByRole('button', { name: /Americano Add/ }));
+  fireEvent.click(within(wastageDialog).getByRole('button', { name: 'Confirm Wastage' }));
+  await waitFor(() => expect(client.post).toHaveBeenCalledWith('/api/pos/stock-actions/', expect.objectContaining({
+    action_type: 'WASTAGE',
+    transaction_id: 'POS-WASTE-1',
+    items: [{ product_id: 2, quantity: 1 }],
+  })));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Refund' }));
+  const refundDialog = await screen.findByRole('dialog', { name: 'Record Refund' });
+  fireEvent.change(within(refundDialog).getByLabelText('Transaction ID'), { target: { value: 'POS-REFUND-1' } });
+  fireEvent.change(within(refundDialog).getByLabelText('Reason'), { target: { value: 'Customer return' } });
+  fireEvent.click(await within(refundDialog).findByRole('button', { name: /Americano Add/ }));
+  fireEvent.change(within(refundDialog).getByLabelText('Americano restock disposition'), { target: { value: 'RESTOCKED' } });
+  fireEvent.click(within(refundDialog).getByRole('button', { name: 'Confirm Refund' }));
+  await waitFor(() => expect(client.post).toHaveBeenCalledWith('/api/pos/stock-actions/', expect.objectContaining({
+    action_type: 'REFUND',
+    transaction_id: 'POS-REFUND-1',
+    items: [{ product_id: 2, quantity: 1, disposition: 'RESTOCKED' }],
+  })));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Daily Sales Logs' }));
+  expect(await screen.findByRole('heading', { name: 'Daily Sales Logs' })).toBeInTheDocument();
+  const customerSearch = screen.getByRole('textbox', { name: 'Search transactions by customer name' });
+  fireEvent.change(customerSearch, { target: { value: 'Taylor' } });
+  const transactionRow = await screen.findByRole('row', { name: /Taylor Reyes/ });
+  expect(transactionRow).toHaveTextContent('POS-TEST-20');
+  fireEvent.click(transactionRow);
+  const details = await screen.findByRole('dialog', { name: 'Transaction Details & Receipt' });
+  expect(details).toHaveTextContent('Taylor Reyes');
+  fireEvent.click(within(details).getByRole('button', { name: 'Back to Sales Log' }));
+  fireEvent.change(customerSearch, { target: { value: 'Unmatched Name' } });
+  expect(await screen.findByText('No transactions')).toBeInTheDocument();
+  alerts.mockRestore();
+}, 20000);
+
+test('Bookings keeps its viewport-sized table region and page controls in place while loading', async () => {
+  const booking = {
+    id: 48,
+    customer_name: 'Jamie Reyes',
+    customer_email: 'jamie@example.test',
+    package: 3,
+    package_details: { name: 'Portrait Session' },
+    scheduled_date: '2026-11-15',
+    scheduled_time: '10:30',
+    status: 'CONFIRMED',
+    payments: [],
+    is_walk_in: true,
+    created_by_name: 'Jamie Cashier',
+  };
+  let resolveBookings;
+  sessionStorage.setItem('staff:recipesChecked', 'true');
+  getCached.mockImplementation(url => {
+    if (url === '/api/bookings/') return new Promise(resolve => { resolveBookings = resolve; });
+    return Promise.resolve({ data: [] });
+  });
+
+  render(<StaffDashboard />);
+  expect(await screen.findByRole('heading', { name: 'POS Terminal' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Bookings' }));
+
+  expect(await screen.findByRole('heading', { name: 'Bookings' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Walk-in Booking' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Refresh bookings' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Loading bookings' })).toBeInTheDocument();
+  const tableRegion = screen.getByRole('region', { name: 'Bookings table' });
+  const regionClassesWhileLoading = tableRegion.className;
+  expect(tableRegion).toHaveClass('min-h-0', 'flex-1', 'overflow-hidden');
+  expect(tableRegion.querySelector('.overflow-y-auto')).toBeInTheDocument();
+  expect(tableRegion.querySelector('thead')).toHaveClass('sticky', 'top-0');
+  expect(screen.getByRole('heading', { name: 'Bookings' }).closest('main')).toHaveClass('overflow-hidden');
+  expect(screen.getByRole('heading', { name: 'Bookings' }).closest('main').parentElement).toHaveClass('h-dvh', 'min-h-0');
+
+  await act(async () => resolveBookings({ data: [booking] }));
+  expect(await screen.findByText('Jamie Reyes')).toBeInTheDocument();
+  expect(tableRegion.className).toBe(regionClassesWhileLoading);
+  expect(screen.getByRole('button', { name: 'Walk-in Booking' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Refresh bookings' })).toBeVisible();
+  expect(screen.getByRole('columnheader', { name: 'Booking' })).toBeVisible();
 });

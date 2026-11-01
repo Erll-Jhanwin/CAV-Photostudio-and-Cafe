@@ -25,6 +25,7 @@ class ReceiptPrintingTests(SimpleTestCase):
             "business_address": "028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas",
             "business_contact_number": "+639171234567",
             "staff_name": "cashier1",
+            "customer_name": "Taylor Reyes",
             "created_at_display": "2026-07-15 10:30 AM",
             "total": "150.00",
             "discounts": "0.00",
@@ -57,6 +58,8 @@ class ReceiptPrintingTests(SimpleTestCase):
             "2026-07-15 10:30 AM",
             "CASHIER",
             "cashier1",
+            "CUSTOMER",
+            "Taylor Reyes",
             "ITEMIZED PRODUCTS",
             "Iced Latte",
             "DISCOUNTS",
@@ -277,6 +280,44 @@ class PosIdempotencyTests(TestCase):
         self.assertEqual(Payment.objects.filter(payment_type=Payment.POS).count(), 1)
         self.product.refresh_from_db()
         self.assertEqual(self.product.stock_level, 3)
+
+    def test_customer_name_is_saved_returned_in_receipt_and_searchable(self):
+        created = self.client.post('/api/pos/orders/', {
+            'items': [{'product_id': self.product.id, 'quantity': 1}],
+            'customer_name': '  Taylor Reyes  ',
+            'payment': {'amount': '125.00', 'method': 'CASH'},
+        }, format='json')
+
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data['customer_name'], 'Taylor Reyes')
+        order = Order.objects.get(pk=created.data['id'])
+        self.assertEqual(order.customer_name, 'Taylor Reyes')
+
+        other = self.client.post('/api/pos/orders/', {
+            'items': [{'product_id': self.product.id, 'quantity': 1}],
+            'customer_name': 'Morgan Lee',
+            'payment': {'amount': '125.00', 'method': 'CASH'},
+        }, format='json')
+        self.assertEqual(other.status_code, 201, other.data)
+
+        listed = self.client.get('/api/pos/orders/?customer_name=taylor')
+        self.assertEqual([row['customer_name'] for row in listed.data], ['Taylor Reyes'])
+        details = self.client.get(f"/api/pos/orders/{order.pk}/")
+        self.assertEqual(details.data['customer_name'], 'Taylor Reyes')
+
+        receipt_text = _receipt_text(created.data)
+        self.assertIn('Taylor Reyes', receipt_text)
+
+    def test_unnamed_walk_in_order_uses_the_customer_default(self):
+        created = self.client.post('/api/pos/orders/', {
+            'items': [{'product_id': self.product.id, 'quantity': 1}],
+            'customer_name': '   ',
+            'payment': {'amount': '125.00', 'method': 'CASH'},
+        }, format='json')
+
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data['customer_name'], 'Walk-in Customer')
+        self.assertEqual(Order.objects.get(pk=created.data['id']).customer_name, 'Walk-in Customer')
 
     def test_item_discount_and_order_discount_are_recorded_separately_in_total(self):
         response = self.client.post('/api/pos/orders/', {

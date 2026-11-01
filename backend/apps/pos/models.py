@@ -18,6 +18,7 @@ class Order(models.Model):
 
     staff = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_orders')
     booking = models.ForeignKey(Booking, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
+    customer_name = models.CharField(max_length=200, default='Walk-in Customer', blank=True)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     discount_type = models.CharField(max_length=10, choices=(('FIXED', 'Fixed Amount'), ('PERCENT', 'Percentage')), default='FIXED')
     discount_value = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)

@@ -138,6 +138,7 @@ def build_receipt_payload(order, payment, staff_username, amount_received=None):
         "business_contact_number": "+639171234567",
         "staff": order.staff_id,
         "staff_name": staff_username,
+        "customer_name": order.customer_name or 'Walk-in Customer',
         "booking": order.booking_id,
         "booking_customer_name": "",
         "subtotal": str(order.subtotal or order.total),
@@ -170,6 +171,9 @@ class OrderListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         user = self.request.user
         queryset = Order.objects.exclude(order_type='END_OF_DAY_REPORT').select_related('staff', 'booking__customer').prefetch_related('payments')
+        customer_name = str(self.request.query_params.get('customer_name') or '').strip()[:200]
+        if customer_name:
+            queryset = queryset.filter(customer_name__icontains=customer_name)
         if user.role in ['STAFF', 'ADMIN']:
             return apply_limit(queryset.order_by('-created_at'), self.request)
         return apply_limit(queryset.filter(booking__customer=user).order_by('-created_at'), self.request)
@@ -199,6 +203,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
         discount_data = request.data.get('discount') or {}
         booking_id = request.data.get('booking_id')
         order_type = request.data.get('order_type', 'WALK_IN')
+        customer_name = str(request.data.get('customer_name') or '').strip()[:200] or 'Walk-in Customer'
         should_print_receipt = str(request.data.get('print_receipt', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
 
         if not items_data or not isinstance(items_data, list):
@@ -353,6 +358,7 @@ class OrderListCreateView(generics.ListCreateAPIView):
             order = Order.objects.create(
                 staff=request.user,
                 booking_id=booking_id,
+                customer_name=customer_name,
                 subtotal=subtotal_amount,
                 discount_type=discount["type"],
                 discount_value=discount["value"],
@@ -864,6 +870,7 @@ def build_report_transaction_snapshot(paid_orders, booking_payments):
             'booking_customer_name': (
                 order.booking.customer.get_full_name() or order.booking.customer.username
             ) if order.booking_id and order.booking and order.booking.customer else '',
+            'customer_name': order.customer_name or 'Walk-in Customer',
             'subtotal': order.subtotal,
             'discount_type': order.discount_type,
             'discount_value': order.discount_value,

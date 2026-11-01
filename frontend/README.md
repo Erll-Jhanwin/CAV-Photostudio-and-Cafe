@@ -4,7 +4,7 @@ This project was bootstrapped with [Create React App](https://github.com/faceboo
 
 ## Google Sign-In Setup
 
-Google Sign-In uses `REACT_APP_GOOGLE_CLIENT_ID` in `frontend/.env` and the backend verifies the same client ID with `GOOGLE_CLIENT_ID` in `backend/.env`. Use the same Web application OAuth client ID in both files.
+Google Sign-In uses `REACT_APP_GOOGLE_CLIENT_ID` from `cav_env/CAV-Photostudio-and-Cafe-frontend.env`; the backend verifies it with `GOOGLE_CLIENT_ID` from `cav_env/CAV-Photostudio-and-Cafe-backend.env`. Keep the same Web application OAuth client ID in both exports. The frontend loader only passes approved public `REACT_APP_*` settings to Create React App. Never put backend credentials in the frontend export.
 
 In Google Cloud Console, open APIs & Services > Credentials > your Web application OAuth client. Add every frontend URL you use under Authorized JavaScript origins:
 

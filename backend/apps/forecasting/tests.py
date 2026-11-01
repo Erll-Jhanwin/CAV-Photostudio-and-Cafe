@@ -13,7 +13,7 @@ from forecasting.models import ForecastRun, SalesHistoryImport, SalesHistoryReco
 from ml.forecasting_engine import generate_forecast_report
 from ml.linear_regression_forecasting import MODEL_VERSION, dataset_path
 from ml.sales_history_repository import _decimal, import_sales_history_csv
-from forecasting.views import forecast_cache_key
+from forecasting.views import FORECAST_CACHE_SECONDS, forecast_cache_key
 
 
 class ForecastingEngineTests(TestCase):
@@ -280,6 +280,19 @@ class ForecastingReportApiTests(TestCase):
         self.assertEqual(first.data, report)
         self.assertEqual(second.data, report)
         generate.assert_called_once_with()
+
+    def test_forecasting_command_warms_the_dashboard_cache_for_web_workers(self):
+        from io import StringIO
+        from unittest.mock import patch
+        from django.core.management import call_command
+
+        report = {'status': 'ok', 'sales_forecast': [{'target_date': '2026-11-02'}]}
+        output = StringIO()
+        with patch('forecasting.management.commands.run_forecasting.generate_forecast_report', return_value=report):
+            call_command('run_forecasting', stdout=output)
+
+        self.assertEqual(cache.get(forecast_cache_key()), report)
+        self.assertEqual(FORECAST_CACHE_SECONDS, 900)
 
     def test_dashboard_api_bootstraps_bundled_dataset_and_returns_computed_forecast(self):
         response = self.client.get('/api/forecasting/predictions/')

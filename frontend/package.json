@@ -21,10 +21,10 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "start": "node ./node_modules/react-scripts/bin/react-scripts.js start",
+    "start": "node ./load-render-env.cjs start",
     "print-bridge": "node local-print-bridge.js",
     "local-console": "node serve-build.js",
-    "build": "node ./node_modules/react-scripts/bin/react-scripts.js build",
+    "build": "node ./load-render-env.cjs build",
     "cap": "node ../node_modules/@capacitor/cli/bin/capacitor",
     "cap:add:android": "node ../node_modules/@capacitor/cli/bin/capacitor add android",
     "cap:copy": "npm run build && node ../node_modules/@capacitor/cli/bin/capacitor copy",

@@ -7,7 +7,7 @@ from pos.models import Order, POSStockAction
 class OrderAdmin(admin.ModelAdmin):
     list_display = ('id', 'transaction_id', 'staff', 'order_type', 'payment_status', 'total', 'created_at')
     list_filter = ('order_type', 'payment_status')
-    search_fields = ('transaction_id', 'staff__username')
+    search_fields = ('transaction_id', 'customer_name', 'staff__username')
 
 
 @admin.register(POSStockAction)
