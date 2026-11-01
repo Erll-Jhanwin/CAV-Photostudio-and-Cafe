@@ -706,7 +706,7 @@ export default function AdminDashboard() {
         setDataError('');
       }
     } catch (err) {
-      console.error(err);
+      console.error('Admin analytics request failed.');
       if (requestSeq === dashboardFetchSeqRef.current) {
         setAnalyticsError(getApiErrorMessage(err, 'Failed to load Business Overview metrics.'));
       }

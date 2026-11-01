@@ -836,13 +836,6 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {!showForgotPassword && (
-                <RecaptchaChallenge
-                  onTokenChange={handleRecaptchaToken}
-                  resetKey={recaptchaResetKey}
-                />
-              )}
-
               {showForgotPassword ? (
                 <form onSubmit={handleForgotSubmit} className="space-y-4" noValidate>
                   <div className="space-y-4 pb-2">
@@ -1042,6 +1035,10 @@ export default function LoginPage() {
                           {registrationResendCooldown > 0 ? `Resend code in ${registrationResendCooldown}s` : 'Resend code'}
                         </button>
                       </div>
+                      <RecaptchaChallenge
+                        onTokenChange={handleRecaptchaToken}
+                        resetKey={recaptchaResetKey}
+                      />
                       <label className="flex items-start gap-3 text-xs leading-5 text-espresso/72">
                         <input
                           type="checkbox"
@@ -1089,6 +1086,10 @@ export default function LoginPage() {
                           {adminMfaResendCooldown > 0 ? `Resend code in ${adminMfaResendCooldown}s` : 'Resend code'}
                         </button>
                       </div>
+                      <RecaptchaChallenge
+                        onTokenChange={handleRecaptchaToken}
+                        resetKey={recaptchaResetKey}
+                      />
                     </div>
                   ) : (
                     <>
@@ -1183,6 +1184,10 @@ export default function LoginPage() {
                             error={formErrors.passwordConfirm}
                           />
                           <PasswordStrength password={form.password} />
+                          <RecaptchaChallenge
+                            onTokenChange={handleRecaptchaToken}
+                            resetKey={recaptchaResetKey}
+                          />
                           <label className="flex items-start gap-3 text-xs leading-5 text-espresso/72">
                             <input
                               type="checkbox"
@@ -1210,6 +1215,12 @@ export default function LoginPage() {
                             Forgot password?
                           </button>
                         </div>
+                      )}
+                      {!isRegister && (
+                        <RecaptchaChallenge
+                          onTokenChange={handleRecaptchaToken}
+                          resetKey={recaptchaResetKey}
+                        />
                       )}
                     </>
                   )}

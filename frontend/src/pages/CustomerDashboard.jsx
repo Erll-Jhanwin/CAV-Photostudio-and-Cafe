@@ -417,8 +417,8 @@ export default function CustomerDashboard() {
         { force, maxAge: 10_000 },
       );
       setNotifications(Array.isArray(response.data) ? response.data : []);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      console.warn('Customer notifications could not be loaded.');
     }
   }, []);
 
@@ -660,7 +660,7 @@ export default function CustomerDashboard() {
       // deployments from blocking the dashboard while they receive the API migration.
       void fetchNotifications({ force: background });
     } catch (err) {
-      console.error(err);
+      console.error('Customer dashboard refresh failed.');
       if (requestSeq === dashboardFetchSeqRef.current) {
         setDashboardError(getApiErrorMessage(err, 'Could not refresh your bookings and profile.'));
       }
@@ -713,11 +713,11 @@ export default function CustomerDashboard() {
     )));
     try {
       await client.patch(`/api/notifications/${notification.id}/read/`);
-    } catch (err) {
+    } catch {
       setNotifications(current => current.map(item => (
         item.id === notification.id ? { ...item, is_read: false, read_at: null } : item
       )));
-      console.error(err);
+      console.warn('Customer notification status could not be updated.');
     }
   };
 

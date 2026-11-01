@@ -15,7 +15,7 @@ jest.mock('../components/RecaptchaChallenge', () => {
   const React = require('react');
   return function MockRecaptchaChallenge({ onTokenChange, resetKey }) {
     React.useEffect(() => onTokenChange('test-recaptcha-token', ''), [onTokenChange, resetKey]);
-    return null;
+    return React.createElement('div', { 'data-testid': 'recaptcha-widget' });
   };
 });
 
@@ -32,24 +32,109 @@ jest.mock('react-router-dom', () => ({
 }));
 
 const renderLogin = () => render(<LoginPage />);
+const appearsBefore = (first, second) => {
+  // Assert source order for responsive form placement.
+  // eslint-disable-next-line testing-library/no-node-access
+  return Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+};
 
 describe('responsive authentication layout', () => {
   test('hides the marketing panel below desktop while login and registration share a full-width form', () => {
     renderLogin();
 
-    const marketingPanel = screen.getByRole('heading', {
+    // The section elements carry the responsive layout classes under test.
+    const marketingPanelHeading = screen.getByRole('heading', {
       name: 'Welcome to your CAV experience.',
-    }).closest('section');
+    });
+    // eslint-disable-next-line testing-library/no-node-access
+    const marketingPanel = marketingPanelHeading.closest('section');
+    // eslint-disable-next-line testing-library/no-node-access
     const loginForm = screen.getByRole('heading', { name: 'Sign in to CAV' }).closest('section');
 
     expect(marketingPanel).toHaveClass('hidden', 'lg:flex');
     expect(loginForm).toHaveClass('min-w-0', 'bg-cream');
+    // eslint-disable-next-line testing-library/no-node-access
     expect(loginForm.querySelector('.max-w-md')).toHaveClass('w-full', 'min-w-0');
+
+    const loginPassword = screen.getByLabelText('Password');
+    const forgotLink = screen.getByRole('button', { name: 'Forgot password?' });
+    const loginRecaptcha = screen.getByTestId('recaptcha-widget');
+    const loginSubmit = screen.getByRole('button', { name: 'Enter My Dashboard' });
+    expect(appearsBefore(loginPassword, forgotLink)).toBe(true);
+    expect(appearsBefore(forgotLink, loginRecaptcha)).toBe(true);
+    expect(appearsBefore(loginRecaptcha, loginSubmit)).toBe(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'New to CAV? Create an account' }));
 
     expect(screen.getByRole('heading', { name: 'Join CAV today' })).toBeInTheDocument();
     expect(marketingPanel).toHaveClass('hidden', 'lg:flex');
+    const registrationPassword = screen.getByLabelText('Password');
+    const registrationRecaptcha = screen.getByTestId('recaptcha-widget');
+    const consentCheckbox = screen.getByRole('checkbox');
+    expect(appearsBefore(registrationPassword, registrationRecaptcha)).toBe(true);
+    expect(appearsBefore(registrationRecaptcha, consentCheckbox)).toBe(true);
+  });
+});
+
+describe('password authentication submissions', () => {
+  beforeEach(() => {
+    mockLogin.mockReset();
+    mockRegister.mockReset();
+    client.post.mockReset();
+  });
+
+  test('login submits only after the reCAPTCHA widget is in the form and its token is available', async () => {
+    mockLogin.mockResolvedValue({ success: false, error: 'Invalid credentials.' });
+    renderLogin();
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'member' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'MemberPassword#2026' } });
+
+    // The mocked auth promise triggers state updates after the click.
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Enter My Dashboard' }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('member', 'MemberPassword#2026', {
+      recaptcha_token: 'test-recaptcha-token',
+    }));
+  });
+
+  test('registration keeps privacy consent required and submits the reCAPTCHA token after consent', async () => {
+    mockRegister.mockResolvedValue({
+      success: true,
+      registration_token: 'registration-token-with-more-than-32-characters',
+      contact_hint: '*******4567',
+      resend_cooldown_seconds: 60,
+      expires_in_minutes: 10,
+    });
+    renderLogin();
+    fireEvent.click(screen.getByRole('button', { name: 'New to CAV? Create an account' }));
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'new-member' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'member@example.com' } });
+    fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '09171234567' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'SecureCustomer#2026' } });
+    fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'SecureCustomer#2026' } });
+
+    const submit = screen.getByRole('button', { name: 'Send Verification Code' });
+    expect(submit).toBeDisabled();
+    expect(mockRegister).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(submit).toBeEnabled();
+    // Registration transitions to the OTP form after its mocked async result.
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      fireEvent.click(submit);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(mockRegister).toHaveBeenCalledWith(expect.objectContaining({
+      username: 'new-member',
+      privacy_consent: true,
+      recaptcha_token: 'test-recaptcha-token',
+    })));
+    expect(await screen.findByLabelText('One-Time OTP')).toBeInTheDocument();
   });
 });
 
@@ -182,6 +267,8 @@ describe('OTP resend flows', () => {
       expect(await screen.findByText(/A new admin verification code was sent/)).toBeInTheDocument();
       fireEvent.change(screen.getByLabelText('SMS one-time code'), { target: { value: '123456' } });
       await waitFor(() => expect(screen.getByRole('button', { name: 'Verify Admin Access' })).toBeEnabled());
+      // MFA verification changes component state after the mocked auth promise.
+      // eslint-disable-next-line testing-library/no-unnecessary-act
       await act(async () => {
         fireEvent.click(screen.getByRole('button', { name: 'Verify Admin Access' }));
         await Promise.resolve();
@@ -227,10 +314,7 @@ describe('OTP resend flows', () => {
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'SecureCustomer#2026' } });
     fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'SecureCustomer#2026' } });
     fireEvent.click(screen.getByRole('checkbox'));
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Send Verification Code' }));
-      await Promise.resolve();
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send Verification Code' }));
     await waitFor(() => expect(mockRegister).toHaveBeenCalledWith(expect.objectContaining({ recaptcha_token: 'test-recaptcha-token' })));
     expect(await screen.findByLabelText('One-Time OTP')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Resend code in 1s' })).toBeDisabled();
@@ -238,7 +322,12 @@ describe('OTP resend flows', () => {
     await act(async () => { jest.advanceTimersByTime(1100); });
     const resendButton = screen.getByRole('button', { name: 'Resend code' });
     fireEvent.change(screen.getByLabelText('One-Time OTP'), { target: { value: '123456' } });
-    fireEvent.click(resendButton);
+    // The resend handler clears the old OTP after its mocked async response.
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      fireEvent.click(resendButton);
+      await Promise.resolve();
+    });
 
     expect(await screen.findByText(/A new verification code was sent/)).toBeInTheDocument();
     expect(client.post).toHaveBeenCalledWith('/api/auth/register/resend/', {
@@ -264,6 +353,8 @@ describe('OTP resend flows', () => {
 
     await act(async () => { jest.advanceTimersByTime(1100); });
     const resendButton = screen.getByRole('button', { name: 'Resend code' });
+    // The resend handler resets the OTP field after its mocked async response.
+    // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
       fireEvent.click(resendButton);
       await Promise.resolve();

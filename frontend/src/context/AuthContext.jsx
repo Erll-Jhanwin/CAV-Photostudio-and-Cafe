@@ -160,7 +160,9 @@ export const AuthProvider = ({ children }) => {
     try {
       await client.post('/api/auth/logout/');
     } catch (error) {
-      console.warn('Server logout failed; clearing local session state.', error);
+      // Axios errors include request configuration and CSRF headers. Avoid
+      // logging the raw error object while still clearing the local session.
+      console.warn('Server logout failed; clearing local session state.');
     } finally {
       clearStoredAuth();
       sessionStorage.clear();
