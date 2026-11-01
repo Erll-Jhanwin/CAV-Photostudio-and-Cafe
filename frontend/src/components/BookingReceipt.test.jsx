@@ -11,7 +11,9 @@ const receipt = {
   scheduledTime: '09:00 AM',
   totalAmount: 1000,
   amountPaid: 500,
+  currentPaymentAmount: 500,
   remainingBalance: 500,
+  paymentStatus: 'Approved',
   paymentMethod: 'Cash',
 };
 
@@ -25,16 +27,18 @@ test('booking receipt preview uses the 58 mm thermal layout and includes booking
   [
     'Booking reference', '#55', 'Customer', 'Jamie Reyes', 'Package', 'Portrait Session',
     'Session date', '2026-12-01', 'Session time', '09:00 AM', 'Total amount',
-    'Payment received', 'Remaining balance', 'Payment method', 'Cash',
+    'Remaining balance', 'Payment method', 'Cash',
+    'Amount paid to date', 'Payment amount', 'Payment status', 'Approved',
   ].forEach(value => expect(screen.getByText(value)).toBeInTheDocument());
   expect(screen.getByText('PHP 1,000.00')).toBeInTheDocument();
-  expect(screen.getAllByText('PHP 500.00')).toHaveLength(2);
+  expect(screen.getAllByText('PHP 500.00')).toHaveLength(3);
 });
 
 test('verified booking receipt uses the approved payment and remaining balance returned by the API', () => {
   const mapped = bookingReceiptFromPayment({
     booking: 55,
     amount: '200.00',
+    status: 'APPROVED',
     method: 'CASH',
     booking_details: {
       total_amount: '1000.00', amount_paid: '500.00', remaining_balance: '500.00',
@@ -42,7 +46,7 @@ test('verified booking receipt uses the approved payment and remaining balance r
       scheduled_date: '2026-12-01', scheduled_time: '09:00 AM',
     },
   });
-  expect(mapped).toMatchObject({ bookingId: 55, amountPaid: 500, remainingBalance: 500, totalAmount: 1000 });
+  expect(mapped).toMatchObject({ bookingId: 55, amountPaid: 500, currentPaymentAmount: 200, remainingBalance: 500, totalAmount: 1000, paymentStatus: 'Approved' });
 });
 
 test('verification receipt offers both copies and sends each through the local printer bridge', async () => {

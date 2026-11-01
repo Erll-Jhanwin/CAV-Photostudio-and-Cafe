@@ -40,7 +40,8 @@ test('walk-in success offers two receipt copies and reprinting never resubmits b
   expect(screen.getByRole('button', { name: 'Print Customer Copy' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Print Your Copy' })).toBeInTheDocument();
   expect(screen.getByText('PHP 1,000.00')).toBeInTheDocument();
-  expect(screen.getAllByText('PHP 500.00')).toHaveLength(2);
+  expect(screen.getAllByText('PHP 500.00')).toHaveLength(3);
+  expect(screen.getByText('Approved')).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Print Customer Copy' }));
   await waitFor(() => expect(print).toHaveBeenCalledTimes(1));

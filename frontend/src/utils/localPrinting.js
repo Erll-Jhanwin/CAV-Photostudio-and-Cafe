@@ -62,6 +62,10 @@ const ITEM_UNIT_WIDTH = 12;
 const ITEM_TOTAL_WIDTH = RECEIPT_WIDTH - ITEM_QTY_WIDTH - ITEM_UNIT_WIDTH;
 
 const normalizeText = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+const sentenceCase = value => {
+  const text = normalizeText(value).replace(/_/g, ' ').toLowerCase();
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
 
 const line = (char = '-') => char.repeat(RECEIPT_WIDTH);
 
@@ -215,8 +219,11 @@ export const buildBookingReceiptText = (receipt, business = RECEIPT_BUSINESS, co
   ];
   const payment = [
     line(),
+    ...center('PAYMENT STATUS'),
+    ...center(sentenceCase(receipt?.paymentStatus || 'not recorded')),
     ...pair('TOTAL AMOUNT', money(receipt?.totalAmount)),
-    ...pair('PAYMENT RECEIVED', money(receipt?.amountPaid)),
+    ...pair('PAYMENT AMOUNT', money(receipt?.currentPaymentAmount ?? receipt?.amountPaid)),
+    ...pair('PAID TO DATE', money(receipt?.amountPaid)),
     ...pair('BALANCE DUE', money(receipt?.remainingBalance)),
     ...pair('PAYMENT METHOD', receipt?.paymentMethod || 'Not recorded'),
     ...(receipt?.paymentReference ? pair('PAYMENT REF', receipt.paymentReference) : []),

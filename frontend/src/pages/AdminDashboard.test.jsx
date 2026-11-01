@@ -77,19 +77,29 @@ describe('AdminDashboard', () => {
 
     render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Print Receipt' }));
+    const reprintDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
+    expect(within(reprintDialog).getByText('Pending verification')).toBeInTheDocument();
+    expect(within(reprintDialog).getByLabelText('Receipt printer')).toBeInTheDocument();
+    expect(within(reprintDialog).getByRole('button', { name: 'Detect Printers' })).toBeInTheDocument();
+    expect(client.patch).not.toHaveBeenCalled();
+    expect(localBridge).not.toHaveBeenCalled();
+    expect(print).not.toHaveBeenCalled();
+    fireEvent.click(within(reprintDialog).getByRole('button', { name: 'Done' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm Payment' }));
 
     const receiptDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
     expect(alert).toHaveBeenCalledWith('Payment approved successfully.');
     expect(within(receiptDialog).getByText('Payment reference')).toBeInTheDocument();
     expect(within(receiptDialog).getByText('Jamie Reyes')).toBeInTheDocument();
+    expect(within(receiptDialog).getByText('Approved')).toBeInTheDocument();
     expect(within(receiptDialog).getByText('Studio')).toBeInTheDocument();
     expect(within(receiptDialog).getByText('Portrait Session')).toBeInTheDocument();
     expect(within(receiptDialog).getByText('2026-11-15')).toBeInTheDocument();
     expect(within(receiptDialog).getByText('10:30')).toBeInTheDocument();
     expect(within(receiptDialog).getByText('PHP 2,500.00')).toBeInTheDocument();
-    expect(within(receiptDialog).getByText('Payment received')).toBeInTheDocument();
-    expect(within(receiptDialog).getAllByText('PHP 1,250.00')).toHaveLength(2);
+    expect(within(receiptDialog).getByText('Amount paid to date')).toBeInTheDocument();
+    expect(within(receiptDialog).getAllByText('PHP 1,250.00')).toHaveLength(3);
     expect(within(receiptDialog).getByText('GCash')).toBeInTheDocument();
     expect(within(receiptDialog).getByRole('button', { name: 'Print Customer Copy' })).toBeInTheDocument();
     await waitFor(() => expect(print).toHaveBeenCalled());

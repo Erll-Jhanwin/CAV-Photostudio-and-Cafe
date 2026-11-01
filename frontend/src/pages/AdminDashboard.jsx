@@ -59,7 +59,6 @@ import {
 import { formatManilaDateTime, MANILA_TIME_ZONE } from '../utils/dateTime';
 import { getDashboardRangeDates } from '../utils/dashboardDateRange';
 import { hasDashboardOperationalRecords, validateDashboardAnalytics } from '../utils/dashboardAnalytics';
-import { useGlobalLoadingProgressSuppression } from '../utils/globalLoadingProgress';
 import {
   getLocalPrinters,
   getLocalPrintingSetupMessage,
@@ -598,6 +597,7 @@ export default function AdminDashboard() {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
   const [bookingReceipt, setBookingReceipt] = useState(null);
+  const [bookingReceiptAutoPrint, setBookingReceiptAutoPrint] = useState(false);
   const [walkInBookingOpen, setWalkInBookingOpen] = useState(false);
   const [receiptPrintError, setReceiptPrintError] = useState('');
   const [endOfDayModalOpen, setEndOfDayModalOpen] = useState(false);
@@ -622,8 +622,6 @@ export default function AdminDashboard() {
   const [localPrintStatus, setLocalPrintStatus] = useState('Detect the cashier printer before printing a closeout.');
   const [tabLoading, setTabLoading] = useState({});
   const [liveBookingsReady, setLiveBookingsReady] = useState(false);
-  useGlobalLoadingProgressSuppression('admin-dashboard-skeleton', loading && !initialDataReady);
-  useGlobalLoadingProgressSuppression('admin-live-bookings-skeleton', activeTab === 'live' && !liveBookingsReady);
   const dashboardFetchSeqRef = useRef(0);
   const forecastFetchSeqRef = useRef(0);
   const endOfDayDetailsRequestRef = useRef(0);
@@ -1149,12 +1147,20 @@ export default function AdminDashboard() {
       setBookingPayments(current => normalizePayments(current.map(item => item.id === payment.id ? res.data : item)));
       fetchData({ background: true });
       alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'} successfully.`);
-      if (newStatus === 'APPROVED') setBookingReceipt(bookingReceiptFromPayment(res.data));
+      if (newStatus === 'APPROVED') {
+        setBookingReceiptAutoPrint(true);
+        setBookingReceipt(bookingReceiptFromPayment(res.data));
+      }
     } catch (err) {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
     } finally {
       setVerifyingPaymentId(null);
     }
+  };
+
+  const openBookingReceipt = payment => {
+    setBookingReceiptAutoPrint(false);
+    setBookingReceipt(bookingReceiptFromPayment(payment));
   };
 
   const getEndOfDayExpectedCashValue = (
@@ -2672,6 +2678,9 @@ export default function AdminDashboard() {
                             <section className="min-w-0 border-t border-espresso/10 pt-3 sm:col-span-2 md:col-span-1 md:border-l md:border-t-0 md:px-4 md:pt-0">
                               <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Verification</h3>
                               <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
+                              <Button size="sm" variant="outline" icon={Printer} onClick={() => openBookingReceipt(payment)}>
+                                Print Receipt
+                              </Button>
                               {isPending ? (
                                 <>
                                   <Button
@@ -3375,7 +3384,17 @@ export default function AdminDashboard() {
         error={endOfDayDetailError}
       />
 
-      <BookingReceiptPrintDialog open={Boolean(bookingReceipt)} receipt={bookingReceipt} printerName={selectedLocalPrinter} onClose={() => setBookingReceipt(null)} />
+      <BookingReceiptPrintDialog
+        open={Boolean(bookingReceipt)}
+        receipt={bookingReceipt}
+        printerName={selectedLocalPrinter}
+        printers={localPrinters}
+        onSelectPrinter={setSelectedLocalPrinter}
+        onDetectPrinters={handleDetectLocalPrinters}
+        detectingPrinters={localPrinterLoading}
+        autoPrint={bookingReceiptAutoPrint}
+        onClose={() => { setBookingReceipt(null); setBookingReceiptAutoPrint(false); }}
+      />
 
       <IngredientStatusModal
         open={ingredientStatusOpen}

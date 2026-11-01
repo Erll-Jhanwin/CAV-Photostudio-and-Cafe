@@ -37,7 +37,6 @@ import {
   syncPushSubscription,
 } from '../utils/pushNotifications';
 import { filterNotifications, getNotificationCategories } from '../utils/notificationFilters';
-import { useGlobalLoadingProgressSuppression } from '../utils/globalLoadingProgress';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -330,7 +329,6 @@ export default function CustomerDashboard() {
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
   const [dashboardError, setDashboardError] = useState('');
-  useGlobalLoadingProgressSuppression('customer-dashboard-skeleton', loading && !initialDataReady);
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');

@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Printer } from 'lucide-react';
+import { Printer, RefreshCw } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Modal } from './ui/Modal';
+import { Select } from './ui/Input';
 import { printLocalBookingReceipt, RECEIPT_BUSINESS } from '../utils/localPrinting';
 
 const peso = value => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const textValue = value => String(value || '').trim() || 'Not provided';
+const formatPaymentStatus = value => {
+  const status = String(value || 'NOT_RECORDED').toLowerCase().replace(/_/g, ' ');
+  return status.charAt(0).toUpperCase() + status.slice(1);
+};
 
 export const bookingReceiptFromPayment = payment => {
   const details = payment?.booking_details || {};
@@ -22,7 +27,9 @@ export const bookingReceiptFromPayment = payment => {
     scheduledTime: details.scheduled_time,
     totalAmount,
     amountPaid,
+    currentPaymentAmount: Number(payment?.amount || 0),
     remainingBalance: Number(details.remaining_balance ?? Math.max(totalAmount - amountPaid, 0)),
+    paymentStatus: formatPaymentStatus(payment?.status),
     paymentMethod: payment?.method_label || payment?.method,
     paymentReference: payment?.reference_number,
     transactionDate: payment?.paid_at || payment?.verified_at || payment?.created_at,
@@ -42,6 +49,7 @@ export async function printBookingReceipt({ receipt, printerName = '', copyLabel
 }
 
 export function BookingReceiptDocument({ receipt, copyLabel, business = RECEIPT_BUSINESS }) {
+  const paymentStatus = formatPaymentStatus(receipt.paymentStatus);
   return (
     <article id="booking-receipt-print-area" className="booking-receipt-paper mx-auto w-[58mm] max-w-full bg-white p-2 font-mono text-[9px] font-bold leading-tight text-black" aria-label={`${copyLabel} booking receipt`}>
       <header className="space-y-1 border-b border-dashed border-black pb-2 text-center">
@@ -64,8 +72,10 @@ export function BookingReceiptDocument({ receipt, copyLabel, business = RECEIPT_
 
       <section className="space-y-1 py-2 text-[8px]">
         <ReceiptRow label="Total amount" value={peso(receipt.totalAmount)} strong />
-        <ReceiptRow label="Payment received" value={peso(receipt.amountPaid)} strong />
+        <ReceiptRow label="Payment amount" value={peso(receipt.currentPaymentAmount ?? receipt.amountPaid)} />
+        <ReceiptRow label="Amount paid to date" value={peso(receipt.amountPaid)} strong />
         <ReceiptRow label="Remaining balance" value={peso(receipt.remainingBalance)} strong />
+        <ReceiptRow label="Payment status" value={paymentStatus} />
         <ReceiptRow label="Payment method" value={textValue(receipt.paymentMethod)} />
         {receipt.paymentReference && <ReceiptRow label="Payment reference" value={textValue(receipt.paymentReference)} />}
       </section>
@@ -81,7 +91,19 @@ function ReceiptRow({ label, value, strong = false }) {
   </div>;
 }
 
-export default function BookingReceiptPrintDialog({ open, receipt, onClose, printerName = '' }) {
+export default function BookingReceiptPrintDialog({
+  open,
+  receipt,
+  onClose,
+  printerName = '',
+  printers = [],
+  onSelectPrinter,
+  onDetectPrinters,
+  detectingPrinters = false,
+  printingEnabled,
+  onTogglePrinting,
+  autoPrint = true,
+}) {
   const [copyLabel, setCopyLabel] = useState('Staff/Admin Copy');
   const [printError, setPrintError] = useState('');
   const [printing, setPrinting] = useState(false);
@@ -92,6 +114,7 @@ export default function BookingReceiptPrintDialog({ open, receipt, onClose, prin
     setPrintError('');
     setPrinting(true);
     try {
+      if (printingEnabled === false) throw new Error('Local printing is disabled.');
       const result = await printLocalBookingReceipt({ receipt, printerName, copyLabel: copy });
       if (!result?.printed) throw new Error('The local printer did not accept the receipt.');
     } catch (error) {
@@ -103,16 +126,18 @@ export default function BookingReceiptPrintDialog({ open, receipt, onClose, prin
   }, [printerName, receipt]);
 
   useEffect(() => {
-    if (!open || !receipt) {
+    if (!open || !receipt || !autoPrint) {
       autoPrintKeyRef.current = null;
       return undefined;
     }
     const receiptKey = `${receipt.bookingId}:${receipt.paymentReference || ''}`;
     if (autoPrintKeyRef.current === receiptKey) return undefined;
-    autoPrintKeyRef.current = receiptKey;
-    const timer = window.setTimeout(() => { void handlePrint('Staff/Admin Copy'); }, 250);
+    const timer = window.setTimeout(() => {
+      autoPrintKeyRef.current = receiptKey;
+      void handlePrint('Staff/Admin Copy');
+    }, 250);
     return () => window.clearTimeout(timer);
-  }, [handlePrint, open, receipt]);
+  }, [autoPrint, handlePrint, open, receipt]);
 
   return (
     <Modal open={open} onClose={onClose} title="Booking receipt" size="2xl" bodyClassName="bg-cream/60">
@@ -120,6 +145,28 @@ export default function BookingReceiptPrintDialog({ open, receipt, onClose, prin
         <div className="max-h-[65vh] overflow-y-auto rounded-xl bg-white p-3">
           <BookingReceiptDocument receipt={receipt} copyLabel={copyLabel} />
         </div>
+        <section aria-label="Receipt printer controls" className="rounded-xl border border-espresso/10 bg-white p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            {onTogglePrinting && <Button type="button" variant={printingEnabled ? 'success' : 'outline'} size="sm" disabled={detectingPrinters} onClick={onTogglePrinting}>
+              Local printing {printingEnabled ? 'Enabled' : 'Disabled'}
+            </Button>}
+            <div className="min-w-0 flex-1">
+              <Select
+                label="Receipt printer"
+                value={printerName}
+                onChange={event => onSelectPrinter?.(event.target.value)}
+                disabled={detectingPrinters || (printingEnabled === false) || !printers.length}
+                options={[
+                  { value: '', label: printers.length ? 'Use default printer' : 'No printers detected' },
+                  ...printers.map(printer => ({ value: printer.name, label: `${printer.name}${printer.default ? ' (Default)' : ''}` })),
+                ]}
+              />
+            </div>
+            <Button type="button" variant="outline" size="sm" icon={RefreshCw} loading={detectingPrinters} disabled={!onDetectPrinters || detectingPrinters} onClick={onDetectPrinters}>
+              Detect Printers
+            </Button>
+          </div>
+        </section>
         {printError && <p role="status" className="rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-900">{printError}</p>}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end print:hidden">
           <Button variant="outline" onClick={onClose}>Done</Button>

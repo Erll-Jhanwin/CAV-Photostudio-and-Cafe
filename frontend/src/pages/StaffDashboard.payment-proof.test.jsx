@@ -110,6 +110,7 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
       package_name: 'Portrait Session',
       scheduled_date: '2026-11-15',
       scheduled_time: '10:30',
+      total_amount: '1000.00', amount_paid: '500.00', remaining_balance: '500.00',
     },
   }));
   const alerts = jest.spyOn(window, 'alert').mockImplementation(() => {});
@@ -154,6 +155,17 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   expect(screen.getByText('Payment Customer 1')).toBeInTheDocument();
   expect(screen.getByText('Payment Customer 2')).toBeInTheDocument();
   expect(screen.getByText('Payment Customer 3')).toBeInTheDocument();
+  expect(within(list).getAllByRole('button', { name: 'Print Receipt' })).toHaveLength(4);
+
+  fireEvent.click(within(list).getAllByRole('button', { name: 'Print Receipt' })[0]);
+  const reprintDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
+  expect(within(reprintDialog).getByText('Pending verification')).toBeInTheDocument();
+  expect(within(reprintDialog).getByLabelText('Receipt printer')).toBeInTheDocument();
+  expect(within(reprintDialog).getByRole('button', { name: 'Detect Printers' })).toBeInTheDocument();
+  expect(client.patch).not.toHaveBeenCalled();
+  expect(localBridge).not.toHaveBeenCalled();
+  expect(print).not.toHaveBeenCalled();
+  fireEvent.click(within(reprintDialog).getByRole('button', { name: 'Done' }));
 
   fireEvent.click(screen.getByRole('button', { name: 'View proof of payment for booking 170' }));
   expect(await screen.findByRole('dialog', { name: 'Payment proof · Booking #170' })).toBeInTheDocument();
@@ -164,6 +176,8 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/api/bookings/payments/70/verify/', { status: 'APPROVED' }));
   const receiptDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
   expect(within(receiptDialog).getByText(/Booking reference/)).toBeInTheDocument();
+  expect(within(receiptDialog).getByText('Approved')).toBeInTheDocument();
+  expect(within(receiptDialog).getByText('Remaining balance')).toBeInTheDocument();
   expect(within(receiptDialog).getByRole('button', { name: 'Print Customer Copy' })).toBeInTheDocument();
   expect(alerts).toHaveBeenCalledWith('Payment approved successfully.');
   await waitFor(() => expect(print).toHaveBeenCalled());

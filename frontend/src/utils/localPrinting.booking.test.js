@@ -9,7 +9,9 @@ const receipt = {
   scheduledTime: '09:00 AM',
   totalAmount: 1000,
   amountPaid: 500,
+  currentPaymentAmount: 250,
   remainingBalance: 500,
+  paymentStatus: 'Pending verification',
   paymentMethod: 'Cash',
   paymentReference: 'GC-55-REF',
 };
@@ -25,8 +27,10 @@ test('thermal booking text fits the shared 32-column POS receipt width and conta
   expect(content).toContain('SESSION DATE');
   expect(content).toContain('SESSION TIME');
   expect(content).toContain('TOTAL AMOUNT');
-  expect(content).toContain('PAYMENT RECEIVED');
+  expect(content).toContain('PAYMENT AMOUNT');
+  expect(content).toContain('PAID TO DATE');
   expect(content).toContain('BALANCE DUE');
+  expect(content).toContain('PAYMENT STATUS');
   expect(content).toContain('PAYMENT METHOD');
   expect(content).toContain('PAYMENT REF');
   expect(content.split('\n').every(row => row.length <= 32)).toBe(true);

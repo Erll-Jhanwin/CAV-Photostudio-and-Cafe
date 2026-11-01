@@ -30,7 +30,6 @@ import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
 import BookingQueue from '../components/bookings/BookingQueue';
-import { useGlobalLoadingProgressSuppression } from '../utils/globalLoadingProgress';
 
 export function StaffSkeleton() {
   return (
@@ -228,6 +227,7 @@ export default function StaffDashboard() {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
   const [bookingReceipt, setBookingReceipt] = useState(null);
+  const [bookingReceiptAutoPrint, setBookingReceiptAutoPrint] = useState(false);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [initialDataReady, setInitialDataReady] = useState(false);
@@ -799,12 +799,20 @@ export default function StaffDashboard() {
       const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
       setBookingPayments(current => normalizePayments(current.map(item => item.id === payment.id ? res.data : item)));
       alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'} successfully.`);
-      if (newStatus === 'APPROVED') setBookingReceipt(bookingReceiptFromPayment(res.data));
+      if (newStatus === 'APPROVED') {
+        setBookingReceiptAutoPrint(true);
+        setBookingReceipt(bookingReceiptFromPayment(res.data));
+      }
     } catch (err) {
       alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
     } finally {
       setVerifyingPaymentId(null);
     }
+  };
+
+  const openBookingReceipt = payment => {
+    setBookingReceiptAutoPrint(false);
+    setBookingReceipt(bookingReceiptFromPayment(payment));
   };
 
   const loadStockActionProducts = async () => {
@@ -1610,8 +1618,6 @@ export default function StaffDashboard() {
   const isViewportBoundTab = isSalesTab || isPosTab || isBookingsTab || isPaymentsTab || isInventoryTab || isCatalogTab;
   const showStaffSkeleton = !initialDataReady && (loading || isCurrentTabLoading) && !isBookingsTab && !isPaymentsTab
     && !(user?.role === 'STAFF' && staffAccessReady && !staffAccess?.on_duty);
-  useGlobalLoadingProgressSuppression('staff-dashboard-skeleton', showStaffSkeleton);
-  useGlobalLoadingProgressSuppression('staff-bookings-skeleton', isBookingsTab && !!loadingResources.bookings && staffBookings.length === 0);
 
   if (showStaffSkeleton) {
     return <StaffSkeleton />;
@@ -2115,6 +2121,9 @@ export default function StaffDashboard() {
                               <section className="min-w-0 border-t border-espresso/10 pt-3 sm:col-span-2 md:col-span-1 md:border-l md:border-t-0 md:px-4 md:pt-0">
                                 <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Verification</h3>
                                 <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
+                                  <Button size="sm" variant="outline" icon={Printer} onClick={() => openBookingReceipt(payment)}>
+                                    Print Receipt
+                                  </Button>
                                   {isPending ? (
                                     <>
                                       <Button size="sm" variant="success" icon={Check} loading={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}>
@@ -3156,7 +3165,19 @@ export default function StaffDashboard() {
         onLookupTransaction={lookupStockActionTransaction}
         onSubmit={handleStockActionSubmit}
       />
-      <BookingReceiptPrintDialog open={Boolean(bookingReceipt)} receipt={bookingReceipt} printerName={selectedLocalPrinter} onClose={() => setBookingReceipt(null)} />
+      <BookingReceiptPrintDialog
+        open={Boolean(bookingReceipt)}
+        receipt={bookingReceipt}
+        printerName={selectedLocalPrinter}
+        printers={localPrinters}
+        onSelectPrinter={setSelectedLocalPrinter}
+        onDetectPrinters={handleDetectLocalPrinters}
+        detectingPrinters={localPrinterLoading}
+        printingEnabled={localPrintingEnabled}
+        onTogglePrinting={() => setLocalPrintingEnabled(value => !value)}
+        autoPrint={bookingReceiptAutoPrint}
+        onClose={() => { setBookingReceipt(null); setBookingReceiptAutoPrint(false); }}
+      />
     </div>
     )
   );
