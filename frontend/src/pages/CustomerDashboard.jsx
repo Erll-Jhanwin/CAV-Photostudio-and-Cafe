@@ -37,6 +37,7 @@ import {
   syncPushSubscription,
 } from '../utils/pushNotifications';
 import { filterNotifications, getNotificationCategories } from '../utils/notificationFilters';
+import { startVisiblePolling } from '../utils/visiblePolling';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -420,6 +421,7 @@ export default function CustomerDashboard() {
   const bookingRequestStartedRef = useRef(false);
   const paymentRequestStartedRef = useRef(false);
   const dashboardFetchSeqRef = useRef(0);
+  const dashboardRefreshInFlightRef = useRef(false);
   const availabilityMountedRef = useRef(true);
   const monthAvailabilityRequestRef = useRef(0);
   const dayAvailabilityRequestRef = useRef(0);
@@ -701,6 +703,8 @@ export default function CustomerDashboard() {
   }, []);
 
   const fetchDashboardData = useCallback(async ({ background = false } = {}) => {
+    if (dashboardRefreshInFlightRef.current) return;
+    dashboardRefreshInFlightRef.current = true;
     const requestSeq = dashboardFetchSeqRef.current + 1;
     dashboardFetchSeqRef.current = requestSeq;
     try {
@@ -762,6 +766,7 @@ export default function CustomerDashboard() {
         setDashboardError(getApiErrorMessage(err, 'Could not refresh your bookings and profile.'));
       }
     } finally {
+      dashboardRefreshInFlightRef.current = false;
       if (!background && requestSeq === dashboardFetchSeqRef.current) {
         setLoading(false);
         setInitialDataReady(true);
@@ -797,10 +802,7 @@ export default function CustomerDashboard() {
 
   useEffect(() => {
     if (!userId) return undefined;
-    const intervalId = window.setInterval(() => {
-      void fetchNotifications({ force: true });
-    }, 10_000);
-    return () => window.clearInterval(intervalId);
+    return startVisiblePolling(() => fetchNotifications({ force: true }), 30000);
   }, [userId, fetchNotifications]);
 
   const handleNotificationRead = async (notification) => {
@@ -853,17 +855,7 @@ export default function CustomerDashboard() {
 
   useEffect(() => {
     if (!userId) return undefined;
-    const refresh = () => {
-      if (!document.hidden) fetchDashboardData({ background: true });
-    };
-    const intervalId = window.setInterval(refresh, 45000);
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', refresh);
-    };
+    return startVisiblePolling(() => fetchDashboardData({ background: true }), 60000);
   }, [userId, fetchDashboardData]);
 
   const handleProfileUpdate = async (e) => {

@@ -59,6 +59,7 @@ import {
 } from '../utils/uniqueRecords';
 import { formatManilaDateTime, MANILA_TIME_ZONE } from '../utils/dateTime';
 import { getDashboardRangeDates } from '../utils/dashboardDateRange';
+import { startVisiblePolling } from '../utils/visiblePolling';
 import { hasDashboardOperationalRecords, validateDashboardAnalytics } from '../utils/dashboardAnalytics';
 import {
   getLocalPrinters,
@@ -624,6 +625,9 @@ export default function AdminDashboard() {
   const [tabLoading, setTabLoading] = useState({});
   const [liveBookingsReady, setLiveBookingsReady] = useState(false);
   const dashboardFetchSeqRef = useRef(0);
+  const adminTabLoadInFlightRef = useRef(new Set());
+  const pendingAdminTabRefreshRef = useRef(new Set());
+  const pendingAdminTabRefreshAtRef = useRef(new Map());
   const forecastFetchSeqRef = useRef(0);
   const endOfDayDetailsRequestRef = useRef(0);
   const salesChartInteractionElementRef = useRef(null);
@@ -631,6 +635,15 @@ export default function AdminDashboard() {
 
   const loadAdminTabData = useCallback(async (tab, { force = false } = {}) => {
     if (tab === 'analytics' || tab === 'completed-bookings') return;
+    if (adminTabLoadInFlightRef.current.has(tab)) {
+      const lastQueuedAt = pendingAdminTabRefreshAtRef.current.get(tab) || 0;
+      if (force && Date.now() - lastQueuedAt > 250) {
+        pendingAdminTabRefreshRef.current.add(tab);
+        pendingAdminTabRefreshAtRef.current.set(tab, Date.now());
+      }
+      return;
+    }
+    adminTabLoadInFlightRef.current.add(tab);
     setTabLoading(current => ({ ...current, [tab]: true }));
     try {
       if (tab === 'calendar' || tab === 'live') {
@@ -669,8 +682,13 @@ export default function AdminDashboard() {
     } catch (error) {
       setDataError(getApiErrorMessage(error, `Could not load ${tab} data.`));
     } finally {
+      adminTabLoadInFlightRef.current.delete(tab);
       setTabLoading(current => ({ ...current, [tab]: false }));
       if (tab === 'live') setLiveBookingsReady(true);
+      if (pendingAdminTabRefreshRef.current.delete(tab)) {
+        pendingAdminTabRefreshAtRef.current.delete(tab);
+        window.setTimeout(() => { void loadAdminTabData(tab, { force: true }); }, 0);
+      }
     }
   }, [bookingCalendarMonth]);
 
@@ -769,22 +787,10 @@ export default function AdminDashboard() {
       if (activeTab === 'analytics') fetchData({ background: true });
       loadAdminTabData(activeTab, { force: true });
     };
-    const refreshInterval = activeTab === 'live' ? 10000
-      : activeTab === 'calendar' || activeTab === 'payments' ? 15000
-        : 30000;
-    const intervalId = window.setInterval(refresh, refreshInterval);
-    window.addEventListener('focus', refresh);
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) refresh();
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    const refreshInterval = activeTab === 'live' ? 20000
+      : activeTab === 'calendar' || activeTab === 'payments' ? 30000
+        : 60000;
+    return startVisiblePolling(refresh, refreshInterval);
   }, [user, activeTab, fetchData, loadAdminTabData]);
 
   useEffect(() => {

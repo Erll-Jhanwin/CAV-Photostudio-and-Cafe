@@ -30,6 +30,7 @@ import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
 import BookingQueue from '../components/bookings/BookingQueue';
+import { startVisiblePolling } from '../utils/visiblePolling';
 
 export function StaffSkeleton() {
   return (
@@ -333,6 +334,9 @@ export default function StaffDashboard() {
   const [purchaseOrderErrors, setPurchaseOrderErrors] = useState({});
   const [purchaseOrderActionId, setPurchaseOrderActionId] = useState(null);
   const tabLoadInFlightRef = useRef(new Set());
+  const tabLoadStartedAtRef = useRef(new Map());
+  const pendingTabRefreshRef = useRef(new Set());
+  const pendingTabRefreshAtRef = useRef(new Map());
 
   const loadStaticInventoryOptions = useCallback(async (force = false) => {
     const cachedCategories = !force ? readStaffCache(user?.id, 'categories') : null;
@@ -374,9 +378,18 @@ export default function StaffDashboard() {
   }, [refreshProducts]);
 
   const loadTabData = useCallback(async (tab = activeTab, force = false) => {
-    if (tabLoadInFlightRef.current.has(tab)) return;
+    if (tabLoadInFlightRef.current.has(tab)) {
+      const startedAt = tabLoadStartedAtRef.current.get(tab) || Date.now();
+      const lastQueuedAt = pendingTabRefreshAtRef.current.get(tab) || 0;
+      if (force && Date.now() - startedAt > 250 && Date.now() - lastQueuedAt > 250) {
+        pendingTabRefreshRef.current.add(tab);
+        pendingTabRefreshAtRef.current.set(tab, Date.now());
+      }
+      return;
+    }
     if (!force && loadedTabs[tab]) return;
     tabLoadInFlightRef.current.add(tab);
+    tabLoadStartedAtRef.current.set(tab, Date.now());
     try {
       setError('');
       setLoadingResources(current => ({ ...current, [tab]: true }));
@@ -434,9 +447,14 @@ export default function StaffDashboard() {
       setError(getApiErrorMessage(err, 'Failed to load dashboard data.'));
     } finally {
       tabLoadInFlightRef.current.delete(tab);
+      tabLoadStartedAtRef.current.delete(tab);
       setLoadingResources(current => ({ ...current, [tab]: false }));
       setLoading(false);
       setInitialDataReady(true);
+      if (pendingTabRefreshRef.current.delete(tab)) {
+        pendingTabRefreshAtRef.current.delete(tab);
+        window.setTimeout(() => { void loadTabData(tab, true); }, 0);
+      }
     }
   }, [activeTab, loadedTabs, ensureDefaultRecipesOnce, loadStaticInventoryOptions, salesCustomerSearch, user?.id]);
 
@@ -471,42 +489,48 @@ export default function StaffDashboard() {
     };
     setStaffAccessReady(false);
     void refreshAccess();
-    const intervalId = window.setInterval(refreshAccess, 10000);
-    return () => { mounted = false; window.clearInterval(intervalId); };
+    const stopPolling = startVisiblePolling(refreshAccess, 30000);
+    return () => { mounted = false; stopPolling(); };
   }, [user]);
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) return undefined;
-    const refresh = () => {
-      if (!document.hidden) loadTabData(activeTab, true);
-    };
-    const intervalId = window.setInterval(refresh, ['payments', 'bookings'].includes(activeTab) ? 5000 : 45000);
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', refresh);
-    };
+    const intervalMs = ['payments', 'bookings'].includes(activeTab) ? 15000 : 60000;
+    return startVisiblePolling(() => loadTabData(activeTab, true), intervalMs);
   }, [user, activeTab, loadTabData]);
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) return undefined;
     const refreshChangedData = (event) => {
       const url = String(event.detail?.url || '');
+      let affectedTabs = [];
       if (url.includes('/api/pos/orders/')) {
-        void Promise.all(['pos', 'inventory', 'catalog', 'sales'].map(tab => loadTabData(tab, true)));
+        affectedTabs = ['pos', 'inventory', 'catalog', 'sales'];
+      } else if (url.includes('/api/pos/stock-actions/')) {
+        affectedTabs = ['pos', 'inventory', 'catalog', 'sales'];
       } else if (url.includes('/api/inventory/')) {
-        void Promise.all(['pos', 'inventory', 'catalog'].map(tab => loadTabData(tab, true)));
+        affectedTabs = ['pos', 'inventory', 'catalog'];
+      } else if (url.includes('/api/pos/payments/')) {
+        affectedTabs = ['sales'];
       } else if (url.includes('/api/bookings/payments/')) {
-        void loadTabData('payments', true);
+        affectedTabs = ['payments'];
       } else if (url.includes('/api/bookings/')) {
-        void loadTabData('bookings', true);
+        affectedTabs = ['bookings'];
       }
+      if (!affectedTabs.length) return;
+      setLoadedTabs(current => {
+        const next = { ...current };
+        let changed = false;
+        affectedTabs.forEach(tab => {
+          if (next[tab]) { next[tab] = false; changed = true; }
+        });
+        return changed ? next : current;
+      });
+      if (affectedTabs.includes(activeTab)) void loadTabData(activeTab, true);
     };
     window.addEventListener(DATA_CHANGED_EVENT, refreshChangedData);
     return () => window.removeEventListener(DATA_CHANGED_EVENT, refreshChangedData);
-  }, [user, loadTabData]);
+  }, [user, activeTab, loadTabData]);
 
   useEffect(() => { setProductPage(1); }, [posSearch]);
   useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
@@ -874,7 +898,6 @@ export default function StaffDashboard() {
     try {
       const response = await client.post('/api/pos/stock-actions/', payload);
       setStockActionType(null);
-      await Promise.all(['pos', 'inventory', 'catalog', 'sales'].map(tab => loadTabData(tab, true)));
       alert(`${payload.action_type === 'REFUND' ? 'Refund' : 'Wastage'} recorded for ${response.data.transaction_id}.`);
     } catch (actionError) {
       setStockActionError(getApiErrorMessage(actionError, 'Could not save this stock action. Check the transaction and quantities, then try again.'));

@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from users.models import StaffAccessProfile
 from inventory.models import Category, InventoryEvent, Product, Supplier
 from inventory.serializers import ProductSerializer
 from pos.models import Order
@@ -15,6 +16,7 @@ class StockMovementWriteTests(TestCase):
             password='Staff123!pass',
             role='STAFF',
         )
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         self.product = Product.objects.create(
             name='Inventory Test Print',
             sku='INVENTORY-TEST-PRINT',
@@ -57,6 +59,7 @@ class CatalogReferenceCrudTests(TestCase):
             password='Staff123!pass',
             role='STAFF',
         )
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         self.client = APIClient()
         self.client.force_authenticate(self.staff)
 
@@ -151,6 +154,7 @@ class PurchaseOrderLifecycleTests(TestCase):
             password='Staff123!pass',
             role='STAFF',
         )
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         self.product = Product.objects.create(
             name='Purchase Order Test Product',
             sku='PO-TEST-001',

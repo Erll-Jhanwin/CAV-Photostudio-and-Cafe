@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from users.models import StaffAccessProfile
 from forecasting.models import ForecastRun
 from ml.linear_regression_forecasting import (
     create_forecast_run, evaluate_series, fit_linear_regression, load_daily_sales,
@@ -81,6 +82,7 @@ class ForecastDataIntegrationTests(TestCase):
     def test_forecast_endpoint_is_staff_only_and_accepts_valid_horizon(self):
         customer = get_user_model().objects.create_user(username='forecast-customer', password='test-pass', role='CUSTOMER')
         staff = get_user_model().objects.create_user(username='forecast-staff', password='test-pass', role='STAFF')
+        StaffAccessProfile.objects.create(user=staff, on_duty=True)
         client = APIClient()
         client.force_authenticate(customer)
         self.assertEqual(client.get('/api/forecasting/ml/').status_code, 403)

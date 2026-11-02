@@ -9,6 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from users.models import StaffAccessProfile
 from forecasting.models import ForecastRun, SalesHistoryImport, SalesHistoryRecord
 from ml.forecasting_engine import generate_forecast_report
 from ml.linear_regression_forecasting import MODEL_VERSION, dataset_path
@@ -198,6 +199,7 @@ class ForecastingImportApiTests(TestCase):
             password='ForecastingPass123!',
             role='STAFF',
         )
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         self.customer = get_user_model().objects.create_user(
             username='forecasting-customer',
             password='ForecastingPass123!',
@@ -263,6 +265,7 @@ class ForecastingReportApiTests(TestCase):
             password='ForecastingPass123!',
             role='STAFF',
         )
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         self.client = APIClient()
         self.client.force_authenticate(self.staff)
         cache.clear()
