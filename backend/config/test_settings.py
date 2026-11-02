@@ -13,6 +13,7 @@ os.environ['DATABASE_URL'] = test_database_url
 os.environ['DATABASE_SSL_REQUIRE'] = 'false'
 os.environ['DJANGO_SECRET_KEY'] = 'isolated-tests-only-not-for-deployment'
 os.environ['DJANGO_DEBUG'] = 'false'
+os.environ['DJANGO_ISOLATED_TEST_SETTINGS'] = '1'
 
 from .settings import *  # noqa: E402,F403
 

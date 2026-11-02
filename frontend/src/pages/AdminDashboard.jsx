@@ -735,8 +735,8 @@ export default function AdminDashboard() {
       navigate('/login');
       return;
     }
-    fetchData();
-  }, [user, navigate, fetchData]);
+    if (activeTab === 'analytics') fetchData();
+  }, [user, navigate, activeTab, fetchData]);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN' || !initialDataReady) return undefined;
@@ -766,10 +766,12 @@ export default function AdminDashboard() {
     if (!user || user.role !== 'ADMIN') return undefined;
 
     const refresh = () => {
-      fetchData({ background: true });
+      if (activeTab === 'analytics') fetchData({ background: true });
       loadAdminTabData(activeTab, { force: true });
     };
-    const refreshInterval = activeTab === 'calendar' || activeTab === 'live' || activeTab === 'payments' ? 5000 : 30000;
+    const refreshInterval = activeTab === 'live' ? 10000
+      : activeTab === 'calendar' || activeTab === 'payments' ? 15000
+        : 30000;
     const intervalId = window.setInterval(refresh, refreshInterval);
     window.addEventListener('focus', refresh);
 
@@ -788,7 +790,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') return undefined;
     const refreshChangedData = () => {
-      fetchData({ background: true });
+      if (activeTab === 'analytics') fetchData({ background: true });
       loadAdminTabData(activeTab, { force: true });
     };
     window.addEventListener(DATA_CHANGED_EVENT, refreshChangedData);

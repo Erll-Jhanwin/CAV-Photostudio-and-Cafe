@@ -21,7 +21,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Render injects service variables directly. For local development, use the
 # backend export kept outside the frontend build context. Existing process
 # variables (including Render's) take precedence over the export.
-load_dotenv(BASE_DIR.parent / 'cav_env' / 'CAV-Photostudio-and-Cafe-backend.env')
+if os.environ.get('DJANGO_ISOLATED_TEST_SETTINGS') != '1':
+    load_dotenv(BASE_DIR.parent / 'cav_env' / 'CAV-Photostudio-and-Cafe-backend.env')
 
 # Add apps folder to Python path
 sys.path.insert(0, os.path.join(BASE_DIR, 'apps'))

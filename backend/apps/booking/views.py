@@ -284,7 +284,10 @@ class BookingListCreateView(generics.ListCreateAPIView):
         user = self.request.user
         if user.role in ['STAFF', 'ADMIN']:
             # Staff/Admin see all bookings, filterable by date
-            queryset = Booking.objects.all().select_related('customer', 'package', 'package__service', 'review').prefetch_related('payments').distinct()
+            queryset = Booking.objects.all().select_related('customer', 'package', 'package__service', 'review').prefetch_related(
+                'payments',
+                'customer__customer_profile',
+            ).distinct()
             date_param = self.request.query_params.get('date')
             status_param = self.request.query_params.get('status')
             if date_param:
@@ -330,7 +333,10 @@ class BookingListCreateView(generics.ListCreateAPIView):
                 queryset = queryset.order_by('scheduled_date', 'scheduled_time', 'id')
             return apply_limit(queryset, self.request, default=100, maximum=500)
         # Customers only see their own bookings
-        queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service', 'review').prefetch_related('payments').distinct().order_by('-scheduled_date', '-created_at', '-id')
+        queryset = Booking.objects.filter(customer=user).select_related('customer', 'package', 'package__service', 'review').prefetch_related(
+            'payments',
+            'customer__customer_profile',
+        ).distinct().order_by('-scheduled_date', '-created_at', '-id')
         if self.request.query_params.get('search'):
             queryset = filters.SearchFilter().filter_queryset(self.request, queryset, self)
         return apply_limit(queryset, self.request, default=100, maximum=500)
