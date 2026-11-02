@@ -63,6 +63,47 @@ test('shows the customer dashboard while the supplemental profile refresh is sti
   expect(resolveProfile).toBeDefined();
 });
 
+test('My Photos groups booking attachments and opens the image, ZIP, and Drive delivery types', async () => {
+  const defaultGet = client.get.getMockImplementation();
+  client.get.mockImplementation((url, options) => {
+    if (url === '/api/gallery/customer-photos/') return Promise.resolve({ data: [
+      {
+        id: 201, booking_id: 88, booking_scheduled_date: '2026-10-20', booking_scheduled_time: '14:00:00',
+        package_name: 'Studio Portrait', title: 'Finished portraits', attachment_type: 'IMAGE',
+        download_url: '/api/gallery/customer-photos/201/download/', created_at: '2026-10-21T10:00:00Z',
+      },
+      {
+        id: 202, booking_id: 88, booking_scheduled_date: '2026-10-20', booking_scheduled_time: '14:00:00',
+        package_name: 'Studio Portrait', title: 'Full resolution archive', attachment_type: 'ZIP', file_name: 'session.zip',
+        download_url: '/api/gallery/customer-photos/202/download/', created_at: '2026-10-21T10:01:00Z',
+      },
+      {
+        id: 203, booking_id: 88, booking_scheduled_date: '2026-10-20', booking_scheduled_time: '14:00:00',
+        package_name: 'Studio Portrait', title: 'Online gallery', attachment_type: 'GOOGLE_DRIVE',
+        drive_url: 'https://drive.google.com/file/d/Abc_123/view', created_at: '2026-10-21T10:02:00Z',
+      },
+    ] });
+    if (String(url).includes('/download/')) return Promise.resolve({ data: new Blob(['file']) });
+    return defaultGet(url, options);
+  });
+  const openWindow = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+  render(<CustomerDashboard />);
+  fireEvent.click(await screen.findByRole('button', { name: 'My Photos' }));
+  expect(await screen.findByText('Studio Portrait')).toBeInTheDocument();
+  expect(screen.getByText('2026-10-20 · 14:00')).toBeInTheDocument();
+
+  fireEvent.click(screen.getAllByRole('button', { name: 'View', exact: true })[0]);
+  expect(await screen.findByRole('dialog', { name: 'Session photos · Booking #88' })).toBeInTheDocument();
+  expect(await screen.findByRole('img', { name: 'Finished portraits' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Close modal' }));
+
+  fireEvent.click(screen.getByRole('button', { name: 'View ZIP' }));
+  await waitFor(() => expect(client.get).toHaveBeenCalledWith('/api/gallery/customer-photos/202/download/', { responseType: 'blob' }));
+  fireEvent.click(screen.getAllByRole('button', { name: 'View', exact: true })[1]);
+  expect(openWindow).toHaveBeenCalledWith('https://drive.google.com/file/d/Abc_123/view', '_blank', 'noopener,noreferrer');
+});
+
 async function fillPayment(container) {
   fireEvent.change(screen.getByLabelText('GCash Reference No.'), { target: { value: 'GCASH-TEST-001' } });
   fireEvent.change(screen.getByLabelText('Amount Paid'), { target: { value: '500' } });

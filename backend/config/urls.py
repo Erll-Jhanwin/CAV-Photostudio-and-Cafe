@@ -51,7 +51,7 @@ from pos.views import OrderListCreateView, OrderDetailView, OrderReturnView, POS
 from chatbot.views import ChatbotQueryView, FAQListCreateView, FAQDetailUpdateView
 from dashboard.views import DashboardAnalyticsView
 from forecasting.views import ForecastingDataView, SalesHistoryImportView, MachineLearningForecastView
-from gallery.views import CustomerPhotoDownloadView, CustomerPhotoListCreateView, GalleryImageDetailView, GalleryImageListView
+from gallery.views import CompletedBookingListView, CustomerPhotoDownloadView, CustomerPhotoListCreateView, GalleryImageDetailView, GalleryImageListView
 from audit.views import AuditLogListView, ClientRuntimeErrorView
 from config.health import health_check
 from notifications.views import (
@@ -165,6 +165,7 @@ urlpatterns = [
     # Landing gallery
     path('api/gallery/images/', GalleryImageListView.as_view(), name='gallery_image_list'),
     path('api/gallery/images/<int:pk>/', GalleryImageDetailView.as_view(), name='gallery_image_detail'),
+    path('api/gallery/completed-bookings/', CompletedBookingListView.as_view(), name='completed_booking_list'),
     path('api/gallery/customer-photos/', CustomerPhotoListCreateView.as_view(), name='customer_photo_list_create'),
     path('api/gallery/customer-photos/<int:pk>/download/', CustomerPhotoDownloadView.as_view(), name='customer_photo_download'),
 ]

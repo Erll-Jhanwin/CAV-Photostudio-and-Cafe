@@ -1,23 +1,104 @@
 import logging
 import mimetypes
+import re
+import zipfile
+from urllib.parse import urlsplit
 
+from django.db.models import Prefetch
 from django.db import transaction
 from django.http import FileResponse
+from PIL import Image, UnidentifiedImageError
 from rest_framework import permissions, status, views
+from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from audit.models import AuditLog
-from users.permissions import IsStaffOrAdmin
+from users.permissions import IsAdmin, IsStaffOrAdmin
 from payment.storage import SupabaseStorageError
 from booking.models import Booking
 from users.uploads import validate_receipt_image
 
 from .models import CustomerPhoto, GalleryImage
-from .serializers import CustomerPhotoSerializer, GalleryImageSerializer
+from .serializers import CompletedBookingSerializer, CustomerPhotoSerializer, GalleryImageSerializer
 
 
 logger = logging.getLogger(__name__)
+
+MAX_CUSTOMER_IMAGE_SIZE = 5 * 1024 * 1024
+MAX_CUSTOMER_UPLOAD_SIZE = 50 * 1024 * 1024
+MAX_CUSTOMER_IMAGES_PER_UPLOAD = 20
+MAX_ARCHIVE_UNCOMPRESSED_SIZE = 250 * 1024 * 1024
+MAX_CUSTOMER_IMAGE_PIXELS = 25_000_000
+ALLOWED_ARCHIVE_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
+
+
+def validate_customer_photo_archive(upload):
+    if not upload or not str(upload.name or '').lower().endswith('.zip'):
+        return {'archive': 'Upload a ZIP file.'}
+    if upload.size > MAX_CUSTOMER_UPLOAD_SIZE:
+        return {'archive': 'ZIP files must be 50 MB or smaller.'}
+    try:
+        upload.seek(0)
+        with zipfile.ZipFile(upload) as archive:
+            entries = [entry for entry in archive.infolist() if not entry.is_dir()]
+            image_entries = [
+                entry for entry in entries
+                if entry.filename.rsplit('/', 1)[-1].lower().endswith(tuple(ALLOWED_ARCHIVE_IMAGE_EXTENSIONS))
+            ]
+            uncompressed_size = sum(entry.file_size for entry in entries)
+            if not entries or not image_entries:
+                return {'archive': 'The ZIP must contain at least one JPG, PNG, or WEBP photo.'}
+            if len(entries) > 1000 or uncompressed_size > MAX_ARCHIVE_UNCOMPRESSED_SIZE:
+                return {'archive': 'The ZIP contains too many files or expands beyond the 250 MB limit.'}
+            if any(entry.flag_bits & 0x1 for entry in entries):
+                return {'archive': 'Password-protected ZIP files are not supported.'}
+            if any(entry.file_size > 0 and entry.file_size / max(entry.compress_size, 1) > 200 for entry in entries):
+                return {'archive': 'The ZIP contains an unusually compressed file and was rejected.'}
+            if archive.testzip() is not None:
+                return {'archive': 'The ZIP file is damaged. Please create a new archive and retry.'}
+    except (OSError, ValueError, zipfile.BadZipFile, zipfile.LargeZipFile):
+        return {'archive': 'Upload a valid, readable ZIP file.'}
+    finally:
+        upload.seek(0)
+    upload.name = 'customer-photos.zip'
+    return None
+
+
+def validate_google_drive_url(value):
+    value = str(value or '').strip()
+    if len(value) > 1000:
+        return False
+    try:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != 'https'
+            or parsed.hostname not in {'drive.google.com', 'docs.google.com'}
+            or parsed.username
+            or parsed.password
+            or parsed.port not in (None, 443)
+        ):
+            return False
+    except (TypeError, ValueError):
+        return False
+    return bool(re.fullmatch(
+        r'/(?:file/d|drive/(?:d|folders)|drive/u/\d+/folders|document/d|spreadsheets/d|presentation/d)/[A-Za-z0-9_-]+(?:/.*)?',
+        parsed.path,
+    ))
+
+
+def validate_customer_photo_image(upload):
+    validate_receipt_image(upload)
+    try:
+        with Image.open(upload) as image:
+            width, height = image.size
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError, ValueError):
+        raise ValidationError('Each photo must be a readable JPG, PNG, or WEBP image.')
+    finally:
+        upload.seek(0)
+    if width * height > MAX_CUSTOMER_IMAGE_PIXELS:
+        raise ValidationError('Each photo must be 25 megapixels or smaller.')
+    return upload
 
 
 def storage_error_response(operation, error, image_id=None):
@@ -165,6 +246,35 @@ class GalleryImageDetailView(views.APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class CompletedBookingListView(views.APIView):
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        try:
+            limit = min(max(int(request.query_params.get('limit', 50)), 1), 100)
+            offset = min(max(int(request.query_params.get('offset', 0)), 0), 1_000_000)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Use a positive limit and a non-negative offset.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        bookings = Booking.objects.filter(status='COMPLETED').select_related(
+            'customer', 'package', 'package__service', 'review'
+        ).prefetch_related(
+            'payments',
+            Prefetch(
+                'delivered_photos',
+                queryset=CustomerPhoto.objects.select_related('booking__package').order_by('created_at', 'id'),
+                to_attr='customer_photo_rows',
+            ),
+        ).order_by('-scheduled_date', '-scheduled_time', '-id')
+        total = bookings.count()
+        rows = bookings[offset:offset + limit]
+        return Response({
+            'count': total,
+            'next_offset': offset + limit if offset + limit < total else None,
+            'results': CompletedBookingSerializer(rows, many=True, context={'request': request}).data,
+        })
+
+
 class CustomerPhotoListCreateView(views.APIView):
     parser_classes = [MultiPartParser, FormParser]
     throttle_scope = 'sensitive'
@@ -172,7 +282,7 @@ class CustomerPhotoListCreateView(views.APIView):
     def get(self, request):
         if not request.user.is_authenticated:
             return Response({'detail': 'Authentication required.'}, status=status.HTTP_401_UNAUTHORIZED)
-        photos = CustomerPhoto.objects.select_related('booking', 'booking__customer', 'uploaded_by')
+        photos = CustomerPhoto.objects.select_related('booking', 'booking__customer', 'booking__package', 'uploaded_by')
         if request.user.role in {'STAFF', 'ADMIN'}:
             booking_id = request.query_params.get('booking')
             if booking_id:
@@ -184,30 +294,98 @@ class CustomerPhotoListCreateView(views.APIView):
     def post(self, request):
         if not request.user.is_authenticated or request.user.role not in {'STAFF', 'ADMIN'}:
             return Response({'detail': 'Staff access required.'}, status=status.HTTP_403_FORBIDDEN)
+        managed_delivery = 'attachment_type' in request.data
+        if managed_delivery and request.user.role != 'ADMIN':
+            return Response({'detail': 'Admin access required to manage completed-session photo deliveries.'}, status=status.HTTP_403_FORBIDDEN)
         try:
             booking = Booking.objects.select_related('customer').get(pk=request.data.get('booking'))
         except (Booking.DoesNotExist, TypeError, ValueError):
             return Response({'booking': 'Select a valid booking.'}, status=status.HTTP_400_BAD_REQUEST)
-        upload = request.FILES.get('image')
-        if not upload:
-            return Response({'image': 'Upload a customer photo.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        attachment_type = str(request.data.get('attachment_type') or CustomerPhoto.ATTACHMENT_IMAGE).strip().upper()
+        if attachment_type not in {CustomerPhoto.ATTACHMENT_IMAGE, CustomerPhoto.ATTACHMENT_ZIP, CustomerPhoto.ATTACHMENT_DRIVE}:
+            return Response({'attachment_type': 'Choose images, a ZIP archive, or a Google Drive link.'}, status=status.HTTP_400_BAD_REQUEST)
+        if managed_delivery and (booking.status != 'COMPLETED' or not booking.customer_id):
+            return Response({'booking': 'Photo delivery requires a completed booking linked to a customer account.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        title = str(request.data.get('title') or '').strip()[:160]
+        uploads = []
+        drive_url = ''
+        if attachment_type == CustomerPhoto.ATTACHMENT_IMAGE:
+            uploads = request.FILES.getlist('images') or ([request.FILES['image']] if request.FILES.get('image') else [])
+            if not uploads:
+                return Response({'images': 'Select at least one JPG, PNG, or WEBP image.'}, status=status.HTTP_400_BAD_REQUEST)
+            if len(uploads) > MAX_CUSTOMER_IMAGES_PER_UPLOAD:
+                return Response({'images': f'Upload no more than {MAX_CUSTOMER_IMAGES_PER_UPLOAD} images at a time.'}, status=status.HTTP_400_BAD_REQUEST)
+            if sum(upload.size for upload in uploads) > MAX_CUSTOMER_UPLOAD_SIZE:
+                return Response({'images': 'The combined image upload must be 50 MB or smaller.'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                for upload in uploads:
+                    if upload.size > MAX_CUSTOMER_IMAGE_SIZE:
+                        return Response({'images': 'Each image must be 5 MB or smaller.'}, status=status.HTTP_400_BAD_REQUEST)
+                    validate_customer_photo_image(upload)
+            except ValidationError as exc:
+                return Response({'images': exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+        elif attachment_type == CustomerPhoto.ATTACHMENT_ZIP:
+            archive = request.FILES.get('archive') or request.FILES.get('image')
+            archive_error = validate_customer_photo_archive(archive)
+            if archive_error:
+                return Response(archive_error, status=status.HTTP_400_BAD_REQUEST)
+            uploads = [archive]
+        else:
+            drive_url = str(request.data.get('drive_url') or '').strip()
+            if not validate_google_drive_url(drive_url):
+                return Response({'drive_url': 'Use a valid HTTPS Google Drive or Docs sharing URL.'}, status=status.HTTP_400_BAD_REQUEST)
+            if request.FILES:
+                return Response({'drive_url': 'Remove uploaded files when delivering a Google Drive link.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created_photos = []
         try:
-            validate_receipt_image(upload)
-            photo = CustomerPhoto.objects.create(
-                booking=booking,
-                title=str(request.data.get('title') or '').strip()[:160],
-                image=upload,
-                uploaded_by=request.user,
-            )
+            with transaction.atomic():
+                if attachment_type == CustomerPhoto.ATTACHMENT_DRIVE:
+                    created_photos.append(CustomerPhoto.objects.create(
+                        booking=booking,
+                        title=title or 'Google Drive photo set',
+                        attachment_type=attachment_type,
+                        drive_url=drive_url,
+                        uploaded_by=request.user,
+                    ))
+                else:
+                    for index, upload in enumerate(uploads, start=1):
+                        photo_title = title
+                        if attachment_type == CustomerPhoto.ATTACHMENT_IMAGE and len(uploads) > 1 and not photo_title:
+                            photo_title = f'Photo {index}'
+                        elif attachment_type == CustomerPhoto.ATTACHMENT_ZIP and not photo_title:
+                            photo_title = 'ZIP photo set'
+                        created_photos.append(CustomerPhoto.objects.create(
+                            booking=booking,
+                            title=photo_title,
+                            attachment_type=attachment_type,
+                            image=upload,
+                            uploaded_by=request.user,
+                        ))
         except SupabaseStorageError as exc:
+            for saved_photo in created_photos:
+                try:
+                    saved_photo.image.storage.delete(saved_photo.image.name)
+                except OSError:
+                    logger.exception('Could not clean up a partial customer photo upload for booking_id=%s.', booking.pk)
             return storage_error_response('customer_photo_upload', exc)
         AuditLog.objects.create(
             user=request.user,
             action='CUSTOMER_PHOTO_UPLOAD',
-            description=f'Uploaded a customer photo for booking #{booking.pk}.',
-            metadata={'photo_id': photo.pk, 'booking_id': booking.pk, 'customer_id': booking.customer_id},
+            description=f'Added {len(created_photos)} customer photo attachment(s) for booking #{booking.pk}.',
+            metadata={
+                'photo_ids': [photo.pk for photo in created_photos],
+                'booking_id': booking.pk,
+                'customer_id': booking.customer_id,
+                'attachment_type': attachment_type,
+            },
         )
-        return Response(CustomerPhotoSerializer(photo, context={'request': request}).data, status=status.HTTP_201_CREATED)
+        serialized = CustomerPhotoSerializer(created_photos, many=True, context={'request': request}).data
+        if not managed_delivery and attachment_type == CustomerPhoto.ATTACHMENT_IMAGE and len(serialized) == 1:
+            return Response(serialized[0], status=status.HTTP_201_CREATED)
+        return Response({'results': serialized, 'count': len(serialized)}, status=status.HTTP_201_CREATED)
 
 
 class CustomerPhotoDownloadView(views.APIView):
@@ -225,6 +403,8 @@ class CustomerPhotoDownloadView(views.APIView):
         photo = photos.first()
         if not photo:
             return Response({'detail': 'Photo not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if not photo.image:
+            return Response({'detail': 'This attachment is not a downloadable file.'}, status=status.HTTP_404_NOT_FOUND)
         try:
             image = photo.image.open('rb')
         except FileNotFoundError:

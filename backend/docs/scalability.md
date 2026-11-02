@@ -38,6 +38,26 @@ configured, or queued texts will wait. Email and push still dispatch after the
 commit in the web process. OCR and optional chatbot calls also need bounded
 provider timeouts and should be queued if measured request latency requires it.
 
+## SMTP email delivery
+
+Set `EMAIL_DELIVERY_ENABLED=true` on the backend web service to enable email
+notifications; it defaults to disabled. Configure `EMAIL_HOST`, `EMAIL_PORT`,
+`EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`,
+`EMAIL_USE_TLS`, `EMAIL_USE_SSL`, and optionally `EMAIL_TIMEOUT` in the backend
+service environment. For Gmail, use `smtp.gmail.com`, port `587`, TLS enabled,
+SSL disabled, and an app password. For implicit SSL use port `465`, SSL enabled,
+TLS disabled. Keep credentials only in the deployment environment, never in
+the blueprint or logs. The startup settings reject enabling TLS and SSL
+together. Confirm that the sender address is allowed by the SMTP account.
+
+Password reset email is sent from the web request. Booking lifecycle emails
+are stored in the database and require `manage.py process_notification_deliveries`
+to run on a scheduled job or background worker. Installing that worker does
+not enable delivery by itself; it also needs the SMTP variables and
+`EMAIL_DELIVERY_ENABLED=true`. SMTP connection failures are logged with host,
+port, TLS/SSL mode, exception type, and response code where available; the
+exception text, credentials, recipient, and message body are not logged.
+
 ## Load test requirements
 
 Use an isolated staging database, storage bucket, SMS/email test credentials,

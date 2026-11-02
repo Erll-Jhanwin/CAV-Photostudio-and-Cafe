@@ -458,6 +458,11 @@ LOGGING = {
             'level': os.environ.get('APP_LOG_LEVEL', 'INFO'),
             'propagate': False,
         },
+        'users': {
+            'handlers': ['console'],
+            'level': os.environ.get('APP_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
         'notifications': {
             'handlers': ['console'],
             'level': os.environ.get('APP_LOG_LEVEL', 'INFO'),

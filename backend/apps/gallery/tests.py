@@ -1,4 +1,5 @@
 from io import BytesIO
+import zipfile
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
@@ -59,6 +60,86 @@ class GalleryImageAPITests(TestCase):
         self.client.force_authenticate(other)
         self.assertEqual(self.client.get('/api/gallery/customer-photos/').data, [])
         self.assertEqual(self.client.get(created.data['download_url']).status_code, 404)
+
+    def test_completed_booking_photo_batch_flows_from_admin_to_customer_gallery(self):
+        booking = self.create_booking(self.customer, 'CompletedPhotoBatch')
+        booking.status = 'COMPLETED'
+        booking.save(update_fields=['status'])
+        self.client.force_authenticate(self.admin)
+
+        listed = self.client.get('/api/gallery/completed-bookings/?limit=10')
+        self.assertEqual(listed.status_code, 200)
+        booking_row = next(row for row in listed.data['results'] if row['id'] == booking.pk)
+        self.assertEqual(booking_row['status'], 'COMPLETED')
+        self.assertEqual(booking_row['photo_attachments'], [])
+
+        uploaded = self.client.post('/api/gallery/customer-photos/', {
+            'booking': booking.pk,
+            'attachment_type': 'IMAGE',
+            'title': 'Finished portraits',
+            'images': [png_upload('portrait-one.png'), png_upload('portrait-two.png')],
+        }, format='multipart')
+        self.assertEqual(uploaded.status_code, 201, uploaded.data)
+        self.assertEqual(uploaded.data['count'], 2)
+
+        refreshed = self.client.get('/api/gallery/completed-bookings/?limit=10')
+        delivered = next(row for row in refreshed.data['results'] if row['id'] == booking.pk)['photo_attachments']
+        self.assertEqual(len(delivered), 2)
+        self.assertEqual({row['attachment_type'] for row in delivered}, {'IMAGE'})
+        self.assertTrue(all(row['download_url'] for row in delivered))
+
+        self.client.force_authenticate(self.customer)
+        customer_photos = self.client.get('/api/gallery/customer-photos/')
+        self.assertEqual(customer_photos.status_code, 200)
+        self.assertEqual(len(customer_photos.data), 2)
+        self.assertEqual(customer_photos.data[0]['package_name'], booking.package.name)
+        self.assertEqual(customer_photos.data[0]['booking_scheduled_date'], booking.scheduled_date.isoformat())
+
+        other_customer = get_user_model().objects.create_user('photo-batch-other', role='CUSTOMER')
+        self.client.force_authenticate(other_customer)
+        self.assertEqual(self.client.get('/api/gallery/customer-photos/').data, [])
+        self.assertEqual(self.client.get(delivered[0]['download_url']).status_code, 404)
+
+    def test_completed_booking_zip_and_drive_attachments_are_validated_and_owner_scoped(self):
+        booking = self.create_booking(self.customer, 'CompletedPhotoDelivery')
+        booking.status = 'COMPLETED'
+        booking.save(update_fields=['status'])
+        image = png_upload('inside.png')
+        archive_bytes = BytesIO()
+        with zipfile.ZipFile(archive_bytes, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('session/inside.png', image.read())
+        archive_upload = SimpleUploadedFile('session-photos.zip', archive_bytes.getvalue(), content_type='application/zip')
+
+        self.client.force_authenticate(self.admin)
+        zip_response = self.client.post('/api/gallery/customer-photos/', {
+            'booking': booking.pk, 'attachment_type': 'ZIP', 'archive': archive_upload,
+        }, format='multipart')
+        self.assertEqual(zip_response.status_code, 201, zip_response.data)
+        self.assertEqual(zip_response.data['results'][0]['attachment_type'], 'ZIP')
+        self.assertTrue(zip_response.data['results'][0]['download_url'])
+
+        drive_response = self.client.post('/api/gallery/customer-photos/', {
+            'booking': booking.pk,
+            'attachment_type': 'GOOGLE_DRIVE',
+            'drive_url': 'https://drive.google.com/file/d/Abc_123/view?usp=sharing',
+        }, format='multipart')
+        self.assertEqual(drive_response.status_code, 201, drive_response.data)
+        self.assertEqual(drive_response.data['results'][0]['drive_url'], 'https://drive.google.com/file/d/Abc_123/view?usp=sharing')
+
+        invalid_link = self.client.post('/api/gallery/customer-photos/', {
+            'booking': booking.pk,
+            'attachment_type': 'GOOGLE_DRIVE',
+            'drive_url': 'https://drive.google.com.evil.example/file/d/Abc_123/view',
+        }, format='multipart')
+        self.assertEqual(invalid_link.status_code, 400)
+
+        self.client.force_authenticate(self.customer)
+        received = self.client.get('/api/gallery/customer-photos/')
+        self.assertEqual({row['attachment_type'] for row in received.data}, {'ZIP', 'GOOGLE_DRIVE'})
+
+        other_customer = get_user_model().objects.create_user('photo-delivery-other', role='CUSTOMER')
+        self.client.force_authenticate(other_customer)
+        self.assertEqual(self.client.get('/api/gallery/customer-photos/').data, [])
 
     def test_public_list_shows_only_featured_images_and_filters_categories(self):
         GalleryImage.objects.create(title='Studio feature', category='STUDIO', image=png_upload())

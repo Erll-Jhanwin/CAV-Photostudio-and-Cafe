@@ -30,6 +30,7 @@ import { Avatar } from '../components/ui/Avatar';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
 import BookingQueue from '../components/bookings/BookingQueue';
+import CompletedBookingsManager from '../components/bookings/CompletedBookingsManager';
 import WalkInBookingModal from './WalkInBookingModal';
 import {
   aggregateSalesChartData,
@@ -629,7 +630,7 @@ export default function AdminDashboard() {
   const salesChartInteractionRef = useRef(null);
 
   const loadAdminTabData = useCallback(async (tab, { force = false } = {}) => {
-    if (tab === 'analytics') return;
+    if (tab === 'analytics' || tab === 'completed-bookings') return;
     setTabLoading(current => ({ ...current, [tab]: true }));
     try {
       if (tab === 'calendar' || tab === 'live') {
@@ -1400,9 +1401,10 @@ export default function AdminDashboard() {
 
   const navItems = [
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
-    { key: 'booking', label: 'Booking', icon: Calendar, active: ['calendar', 'live'].includes(activeTab), children: [
+    { key: 'booking', label: 'Booking', icon: Calendar, active: ['calendar', 'live', 'completed-bookings'].includes(activeTab), children: [
       { key: 'calendar', label: 'Booking Calendar', active: activeTab === 'calendar', onClick: () => setActiveTab('calendar') },
       { key: 'live', label: 'Live Booking List', active: activeTab === 'live', onClick: () => setActiveTab('live') },
+      { key: 'completed-bookings', label: 'Completed Bookings', active: activeTab === 'completed-bookings', onClick: () => setActiveTab('completed-bookings') },
     ] },
     { key: 'reports', label: 'End-of-Day Reports', icon: Printer, active: activeTab === 'reports', onClick: () => setActiveTab('reports') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
@@ -1414,7 +1416,7 @@ export default function AdminDashboard() {
     { key: 'audit', label: 'Audit Logs', icon: ClipboardList, active: activeTab === 'audit', onClick: () => setActiveTab('audit') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', live: 'Live Bookings', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', inventory: 'Live Inventory', staff: 'Accounts', 'staff-access': 'Staff Restrictions', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', audit: 'Audit Logs' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', live: 'Live Bookings', 'completed-bookings': 'Completed Bookings', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', inventory: 'Live Inventory', staff: 'Accounts', 'staff-access': 'Staff Restrictions', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', audit: 'Audit Logs' };
   const expectedAnalyticsRange = getDashboardRangeDates(datePreset, customStart, customEnd);
   const analyticsRangeMatches = analytics?.range?.start === expectedAnalyticsRange.start
     && analytics?.range?.end === expectedAnalyticsRange.end;
@@ -1700,6 +1702,8 @@ export default function AdminDashboard() {
               </button>
             </div>
           )}
+
+          {activeTab === 'completed-bookings' && <CompletedBookingsManager />}
 
           {dataError && activeTab !== 'analytics' && (
             <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-2xl mb-6 flex items-start gap-3 shadow-sm" role="alert">

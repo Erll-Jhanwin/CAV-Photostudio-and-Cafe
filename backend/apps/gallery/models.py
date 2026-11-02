@@ -49,13 +49,25 @@ class GalleryImage(models.Model):
 
 
 def customer_photo_upload_path(instance, filename):
-    return f'customer_photos/booking_{instance.booking_id or "new"}/{uuid4().hex}{safe_image_extension(filename)}'
+    extension = '.zip' if instance.attachment_type == CustomerPhoto.ATTACHMENT_ZIP else safe_image_extension(filename)
+    return f'customer_photos/booking_{instance.booking_id or "new"}/{uuid4().hex}{extension}'
 
 
 class CustomerPhoto(models.Model):
+    ATTACHMENT_IMAGE = 'IMAGE'
+    ATTACHMENT_ZIP = 'ZIP'
+    ATTACHMENT_DRIVE = 'GOOGLE_DRIVE'
+    ATTACHMENT_CHOICES = (
+        (ATTACHMENT_IMAGE, 'Image'),
+        (ATTACHMENT_ZIP, 'ZIP archive'),
+        (ATTACHMENT_DRIVE, 'Google Drive link'),
+    )
+
     booking = models.ForeignKey('booking.Booking', on_delete=models.CASCADE, related_name='delivered_photos')
     title = models.CharField(max_length=160, blank=True)
-    image = models.FileField(upload_to=customer_photo_upload_path, storage=SupabaseCustomerPhotoStorage())
+    attachment_type = models.CharField(max_length=16, choices=ATTACHMENT_CHOICES, default=ATTACHMENT_IMAGE)
+    drive_url = models.URLField(max_length=1000, blank=True)
+    image = models.FileField(upload_to=customer_photo_upload_path, storage=SupabaseCustomerPhotoStorage(), blank=True)
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

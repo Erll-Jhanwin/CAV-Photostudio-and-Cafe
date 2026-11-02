@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from users.uploads import validated_image_format
 from payment.storage import SupabaseStorageError
+from booking.serializers import BookingSerializer
 
 from .models import CustomerPhoto, GalleryImage
 
@@ -120,13 +121,38 @@ class GalleryImageSerializer(serializers.ModelSerializer):
 class CustomerPhotoSerializer(serializers.ModelSerializer):
     download_url = serializers.SerializerMethodField()
     booking_id = serializers.IntegerField(read_only=True)
+    booking_scheduled_date = serializers.DateField(source='booking.scheduled_date', read_only=True)
+    booking_scheduled_time = serializers.TimeField(source='booking.scheduled_time', read_only=True)
+    package_name = serializers.CharField(source='booking.package.name', read_only=True)
+    file_name = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomerPhoto
-        fields = ('id', 'booking_id', 'title', 'download_url', 'created_at')
+        fields = (
+            'id', 'booking_id', 'booking_scheduled_date', 'booking_scheduled_time', 'package_name',
+            'title', 'attachment_type', 'file_name', 'drive_url', 'download_url', 'created_at',
+        )
+        read_only_fields = fields
 
     def get_download_url(self, obj):
+        if not obj.image:
+            return None
         from django.urls import reverse
         request = self.context.get('request')
         url = reverse('customer_photo_download', kwargs={'pk': obj.pk})
         return request.build_absolute_uri(url) if request else url
+
+    def get_file_name(self, obj):
+        return obj.image.name.rsplit('/', 1)[-1] if obj.image else ''
+
+
+class CompletedBookingSerializer(BookingSerializer):
+    customer_account_id = serializers.IntegerField(source='customer_id', read_only=True, allow_null=True)
+    photo_attachments = serializers.SerializerMethodField()
+
+    class Meta(BookingSerializer.Meta):
+        fields = [*BookingSerializer.Meta.fields, 'customer_account_id', 'photo_attachments']
+
+    def get_photo_attachments(self, booking):
+        rows = getattr(booking, 'customer_photo_rows', [])
+        return CustomerPhotoSerializer(rows, many=True, context=self.context).data

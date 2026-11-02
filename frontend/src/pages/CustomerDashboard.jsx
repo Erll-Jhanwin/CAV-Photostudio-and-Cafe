@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
-import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, ChevronDown, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, XCircle, RotateCcw, Hourglass, BadgeCheck, Ban, ReceiptText, Phone, Mail, Star, Download } from 'lucide-react';
+import { Calendar, User, Clock, Bell, CheckCircle, MessageSquare, X, Coffee, Plus, ShoppingBag, Send, ChevronLeft, ChevronRight, ChevronDown, Camera, Check, Heart, Cake, Sparkles, Users, MapPin, Eye, ExternalLink, XCircle, RotateCcw, Hourglass, BadgeCheck, Ban, ReceiptText, Phone, Mail, Star, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
@@ -88,6 +88,24 @@ const formatApiError = (error, fallback) => {
     if (messages.length) return messages.join(' ');
   }
   return error?.message || fallback;
+};
+
+const groupCustomerPhotoRecords = records => {
+  const groups = new Map();
+  records.forEach(photo => {
+    const key = String(photo.booking_id);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        bookingId: photo.booking_id,
+        scheduledDate: photo.booking_scheduled_date,
+        scheduledTime: photo.booking_scheduled_time,
+        packageName: photo.package_name,
+        attachments: [],
+      });
+    }
+    groups.get(key).attachments.push(photo);
+  });
+  return [...groups.values()];
 };
 
 const getPackagePhotoOutputs = (pkg) => {
@@ -390,6 +408,9 @@ export default function CustomerDashboard() {
   const [customerPhotos, setCustomerPhotos] = useState([]);
   const [customerPhotosLoading, setCustomerPhotosLoading] = useState(false);
   const [customerPhotosError, setCustomerPhotosError] = useState('');
+  const [photoGallery, setPhotoGallery] = useState(null);
+  const photoGalleryUrlsRef = useRef([]);
+  const photoGalleryRequestRef = useRef(0);
   const bookingSubmitInFlightRef = useRef(false);
   const bookingSubmitClickRef = useRef(0);
   const bookingIdempotencyKeyRef = useRef('');
@@ -400,6 +421,42 @@ export default function CustomerDashboard() {
   const availabilityMountedRef = useRef(true);
   const monthAvailabilityRequestRef = useRef(0);
   const dayAvailabilityRequestRef = useRef(0);
+
+  const closeCustomerPhotoGallery = useCallback(() => {
+    photoGalleryRequestRef.current += 1;
+    photoGalleryUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+    photoGalleryUrlsRef.current = [];
+    setPhotoGallery(null);
+  }, []);
+
+  const openCustomerPhotoGallery = useCallback(async (booking, attachments) => {
+    const requestId = photoGalleryRequestRef.current + 1;
+    photoGalleryRequestRef.current = requestId;
+    setCustomerPhotosError('');
+    setPhotoGallery({ booking, images: [], loading: true, error: '', activeIndex: 0 });
+    const results = await Promise.allSettled(attachments.map(async attachment => {
+      const response = await client.get(attachment.download_url, { responseType: 'blob' });
+      return { ...attachment, objectUrl: URL.createObjectURL(response.data) };
+    }));
+    const images = results.filter(result => result.status === 'fulfilled').map(result => result.value);
+    const failed = results.some(result => result.status === 'rejected');
+    if (photoGalleryRequestRef.current !== requestId) {
+      images.forEach(image => URL.revokeObjectURL(image.objectUrl));
+      return;
+    }
+    photoGalleryUrlsRef.current = images.map(image => image.objectUrl);
+    setPhotoGallery(current => current?.booking.bookingId === booking.bookingId ? {
+      ...current,
+      images,
+      loading: false,
+      error: failed ? 'Some photos could not be opened. You can still view the photos that loaded.' : '',
+    } : current);
+  }, []);
+
+  useEffect(() => () => {
+    photoGalleryRequestRef.current += 1;
+    photoGalleryUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+  }, []);
 
   useEffect(() => {
     availabilityMountedRef.current = true;
@@ -2705,32 +2762,75 @@ export default function CustomerDashboard() {
             <div className="space-y-5 animate-in-up" key="photos">
               <div>
                 <h1 className="heading-page text-espresso">My Photos</h1>
-                <p className="text-xs text-espresso/50 mt-1">Download the finished digital photos delivered for your bookings.</p>
+                <p className="text-xs text-espresso/50 mt-1">View the photos and files delivered for your completed bookings.</p>
               </div>
               {customerPhotosError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{customerPhotosError}</div>}
               {customerPhotosLoading ? (
                 <Card className="flex min-h-48 items-center justify-center gap-2"><LoadingSpinner size="sm" /> Loading your photos…</Card>
               ) : customerPhotos.length ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {customerPhotos.map(photo => (
-                    <Card key={photo.id} className="flex items-center justify-between gap-3">
-                      <div className="min-w-0"><p className="truncate font-black text-espresso">{photo.title || `Photo set · Booking #${photo.booking_id}`}</p><p className="mt-1 text-xs text-espresso/50">Delivered {formatManilaDateTime(photo.created_at)}</p></div>
-                      <Button variant="gold" size="sm" icon={Download} onClick={async () => {
-                        try {
-                          const response = await client.get(photo.download_url, { responseType: 'blob' });
-                          const url = URL.createObjectURL(response.data);
-                          const link = document.createElement('a');
-                          link.href = url;
-                          link.download = `cav-photo-${photo.booking_id}-${photo.id}.jpg`;
-                          document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
-                        } catch (error) { setCustomerPhotosError(getApiErrorMessage(error, 'Photo download failed.')); }
-                      }}>Download</Button>
-                    </Card>
-                  ))}
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  {groupCustomerPhotoRecords(customerPhotos).map(group => {
+                    const images = group.attachments.filter(photo => photo.attachment_type === 'IMAGE' && photo.download_url);
+                    const otherAttachments = group.attachments.filter(photo => photo.attachment_type !== 'IMAGE');
+                    return (
+                      <Card key={group.bookingId} className="space-y-4">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-wider text-gold-dark">Completed session · Booking #{group.bookingId}</p>
+                          <h2 className="mt-1 text-base font-black text-espresso">{group.packageName || 'Studio session'}</h2>
+                          <p className="mt-1 text-xs text-espresso/55">{group.scheduledDate || 'Session date unavailable'}{group.scheduledTime ? ` · ${String(group.scheduledTime).slice(0, 5)}` : ''}</p>
+                        </div>
+                        <div className="space-y-2 border-t border-espresso/[0.07] pt-3">
+                          {images.length > 0 && (
+                            <div className="flex items-center justify-between gap-3 rounded-xl bg-cream/70 px-3 py-2.5">
+                              <div className="min-w-0"><p className="font-bold text-espresso">Session photos</p><p className="mt-0.5 text-[11px] text-espresso/50">{images.length} {images.length === 1 ? 'photo' : 'photos'}</p></div>
+                              <Button variant="gold" size="sm" icon={Eye} onClick={() => openCustomerPhotoGallery(group, images)}>View</Button>
+                            </div>
+                          )}
+                          {otherAttachments.map(photo => (
+                            <div key={photo.id} className="flex items-center justify-between gap-3 rounded-xl bg-cream/70 px-3 py-2.5">
+                              <div className="min-w-0"><p className="truncate font-bold text-espresso">{photo.title || (photo.attachment_type === 'ZIP' ? 'ZIP photo archive' : 'Google Drive photo set')}</p><p className="mt-0.5 text-[11px] text-espresso/50">Delivered {formatManilaDateTime(photo.created_at)}</p></div>
+                              {photo.attachment_type === 'GOOGLE_DRIVE' ? (
+                                <Button variant="gold" size="sm" icon={ExternalLink} onClick={() => window.open(photo.drive_url, '_blank', 'noopener,noreferrer')}>View</Button>
+                              ) : (
+                                <Button variant="gold" size="sm" icon={Download} onClick={async () => {
+                                  try {
+                                    const response = await client.get(photo.download_url, { responseType: 'blob' });
+                                    const url = URL.createObjectURL(response.data);
+                                    const link = document.createElement('a');
+                                    link.href = url;
+                                    link.download = photo.file_name || `cav-photo-${photo.booking_id}-${photo.id}.zip`;
+                                    document.body.appendChild(link); link.click(); link.remove();
+                                    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+                                  } catch (error) { setCustomerPhotosError(getApiErrorMessage(error, 'The ZIP download failed.')); }
+                                }}>View ZIP</Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </Card>
+                    );
+                  })}
                 </div>
               ) : (
                 <EmptyState icon={Camera} title="No delivered photos yet" description="Your finished digital copies will appear here when the studio delivers them." />
               )}
+              <Modal open={Boolean(photoGallery)} onClose={closeCustomerPhotoGallery} title={photoGallery ? `Session photos · Booking #${photoGallery.booking.bookingId}` : ''} size="5xl">
+                {photoGallery?.loading ? (
+                  <div className="flex min-h-72 items-center justify-center gap-2 text-sm text-espresso/60"><LoadingSpinner size="sm" />Opening your photos…</div>
+                ) : photoGallery?.images.length ? (
+                  <div className="space-y-3">
+                    {photoGallery.error && <p role="alert" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{photoGallery.error}</p>}
+                    <div className="flex min-h-[45vh] items-center justify-center gap-2 rounded-2xl bg-espresso p-2 sm:gap-4 sm:p-4">
+                      {photoGallery.images.length > 1 && <Button variant="outline" icon={ChevronLeft} aria-label="Previous photo" onClick={() => setPhotoGallery(current => ({ ...current, activeIndex: (current.activeIndex - 1 + current.images.length) % current.images.length }))} />}
+                      <img src={photoGallery.images[photoGallery.activeIndex].objectUrl} alt={photoGallery.images[photoGallery.activeIndex].title || `Session photo ${photoGallery.activeIndex + 1}`} className="max-h-[65vh] min-w-0 max-w-full rounded-xl object-contain" />
+                      {photoGallery.images.length > 1 && <Button variant="outline" icon={ChevronRight} aria-label="Next photo" onClick={() => setPhotoGallery(current => ({ ...current, activeIndex: (current.activeIndex + 1) % current.images.length }))} />}
+                    </div>
+                    <p className="text-center text-xs font-semibold text-espresso/55">Photo {photoGallery.activeIndex + 1} of {photoGallery.images.length}</p>
+                  </div>
+                ) : (
+                  <div className="flex min-h-56 items-center justify-center text-sm text-espresso/55">Photos could not be opened. Close this window and try again.</div>
+                )}
+              </Modal>
             </div>
           )}
 
