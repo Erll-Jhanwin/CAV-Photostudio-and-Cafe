@@ -50,11 +50,13 @@ TLS disabled. Keep credentials only in the deployment environment, never in
 the blueprint or logs. The startup settings reject enabling TLS and SSL
 together. Confirm that the sender address is allowed by the SMTP account.
 
-Password reset email is sent from the web request. Booking lifecycle emails
-are stored in the database and require `manage.py process_notification_deliveries`
-to run on a scheduled job or background worker. Installing that worker does
-not enable delivery by itself; it also needs the SMTP variables and
-`EMAIL_DELIVERY_ENABLED=true`. SMTP connection failures are logged with host,
+Password reset email is sent from the web request. Booking submission,
+approval, and reminder emails remain queued for
+`manage.py process_notification_deliveries`; booking completion emails make an
+immediate post-commit SMTP attempt and remain in that same outbox for retry if
+delivery fails. A scheduled job or background worker is still needed for queued
+emails and retries. Installing that worker does not enable delivery by itself;
+it also needs the SMTP variables and `EMAIL_DELIVERY_ENABLED=true`. SMTP connection failures are logged with host,
 port, TLS/SSL mode, exception type, and response code where available; the
 exception text, credentials, recipient, and message body are not logged.
 

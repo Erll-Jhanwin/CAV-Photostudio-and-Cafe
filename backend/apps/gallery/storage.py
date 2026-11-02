@@ -18,7 +18,14 @@ class SupabaseCustomerPhotoStorage(SupabasePaymentProofStorage):
 
     def _config(self):
         base_url, api_key, _ = super()._config()
-        bucket = str(getattr(settings, 'SUPABASE_CUSTOMER_PHOTOS_BUCKET', 'customer-photos') or '').strip()
+        bucket = str(
+            getattr(
+                settings,
+                'SUPABASE_CUSTOMER_PHOTOS_BUCKET',
+                getattr(settings, 'SUPABASE_PAYMENT_PROOFS_BUCKET', 'payment-proofs'),
+            )
+            or ''
+        ).strip()
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', bucket):
             raise SupabaseStorageError('Supabase customer photo bucket configuration is invalid.')
         return base_url, api_key, bucket

@@ -83,7 +83,40 @@ def queue_booking_approved(booking):
 
 
 def queue_booking_completed(booking):
-    enqueue_booking_email(booking, BookingEmail.EVENT_COMPLETED, event_key=f'booking:{booking.id}:completed:{uuid4().hex}')
+    if not booking_email_address(booking):
+        logger.warning(
+            'Completion email not queued: booking has no customer email booking_id=%s.',
+            booking.pk,
+        )
+        return None
+    email = BookingEmail.objects.filter(
+        booking=booking,
+        event_type=BookingEmail.EVENT_COMPLETED,
+    ).order_by('id').first()
+    if email is None:
+        email = enqueue_booking_email(
+            booking,
+            BookingEmail.EVENT_COMPLETED,
+            event_key=f'booking:{booking.id}:completed',
+        )
+    if email and getattr(settings, 'EMAIL_DELIVERY_ENABLED', False):
+        # The booking write has already committed when this runs. SMTP failures
+        # stay in the retryable BookingEmail outbox and never roll back completion.
+        transaction.on_commit(lambda email_id=email.pk: _deliver_completed_booking_email(email_id))
+    return email
+
+
+def _deliver_completed_booking_email(email_id):
+    try:
+        process_booking_email(email_id)
+    except Exception as exc:
+        # Do not include exception text: SMTP errors can contain provider replies
+        # and credential details. The queued event remains available to the worker.
+        logger.error(
+            'Completion email dispatch failed after booking commit: email_event_id=%s exception_type=%s.',
+            email_id,
+            type(exc).__name__,
+        )
 
 
 def schedule_booking_reminder(booking):

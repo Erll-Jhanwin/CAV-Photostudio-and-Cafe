@@ -65,6 +65,7 @@ class CustomerPhoto(models.Model):
 
     booking = models.ForeignKey('booking.Booking', on_delete=models.CASCADE, related_name='delivered_photos')
     title = models.CharField(max_length=160, blank=True)
+    original_filename = models.CharField(max_length=255, blank=True)
     attachment_type = models.CharField(max_length=16, choices=ATTACHMENT_CHOICES, default=ATTACHMENT_IMAGE)
     drive_url = models.URLField(max_length=1000, blank=True)
     image = models.FileField(upload_to=customer_photo_upload_path, storage=SupabaseCustomerPhotoStorage(), blank=True)

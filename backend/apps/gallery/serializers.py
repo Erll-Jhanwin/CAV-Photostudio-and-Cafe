@@ -143,7 +143,7 @@ class CustomerPhotoSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(url) if request else url
 
     def get_file_name(self, obj):
-        return obj.image.name.rsplit('/', 1)[-1] if obj.image else ''
+        return obj.original_filename or (obj.image.name.rsplit('/', 1)[-1] if obj.image else '')
 
 
 class CompletedBookingSerializer(BookingSerializer):

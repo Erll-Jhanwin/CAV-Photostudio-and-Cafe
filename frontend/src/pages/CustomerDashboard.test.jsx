@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import client, { getCached } from '../api/client';
 import { getManilaMonthValue } from '../utils/dateTime';
 import CustomerDashboard from './CustomerDashboard';
@@ -65,6 +65,7 @@ test('shows the customer dashboard while the supplemental profile refresh is sti
 
 test('My Photos groups booking attachments and opens the image, ZIP, and Drive delivery types', async () => {
   const defaultGet = client.get.getMockImplementation();
+  let rejectZipDownload = false;
   client.get.mockImplementation((url, options) => {
     if (url === '/api/gallery/customer-photos/') return Promise.resolve({ data: [
       {
@@ -83,10 +84,18 @@ test('My Photos groups booking attachments and opens the image, ZIP, and Drive d
         drive_url: 'https://drive.google.com/file/d/Abc_123/view', created_at: '2026-10-21T10:02:00Z',
       },
     ] });
+    if (String(url).includes('/download-all/')) {
+      if (rejectZipDownload) {
+        rejectZipDownload = false;
+        return Promise.reject(new Error('download failed'));
+      }
+      return Promise.resolve({ data: new Blob(['zip-file']) });
+    }
     if (String(url).includes('/download/')) return Promise.resolve({ data: new Blob(['file']) });
     return defaultGet(url, options);
   });
   const openWindow = jest.spyOn(window, 'open').mockImplementation(() => null);
+  const downloadClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
 
   render(<CustomerDashboard />);
   fireEvent.click(await screen.findByRole('button', { name: 'My Photos' }));
@@ -94,14 +103,22 @@ test('My Photos groups booking attachments and opens the image, ZIP, and Drive d
   expect(screen.getByText('2026-10-20 · 14:00')).toBeInTheDocument();
 
   fireEvent.click(screen.getAllByRole('button', { name: 'View', exact: true })[0]);
-  expect(await screen.findByRole('dialog', { name: 'Session photos · Booking #88' })).toBeInTheDocument();
+  const galleryDialog = await screen.findByRole('dialog', { name: 'Session photos · Booking #88' });
   expect(await screen.findByRole('img', { name: 'Finished portraits' })).toBeInTheDocument();
+  fireEvent.click(within(galleryDialog).getByRole('button', { name: 'Download All Photos' }));
+  await waitFor(() => expect(client.get).toHaveBeenCalledWith('/api/gallery/customer-photos/booking/88/download-all/', { responseType: 'blob' }));
+  await waitFor(() => expect(downloadClick).toHaveBeenCalled());
+  rejectZipDownload = true;
+  fireEvent.click(within(galleryDialog).getByRole('button', { name: 'Download All Photos' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('We could not create or download the ZIP. Please try again.');
+  fireEvent.click(within(galleryDialog).getByRole('button', { name: 'Open Google Drive' }));
+  expect(openWindow).toHaveBeenCalledWith('https://drive.google.com/file/d/Abc_123/view', '_blank', 'noopener,noreferrer');
   fireEvent.click(screen.getByRole('button', { name: 'Close modal' }));
 
   fireEvent.click(screen.getByRole('button', { name: 'View ZIP' }));
   await waitFor(() => expect(client.get).toHaveBeenCalledWith('/api/gallery/customer-photos/202/download/', { responseType: 'blob' }));
-  fireEvent.click(screen.getAllByRole('button', { name: 'View', exact: true })[1]);
-  expect(openWindow).toHaveBeenCalledWith('https://drive.google.com/file/d/Abc_123/view', '_blank', 'noopener,noreferrer');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Open Google Drive', exact: true })[0]);
+  expect(openWindow).toHaveBeenCalledTimes(2);
 });
 
 async function fillPayment(container) {

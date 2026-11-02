@@ -100,6 +100,49 @@ class GalleryImageAPITests(TestCase):
         self.assertEqual(self.client.get('/api/gallery/customer-photos/').data, [])
         self.assertEqual(self.client.get(delivered[0]['download_url']).status_code, 404)
 
+    def test_customer_can_download_all_original_images_in_owner_scoped_zip(self):
+        booking = self.create_booking(self.customer, 'PhotoArchive')
+        booking.status = 'COMPLETED'
+        booking.save(update_fields=['status'])
+        uploads = [png_upload('portrait one.png'), png_upload('portrait-two.png')]
+        expected_contents = {}
+        for upload in uploads:
+            expected_contents[upload.name] = upload.read()
+            upload.seek(0)
+
+        self.client.force_authenticate(self.admin)
+        uploaded = self.client.post('/api/gallery/customer-photos/', {
+            'booking': booking.pk,
+            'attachment_type': 'IMAGE',
+            'images': uploads,
+        }, format='multipart')
+        self.assertEqual(uploaded.status_code, 201, uploaded.data)
+        self.assertEqual(
+            {photo['file_name'] for photo in uploaded.data['results']},
+            set(expected_contents),
+        )
+
+        self.client.force_authenticate(self.customer)
+        response = self.client.get(f'/api/gallery/customer-photos/booking/{booking.pk}/download-all/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/zip')
+        with zipfile.ZipFile(BytesIO(b''.join(response.streaming_content))) as archive:
+            self.assertEqual(set(archive.namelist()), set(expected_contents))
+            for filename, contents in expected_contents.items():
+                self.assertEqual(archive.read(filename), contents)
+
+        other_customer = get_user_model().objects.create_user('photo-archive-other', role='CUSTOMER')
+        self.client.force_authenticate(other_customer)
+        self.assertEqual(
+            self.client.get(f'/api/gallery/customer-photos/booking/{booking.pk}/download-all/').status_code,
+            404,
+        )
+        self.client.force_authenticate(None)
+        self.assertEqual(
+            self.client.get(f'/api/gallery/customer-photos/booking/{booking.pk}/download-all/').status_code,
+            401,
+        )
+
     def test_completed_booking_zip_and_drive_attachments_are_validated_and_owner_scoped(self):
         booking = self.create_booking(self.customer, 'CompletedPhotoDelivery')
         booking.status = 'COMPLETED'
@@ -136,6 +179,9 @@ class GalleryImageAPITests(TestCase):
         self.client.force_authenticate(self.customer)
         received = self.client.get('/api/gallery/customer-photos/')
         self.assertEqual({row['attachment_type'] for row in received.data}, {'ZIP', 'GOOGLE_DRIVE'})
+        archive_download = self.client.get(f'/api/gallery/customer-photos/booking/{booking.pk}/download-all/')
+        self.assertEqual(archive_download.status_code, 200)
+        self.assertEqual(b''.join(archive_download.streaming_content), archive_bytes.getvalue())
 
         other_customer = get_user_model().objects.create_user('photo-delivery-other', role='CUSTOMER')
         self.client.force_authenticate(other_customer)

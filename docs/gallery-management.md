@@ -7,6 +7,14 @@ Uploads are renamed to UUID paths, and only featured records with an image sourc
 appear publicly. Customers can list featured records but cannot create, edit, or
 delete them.
 
+Completed-booking photo deliveries use a private Supabase Storage bucket. The
+backend defaults `SUPABASE_CUSTOMER_PHOTOS_BUCKET` to the existing
+`SUPABASE_PAYMENT_PROOFS_BUCKET` (normally `payment-proofs`), so this feature
+works without provisioning another bucket. Set `SUPABASE_CUSTOMER_PHOTOS_BUCKET`
+only when a separate private bucket has been created in Supabase. The backend
+uses the server credential for storage access; customers receive files only
+through the authenticated Django endpoint.
+
 ## Storage setup
 
 Local development uses Django file storage under `MEDIA_ROOT`. Production

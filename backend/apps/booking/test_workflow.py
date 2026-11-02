@@ -263,10 +263,11 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
     def test_completed_booking_email_delivers_through_django_and_keeps_survey_template(self):
         booking = self.book()
         self.client.force_authenticate(self.staff)
-        response = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json')
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json')
         self.assertEqual(response.status_code, 200, response.data)
         email = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_COMPLETED)
-        self.assertEqual(process_booking_email(email.id), BookingEmail.STATUS_SENT)
+        self.assertEqual(email.status, BookingEmail.STATUS_SENT)
         self.assertEqual(len(mail.outbox), 1)
         sent_message = mail.outbox[0]
         self.assertEqual(sent_message.from_email, 'CAV Photo Studio <studio@example.test>')
@@ -275,6 +276,33 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
         self.assertIn('Share your feedback:', sent_message.body)
         self.assertIn('https://cav-photostudio-and-cafe-frontend.onrender.com/booking-feedback?token=',
                       sent_message.alternatives[0][0])
+
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=True,
+        EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+        EMAIL_HOST='smtp.example.test',
+        DEFAULT_FROM_EMAIL='CAV Photo Studio <studio@example.test>',
+    )
+    def test_completion_email_failure_keeps_booking_completed_and_outbox_retryable(self):
+        booking = self.book()
+        admin = get_user_model().objects.create_user(username='workflow-admin', role='ADMIN')
+        self.client.force_authenticate(admin)
+        with patch('users.email_delivery.send_transactional_email', side_effect=EmailDeliveryError('SMTP email delivery failed.')) as sender:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, 'COMPLETED')
+        email = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_COMPLETED)
+        self.assertEqual(email.status, BookingEmail.STATUS_QUEUED)
+        self.assertEqual(email.attempt_count, 1)
+        self.assertTrue(email.next_retry_at)
+        sender.assert_called_once()
+
+        repeated = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json')
+        self.assertEqual(repeated.status_code, 200, repeated.data)
+        self.assertEqual(BookingEmail.objects.filter(booking=booking, event_type=BookingEmail.EVENT_COMPLETED).count(), 1)
 
     @override_settings(
         EMAIL_DELIVERY_ENABLED=True,

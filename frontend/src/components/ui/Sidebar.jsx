@@ -249,9 +249,9 @@ export function Sidebar({
               variant="danger"
               icon={LogOut}
               onClick={handleConfirmSignOut}
-              className="rounded-2xl"
+              className="rounded-2xl justify-center gap-2 whitespace-nowrap"
             >
-              Sign Out Securely
+              Sign Out
             </Button>
           </div>
         </div>

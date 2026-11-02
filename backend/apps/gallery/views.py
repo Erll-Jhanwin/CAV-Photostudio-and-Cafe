@@ -1,6 +1,8 @@
 import logging
 import mimetypes
+import os
 import re
+import tempfile
 import zipfile
 from urllib.parse import urlsplit
 
@@ -321,6 +323,7 @@ class CustomerPhotoListCreateView(views.APIView):
                 return Response({'images': 'The combined image upload must be 50 MB or smaller.'}, status=status.HTTP_400_BAD_REQUEST)
             try:
                 for upload in uploads:
+                    upload.customer_original_filename = safe_customer_photo_filename(upload.name)
                     if upload.size > MAX_CUSTOMER_IMAGE_SIZE:
                         return Response({'images': 'Each image must be 5 MB or smaller.'}, status=status.HTTP_400_BAD_REQUEST)
                     validate_customer_photo_image(upload)
@@ -328,6 +331,8 @@ class CustomerPhotoListCreateView(views.APIView):
                 return Response({'images': exc.detail}, status=status.HTTP_400_BAD_REQUEST)
         elif attachment_type == CustomerPhoto.ATTACHMENT_ZIP:
             archive = request.FILES.get('archive') or request.FILES.get('image')
+            if archive:
+                archive.customer_original_filename = safe_customer_photo_filename(archive.name)
             archive_error = validate_customer_photo_archive(archive)
             if archive_error:
                 return Response(archive_error, status=status.HTTP_400_BAD_REQUEST)
@@ -360,6 +365,7 @@ class CustomerPhotoListCreateView(views.APIView):
                         created_photos.append(CustomerPhoto.objects.create(
                             booking=booking,
                             title=photo_title,
+                            original_filename=getattr(upload, 'customer_original_filename', '') or safe_customer_photo_filename(upload.name),
                             attachment_type=attachment_type,
                             image=upload,
                             uploaded_by=request.user,
@@ -417,4 +423,94 @@ class CustomerPhotoDownloadView(views.APIView):
         response = FileResponse(image, content_type=mimetypes.guess_type(filename)[0] or 'application/octet-stream', as_attachment=True, filename=filename)
         response['X-Content-Type-Options'] = 'nosniff'
         response['Cache-Control'] = 'private, no-store'
+        return response
+
+
+def safe_customer_photo_filename(value):
+    name = str(value or '').replace('\\', '/').rsplit('/', 1)[-1]
+    name = ''.join(character for character in name if character.isprintable() and character not in {'/', '\\'})
+    name = name.strip().strip('.')[:255]
+    return name or 'photo'
+
+
+def unique_archive_name(filename, used_names):
+    safe_name = safe_customer_photo_filename(filename)
+    stem, extension = os.path.splitext(safe_name)
+    candidate = safe_name
+    suffix = 2
+    while candidate.casefold() in used_names:
+        candidate = f'{stem} ({suffix}){extension}'
+        suffix += 1
+    used_names.add(candidate.casefold())
+    return candidate
+
+
+class CustomerPhotoBookingDownloadAllView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = 'sensitive'
+
+    def get(self, request, booking_id):
+        if request.user.role != 'CUSTOMER':
+            return Response({'detail': 'Photo archive not found.'}, status=status.HTTP_404_NOT_FOUND)
+        booking = Booking.objects.filter(pk=booking_id, customer=request.user).first()
+        if not booking:
+            return Response({'detail': 'Photo archive not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        attachments = CustomerPhoto.objects.filter(
+            booking=booking,
+            image__gt='',
+        ).exclude(attachment_type=CustomerPhoto.ATTACHMENT_DRIVE)
+        existing_zip = attachments.filter(attachment_type=CustomerPhoto.ATTACHMENT_ZIP).order_by('-created_at', '-id').first()
+        if existing_zip:
+            try:
+                file_handle = existing_zip.image.open('rb')
+            except (FileNotFoundError, SupabaseStorageError, OSError, ValueError) as exc:
+                logger.exception('Existing customer photo ZIP could not be opened booking_id=%s photo_id=%s.', booking.pk, existing_zip.pk)
+                return Response({'detail': 'The photo ZIP could not be downloaded. Please try again.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            response = FileResponse(
+                file_handle,
+                as_attachment=True,
+                filename=existing_zip.original_filename or f'booking-{booking.pk}-photos.zip',
+                content_type='application/zip',
+            )
+            response['Cache-Control'] = 'private, no-store'
+            response['X-Content-Type-Options'] = 'nosniff'
+            return response
+
+        photos = list(
+            attachments.filter(attachment_type=CustomerPhoto.ATTACHMENT_IMAGE)
+            .order_by('created_at', 'id')
+        )
+        if not photos:
+            return Response({'detail': 'No downloadable photos are available for this booking.'}, status=status.HTTP_404_NOT_FOUND)
+
+        archive_file = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode='w+b')
+        used_names = set()
+        try:
+            with zipfile.ZipFile(archive_file, mode='w', compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+                for photo in photos:
+                    entry_name = unique_archive_name(
+                        photo.original_filename or (photo.image.name.rsplit('/', 1)[-1] if photo.image else ''),
+                        used_names,
+                    )
+                    with photo.image.open('rb') as source, archive.open(entry_name, mode='w', force_zip64=True) as target:
+                        while True:
+                            chunk = source.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            target.write(chunk)
+            archive_file.seek(0)
+        except (SupabaseStorageError, OSError, ValueError, RuntimeError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
+            archive_file.close()
+            logger.exception('Customer photo ZIP creation failed booking_id=%s photo_count=%s.', booking.pk, len(photos))
+            return Response({'detail': 'The photo ZIP could not be created. Please try again.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        response = FileResponse(
+            archive_file,
+            as_attachment=True,
+            filename=f'booking-{booking.pk}-photos.zip',
+            content_type='application/zip',
+        )
+        response['Cache-Control'] = 'private, no-store'
+        response['X-Content-Type-Options'] = 'nosniff'
         return response
