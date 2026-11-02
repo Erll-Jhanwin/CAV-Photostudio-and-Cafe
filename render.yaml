@@ -25,6 +25,9 @@ services:
         source: /*
         destination: /index.html
     headers:
+      - path: /api/*
+        name: Cache-Control
+        value: private, no-store, max-age=0, must-revalidate
       - path: /index.html
         name: Cache-Control
         value: no-cache, max-age=0, must-revalidate
