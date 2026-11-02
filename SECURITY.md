@@ -10,9 +10,9 @@
 
 ## Supabase least privilege and RLS
 
-Create a non-owner `cav_backend` PostgreSQL role with only the schema/table/sequence privileges Django needs. Use its connection string as `DATABASE_URL`. Do not use Supabase `anon`, `authenticated`, or `service_role` keys in the frontend.
+Create a non-owner `cav_backend` PostgreSQL role with no superuser, role/database creation, or `BYPASSRLS` privileges. Keep ownership and migrations on a separate restricted deployment identity; use `cav_backend` only for runtime data access. Use its connection string as `DATABASE_URL`. Do not use Supabase `anon`, `authenticated`, or `service_role` keys in the frontend.
 
-Review and adapt [supabase-rls.sql](backend/docs/supabase-rls.sql) before applying it. The script enables RLS and grants only the backend role access to the listed application tables. Add every new sensitive table to the script and verify policies with `pg_policies` after migrations.
+Review [supabase-rls.sql](backend/docs/supabase-rls.sql) in staging before production. It applies a backend-only policy and data grants to current public base tables, refuses owner/superuser/BYPASSRLS runtime roles, and prints audit queries for tables, policies, grants, role attributes, memberships, and storage. Repeat the coverage audit after migrations so newly created tables do not silently miss RLS.
 
 Configure the receipt bucket and client-role restrictions with [supabase-payment-proof-storage.sql](backend/docs/supabase-payment-proof-storage.sql). Deployment variables and the upload/download flow are documented in [payment-proof-storage.md](docs/payment-proof-storage.md).
 

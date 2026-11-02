@@ -47,10 +47,9 @@ class GalleryImageSerializer(serializers.ModelSerializer):
                 url = obj.source_url
         except SupabaseStorageError as exc:
             logger.warning(
-                'Gallery image URL unavailable record_id=%s exception_type=%s storage_error=%s.',
+                'Gallery image URL unavailable record_id=%s exception_type=%s.',
                 obj.pk,
                 type(exc).__name__,
-                str(exc),
             )
             url = None
         obj._gallery_image_url = url or None
@@ -108,10 +107,9 @@ class GalleryImageSerializer(serializers.ModelSerializer):
                     storage.delete(previous_name)
                 except OSError as exc:
                     logger.warning(
-                        'Could not remove replaced gallery image record_id=%s exception_type=%s storage_error=%s.',
+                        'Could not remove replaced gallery image record_id=%s exception_type=%s.',
                         updated.pk,
                         type(exc).__name__,
-                        str(exc),
                     )
 
             transaction.on_commit(remove_replaced_image)

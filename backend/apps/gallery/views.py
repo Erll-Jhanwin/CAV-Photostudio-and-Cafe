@@ -106,12 +106,11 @@ def validate_customer_photo_image(upload):
 def storage_error_response(operation, error, image_id=None):
     cause = error.__cause__
     logger.error(
-        'Gallery storage operation failed operation=%s record_id=%s exception_type=%s cause_type=%s storage_error=%s.',
+        'Gallery storage operation failed operation=%s record_id=%s exception_type=%s cause_type=%s.',
         operation,
         image_id,
         type(error).__name__,
         type(cause).__name__ if cause else '',
-        str(error),
     )
     return Response(
         {'detail': 'Gallery image storage is temporarily unavailable. Please try again shortly.'},
@@ -228,10 +227,9 @@ class GalleryImageDetailView(views.APIView):
                 image.image.storage.delete(image.image.name)
             except OSError as exc:
                 logger.error(
-                    'Gallery storage operation failed operation=delete record_id=%s exception_type=%s storage_error=%s.',
+                    'Gallery storage operation failed operation=delete record_id=%s exception_type=%s.',
                     image.pk,
                     type(exc).__name__,
-                    str(exc),
                 )
                 return Response(
                     {'detail': 'The image could not be removed from storage. The gallery record was kept.'},
@@ -374,8 +372,8 @@ class CustomerPhotoListCreateView(views.APIView):
             for saved_photo in created_photos:
                 try:
                     saved_photo.image.storage.delete(saved_photo.image.name)
-                except OSError:
-                    logger.exception('Could not clean up a partial customer photo upload for booking_id=%s.', booking.pk)
+                except OSError as cleanup_exc:
+                    logger.error('Could not clean up a partial customer photo upload booking_id=%s exception_type=%s.', booking.pk, type(cleanup_exc).__name__)
             return storage_error_response('customer_photo_upload', exc)
         AuditLog.objects.create(
             user=request.user,
@@ -416,7 +414,7 @@ class CustomerPhotoDownloadView(views.APIView):
         except FileNotFoundError:
             return Response({'detail': 'Photo file not found.'}, status=status.HTTP_404_NOT_FOUND)
         except (SupabaseStorageError, OSError, ValueError) as exc:
-            logger.exception('Customer photo retrieval failed for photo_id=%s', photo.pk)
+            logger.error('Customer photo retrieval failed photo_id=%s exception_type=%s.', photo.pk, type(exc).__name__)
             AuditLog.objects.create(user=request.user, action='CUSTOMER_PHOTO_STORAGE_ERROR', description=f'Customer photo #{photo.pk} could not be retrieved.', metadata={'photo_id': photo.pk, 'issue': type(exc).__name__})
             return Response({'detail': 'Photo storage is temporarily unavailable.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         filename = photo.image.name.rsplit('/', 1)[-1]
@@ -465,7 +463,7 @@ class CustomerPhotoBookingDownloadAllView(views.APIView):
             try:
                 file_handle = existing_zip.image.open('rb')
             except (FileNotFoundError, SupabaseStorageError, OSError, ValueError) as exc:
-                logger.exception('Existing customer photo ZIP could not be opened booking_id=%s photo_id=%s.', booking.pk, existing_zip.pk)
+                logger.error('Existing customer photo ZIP could not be opened booking_id=%s photo_id=%s exception_type=%s.', booking.pk, existing_zip.pk, type(exc).__name__)
                 return Response({'detail': 'The photo ZIP could not be downloaded. Please try again.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             response = FileResponse(
                 file_handle,
@@ -502,7 +500,7 @@ class CustomerPhotoBookingDownloadAllView(views.APIView):
             archive_file.seek(0)
         except (SupabaseStorageError, OSError, ValueError, RuntimeError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
             archive_file.close()
-            logger.exception('Customer photo ZIP creation failed booking_id=%s photo_count=%s.', booking.pk, len(photos))
+            logger.error('Customer photo ZIP creation failed booking_id=%s photo_count=%s exception_type=%s.', booking.pk, len(photos), type(exc).__name__)
             return Response({'detail': 'The photo ZIP could not be created. Please try again.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         response = FileResponse(

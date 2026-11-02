@@ -10,6 +10,7 @@ from PIL import Image
 from rest_framework.test import APIClient
 
 from payment.storage import SupabaseStorageError
+from users.models import StaffAccessProfile
 
 from booking.models import Booking, Package, Service
 from .models import CustomerPhoto, GalleryImage
@@ -29,6 +30,7 @@ class GalleryImageAPITests(TestCase):
         User = get_user_model()
         self.customer = User.objects.create_user('gallery-customer', password='Customer123!', role='CUSTOMER')
         self.staff = User.objects.create_user('gallery-staff', password='Staff123!', role='STAFF')
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         self.admin = User.objects.create_user('gallery-admin', password='Admin123!', role='ADMIN')
         self.client = APIClient()
 

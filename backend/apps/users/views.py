@@ -281,8 +281,8 @@ def begin_admin_mfa(request, user):
             {'detail': 'Please wait before requesting another verification code.', 'retry_after_seconds': exc.retry_after},
             status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
-    except (IProgSMSDeliveryError, OSError):
-        logger.exception('Admin MFA delivery failed.')
+    except (IProgSMSDeliveryError, OSError) as exc:
+        logger.error('Admin MFA delivery failed exception_type=%s.', type(exc).__name__)
         return Response({'detail': 'Admin SMS verification could not be sent. Check the configured delivery service.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     if not challenge:
         return Response({'detail': 'The selected admin verification method is not configured.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -343,8 +343,8 @@ class AdminMFAResendView(views.APIView):
 
         try:
             send_password_reset_otp(phone_number, purpose='admin security verification')
-        except (IProgSMSDeliveryError, OSError):
-            logger.exception('Admin MFA resend failed.')
+        except (IProgSMSDeliveryError, OSError) as exc:
+            logger.error('Admin MFA resend failed exception_type=%s.', type(exc).__name__)
             return Response({'detail': 'We could not resend the admin verification code. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         pending['attempts'] = 0
@@ -402,8 +402,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             mfa_code = str(request.data.get('mfa_code') or '')
             try:
                 valid_mfa = len(mfa_code) == 6 and admin_mfa_is_valid(mfa_token, mfa_code, user)
-            except IProgSMSDeliveryError:
-                logger.exception('Admin SMS MFA verification failed.')
+            except IProgSMSDeliveryError as exc:
+                logger.error('Admin SMS MFA verification failed exception_type=%s.', type(exc).__name__)
                 return Response({'detail': 'Admin SMS verification is temporarily unavailable. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             if not valid_mfa:
                 return Response({'detail': 'Invalid or expired admin verification code.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -450,8 +450,8 @@ class LogoutView(views.APIView):
         if refresh:
             try:
                 RefreshToken(refresh).blacklist()
-            except Exception:
-                logger.info('Logout received an expired or already revoked refresh token.', exc_info=True)
+            except Exception as exc:
+                logger.info('Logout received an expired or already revoked refresh token exception_type=%s.', type(exc).__name__)
         if user:
             AuditLog.objects.create(
                 user=user,
@@ -505,8 +505,8 @@ class RegisterView(generics.CreateAPIView):
 
         try:
             send_password_reset_otp(contact, purpose='registration')
-        except (IProgSMSDeliveryError, OSError):
-            logger.exception('Registration OTP delivery failed.')
+        except (IProgSMSDeliveryError, OSError) as exc:
+            logger.error('Registration OTP delivery failed exception_type=%s.', type(exc).__name__)
             return Response(
                 {'detail': 'We could not send the verification code. Please try again later.'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -564,8 +564,8 @@ class RegistrationOTPResendView(views.APIView):
             )
         try:
             send_password_reset_otp(pending['contact'], purpose='registration')
-        except (IProgSMSDeliveryError, OSError):
-            logger.exception('Registration OTP resend failed.')
+        except (IProgSMSDeliveryError, OSError) as exc:
+            logger.error('Registration OTP resend failed exception_type=%s.', type(exc).__name__)
             return Response({'detail': 'We could not send the verification code. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         pending['attempts'] = 0
@@ -610,8 +610,8 @@ class RegistrationOTPVerifyView(views.APIView):
             return Response(invalid_response, status=status.HTTP_400_BAD_REQUEST)
         try:
             verified = verify_password_reset_otp(pending['contact'], otp)
-        except IProgSMSDeliveryError:
-            logger.exception('Registration OTP verification failed at provider.')
+        except IProgSMSDeliveryError as exc:
+            logger.error('Registration OTP verification failed at provider exception_type=%s.', type(exc).__name__)
             return Response(
                 {'detail': 'OTP verification is temporarily unavailable. Please try again later.'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -668,8 +668,8 @@ class RegistrationOTPVerifyView(views.APIView):
                 if field in constraint:
                     return Response({f'{field}_number' if field == 'phone' else field: f'{label} already exists.'}, status=status.HTTP_400_BAD_REQUEST)
             return Response({'detail': 'An account with these details already exists.'}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception:
-            logger.exception('Verified registration could not be completed.')
+        except Exception as exc:
+            logger.error('Verified registration could not be completed exception_type=%s.', type(exc).__name__)
             return Response({'detail': 'Account creation failed. Please try registration again.'}, status=status.HTTP_400_BAD_REQUEST)
 
         cache.delete(cache_key)
@@ -836,8 +836,8 @@ class GoogleAuthView(views.APIView):
                 return begin_admin_mfa(request, user)
             try:
                 valid_mfa = len(mfa_code) == 6 and admin_mfa_is_valid(mfa_token, mfa_code, user)
-            except IProgSMSDeliveryError:
-                logger.exception('Admin SMS MFA verification failed.')
+            except IProgSMSDeliveryError as exc:
+                logger.error('Admin SMS MFA verification failed exception_type=%s.', type(exc).__name__)
                 return Response({'detail': 'Admin SMS verification is temporarily unavailable. Please try again later.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
             if not valid_mfa:
                 return Response({'detail': 'Invalid or expired admin verification code.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1377,8 +1377,8 @@ class ForgotPasswordView(views.APIView):
 
         try:
             send_password_reset_otp(phone_number)
-        except IProgSMSDeliveryError:
-            logger.exception('Password reset SMS delivery failed for user_id=%s.', user.id)
+        except IProgSMSDeliveryError as exc:
+            logger.error('Password reset SMS delivery failed user_id=%s exception_type=%s.', user.id, type(exc).__name__)
             reset_otp.used_at = timezone.now()
             reset_otp.save(update_fields=['used_at'])
             return generic_password_reset_response()
@@ -1419,8 +1419,8 @@ class PasswordResetVerifyOTPView(views.APIView):
 
             try:
                 verified = verify_password_reset_otp(phone_number, otp)
-            except IProgSMSDeliveryError:
-                logger.exception('Password reset OTP verification failed at provider.')
+            except IProgSMSDeliveryError as exc:
+                logger.error('Password reset OTP verification failed at provider exception_type=%s.', type(exc).__name__)
                 return Response(
                     {"detail": "OTP verification is temporarily unavailable. Please try again later."},
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,

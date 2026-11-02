@@ -239,7 +239,7 @@ def log_chatbot_query(request, question, response_text, **metadata):
             },
         )
     except DatabaseError as exc:
-        logger.warning("Chatbot audit log skipped because the database is unavailable: %s", exc)
+        logger.warning("Chatbot audit log skipped because the database was unavailable exception_type=%s.", type(exc).__name__)
 
 
 def log_escalation(request, question, response_text, lang, reason='complex_concern'):
@@ -258,7 +258,7 @@ def log_escalation(request, question, response_text, lang, reason='complex_conce
         )
         return log.id
     except DatabaseError as exc:
-        logger.warning("Chatbot escalation could not be recorded: %s", exc)
+        logger.warning("Chatbot escalation could not be recorded exception_type=%s.", type(exc).__name__)
         return None
 
 
@@ -393,7 +393,7 @@ class ChatbotQueryView(views.APIView):
                 "language": lang,
             }, status=status.HTTP_400_BAD_REQUEST)
         except serializers.ValidationError as exc:
-            logger.info("Chatbot booking action validation failed: %s", exc.detail)
+            logger.info("Chatbot booking action validation failed exception_type=%s.", type(exc).__name__)
             return Response({
                 "question": question,
                 "response": "I could not complete that booking change. Please check the package, date, and time.",
@@ -402,10 +402,10 @@ class ChatbotQueryView(views.APIView):
                 "language": lang,
             }, status=status.HTTP_400_BAD_REQUEST)
         except DatabaseError as exc:
-            logger.exception("Chatbot database lookup failed: %s", exc)
+            logger.error("Chatbot database lookup failed exception_type=%s.", type(exc).__name__)
             return Response({"detail": "Chatbot data is temporarily unavailable. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as exc:
-            logger.exception("Chatbot query failed: %s", exc)
+            logger.error("Chatbot query failed exception_type=%s.", type(exc).__name__)
             return Response({"detail": "Chatbot could not process that question."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

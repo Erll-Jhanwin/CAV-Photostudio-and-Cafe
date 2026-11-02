@@ -230,7 +230,7 @@ def process_booking_email(email_id, *, now=None):
         else:
             event.next_retry_at = now + timedelta(seconds=delays[min(event.attempt_count - 1, len(delays) - 1)])
         event.save(update_fields=['status', 'next_retry_at', 'last_error', 'updated_at'])
-        logger.error('Booking email failed: booking_id=%s event=%s attempt=%s error=%s', event.booking_id, event.event_type, event.attempt_count, exc)
+        logger.error('Booking email failed: booking_id=%s event=%s attempt=%s exception_type=%s', event.booking_id, event.event_type, event.attempt_count, type(exc).__name__)
         return event.status
     event.status = BookingEmail.STATUS_SENT
     event.sent_at = now

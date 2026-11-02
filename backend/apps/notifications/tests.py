@@ -14,6 +14,7 @@ from notifications.models import Notification, NotificationDelivery, PushSubscri
 from notifications.services import dispatch_notification
 from notifications.sms import process_sms_deliveries
 from payment.models import Payment
+from users.models import StaffAccessProfile
 
 
 class BookingNotificationTests(TestCase):
@@ -35,6 +36,7 @@ class BookingNotificationTests(TestCase):
             password='Staff123!',
             role='STAFF',
         )
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
         service = Service.objects.create(
             name='Notification Studio',
             description='Studio sessions',

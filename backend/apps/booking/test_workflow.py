@@ -317,7 +317,10 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
             self.assertEqual(self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'CONFIRMED'}, format='json').status_code, 200)
         with self.captureOnCommitCallbacks(execute=True):
             self.assertEqual(self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json').status_code, 200)
-        self.assertEqual(mail.outbox, [])
+        # The completion event is delivered immediately after the committed
+        # status change; earlier events remain queued for the worker.
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('completed', mail.outbox[0].subject.lower())
 
         due_emails = BookingEmail.objects.filter(
             booking=booking,

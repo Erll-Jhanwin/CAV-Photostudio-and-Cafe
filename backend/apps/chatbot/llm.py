@@ -145,5 +145,5 @@ def generate_grounded_response(question, language='en', context=None, history=No
             content = content.split(':', 1)[1].strip()
         return content[:3000]
     except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, AttributeError) as exc:
-        logger.warning('OpenRouter chatbot request failed; using local fallback: %s', exc)
+        logger.warning('OpenRouter chatbot request failed; using local fallback exception_type=%s.', type(exc).__name__)
         return None

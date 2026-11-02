@@ -50,10 +50,10 @@ class AuditActivityMiddleware:
                             metadata=details,
                             ip_address=request.META.get('REMOTE_ADDR'),
                         )
-                    except Exception:
+                    except Exception as exc:
                         # The business response has already succeeded. Keep the API usable and
                         # emit an operational signal so logging failures are visible to operators.
-                        logger.exception('Audit activity could not be persisted for %s %s', request.method, path)
+                        logger.error('Audit activity could not be persisted method=%s path=%s exception_type=%s.', request.method, path, type(exc).__name__)
             return response
         except Exception as exc:
             user = getattr(request, 'user', None)
@@ -71,8 +71,8 @@ class AuditActivityMiddleware:
                     },
                     ip_address=request.META.get('REMOTE_ADDR'),
                 )
-            except Exception:
-                logger.exception('API error log could not be persisted for %s %s', request.method, request.path)
+            except Exception as log_exc:
+                logger.error('API error log could not be persisted method=%s path=%s exception_type=%s.', request.method, request.path[:220], type(log_exc).__name__)
             raise
         finally:
             _request_audit_events.reset(token)

@@ -879,8 +879,8 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             if payment and payment.receipt:
                 try:
                     payment.receipt.storage.delete(payment.receipt.name)
-                except OSError:
-                    logger.exception('Payment proof cleanup failed for payment_id=%s', payment.pk)
+                except OSError as cleanup_exc:
+                    logger.error('Payment proof cleanup failed payment_id=%s exception_type=%s.', payment.pk, type(cleanup_exc).__name__)
             if idempotency_key:
                 existing_payment = payment_queryset.filter(idempotency_key=idempotency_key).select_related(
                     'booking', 'booking__customer', 'booking__package', 'booking__package__service', 'verified_by'
@@ -898,9 +898,9 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             if payment and payment.receipt:
                 try:
                     payment.receipt.storage.delete(payment.receipt.name)
-                except OSError:
-                    logger.exception('Payment proof cleanup failed for payment_id=%s', payment.pk)
-            logger.exception('Payment proof upload failed for booking_id=%s', serializer.validated_data.get('booking').id)
+                except OSError as cleanup_exc:
+                    logger.error('Payment proof cleanup failed payment_id=%s exception_type=%s.', payment.pk, type(cleanup_exc).__name__)
+            logger.error('Payment proof upload failed booking_id=%s exception_type=%s.', serializer.validated_data.get('booking').id, type(exc).__name__)
             AuditLog.objects.create(
                 user=request.user,
                 action='PAYMENT_PROOF_STORAGE_ERROR',
@@ -908,12 +908,12 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                 metadata={'booking_id': serializer.validated_data.get('booking').id, 'issue': type(exc).__name__},
             )
             return Response({'detail': 'Payment proof could not be saved. The booking remains reserved; please retry.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        except Exception:
+        except Exception as exc:
             if payment and payment.receipt:
                 try:
                     payment.receipt.storage.delete(payment.receipt.name)
-                except OSError:
-                    logger.exception('Payment proof cleanup failed for payment_id=%s', payment.pk)
+                except OSError as cleanup_exc:
+                    logger.error('Payment proof cleanup failed payment_id=%s exception_type=%s.', payment.pk, type(cleanup_exc).__name__)
             raise
 
         return Response(self.get_serializer(payment).data, status=status.HTTP_201_CREATED)
@@ -967,7 +967,7 @@ class BookingPaymentReceiptView(views.APIView):
         except FileNotFoundError:
             return Response({'detail': 'Payment proof not found.'}, status=status.HTTP_404_NOT_FOUND)
         except (SupabaseStorageError, OSError, ValueError) as exc:
-            logger.exception('Payment proof retrieval failed for payment_id=%s', payment.pk)
+            logger.error('Payment proof retrieval failed payment_id=%s exception_type=%s.', payment.pk, type(exc).__name__)
             AuditLog.objects.create(
                 user=request.user,
                 action='PAYMENT_PROOF_STORAGE_ERROR',
