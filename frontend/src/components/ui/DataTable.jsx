@@ -154,7 +154,7 @@ export function DataTable({
               return (
                 <th
                   key={column.key}
-                  className={`${index === 0 ? 'w-[26%]' : ''} px-4 py-3 align-bottom ${alignClass} ${column.width || ''}`}
+                  className={`${index === 0 ? 'w-[26%]' : ''} px-3 sm:px-4 py-2.5 align-bottom ${alignClass} ${column.width || ''}`}
                   aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
                 >
                   {onSort && column.sortable !== false ? (
@@ -169,7 +169,7 @@ export function DataTable({
               );
             })}
             {renderActions && (
-              <th className={`${actionWidth} px-4 py-3 text-right align-bottom`}>
+              <th className={`${actionWidth} px-3 sm:px-4 py-2.5 text-right align-bottom`}>
                 <span className="font-black leading-snug">{actionLabel}</span>
               </th>
             )}
@@ -181,7 +181,7 @@ export function DataTable({
               {normalizedColumns.map((column, index) => {
                 const alignClass = column.align === 'right' ? 'text-right' : column.align === 'center' ? 'text-center' : 'text-left';
                 return (
-                  <td key={column.key} className={`${index === 0 ? 'font-bold text-espresso' : 'font-semibold text-espresso/75'} px-4 py-3.5 align-middle leading-relaxed whitespace-normal break-words ${alignClass}`}>
+                  <td key={column.key} className={`${index === 0 ? 'font-bold text-espresso' : 'font-semibold text-espresso/75'} px-3 sm:px-4 py-3 align-middle leading-relaxed whitespace-normal break-words ${alignClass}`}>
                     <div className="min-w-0 max-w-full">
                       {column.render ? column.render(row) : renderCell ? renderCell(row, column.key) : getValue(row, column.key)}
                     </div>
@@ -189,7 +189,7 @@ export function DataTable({
                 );
               })}
               {renderActions && (
-                <td className="px-4 py-3.5 text-right align-middle">
+                <td className="px-3 sm:px-4 py-3 text-right align-middle">
                   <div className="flex justify-end gap-1.5">
                     {renderActions(row)}
                   </div>

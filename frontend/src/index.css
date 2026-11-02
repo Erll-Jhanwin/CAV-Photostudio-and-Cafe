@@ -12,13 +12,14 @@
 
   html {
     scroll-behavior: smooth;
-    font-size: 14px;
+    font-size: 15px;
     overflow-x: clip;
   }
 
   body {
     @apply m-0 font-sans bg-cream text-charcoal antialiased;
     font-family: 'DM Sans', sans-serif;
+    line-height: 1.5;
     text-rendering: optimizeLegibility;
     overflow-x: clip;
   }
@@ -45,6 +46,18 @@
   h2 { @apply font-bold tracking-tight; line-height: 1.25; }
   h3 { @apply font-semibold; line-height: 1.3; }
   h4, h5, h6 { @apply font-semibold; line-height: 1.35; }
+
+  /* Keep small labels legible across dashboard tables and card summaries. */
+  [class~="text-[8px]"],
+  [class~="text-[9px]"] {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+  }
+
+  [class~="text-[10px]"] {
+    font-size: 12px !important;
+    line-height: 1.3 !important;
+  }
 
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-gold;
@@ -74,6 +87,8 @@
 
   /* Keep muted body text readable on the light CAV surfaces. */
   [class~="text-espresso/45"],
+  [class~="text-espresso/40"],
+  [class~="text-espresso/35"],
   [class~="text-espresso/55"],
   [class~="text-espresso/60"],
   [class~="text-espresso/62"],
@@ -181,7 +196,7 @@
   }
 
   .premium-section {
-    @apply py-20 md:py-28 lg:py-32 px-4 sm:px-6;
+    @apply py-12 md:py-16 lg:py-20 px-4 sm:px-6;
   }
 
   .premium-card {
@@ -226,7 +241,7 @@
 
 .dashboard-main {
   min-width: 0;
-  padding: clamp(1rem, 1.45vw, 1.5rem) !important;
+  padding: clamp(0.875rem, 1.35vw, 1.375rem) !important;
 }
 
 .dashboard-main > *,
@@ -270,7 +285,7 @@
     height: auto;
     min-height: 0;
     overflow: visible !important;
-    padding: 1rem !important;
+    padding: 0.75rem !important;
   }
 
   .dashboard-main > [class*="h-full"] {
@@ -287,6 +302,13 @@
 
   [role="dialog"] > :last-child {
     max-height: calc(100dvh - 1.5rem);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px !important;
   }
 }
 

@@ -10,7 +10,7 @@ export const Input = forwardRef(({ label, icon: Icon, suffix, error, className =
   return (
     <div className="space-y-2">
       {label && (
-        <label htmlFor={id} className={`text-xs font-bold uppercase tracking-[0.16em] block ${labelClass}`}>
+        <label htmlFor={id} className={`text-[12px] font-bold uppercase tracking-[0.12em] block ${labelClass}`}>
           {label}
         </label>
       )}
@@ -26,8 +26,8 @@ export const Input = forwardRef(({ label, icon: Icon, suffix, error, className =
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? errorId : props['aria-describedby']}
           className={`
-            w-full bg-white/90 border rounded-xl px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)]
-            placeholder:text-espresso/40
+            min-h-11 w-full bg-white/90 border rounded-xl px-3.5 py-2.5 text-sm text-espresso shadow-[0_5px_16px_rgba(46,26,17,0.035)]
+            placeholder:text-espresso/55
             transition-all duration-300 ease-out
             focus:outline-none focus:border-gold focus:ring-4 focus:ring-gold/15 focus:bg-white
             disabled:opacity-50 disabled:cursor-not-allowed
@@ -44,7 +44,7 @@ export const Input = forwardRef(({ label, icon: Icon, suffix, error, className =
           </div>
         )}
       </div>
-      {error && <p id={errorId} role="alert" className="text-[11px] text-red-500 font-medium mt-1">{error}</p>}
+      {error && <p id={errorId} role="alert" className="text-xs text-red-600 font-medium mt-1">{error}</p>}
     </div>
   );
 });
@@ -59,7 +59,7 @@ export const Select = forwardRef(({ label, icon: Icon, error, options = [], clas
   return (
     <div className="space-y-2">
       {label && (
-        <label htmlFor={id} className={`text-xs font-bold uppercase tracking-[0.16em] block ${labelClass}`}>
+        <label htmlFor={id} className={`text-[12px] font-bold uppercase tracking-[0.12em] block ${labelClass}`}>
           {label}
         </label>
       )}
@@ -75,7 +75,7 @@ export const Select = forwardRef(({ label, icon: Icon, error, options = [], clas
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? errorId : props['aria-describedby']}
           className={`
-            w-full bg-white/90 border rounded-xl px-4 py-3 text-sm text-espresso shadow-[0_10px_26px_rgba(46,26,17,0.04)]
+            min-h-11 w-full bg-white/90 border rounded-xl px-3.5 py-2.5 text-sm text-espresso shadow-[0_5px_16px_rgba(46,26,17,0.035)]
             transition-all duration-300 ease-out
             focus:outline-none focus:border-gold focus:ring-4 focus:ring-gold/15 focus:bg-white
             disabled:opacity-50 disabled:cursor-not-allowed
@@ -92,7 +92,7 @@ export const Select = forwardRef(({ label, icon: Icon, error, options = [], clas
           ))}
         </select>
       </div>
-      {error && <p id={errorId} role="alert" className="text-[11px] text-red-500 font-medium mt-1">{error}</p>}
+      {error && <p id={errorId} role="alert" className="text-xs text-red-600 font-medium mt-1">{error}</p>}
     </div>
   );
 });
@@ -106,7 +106,7 @@ export const Textarea = forwardRef(({ label, error, className = '', containerCla
   return (
     <div className={`space-y-2 ${containerClassName}`}>
       {label && (
-        <label htmlFor={id} className={`text-xs font-bold uppercase tracking-[0.16em] block ${labelClass}`}>
+        <label htmlFor={id} className={`text-[12px] font-bold uppercase tracking-[0.12em] block ${labelClass}`}>
           {label}
         </label>
       )}
@@ -116,8 +116,8 @@ export const Textarea = forwardRef(({ label, error, className = '', containerCla
         aria-invalid={error ? 'true' : undefined}
         aria-describedby={error ? errorId : props['aria-describedby']}
         className={`
-          w-full bg-white/90 border rounded-xl px-4 py-3 text-sm text-espresso
-          placeholder:text-espresso/40 resize-none shadow-[0_10px_26px_rgba(46,26,17,0.04)]
+          min-h-11 w-full bg-white/90 border rounded-xl px-3.5 py-2.5 text-sm text-espresso
+          placeholder:text-espresso/55 resize-none shadow-[0_5px_16px_rgba(46,26,17,0.035)]
           transition-all duration-300 ease-out
           focus:outline-none focus:border-gold focus:ring-4 focus:ring-gold/15 focus:bg-white
           disabled:opacity-50 disabled:cursor-not-allowed
@@ -126,7 +126,7 @@ export const Textarea = forwardRef(({ label, error, className = '', containerCla
         `}
         {...props}
       />
-      {error && <p id={errorId} role="alert" className="text-[11px] text-red-500 font-medium mt-1">{error}</p>}
+      {error && <p id={errorId} role="alert" className="text-xs text-red-600 font-medium mt-1">{error}</p>}
     </div>
   );
 });
