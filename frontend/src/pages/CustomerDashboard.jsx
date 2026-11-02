@@ -281,8 +281,8 @@ const shiftMonth = (monthValue, offset) => {
 
 export function CustomerSkeleton() {
   return (
-    <div className="min-h-screen bg-cream flex flex-col md:flex-row">
-      <aside className="hidden md:flex w-64 bg-espresso flex-col p-5 shrink-0">
+    <div className="dashboard-shell min-h-screen bg-cream flex flex-col md:flex-row">
+      <aside className="dashboard-sidebar hidden md:flex bg-espresso flex-col shrink-0">
         <Skeleton className="h-12 w-full rounded-xl bg-white/10" />
         <SkeletonProfileCard />
         <div className="flex-1 space-y-2 my-6">
@@ -290,7 +290,7 @@ export function CustomerSkeleton() {
         </div>
         <Skeleton className="h-10 w-full rounded-xl bg-white/5" />
       </aside>
-      <main className="flex-1 p-6 md:p-10">
+      <main className="dashboard-main flex-1">
         <div className="mb-6 flex items-center gap-3 text-xs font-bold text-espresso/60" role="status">
           <LoadingSpinner className="text-gold-dark" label="Loading customer dashboard" />
           Loading your dashboard...

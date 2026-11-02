@@ -10,11 +10,11 @@ const variants = {
 };
 
 const sizes = {
-  xs: 'min-h-9 px-2.5 py-1.5 text-[11px]',
-  sm: 'px-3 py-2 text-xs',
-  md: 'px-4 py-2.5 text-sm',
-  lg: 'px-5 py-3 text-sm',
-  xl: 'px-7 py-3.5 text-base',
+  xs: 'min-h-8 px-2 py-1 text-[11px]',
+  sm: 'px-2.5 py-1.5 text-xs',
+  md: 'px-3.5 py-2 text-sm',
+  lg: 'px-4 py-2.5 text-sm',
+  xl: 'px-6 py-3 text-base',
 };
 
 export function Button({
@@ -46,7 +46,7 @@ export function Button({
       aria-busy={loading || undefined}
       {...props}
       className={`
-        relative inline-flex min-h-10 items-center justify-center gap-2 rounded-xl font-bold leading-snug
+        relative inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg font-bold leading-snug
         transition-[transform,background-color,border-color,color,box-shadow,opacity] duration-200 ease-out hover:-translate-y-px active:translate-y-0 active:scale-[0.99]
         disabled:opacity-55 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:active:scale-100
         focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold
