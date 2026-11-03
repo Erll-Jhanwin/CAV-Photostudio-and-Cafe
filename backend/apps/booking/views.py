@@ -28,6 +28,7 @@ from booking.serializers import (
     WalkInBookingCreateSerializer,
     BookingReviewSerializer,
     StudioUnavailableDateSerializer,
+    MINIMUM_BOOKING_DOWN_PAYMENT,
     validate_booking_payment_amount,
 )
 from booking.availability import (
@@ -641,8 +642,8 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
                 verified_total = Payment.objects.filter(
                     payment_type=Payment.BOOKING, booking_id=booking.pk, status__in=['APPROVED', 'PAID'],
                 ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-                if verified_total < Decimal('200.00'):
-                    raise ValidationError({'status': 'A verified down payment of at least PHP 200.00 is required to confirm this booking.'})
+                if verified_total < MINIMUM_BOOKING_DOWN_PAYMENT:
+                    raise ValidationError({'status': f'A verified down payment of at least PHP {MINIMUM_BOOKING_DOWN_PAYMENT} is required to confirm this booking.'})
             if 'package' in serializer.validated_data:
                 proposed_package = serializer.validated_data['package']
                 proposed_total = Decimal(str(proposed_package.price or 0))

@@ -31,6 +31,7 @@ import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime
 import { calculateSalesRowsPerPage } from './salesLogLayout';
 import BookingQueue from '../components/bookings/BookingQueue';
 import { startVisiblePolling } from '../utils/visiblePolling';
+import { MINIMUM_BOOKING_DOWN_PAYMENT } from '../utils/bookingPayments';
 
 export function StaffSkeleton() {
   return (
@@ -2084,7 +2085,7 @@ export default function StaffDashboard() {
                                   <div className="min-w-0"><dt className="text-espresso/50">Method</dt><dd className="break-words font-bold text-espresso">{payment.method_label || payment.method || 'Unknown'}</dd></div>
                                   <div className="min-w-0"><dt className="text-espresso/50">Reference</dt><dd className="break-all font-bold text-espresso">{payment.reference_number}</dd></div>
                                   <div><dt className="text-espresso/50">Payment Amount</dt><dd className="font-black text-gold-dark">{formatCurrency(payment.amount)}</dd></div>
-                                  <div><dt className="text-espresso/50">Required DP</dt><dd className="font-bold text-espresso">{formatCurrency(payment.required_down_payment)}</dd></div>
+                                  <div><dt className="text-espresso/50">Required DP</dt><dd className="font-bold text-espresso">{formatCurrency(MINIMUM_BOOKING_DOWN_PAYMENT)}</dd></div>
                                   <div><dt className="text-espresso/50">Total Amount</dt><dd className="font-bold text-espresso">{formatCurrency(details.total_amount)}</dd></div>
                                   <div><dt className="text-espresso/50">Down Payment Paid</dt><dd className="font-bold text-espresso">{formatCurrency(details.amount_paid)}</dd></div>
                                   <div><dt className="text-espresso/50">Remaining Balance</dt><dd className="font-black text-espresso">{formatCurrency(details.remaining_balance)}</dd></div>

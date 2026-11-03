@@ -141,6 +141,7 @@ async function completeWizard() {
   fireEvent.click(screen.getByRole('button', { name: 'Continue Booking' }));
   fireEvent.click(screen.getByRole('button', { name: 'Continue Booking' }));
   await fillPayment(container);
+  expect(screen.getAllByText('PHP 200')).toHaveLength(2);
   expect(screen.getByText('A minimum down payment of ₱200 is required to confirm your booking. The remaining balance is payable separately.')).toBeInTheDocument();
   expect(await screen.findByRole('img', { name: 'GCash payment QR code' })).toHaveAttribute('src', '/gcash-qr.png');
   return container;

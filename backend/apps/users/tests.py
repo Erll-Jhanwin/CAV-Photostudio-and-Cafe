@@ -12,6 +12,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from unittest.mock import Mock, patch
 
 from users.models import Customer, PasswordResetOTP, PrivacyConsent, PrivacyRequest
+from users.serializers import ProfileSerializer
 from audit.models import AuditLog
 from users.sms_delivery import send_password_reset_otp, verify_password_reset_otp
 
@@ -745,14 +746,25 @@ class GoogleAuthFlowTests(TestCase):
         return self.client.post('/api/auth/google/', body, format='json')
 
     @patch('users.views.requests.get')
-    def test_google_signup_without_phone_creates_customer_and_authenticates(self, mocked_get):
-        response = self.post_google(mocked_get, {'privacy_consent': True})
+    def test_google_signup_requires_valid_philippine_mobile_and_populates_verified_profile(self, mocked_get):
+        missing_phone = self.post_google(mocked_get, {'privacy_consent': True})
+        self.assertEqual(missing_phone.status_code, 400)
+        self.assertIn('phone_number', missing_phone.data)
+        self.assertEqual(missing_phone.data['google_profile'], {
+            'email': self.profile['email'],
+            'first_name': 'Google',
+            'last_name': 'Customer',
+            'profile_picture_url': self.profile['picture'],
+        })
+        self.assertFalse(get_user_model().objects.filter(email=self.profile['email']).exists())
+
+        response = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '+63 917 123 4567'})
         self.assertEqual(response.status_code, 200, response.data)
         self.assertTrue(response.data['created'])
         user = get_user_model().objects.get(email=self.profile['email'])
         self.assertEqual((user.first_name, user.last_name), ('Google', 'Customer'))
         self.assertEqual(user.profile_picture_external_url, self.profile['picture'])
-        self.assertEqual(user.phone_number, '')
+        self.assertEqual(user.phone_number, '639171234567')
         self.assertEqual(user.registration_method, 'GOOGLE')
         self.assertFalse(user.has_usable_password())
         self.assertEqual(Customer.objects.filter(user=user).count(), 1)
@@ -762,14 +774,21 @@ class GoogleAuthFlowTests(TestCase):
         self.assertIn(settings.AUTH_REFRESH_COOKIE_NAME, response.cookies)
         self.assertTrue(AuditLog.objects.filter(user=user, action='CUSTOMER_REGISTER_GOOGLE').exists())
         self.assertTrue(AuditLog.objects.filter(user=user, action='USER_LOGIN_GOOGLE').exists())
+        self.client.force_authenticate(user=user)
+        refreshed_profile = self.client.get('/api/auth/profile/')
+        self.assertEqual(refreshed_profile.status_code, 200)
+        self.assertEqual(refreshed_profile.data['email'], self.profile['email'])
+        self.assertEqual(refreshed_profile.data['first_name'], 'Google')
+        self.assertEqual(refreshed_profile.data['phone_number'], '639171234567')
+        self.assertEqual(refreshed_profile.data['profile_picture_url'], self.profile['picture'])
 
     @patch('users.views.requests.get')
     def test_google_signup_requires_consent_and_repeat_signin_reuses_same_account(self, mocked_get):
-        refused = self.post_google(mocked_get, {'privacy_consent': False})
+        refused = self.post_google(mocked_get, {'privacy_consent': False, 'phone_number': '09171234567'})
         self.assertEqual(refused.status_code, 400)
         self.assertIn('privacy_consent', refused.data)
         self.assertFalse(get_user_model().objects.filter(email__iexact=self.profile['email']).exists())
-        created = self.post_google(mocked_get, {'privacy_consent': True})
+        created = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '09171234567'})
         signed_in = self.post_google(mocked_get)
         self.assertEqual(created.status_code, 200)
         self.assertTrue(created.data['created'])
@@ -780,7 +799,7 @@ class GoogleAuthFlowTests(TestCase):
         self.assertEqual(Customer.objects.filter(user_id=created.data['id']).count(), 1)
 
     @patch('users.views.requests.get')
-    def test_google_rejects_invalid_supplied_phone_but_normalizes_valid_optional_phone(self, mocked_get):
+    def test_google_rejects_invalid_supplied_phone_and_normalizes_valid_phone(self, mocked_get):
         invalid = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '555-0100'})
         self.assertEqual(invalid.status_code, 400)
         self.assertIn('phone_number', invalid.data)
@@ -794,6 +813,7 @@ class GoogleAuthFlowTests(TestCase):
         user = get_user_model().objects.create_user(
             username='existing-google-email', email='VERIFIED.GOOGLE@example.com',
             password='ExistingPass123!', first_name='Existing', last_name='Profile',
+            phone_number='639171234567',
             profile_picture_external_url='https://example.test/custom-avatar.png', registration_method='FORM',
         )
         response = self.post_google(mocked_get)
@@ -802,8 +822,56 @@ class GoogleAuthFlowTests(TestCase):
         self.assertEqual(response.data['id'], user.id)
         user.refresh_from_db()
         self.assertEqual((user.first_name, user.last_name), ('Existing', 'Profile'))
+        self.assertEqual(user.phone_number, '639171234567')
         self.assertEqual(user.profile_picture_external_url, 'https://example.test/custom-avatar.png')
         self.assertEqual(get_user_model().objects.filter(email__iexact=self.profile['email']).count(), 1)
+
+    @patch('users.views.requests.get')
+    def test_existing_customer_without_phone_can_complete_profile_once(self, mocked_get):
+        user = get_user_model().objects.create_user(
+            username='existing-google-no-phone', email=self.profile['email'],
+            password='ExistingPass123!', first_name='', last_name='',
+        )
+        missing_phone = self.post_google(mocked_get)
+        self.assertEqual(missing_phone.status_code, 400)
+        self.assertIn('phone_number', missing_phone.data)
+        self.assertFalse(user.phone_number)
+
+        response = self.post_google(mocked_get, {'phone_number': '09171234567'})
+        self.assertEqual(response.status_code, 200, response.data)
+        user.refresh_from_db()
+        self.assertEqual(user.phone_number, '639171234567')
+        self.assertEqual((user.first_name, user.last_name), ('Google', 'Customer'))
+        self.assertEqual(user.profile_picture_external_url, self.profile['picture'])
+
+        # A later sign-in never replaces user-edited profile values.
+        user.first_name = 'Edited'
+        user.phone_number = '639181234567'
+        user.profile_picture_external_url = 'https://example.test/edited.png'
+        user.save(update_fields=['first_name', 'phone_number', 'profile_picture_external_url'])
+        repeated = self.post_google(mocked_get)
+        self.assertEqual(repeated.status_code, 200, repeated.data)
+        user.refresh_from_db()
+        self.assertEqual((user.first_name, user.phone_number, user.profile_picture_external_url), (
+            'Edited', '639181234567', 'https://example.test/edited.png',
+        ))
+
+    @patch('users.views.requests.get')
+    def test_explicitly_removed_google_photo_is_not_restored_on_later_signin(self, mocked_get):
+        user = get_user_model().objects.create_user(
+            username='google-photo-removed', email=self.profile['email'],
+            password='ExistingPass123!', first_name='Google', phone_number='639171234567',
+            profile_picture_external_url=self.profile['picture'], registration_method='GOOGLE',
+        )
+        serializer = ProfileSerializer(user, data={'remove_profile_picture': True}, partial=True)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+
+        response = self.post_google(mocked_get)
+        self.assertEqual(response.status_code, 200, response.data)
+        user.refresh_from_db()
+        self.assertEqual(user.profile_picture_external_url, '')
+        self.assertTrue(user.profile_picture_google_sync_disabled)
 
     @patch('users.views.requests.get')
     def test_google_rejects_unverified_email(self, mocked_get):

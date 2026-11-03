@@ -211,9 +211,25 @@ export default function LoginPage() {
       if (res.errors?.privacy_consent) {
         setIsRegister(true);
         setRegisterStep('details');
+        const googleProfile = res.errors.google_profile || {};
+        setForm(current => ({
+          ...current,
+          email: current.email || googleProfile.email || '',
+          firstName: current.firstName || googleProfile.first_name || '',
+          lastName: current.lastName || googleProfile.last_name || '',
+        }));
         setFormErrors({ privacyConsent: Array.isArray(res.errors.privacy_consent) ? res.errors.privacy_consent.join(' ') : res.errors.privacy_consent });
         setError('Accept the Privacy Notice, then choose Google again to create your account.');
       } else if (res.errors?.phone_number) {
+        setIsRegister(true);
+        setRegisterStep('details');
+        const googleProfile = res.errors.google_profile || {};
+        setForm(current => ({
+          ...current,
+          email: current.email || googleProfile.email || '',
+          firstName: current.firstName || googleProfile.first_name || '',
+          lastName: current.lastName || googleProfile.last_name || '',
+        }));
         setFormErrors({ phone: Array.isArray(res.errors.phone_number) ? res.errors.phone_number.join(' ') : res.errors.phone_number });
       }
       setError(res.error);
@@ -342,9 +358,25 @@ export default function LoginPage() {
         if (res.errors?.privacy_consent) {
           setIsRegister(true);
           setRegisterStep('details');
+          const googleProfile = res.errors.google_profile || {};
+          setForm(current => ({
+            ...current,
+            email: current.email || googleProfile.email || '',
+            firstName: current.firstName || googleProfile.first_name || '',
+            lastName: current.lastName || googleProfile.last_name || '',
+          }));
           setFormErrors({ privacyConsent: Array.isArray(res.errors.privacy_consent) ? res.errors.privacy_consent.join(' ') : res.errors.privacy_consent });
           setError('Accept the Privacy Notice, then choose Google again to create your account.');
         } else if (res.errors?.phone_number) {
+          setIsRegister(true);
+          setRegisterStep('details');
+          const googleProfile = res.errors.google_profile || {};
+          setForm(current => ({
+            ...current,
+            email: current.email || googleProfile.email || '',
+            firstName: current.firstName || googleProfile.first_name || '',
+            lastName: current.lastName || googleProfile.last_name || '',
+          }));
           setFormErrors({ phone: Array.isArray(res.errors.phone_number) ? res.errors.phone_number.join(' ') : res.errors.phone_number });
         }
         setError(res.error);
@@ -1136,7 +1168,7 @@ export default function LoginPage() {
                               placeholder="+63 917 123 4567"
                               error={formErrors.phone}
                             />
-                            <p className="text-[10px] leading-snug text-espresso/50">Required for regular sign-up. Google sign-up can continue without a number; add one before booking.</p>
+                            <p className="text-[10px] leading-snug text-espresso/50">A valid Philippine mobile number is required to finish account setup.</p>
                           </div>
                           <Textarea
                             label="Address"

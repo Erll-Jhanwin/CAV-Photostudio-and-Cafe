@@ -30,6 +30,7 @@ class CustomUser(AbstractUser):
     address = models.TextField(blank=True, default='')
     profile_picture = models.ImageField(upload_to=profile_picture_upload_path, blank=True, null=True)
     profile_picture_external_url = models.URLField(max_length=500, blank=True)
+    profile_picture_google_sync_disabled = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = 'user'

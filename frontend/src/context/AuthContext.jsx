@@ -67,6 +67,11 @@ export const AuthProvider = ({ children }) => {
           username: profile.username,
           email: profile.email,
           role: profile.role,
+          first_name: profile.first_name || '',
+          last_name: profile.last_name || '',
+          phone_number: profile.phone_number || '',
+          address: profile.address || '',
+          registration_method: profile.registration_method || '',
           profile_picture_url: profile.profile_picture_url || '',
         };
         // A login can complete while this restore request is in flight. Do not
@@ -101,6 +106,11 @@ export const AuthProvider = ({ children }) => {
       username: profile.username || fallbackUser.username,
       email: profile.email || fallbackUser.email,
       role: profile.role || fallbackUser.role,
+      first_name: profile.first_name || '',
+      last_name: profile.last_name || '',
+      phone_number: profile.phone_number || '',
+      address: profile.address || '',
+      registration_method: profile.registration_method || '',
       profile_picture_url: profile.profile_picture_url || fallbackUser.profile_picture_url || '',
     };
 

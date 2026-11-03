@@ -263,6 +263,7 @@ describe('AdminDashboard', () => {
     const proofButton = await screen.findByRole('button', { name: 'View proof of payment for booking 48' });
     expect(screen.getByRole('button', { name: 'Confirm Payment' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Flag Payment Issue' })).toBeInTheDocument();
+    expect(screen.getByText('PHP 200')).toBeInTheDocument();
     expect(client.get).not.toHaveBeenCalled();
 
     fireEvent.click(proofButton);

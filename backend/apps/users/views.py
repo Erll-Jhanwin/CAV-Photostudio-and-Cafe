@@ -731,35 +731,59 @@ class GoogleAuthView(views.APIView):
                 timeout=10,
             )
         except requests.RequestException:
-            return Response({"detail": "Could not verify Google credential."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response({"detail": "Google verification is temporarily unavailable. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         if verify_res.status_code != 200:
-            return Response({"detail": "Invalid Google credential."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Your Google sign-in expired or could not be verified. Choose Google again to retry."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        profile = verify_res.json()
+        try:
+            profile = verify_res.json()
+        except (TypeError, ValueError):
+            return Response({"detail": "Google verification returned an invalid response. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        if not isinstance(profile, dict):
+            return Response({"detail": "Google verification returned an invalid response. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         if profile.get('aud') != settings.GOOGLE_CLIENT_ID or profile.get('iss') not in {
             'accounts.google.com', 'https://accounts.google.com',
         }:
-            return Response({"detail": "Invalid Google credential."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Google sign-in could not be verified for this app. Choose Google again to retry."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        email = profile.get('email', '').strip().lower()
+        email = str(profile.get('email') or '').strip().lower()
         if not email or profile.get('email_verified') not in (True, 'true', 'True', '1'):
             return Response({"detail": "Google account email must be verified."}, status=status.HTTP_400_BAD_REQUEST)
         google_picture_url = (profile.get('picture') or '').strip()
+        user = User.objects.filter(email__iexact=email).first()
+
+        given_name = str(profile.get('given_name') or '').strip()
+        family_name = str(profile.get('family_name') or '').strip()
+        if not given_name and profile.get('name'):
+            name_parts = str(profile['name']).strip().split()
+            given_name = name_parts[0] if name_parts else ''
+            family_name = family_name or ' '.join(name_parts[1:])
+
+        def completion_error(field, message):
+            return Response({
+                field: message,
+                'google_profile': {
+                    'email': email,
+                    'first_name': given_name[:150],
+                    'last_name': family_name[:150],
+                    'profile_picture_url': google_picture_url[:500],
+                },
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         raw_phone_number = str(request.data.get('phone_number') or '').strip()
         phone_number = ''
         if raw_phone_number:
             phone_number = normalize_philippine_mobile_number(raw_phone_number)
             if not phone_number:
-                return Response(
-                    {'phone_number': 'Enter a valid Philippine mobile number, or leave it blank and add one before booking.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if is_phone_number_taken(phone_number):
-                return Response({'phone_number': 'Phone number already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+                return completion_error('phone_number', 'Enter a valid Philippine mobile number to continue.')
+            if is_phone_number_taken(phone_number, user):
+                return completion_error('phone_number', 'That mobile number is already linked to another account. Use a different number or contact support.')
 
-        user = User.objects.filter(email__iexact=email).first()
+        needs_phone = not user or (user.role == 'CUSTOMER' and not user.phone_number)
+        if needs_phone and not phone_number:
+            return completion_error('phone_number', 'Add a valid Philippine mobile number to continue.')
+
         challenge_matches = bool(user and admin_mfa_challenge_matches(request.data.get('mfa_token'), user))
         if not challenge_matches:
             recaptcha_error = validate_recaptcha(request)
@@ -768,17 +792,7 @@ class GoogleAuthView(views.APIView):
         created = False
         if not user:
             if not request.data.get('privacy_consent'):
-                return Response(
-                    {'privacy_consent': 'Accept the privacy notice and service data processing before creating your Google account.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            given_name = str(profile.get('given_name') or '').strip()
-            family_name = str(profile.get('family_name') or '').strip()
-            if not given_name and profile.get('name'):
-                name_parts = str(profile['name']).strip().split()
-                given_name = name_parts[0] if name_parts else ''
-                family_name = ' '.join(name_parts[1:])
+                return completion_error('privacy_consent', 'Accept the privacy notice and service data processing before creating your Google account.')
 
             # Use the unique, verified email as the idempotency key. The DB's
             # case-insensitive unique constraint closes the concurrent signup race.
@@ -826,6 +840,13 @@ class GoogleAuthView(views.APIView):
                     )
                 created = False
 
+        # A returning customer may have skipped the phone field before it became
+        # required. Complete only that missing value; never replace an existing
+        # phone number with a value supplied during a later sign-in.
+        if user.role == 'CUSTOMER' and not user.phone_number and phone_number:
+            user.phone_number = phone_number
+            user.save(update_fields=['phone_number'])
+
         if user.role == 'CUSTOMER':
             Customer.objects.get_or_create(user=user)
 
@@ -843,13 +864,13 @@ class GoogleAuthView(views.APIView):
                 return Response({'detail': 'Invalid or expired admin verification code.'}, status=status.HTTP_400_BAD_REQUEST)
 
         changed_fields = []
-        if not user.first_name and profile.get('given_name'):
-            user.first_name = str(profile['given_name']).strip()[:150]
+        if not user.first_name and given_name:
+            user.first_name = given_name[:150]
             changed_fields.append('first_name')
-        if not user.last_name and profile.get('family_name'):
-            user.last_name = str(profile['family_name']).strip()[:150]
+        if not user.last_name and family_name:
+            user.last_name = family_name[:150]
             changed_fields.append('last_name')
-        if google_picture_url and not user.profile_picture and not user.profile_picture_external_url:
+        if google_picture_url and not user.profile_picture and not user.profile_picture_external_url and not user.profile_picture_google_sync_disabled:
             user.profile_picture_external_url = google_picture_url[:500]
             changed_fields.append('profile_picture_external_url')
         if changed_fields:

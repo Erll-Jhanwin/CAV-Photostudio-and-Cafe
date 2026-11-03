@@ -81,6 +81,7 @@ test('Staff payment verification opens proof on demand and keeps its verify acti
   const proofButton = await screen.findByRole('button', { name: 'View proof of payment for booking 48' });
   expect(screen.getByRole('button', { name: 'Confirm Payment' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Flag Payment Issue' })).toBeInTheDocument();
+  expect(screen.getByText('PHP 200')).toBeInTheDocument();
   expect(client.get).not.toHaveBeenCalledWith('/api/bookings/payments/18/receipt/', { responseType: 'blob' });
   expect(screen.queryByRole('img', { name: 'Payment proof for booking 48' })).not.toBeInTheDocument();
 

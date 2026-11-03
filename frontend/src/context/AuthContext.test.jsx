@@ -71,6 +71,10 @@ describe('AuthContext', () => {
         username: 'customer',
         email: 'customer@example.com',
         role: 'CUSTOMER',
+        first_name: 'Google',
+        last_name: 'Customer',
+        phone_number: '639171234567',
+        profile_picture_url: 'https://lh3.googleusercontent.com/profile-picture',
       },
     });
     client.get.mockResolvedValue({
@@ -79,6 +83,10 @@ describe('AuthContext', () => {
         username: 'customer',
         email: 'customer@example.com',
         role: 'CUSTOMER',
+        first_name: 'Google',
+        last_name: 'Customer',
+        phone_number: '639171234567',
+        profile_picture_url: 'https://lh3.googleusercontent.com/profile-picture',
       },
     });
 
@@ -90,6 +98,10 @@ describe('AuthContext', () => {
     expect(JSON.parse(localStorage.getItem('user'))).toMatchObject({
       username: 'customer',
       role: 'CUSTOMER',
+      first_name: 'Google',
+      last_name: 'Customer',
+      phone_number: '639171234567',
+      profile_picture_url: 'https://lh3.googleusercontent.com/profile-picture',
     });
   });
 

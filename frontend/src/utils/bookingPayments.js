@@ -1,0 +1,1 @@
+export const MINIMUM_BOOKING_DOWN_PAYMENT = 200;

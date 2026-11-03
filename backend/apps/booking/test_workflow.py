@@ -166,6 +166,8 @@ class BookingLifecycleTests(WorkflowFixtures, TestCase):
 
     def test_minimum_payment_verified_balance_and_overpayment_validation(self):
         booking = self.book()
+        booking_response = self.client.get('/api/bookings/')
+        self.assertEqual(booking_response.data[0]['required_down_payment'], Decimal('200.00'))
         too_small = self.client.post('/api/bookings/payments/', {
             'booking': booking.id, 'amount': '199.99', 'reference_number': 'REF-SMALL-01',
         }, format='json')
@@ -176,6 +178,7 @@ class BookingLifecycleTests(WorkflowFixtures, TestCase):
             'booking': booking.id, 'amount': '200.00', 'reference_number': 'REF-MIN-0001',
         }, format='json')
         self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(first.data['required_down_payment'], Decimal('200.00'))
         self.client.force_authenticate(self.staff)
         approved = self.client.patch(f"/api/bookings/payments/{first.data['id']}/verify/", {'status': 'APPROVED'}, format='json')
         self.assertEqual(approved.status_code, 200, approved.data)

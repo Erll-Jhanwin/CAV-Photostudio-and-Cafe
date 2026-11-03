@@ -38,6 +38,7 @@ import {
 } from '../utils/pushNotifications';
 import { filterNotifications, getNotificationCategories } from '../utils/notificationFilters';
 import { startVisiblePolling } from '../utils/visiblePolling';
+import { MINIMUM_BOOKING_DOWN_PAYMENT } from '../utils/bookingPayments';
 
 const getPackageIcon = (name) => {
   const n = name.toLowerCase();
@@ -209,8 +210,7 @@ const createIdempotencyKey = (prefix) => {
   return `${prefix}-${random}`;
 };
 
-const MINIMUM_DOWN_PAYMENT = 200;
-const calculateDownPayment = () => MINIMUM_DOWN_PAYMENT;
+const calculateDownPayment = () => MINIMUM_BOOKING_DOWN_PAYMENT;
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 const isValidPhone = (value) => String(value || '').replace(/[^\d+]/g, '').replace(/^\+/, '').length >= 7;
 const isValidPaymentReference = (value) => /^[A-Za-z0-9\- ]{6,100}$/.test(String(value || '').trim());
@@ -3709,7 +3709,7 @@ export default function CustomerDashboard() {
                 </div>
                 <div className="rounded-2xl border border-espresso/5 bg-white p-4">
                   <p className="text-espresso/45 font-black uppercase tracking-wider">Required Down Payment</p>
-                  <p className="font-bold text-espresso mt-1">{formatPeso(selectedBookingDetails.required_down_payment)}</p>
+                  <p className="font-bold text-espresso mt-1">{formatPeso(MINIMUM_BOOKING_DOWN_PAYMENT)}</p>
                 </div>
                 <div className="rounded-2xl border border-espresso/5 bg-white p-4">
                   <p className="text-espresso/45 font-black uppercase tracking-wider">Booked On</p>

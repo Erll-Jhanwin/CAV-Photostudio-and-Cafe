@@ -131,8 +131,10 @@ class UserSerializer(serializers.ModelSerializer):
         if remove_picture:
             validated_data['profile_picture'] = None
             validated_data['profile_picture_external_url'] = ''
+            validated_data['profile_picture_google_sync_disabled'] = True
         elif new_picture:
             validated_data['profile_picture_external_url'] = ''
+            validated_data['profile_picture_google_sync_disabled'] = True
 
         instance = super().update(instance, validated_data)
 

@@ -217,7 +217,7 @@ describe('Google registration', () => {
     mockLoginWithGoogle.mockReset();
   });
 
-  test('requests privacy consent for a new Google account, then signs the verified customer in without a phone', async () => {
+  test('asks for a mobile number and consent, prepopulates verified Google details, then signs up', async () => {
     let googleCallback;
     const originalClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
     const originalAlert = window.alert;
@@ -232,6 +232,10 @@ describe('Google registration', () => {
       },
     };
     mockLoginWithGoogle
+      .mockResolvedValueOnce({ success: false, error: 'Add a valid Philippine mobile number to continue.', errors: {
+        phone_number: 'Add a valid Philippine mobile number to continue.',
+        google_profile: { email: 'google@example.com', first_name: 'Google', last_name: 'Customer' },
+      } })
       .mockResolvedValueOnce({ success: false, error: 'Accept the Privacy Notice, then choose Google again to create your account.', errors: { privacy_consent: 'Accept the privacy notice.' } })
       .mockResolvedValueOnce({ success: true, created: true, user: { id: 91, username: 'google.customer', email: 'google@example.com', role: 'CUSTOMER' } });
 
@@ -240,17 +244,27 @@ describe('Google registration', () => {
       await waitFor(() => expect(googleCallback).toBeDefined());
       await act(async () => { googleCallback({ credential: 'verified-google-id-token' }); });
 
-      expect(await screen.findByText('Accept the Privacy Notice, then choose Google again to create your account.')).toBeInTheDocument();
+      await screen.findByLabelText('Mobile number');
+      expect(screen.getAllByText('Add a valid Philippine mobile number to continue.')).toHaveLength(2);
       expect(screen.getByLabelText('Mobile number')).toBeInTheDocument();
-      expect(screen.getByLabelText('Mobile number')).not.toBeRequired();
-      fireEvent.click(screen.getByRole('checkbox'));
+      expect(screen.getByLabelText('Email')).toHaveValue('google@example.com');
+      expect(screen.getByLabelText('First Name')).toHaveValue('Google');
+      expect(screen.getByLabelText('Last Name')).toHaveValue('Customer');
+      fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '09171234567' } });
+
       await waitFor(() => expect(window.google.accounts.id.initialize.mock.calls.length).toBeGreaterThan(1));
+      await act(async () => { googleCallback({ credential: 'verified-google-id-token' }); });
+      expect(await screen.findByText('Accept the Privacy Notice, then choose Google again to create your account.')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('checkbox'));
+      await waitFor(() => expect(window.google.accounts.id.initialize.mock.calls.length).toBeGreaterThan(2));
 
       await act(async () => { googleCallback({ credential: 'verified-google-id-token' }); });
 
-      await waitFor(() => expect(mockLoginWithGoogle).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(mockLoginWithGoogle).toHaveBeenCalledTimes(3));
       expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(1, 'verified-google-id-token', '', { privacy_consent: false, recaptcha_token: 'test-recaptcha-token' });
-      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(2, 'verified-google-id-token', '', { privacy_consent: true, recaptcha_token: 'test-recaptcha-token' });
+      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(2, 'verified-google-id-token', '09171234567', { privacy_consent: false, recaptcha_token: 'test-recaptcha-token' });
+      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(3, 'verified-google-id-token', '09171234567', { privacy_consent: true, recaptcha_token: 'test-recaptcha-token' });
       expect(window.alert).toHaveBeenCalledWith('google.customer logged in successfully.');
     } finally {
       if (originalClientId === undefined) delete process.env.REACT_APP_GOOGLE_CLIENT_ID;
