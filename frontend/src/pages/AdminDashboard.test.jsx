@@ -52,6 +52,22 @@ jest.mock('../api/client', () => ({
 import AdminDashboard from './AdminDashboard';
 
 describe('AdminDashboard', () => {
+  it('opens the shared Live Inventory screen from Admin navigation', async () => {
+    getCached.mockImplementation(url => url.includes('/api/dashboard/analytics/')
+      ? Promise.resolve({ data: {
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
+        sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
+        top_selling_products: [], top_booked_packages: [], inventory_status_counts: {}, low_stock_alerts: [], inventory_alerts: [],
+      } })
+      : Promise.resolve({ data: [] }));
+
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Live Inventory' }));
+
+    expect(await screen.findByTestId('admin-live-inventory')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'No ingredients found' })).toBeInTheDocument();
+  });
+
   it('prints the booking receipt after an admin confirms a payment', async () => {
     const payment = {
       id: 18, booking: 48, status: 'PENDING_VERIFICATION', amount: '1250.00',

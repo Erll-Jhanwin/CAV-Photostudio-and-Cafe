@@ -274,3 +274,22 @@ class ProductSalesReadTests(TestCase):
         self.assertEqual(row['revenue'], '25.00')
         self.assertEqual(transactions.data[0]['quantity'], 2)
         self.assertEqual(transactions.data[0]['sale_amount'], '25.00')
+
+    def test_staff_can_read_live_inventory_endpoints_with_list_responses(self):
+        staff = get_user_model().objects.create_user(
+            username='inventory-read-staff',
+            email='inventory-read-staff@example.com',
+            password='Staff123!pass',
+            role='STAFF',
+        )
+        StaffAccessProfile.objects.create(user=staff, on_duty=True)
+        self.client.force_authenticate(staff)
+
+        ingredients = self.client.get('/api/inventory/ingredients/', {'limit': 300})
+        product_sales = self.client.get('/api/inventory/product-sales/')
+
+        self.assertEqual(ingredients.status_code, 200)
+        self.assertEqual(product_sales.status_code, 200)
+        self.assertIsInstance(ingredients.data, list)
+        self.assertIsInstance(product_sales.data, list)
+        self.assertEqual(next(row for row in product_sales.data if row['product_id'] == self.product.id)['quantity_sold'], 2)

@@ -217,6 +217,34 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
         self.assertEqual(approved.count(), 1)
         self.assertIn('Down Payment', approved.get().payload['status'])
 
+    @override_settings(
+        EMAIL_DELIVERY_ENABLED=True,
+        EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+        EMAIL_HOST='smtp.example.test',
+        DEFAULT_FROM_EMAIL='CAV Photo Studio <studio@example.test>',
+    )
+    def test_submission_and_payment_approval_send_only_after_commit(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            booking = self.book()
+        submitted = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_SUBMITTED)
+        self.assertEqual(submitted.status, BookingEmail.STATUS_SENT)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('request received', mail.outbox[0].subject.lower())
+
+        payment = self.pay(booking)
+        self.client.force_authenticate(self.staff)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(
+                f'/api/bookings/payments/{payment.id}/verify/',
+                {'status': 'APPROVED'},
+                format='json',
+            )
+        self.assertEqual(response.status_code, 200, response.data)
+        approved = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_APPROVED)
+        self.assertEqual(approved.status, BookingEmail.STATUS_SENT)
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertIn('approved', mail.outbox[1].subject.lower())
+
     def test_reschedule_replaces_reminder_and_cancellation_suppresses_it(self):
         booking = self.book()
         first_reminder = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_REMINDER)
@@ -246,7 +274,8 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
             email.refresh_from_db()
             self.assertEqual(first, BookingEmail.STATUS_QUEUED)
             self.assertEqual(email.attempt_count, 1)
-            self.assertIn('temporary outage', email.last_error)
+            self.assertIn('EmailDeliveryError', email.last_error)
+            self.assertNotIn('temporary outage', email.last_error)
             second = process_booking_email(email.id, now=email.next_retry_at + timedelta(seconds=1))
             third = process_booking_email(email.id, now=timezone.now() + timedelta(days=10))
         email.refresh_from_db()
@@ -317,10 +346,12 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
             self.assertEqual(self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'CONFIRMED'}, format='json').status_code, 200)
         with self.captureOnCommitCallbacks(execute=True):
             self.assertEqual(self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json').status_code, 200)
-        # The completion event is delivered immediately after the committed
-        # status change; earlier events remain queued for the worker.
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('completed', mail.outbox[0].subject.lower())
+        # Each lifecycle event dispatches after its own committed database
+        # change; retries and scheduled reminders remain in the durable outbox.
+        self.assertEqual(len(mail.outbox), 3)
+        self.assertIn('request received', mail.outbox[0].subject.lower())
+        self.assertIn('approved', mail.outbox[1].subject.lower())
+        self.assertIn('completed', mail.outbox[2].subject.lower())
 
         due_emails = BookingEmail.objects.filter(
             booking=booking,
@@ -356,6 +387,40 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
         self.assertEqual(result, BookingEmail.STATUS_SENT)
         self.assertEqual(reminder.status, BookingEmail.STATUS_SENT)
         self.assertIn('session is tomorrow', sender.call_args.args[1].lower())
+
+    @override_settings(EMAIL_DELIVERY_ENABLED=True, SMS_DELIVERY_ENABLED=False, PUSH_DELIVERY_ENABLED=False)
+    def test_reminder_command_uses_dedicated_email_outbox_without_duplicate_email(self):
+        booking = self.book()
+        starts_at = (timezone.now() + timedelta(hours=24, minutes=2)).replace(second=0, microsecond=0)
+        local_start = timezone.localtime(starts_at)
+        booking.scheduled_date = local_start.date()
+        booking.scheduled_time = local_start.time()
+        booking.save(update_fields=['scheduled_date', 'scheduled_time'])
+        reference_time = starts_at - timedelta(hours=24)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command(
+                'send_booking_reminders',
+                '--at',
+                reference_time.isoformat(),
+                '--window-minutes',
+                '30',
+            )
+        reminder_notification = Notification.objects.get(notification_type='BOOKING_REMINDER_24H')
+        self.assertFalse(Delivery.objects.filter(
+            notification=reminder_notification,
+            channel=Delivery.CHANNEL_EMAIL,
+        ).exists())
+
+        reminder_email = BookingEmail.objects.get(
+            booking=booking,
+            event_type=BookingEmail.EVENT_REMINDER,
+            status=BookingEmail.STATUS_QUEUED,
+        )
+        with patch('users.email_delivery.send_transactional_email', return_value={'provider': 'smtp'}) as sender:
+            result = process_booking_email(reminder_email.pk, now=reference_time + timedelta(seconds=1))
+        self.assertEqual(result, BookingEmail.STATUS_SENT)
+        sender.assert_called_once()
 
     def test_signed_survey_saves_optional_comments_for_admin_review(self):
         booking = Booking.objects.create(

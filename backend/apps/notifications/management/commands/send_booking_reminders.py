@@ -143,6 +143,9 @@ class Command(BaseCommand):
                 title=f'Photo session reminder ({reminder_label})',
                 message=message,
                 event_key=reminder_event_key(booking, notification_type),
+                # Reminder email is delivered by the dedicated 24-hour booking
+                # email outbox; this pipeline handles the configured SMS/push.
+                skip_channels={'email'},
             )
             return 'created'
 

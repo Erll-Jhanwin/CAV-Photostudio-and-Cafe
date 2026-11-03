@@ -1,6 +1,5 @@
 import html
 import logging
-from uuid import uuid4
 from datetime import timedelta
 from decimal import Decimal
 
@@ -70,7 +69,34 @@ def enqueue_booking_email(booking, event_type, *, scheduled_for=None, event_key=
         email.next_retry_at = None
         email.last_error = ''
         email.save(update_fields=['status', 'scheduled_for', 'next_retry_at', 'last_error', 'updated_at'])
+    if event_type != BookingEmail.EVENT_REMINDER:
+        _dispatch_email_after_commit(email)
     return email
+
+
+def _dispatch_email_after_commit(email):
+    """Try due lifecycle mail only after its booking/outbox transaction commits."""
+    if not getattr(settings, 'EMAIL_DELIVERY_ENABLED', False):
+        return
+    if email.status != BookingEmail.STATUS_QUEUED or email.scheduled_for > timezone.now():
+        return
+    transaction.on_commit(
+        lambda email_id=email.pk: _deliver_booking_email_after_commit(email_id),
+        robust=True,
+    )
+
+
+def _deliver_booking_email_after_commit(email_id):
+    try:
+        process_booking_email(email_id)
+    except Exception as exc:
+        # SMTP/provider errors and unexpected failures must not undo a committed
+        # booking or leak provider replies, recipients, or message content.
+        logger.error(
+            'Booking email post-commit dispatch failed: email_event_id=%s exception_type=%s.',
+            email_id,
+            type(exc).__name__,
+        )
 
 
 def queue_booking_submitted(booking):
@@ -79,7 +105,20 @@ def queue_booking_submitted(booking):
 
 
 def queue_booking_approved(booking):
-    enqueue_booking_email(booking, BookingEmail.EVENT_APPROVED, event_key=f'booking:{booking.id}:approved:{uuid4().hex}')
+    # Reuse events written by the previous random-key implementation during
+    # rollout, as well as events created by repeated status transitions.
+    existing = BookingEmail.objects.filter(
+        booking=booking,
+        event_type=BookingEmail.EVENT_APPROVED,
+    ).order_by('id').first()
+    if existing:
+        _dispatch_email_after_commit(existing)
+        return existing
+    return enqueue_booking_email(
+        booking,
+        BookingEmail.EVENT_APPROVED,
+        event_key=f'booking:{booking.id}:approved',
+    )
 
 
 def queue_booking_completed(booking):
@@ -99,24 +138,7 @@ def queue_booking_completed(booking):
             BookingEmail.EVENT_COMPLETED,
             event_key=f'booking:{booking.id}:completed',
         )
-    if email and getattr(settings, 'EMAIL_DELIVERY_ENABLED', False):
-        # The booking write has already committed when this runs. SMTP failures
-        # stay in the retryable BookingEmail outbox and never roll back completion.
-        transaction.on_commit(lambda email_id=email.pk: _deliver_completed_booking_email(email_id))
     return email
-
-
-def _deliver_completed_booking_email(email_id):
-    try:
-        process_booking_email(email_id)
-    except Exception as exc:
-        # Do not include exception text: SMTP errors can contain provider replies
-        # and credential details. The queued event remains available to the worker.
-        logger.error(
-            'Completion email dispatch failed after booking commit: email_event_id=%s exception_type=%s.',
-            email_id,
-            type(exc).__name__,
-        )
 
 
 def schedule_booking_reminder(booking):
@@ -186,7 +208,7 @@ def build_email_content(email_event):
 
 @transaction.atomic
 def process_booking_email(email_id, *, now=None):
-    from users.email_delivery import EmailDeliveryError, send_transactional_email
+    from users.email_delivery import send_transactional_email
 
     now = now or timezone.now()
     event = BookingEmail.objects.select_for_update().select_related('booking').get(pk=email_id)
@@ -213,24 +235,34 @@ def process_booking_email(email_id, *, now=None):
     event.attempt_count += 1
     event.last_error = ''
     event.save(update_fields=['attempt_count', 'last_error', 'updated_at'])
-    subject, text_body, html_body = build_email_content(event)
     try:
+        subject, text_body, html_body = build_email_content(event)
         send_transactional_email(
             event.recipient,
             subject,
             text_body,
             html_message=html_body,
         )
-    except EmailDeliveryError as exc:
+    except Exception as exc:
         delays = (60, 300, 1800, 7200)
-        event.last_error = str(exc)[:500]
+        # Keep provider replies and exception text out of database records.
+        event.last_error = f'Delivery failed ({type(exc).__name__}).'
         if event.attempt_count >= 5:
             event.status = BookingEmail.STATUS_FAILED
             event.next_retry_at = None
         else:
             event.next_retry_at = now + timedelta(seconds=delays[min(event.attempt_count - 1, len(delays) - 1)])
         event.save(update_fields=['status', 'next_retry_at', 'last_error', 'updated_at'])
-        logger.error('Booking email failed: booking_id=%s event=%s attempt=%s exception_type=%s', event.booking_id, event.event_type, event.attempt_count, type(exc).__name__)
+        logger.error(
+            'Booking email delivery failed: email_event_id=%s booking_id=%s event=%s attempt=%s max_attempts=5 exception_type=%s retry_at=%s terminal=%s.',
+            event.pk,
+            event.booking_id,
+            event.event_type,
+            event.attempt_count,
+            type(exc).__name__,
+            event.next_retry_at.isoformat() if event.next_retry_at else '',
+            event.status == BookingEmail.STATUS_FAILED,
+        )
         return event.status
     event.status = BookingEmail.STATUS_SENT
     event.sent_at = now
@@ -244,6 +276,11 @@ def process_due_booking_emails(limit=100, *, now=None):
     due = Q(next_retry_at__lte=now) | Q(next_retry_at__isnull=True, scheduled_for__lte=now)
     if not getattr(settings, 'EMAIL_DELIVERY_ENABLED', False):
         queued = BookingEmail.objects.filter(status=BookingEmail.STATUS_QUEUED).filter(due).count()
+        if queued:
+            logger.warning(
+                'Booking email delivery disabled: due_events=%s EMAIL_DELIVERY_ENABLED=false.',
+                queued,
+            )
         return {'queued': queued, 'sent': 0, 'failed': 0, 'cancelled': 0}
     due_ids = list(BookingEmail.objects.filter(status=BookingEmail.STATUS_QUEUED).filter(due)
                    .order_by('next_retry_at', 'scheduled_for', 'id').values_list('id', flat=True)[:limit])

@@ -51,14 +51,22 @@ the blueprint or logs. The startup settings reject enabling TLS and SSL
 together. Confirm that the sender address is allowed by the SMTP account.
 
 Password reset email is sent from the web request. Booking submission,
-approval, and reminder emails remain queued for
-`manage.py process_notification_deliveries`; booking completion emails make an
-immediate post-commit SMTP attempt and remain in that same outbox for retry if
-delivery fails. A scheduled job or background worker is still needed for queued
-emails and retries. Installing that worker does not enable delivery by itself;
-it also needs the SMTP variables and `EMAIL_DELIVERY_ENABLED=true`. SMTP connection failures are logged with host,
+payment approval, and session completion emails make a post-commit SMTP attempt
+from the durable booking email outbox. 24-hour reminders and retries remain
+queued for `manage.py process_booking_emails`. Configure a scheduled job or
+background worker to run that command regularly
+(for example, every minute) so reminders and transient failures are delivered.
+The generic reminder command sends the SMS/push reminder pipeline; email is
+suppressed there to avoid a second email path for the same reminder. Installing
+that worker does not enable delivery by itself; it also needs the SMTP variables and
+`EMAIL_DELIVERY_ENABLED=true`. SMTP connection failures are logged with host,
 port, TLS/SSL mode, exception type, and response code where available; the
 exception text, credentials, recipient, and message body are not logged.
+
+Booking email delivery retries transient failures after 1 minute, 5 minutes,
+30 minutes, and 2 hours, then marks the event failed after the fifth attempt.
+Lifecycle email event keys are stable per booking and event type, so repeated
+booking/payment updates do not create duplicate lifecycle messages.
 
 ## Load test requirements
 

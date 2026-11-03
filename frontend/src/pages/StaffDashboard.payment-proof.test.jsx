@@ -233,6 +233,44 @@ test('Staff Live Inventory opens dated product sales and wastage records', async
   });
 });
 
+test('Staff Live Inventory shows loading until its inventory request completes', async () => {
+  let resolveInventoryRequest;
+  const inventoryRequest = new Promise(resolve => { resolveInventoryRequest = resolve; });
+  getCached.mockImplementation(url => url === '/api/inventory/ingredients/'
+    ? inventoryRequest
+    : Promise.resolve({ data: [] }));
+
+  render(<StaffDashboard />);
+  expect(await screen.findByRole('heading', { name: 'POS Terminal' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Live Inventory' }));
+  expect(await screen.findByRole('heading', { name: 'Loading inventory' })).toBeInTheDocument();
+
+  await act(async () => {
+    resolveInventoryRequest({ data: [] });
+  });
+  expect(await screen.findByRole('heading', { name: 'No ingredients found' })).toBeInTheDocument();
+});
+
+test('Staff Live Inventory shows a recoverable error and retries the inventory request', async () => {
+  let failInventoryRequests = true;
+  getCached.mockImplementation(url => {
+    if (url === '/api/inventory/ingredients/' && failInventoryRequests) {
+      return Promise.reject(new Error('inventory request failed'));
+    }
+    return Promise.resolve({ data: [] });
+  });
+
+  render(<StaffDashboard />);
+  expect(await screen.findByRole('heading', { name: 'POS Terminal' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Live Inventory' }));
+  expect(await screen.findByRole('heading', { name: 'Inventory unavailable' })).toBeInTheDocument();
+  expect(screen.getByText('Connection Error')).toBeInTheDocument();
+
+  failInventoryRequests = false;
+  fireEvent.click(screen.getByRole('button', { name: 'Reconnect Dashboard' }));
+  expect(await screen.findByRole('heading', { name: 'No ingredients found' })).toBeInTheDocument();
+});
+
 test('Staff POS cart displays and edits items, completes checkout, and records wastage and refund', async () => {
   const products = [
     { id: 1, name: 'Iced Latte', price: '120.00', stock_level: 20, is_active: true, is_cafe_item: false },

@@ -1487,6 +1487,7 @@ export default function StaffDashboard() {
   const sortedInventory = sortRows(visibleInventory, inventorySort);
   const pagedInventory = paginateRows(sortedInventory, inventoryPage, inventoryRowsPerPage);
   const pagedProductSalesInventory = paginateRows(productSalesInventory, productSalesPage, productSalesRowsPerPage);
+  const inventoryLoading = Boolean(loadingResources.inventory);
   const inventoryCounts = inventoryStatuses.reduce((counts, status) => {
     if (status.key === 'ALL') {
       counts.ALL = ingredients.length;
@@ -1542,27 +1543,28 @@ export default function StaffDashboard() {
     const tableArea = isProductSales ? productSalesTableAreaRef.current : inventoryTableAreaRef.current;
     if (!tableArea) return undefined;
     const setRowsPerPage = isProductSales ? setProductSalesRowsPerPage : setInventoryRowsPerPage;
-    const measureRows = () => {
+    const measureInventoryTable = () => {
       const table = tableArea.querySelector('table');
       const headerHeight = table?.querySelector('thead')?.getBoundingClientRect().height || 0;
-      const rowHeights = Array.from(table?.querySelectorAll('tbody tr') || [])
-        .map(row => row.getBoundingClientRect().height);
       const nextPageSize = calculateSalesRowsPerPage({
         availableHeight: tableArea.clientHeight,
         headerHeight,
-        rowHeights,
+        // Use a stable row estimate. Measuring the currently rendered rows
+        // makes page size depend on itself and can cause ResizeObserver to
+        // alternate page sizes when data or an empty state changes.
+        defaultRowHeight: 54,
       });
       setRowsPerPage(current => (current === nextPageSize ? current : nextPageSize));
     };
-    measureRows();
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureRows) : null;
+    measureInventoryTable();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureInventoryTable) : null;
     observer?.observe(tableArea);
-    window.addEventListener('resize', measureRows);
+    window.addEventListener('resize', measureInventoryTable);
     return () => {
       observer?.disconnect();
-      window.removeEventListener('resize', measureRows);
+      window.removeEventListener('resize', measureInventoryTable);
     };
-  }, [activeTab, inventorySection, inventoryPage, productSalesPage, inventoryRowsPerPage, productSalesRowsPerPage, invSearch, inventoryFilter, inventorySort, visibleInventory.length, productSalesInventory]);
+  }, [activeTab, inventorySection]);
   const filteredBookingPayments = bookingPayments.filter(payment => (
     paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
   ));
@@ -2304,8 +2306,12 @@ export default function StaffDashboard() {
                           </>
                         )}
                         emptyIcon={Package}
-                        emptyTitle="No ingredients found"
-                        emptyDescription="Try a different search or status filter."
+                        emptyTitle={inventoryLoading ? 'Loading inventory' : error ? 'Inventory unavailable' : 'No ingredients found'}
+                        emptyDescription={inventoryLoading
+                          ? 'Inventory data is being refreshed.'
+                          : error
+                            ? 'Reconnect to retry loading ingredient records.'
+                            : 'Try a different search or status filter.'}
                         minWidth={980}
                         actionWidth="w-[176px]"
                         containerClassName="h-full"
@@ -2337,8 +2343,12 @@ export default function StaffDashboard() {
                         ]}
                         rows={pagedProductSalesInventory}
                         emptyIcon={Package}
-                        emptyTitle="No active products"
-                        emptyDescription="Add café or studio products to track serving counts."
+                        emptyTitle={inventoryLoading ? 'Loading sales data' : error ? 'Sales data unavailable' : 'No active products'}
+                        emptyDescription={inventoryLoading
+                          ? 'Today’s product activity is being refreshed.'
+                          : error
+                            ? 'Reconnect to retry loading product activity.'
+                            : 'Add café or studio products to track serving counts.'}
                         minWidth={980}
                         containerClassName="h-full"
                         emptyStateClassName="h-full !py-4"
