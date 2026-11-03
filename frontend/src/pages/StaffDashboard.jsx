@@ -241,7 +241,6 @@ export default function StaffDashboard() {
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [transactionId, setTransactionId] = useState('');
   const [amountReceived, setAmountReceived] = useState('');
-  const [discountValue, setDiscountValue] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [showCheckoutLoading, setShowCheckoutLoading] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState(null);
@@ -594,14 +593,9 @@ export default function StaffDashboard() {
   const roundMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
   const getCartSubtotal = () => roundMoney(cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0));
   const getCartDiscountAmount = () => {
-    const subtotal = getCartSubtotal();
-    const value = Number(discountValue || 0);
-    const lineDiscount = roundMoney(cart.reduce((sum, item) => sum + roundMoney(Number(item.price || 0) * item.quantity * Number(item.discountValue || 0) / 100), 0));
-    const remainingSubtotal = Math.max(subtotal - lineDiscount, 0);
-    const orderDiscount = Number.isFinite(value) && value > 0
-      ? Math.min(roundMoney(remainingSubtotal * Math.min(value, 100) / 100), remainingSubtotal)
-      : 0;
-    return roundMoney(lineDiscount + orderDiscount);
+    return roundMoney(cart.reduce((sum, item) => (
+      sum + roundMoney(Number(item.price || 0) * item.quantity * Number(item.discountValue || 0) / 100)
+    ), 0));
   };
   const getCartTotal = () => Math.max(roundMoney(getCartSubtotal() - getCartDiscountAmount()), 0);
   const getReceiptPayment = (order) => order?.payments?.[0] || null;
@@ -717,17 +711,11 @@ export default function StaffDashboard() {
     if (cart.length === 0 || checkoutInFlightRef.current) return;
     const total = getCartTotal();
     const cashReceived = paymentMethod === 'CASH' ? Number(amountReceived) : total;
-    const discountNumber = Number(discountValue || 0);
 
     if (paymentMethod === 'CASH' && (!amountReceived || cashReceived < total)) {
       alert('Amount received must be equal to or greater than the total.');
       return;
     }
-    if (!Number.isFinite(discountNumber) || ![0, ...DISCOUNT_OPTIONS].includes(discountNumber)) {
-      alert('Select a valid discount.');
-      return;
-    }
-
     const confirmed = await confirm({
       title: 'Complete Sale',
       message: `Complete this ${paymentMethod} sale for ${formatReceiptCurrency(total)}?`,
@@ -751,7 +739,6 @@ export default function StaffDashboard() {
         customer_name: customerName.trim() || 'Walk-in Customer',
         order_type: 'WALK_IN',
         print_receipt: false,
-        discount: { type: 'PERCENT', value: discountNumber },
         payment: { amount: cashReceived, method: paymentMethod, transaction_id: transactionId },
         idempotency_key: checkoutIdempotencyKeyRef.current,
       };
@@ -795,7 +782,6 @@ export default function StaffDashboard() {
       setCustomerName('Walk-in Customer');
       setTransactionId('');
       setAmountReceived('');
-      setDiscountValue('');
       checkoutIdempotencyKeyRef.current = '';
       alert('Sale completed successfully.');
     } catch (err) {
@@ -1904,45 +1890,6 @@ export default function StaffDashboard() {
                           <div className="flex justify-between text-xs font-bold text-espresso/60">
                             <span>Subtotal</span>
                             <span>{formatReceiptCurrency(getCartSubtotal())}</span>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-[10px] uppercase font-bold text-espresso/50">Discount</p>
-                            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDiscountValue('');
-                                }}
-                                className={`text-xs font-bold py-2 rounded-xl border transition-all ${
-                                  !Number(discountValue || 0)
-                                    ? 'bg-espresso text-cream border-espresso shadow-sm'
-                                    : 'border-espresso/10 text-espresso/60 hover:border-espresso/30'
-                                }`}
-                                aria-pressed={!Number(discountValue || 0)}
-                              >
-                                No Discount
-                              </button>
-                              {DISCOUNT_OPTIONS.map(value => {
-                                const isActive = Number(discountValue || 0) === value;
-                                return (
-                                <button
-                                  key={value}
-                                  type="button"
-                                  onClick={() => {
-                                    setDiscountValue(String(value));
-                                  }}
-                                  className={`text-xs font-bold py-2 rounded-xl border transition-all ${
-                                    isActive
-                                      ? 'bg-espresso text-cream border-espresso shadow-sm'
-                                      : 'border-espresso/10 text-espresso/60 hover:border-espresso/30'
-                                  }`}
-                                  aria-pressed={isActive}
-                                >
-                                  {value}%
-                                </button>
-                                );
-                              })}
-                            </div>
                           </div>
                           <div className="flex justify-between text-xs font-bold text-espresso/60">
                             <span>Discount Applied</span>

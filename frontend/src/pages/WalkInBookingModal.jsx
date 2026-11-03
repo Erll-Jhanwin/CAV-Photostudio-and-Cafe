@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, Check, Clock, Printer, UserPlus } from 'lucide-react';
-import client, { getApiErrorMessage } from '../api/client';
+import client, { getApiErrorMessage, getCached } from '../api/client';
 import { Button } from '../components/ui/Button';
 import { Input, Select, Textarea } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
@@ -35,7 +35,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
     if (!open) return;
     let active = true;
     setLoadingServices(true);
-    client.get('/api/bookings/services/')
+    getCached('/api/bookings/services/', {}, { maxAge: 60_000 })
       .then(({ data }) => {
         if (!active) return;
         const list = Array.isArray(data) ? data : data?.results || [];

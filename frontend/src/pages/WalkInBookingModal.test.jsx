@@ -7,6 +7,9 @@ jest.mock('../api/client', () => ({
   __esModule: true,
   default: { get: jest.fn(), post: jest.fn() },
   getApiErrorMessage: (_error, fallback) => fallback,
+  getCached: () => Promise.resolve({ data: [{
+    id: 2, name: 'Studio Portrait', packages: [{ id: 3, name: 'Portrait Session', price: '1000.00', inclusions: 'One portrait' }],
+  }] }),
 }));
 
 test('walk-in success offers two receipt copies and reprinting never resubmits booking or payment', async () => {

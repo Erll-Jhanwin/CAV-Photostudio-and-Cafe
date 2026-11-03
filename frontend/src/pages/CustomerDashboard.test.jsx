@@ -32,7 +32,7 @@ beforeEach(() => {
   URL.createObjectURL = jest.fn(() => 'blob:test');
   URL.revokeObjectURL = jest.fn();
   mockConfirm.mockResolvedValue(true);
-  getCached.mockResolvedValue({ data: [] });
+  getCached.mockImplementation(url => Promise.resolve({ data: url === '/api/bookings/services/' ? [service] : [] }));
   client.get.mockImplementation((url, options) => Promise.resolve({ data: url === '/api/bookings/payment-methods/'
     ? { methods: [{ code: 'GCASH', label: 'GCash', qr_url: '/gcash-qr.png', configured: true }] }
     : url === '/api/bookings/services/' ? [service]

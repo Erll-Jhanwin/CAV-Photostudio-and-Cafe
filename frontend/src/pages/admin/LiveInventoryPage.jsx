@@ -16,7 +16,7 @@ const inventoryStatuses = [
 
 const formatCurrency = value => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
-export default function LiveInventoryPage({ ingredients = [], productSalesInventory = [], onRefresh, loading = false }) {
+export default function LiveInventoryPage({ ingredients = [], productSalesInventory = [], onRefresh, loading = false, error = '' }) {
   const [section, setSection] = useState('management');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -55,8 +55,10 @@ export default function LiveInventoryPage({ ingredients = [], productSalesInvent
     const measure = () => {
       const table = area.querySelector('table');
       const headerHeight = table?.querySelector('thead')?.getBoundingClientRect().height || 0;
-      const rowHeights = Array.from(table?.querySelectorAll('tbody tr') || []).map(row => row.getBoundingClientRect().height);
-      const nextSize = calculateSalesRowsPerPage({ availableHeight: area.clientHeight, headerHeight, rowHeights, defaultRowHeight: 54 });
+      // Measuring the rendered rows makes the result depend on the current page
+      // size. Empty-state rows also stretch to fill the table, which can cause
+      // ResizeObserver to alternate page sizes and repeatedly rerender.
+      const nextSize = calculateSalesRowsPerPage({ availableHeight: area.clientHeight, headerHeight, defaultRowHeight: 54 });
       setPageSize(current => current === nextSize ? current : nextSize);
     };
     measure();
@@ -67,7 +69,7 @@ export default function LiveInventoryPage({ ingredients = [], productSalesInvent
       observer?.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [section, inventoryPage, salesPage, inventoryPageSize, salesPageSize, sortedIngredients, productSalesInventory]);
+  }, [section]);
 
   useLayoutEffect(() => {
     setInventoryPage(page => Math.min(page, Math.max(1, Math.ceil(visibleIngredients.length / inventoryPageSize))));
@@ -85,6 +87,17 @@ export default function LiveInventoryPage({ ingredients = [], productSalesInvent
         </div>
         <Button variant="outline" size="sm" icon={RefreshCw} loading={loading} onClick={onRefresh}>Refresh Inventory</Button>
       </div>
+
+      {error && (
+        <div role="alert" className="flex shrink-0 items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold">{error}</p>
+            <p className="mt-1 text-[11px] text-red-700/80">Inventory data could not be loaded. Retry when the connection is available.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={onRefresh} loading={loading} className="shrink-0 border-red-200 bg-white text-red-800 hover:bg-red-100">Retry Inventory</Button>
+        </div>
+      )}
 
       <div role="tablist" aria-label="Live Inventory sections" className="flex shrink-0 gap-2 overflow-x-auto border-b border-espresso/10">
         {[
@@ -127,7 +140,7 @@ export default function LiveInventoryPage({ ingredients = [], productSalesInvent
                 { key: 'suggested_action', label: 'Suggested action' },
                 { key: 'expiration_date', label: 'Expiry', render: item => <>{item.expiration_date || 'N/A'}{item.days_until_expiry != null && <span className="block text-[10px] text-espresso/40">{item.days_until_expiry} day(s)</span>}</> },
                 { key: 'storage_location', label: 'Storage', render: item => item.storage_location || 'N/A' },
-              ]} rows={pagedIngredients} sort={sort} onSort={toggleSort} emptyIcon={Package} emptyTitle={loading ? 'Loading inventory' : 'No ingredients found'} emptyDescription={loading ? 'Inventory data is being refreshed.' : 'Try a different search or status filter.'} minWidth={980} containerClassName="h-full" emptyStateClassName="h-full !py-4" showEmptyTable />
+              ]} rows={pagedIngredients} sort={sort} onSort={toggleSort} emptyIcon={Package} emptyTitle={loading ? 'Loading inventory' : error ? 'Inventory unavailable' : 'No ingredients found'} emptyDescription={loading ? 'Inventory data is being refreshed.' : error ? 'Retry loading inventory to see ingredient records.' : 'Try a different search or status filter.'} minWidth={980} containerClassName="h-full" emptyStateClassName="h-full !py-4" showEmptyTable />
             </div>
             <PaginationControls page={inventoryPage} setPage={setInventoryPage} total={visibleIngredients.length} pageSize={inventoryPageSize} alwaysVisible compact />
           </div>
@@ -145,7 +158,7 @@ export default function LiveInventoryPage({ ingredients = [], productSalesInvent
                 { key: 'ending_stock', label: 'Ending', align: 'right' },
                 { key: 'revenue', label: 'Net revenue', align: 'right', render: row => formatCurrency(row.revenue) },
                 { key: 'profit_loss', label: 'Profit / loss', align: 'right', render: row => <span className={Number(row.profit_loss) < 0 ? 'text-red-700' : 'text-emerald-700'}>{formatCurrency(row.profit_loss)}</span> },
-              ]} rows={pagedSales} emptyIcon={Package} emptyTitle={loading ? 'Loading sales data' : 'No active products'} emptyDescription={loading ? 'Today’s product activity is being refreshed.' : 'Add café or studio products to track serving counts.'} minWidth={900} containerClassName="h-full" emptyStateClassName="h-full !py-4" showEmptyTable />
+              ]} rows={pagedSales} emptyIcon={Package} emptyTitle={loading ? 'Loading sales data' : error ? 'Sales data unavailable' : 'No active products'} emptyDescription={loading ? 'Today’s product activity is being refreshed.' : error ? 'Retry loading inventory to see product activity.' : 'Add café or studio products to track serving counts.'} minWidth={900} containerClassName="h-full" emptyStateClassName="h-full !py-4" showEmptyTable />
             </div>
             <PaginationControls page={salesPage} setPage={setSalesPage} total={productSalesInventory.length} pageSize={salesPageSize} alwaysVisible compact />
           </Card>

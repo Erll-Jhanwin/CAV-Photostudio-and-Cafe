@@ -31,8 +31,9 @@ from booking.serializers import (
 )
 from booking.availability import (
     ACTIVE_BOOKING_STATUSES,
-    get_available_slots,
     get_available_slots_from_data,
+    get_existing_bookings,
+    get_studio_unavailable_reason,
     is_photo_service_event_package,
     is_studio_session_package,
     is_slot_available,
@@ -142,7 +143,19 @@ class BookingAvailabilityView(views.APIView):
                 day = parse_date_value(day_param)
             except ValueError:
                 return Response({"date": "Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
-            slots = get_available_slots(package.id, day, exclude_booking_id=exclude_booking_id)
+            existing_bookings = list(get_existing_bookings(day, exclude_booking_id=exclude_booking_id))
+            studio_notice = (
+                get_studio_unavailable_reason(day, existing_bookings)
+                if is_studio_session_package(package)
+                else ''
+            )
+            slots = get_available_slots_from_data(
+                package,
+                day,
+                existing_bookings,
+                exclude_booking_id=exclude_booking_id,
+                studio_unavailable_reason=studio_notice,
+            )
             studio_notice = next((slot.get('notice') for slot in slots if slot.get('status') == 'STUDIO_UNAVAILABLE' and slot.get('notice')), '')
             return Response({
                 "package": package.id,

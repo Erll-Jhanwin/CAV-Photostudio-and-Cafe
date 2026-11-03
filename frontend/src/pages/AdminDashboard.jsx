@@ -513,6 +513,7 @@ export default function AdminDashboard() {
   const [staffAccessProfiles, setStaffAccessProfiles] = useState([]);
   const [inventoryIngredients, setInventoryIngredients] = useState([]);
   const [productSalesInventory, setProductSalesInventory] = useState([]);
+  const [inventoryError, setInventoryError] = useState('');
   const [faqs, setFaqs] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
@@ -645,6 +646,7 @@ export default function AdminDashboard() {
     }
     adminTabLoadInFlightRef.current.add(tab);
     setTabLoading(current => ({ ...current, [tab]: true }));
+    if (tab === 'inventory') setInventoryError('');
     try {
       if (tab === 'calendar' || tab === 'live') {
         const [bookingsRes, unavailableRes] = await Promise.all([
@@ -680,7 +682,9 @@ export default function AdminDashboard() {
         setProductSalesInventory(normalizeRowsById(productSalesRes.data, row => row?.product_id || row?.product_name));
       }
     } catch (error) {
-      setDataError(getApiErrorMessage(error, `Could not load ${tab} data.`));
+      const message = getApiErrorMessage(error, `Could not load ${tab} data.`);
+      if (tab === 'inventory') setInventoryError(message);
+      else setDataError(message);
     } finally {
       adminTabLoadInFlightRef.current.delete(tab);
       setTabLoading(current => ({ ...current, [tab]: false }));
@@ -1713,11 +1717,11 @@ export default function AdminDashboard() {
 
           {activeTab === 'completed-bookings' && <CompletedBookingsManager />}
 
-          {dataError && activeTab !== 'analytics' && (
+          {dataError && activeTab !== 'analytics' && activeTab !== 'inventory' && (
             <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-2xl mb-6 flex items-start gap-3 shadow-sm" role="alert">
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
               <p className="flex-1 text-xs font-semibold">{dataError}</p>
-              <Button variant="outline" size="sm" onClick={() => fetchData()} className="border-red-200 bg-white text-red-800 hover:bg-red-100">Retry</Button>
+              <Button variant="outline" size="sm" onClick={() => loadAdminTabData(activeTab, { force: true })} className="border-red-200 bg-white text-red-800 hover:bg-red-100">Retry</Button>
             </div>
           )}
 
@@ -3194,6 +3198,7 @@ export default function AdminDashboard() {
               ingredients={inventoryIngredients}
               productSalesInventory={productSalesInventory}
               loading={Boolean(tabLoading.inventory)}
+              error={inventoryError}
               onRefresh={() => loadAdminTabData('inventory', { force: true })}
             />
           )}

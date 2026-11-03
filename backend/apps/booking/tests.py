@@ -147,6 +147,27 @@ class BookingAvailabilityPolicyTests(TestCase):
         self.assertEqual(day['status'], 'STUDIO_UNAVAILABLE')
         self.assertEqual(day['notice'], 'Unavailable due to an event photoshoot.')
 
+    def test_daily_availability_reuses_package_and_booking_data(self):
+        Booking.objects.create(
+            customer=self.customer,
+            package=self.event_package,
+            scheduled_date=self.future_day,
+            scheduled_time='09:00',
+            status='PENDING',
+        )
+        client = APIClient()
+        client.force_authenticate(self.customer)
+
+        with CaptureQueriesContext(connection) as queries:
+            response = client.get('/api/bookings/availability/', {
+                'package': self.event_package.id,
+                'date': self.future_day.isoformat(),
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(len(queries), 3, [query['sql'] for query in queries])
+        self.assertEqual(response.data['slots'][0]['status'], 'BOOKED')
+
 
 class BookingWriteSafetyTests(TestCase):
     def setUp(self):

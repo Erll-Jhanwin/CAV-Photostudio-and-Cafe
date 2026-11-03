@@ -745,7 +745,7 @@ export default function CustomerDashboard() {
         });
 
       const results = await Promise.allSettled([
-        client.get('/api/bookings/services/', { timeout: 12000 }),
+        getCached('/api/bookings/services/', { timeout: 12000 }, { maxAge: 60_000 }),
         client.get('/api/bookings/', { timeout: 12000 }),
       ]);
       if (requestSeq !== dashboardFetchSeqRef.current) return;

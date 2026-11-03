@@ -295,6 +295,9 @@ test('Staff POS cart displays and edits items, completes checkout, and records w
   const cart = screen.getByRole('list', { name: 'Cart items' });
   const latteRow = within(cart).getByRole('listitem', { name: /Iced Latte/ });
   expect(within(latteRow).getByText(/120\.00 each/)).toBeInTheDocument();
+  fireEvent.change(within(latteRow).getByLabelText('Iced Latte discount'), { target: { value: '10' } });
+  expect(screen.getByText('-PHP 12.00')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Complete Sale - PHP 188.00' })).toBeInTheDocument();
   fireEvent.click(within(latteRow).getByRole('button', { name: 'Increase Iced Latte quantity' }));
   expect(within(latteRow).getByLabelText('Iced Latte quantity')).toHaveTextContent('2');
   fireEvent.click(within(latteRow).getByRole('button', { name: 'Decrease Iced Latte quantity' }));
@@ -311,6 +314,7 @@ test('Staff POS cart displays and edits items, completes checkout, and records w
     customer_name: 'Taylor Reyes',
     payment: expect.objectContaining({ amount: 100, method: 'CASH' }),
   })));
+  expect(client.post.mock.calls.find(([url]) => url === '/api/pos/orders/')[1]).not.toHaveProperty('discount');
   expect(await screen.findByText('Your cart is empty')).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Wastage' }));
