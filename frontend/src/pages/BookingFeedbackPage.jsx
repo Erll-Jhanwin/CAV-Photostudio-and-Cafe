@@ -18,7 +18,7 @@ export default function BookingFeedbackPage() {
 
   useEffect(() => {
     if (!token) {
-      setError('This feedback link is incomplete. Please use the link from your CAV email.');
+      setError('This feedback link is incomplete. Open the link in your CAV email.');
       setLoading(false);
       return;
     }
@@ -35,7 +35,7 @@ export default function BookingFeedbackPage() {
     event.preventDefault();
     setError('');
     if (rating < 1 || rating > 5) {
-      setError('Please choose a satisfaction rating.');
+      setError('Choose a satisfaction rating.');
       return;
     }
     setSaving(true);
@@ -43,7 +43,7 @@ export default function BookingFeedbackPage() {
       await client.post('/api/bookings/reviews/survey/', { token, rating, feedback: feedback.trim() });
       setSubmitted(true);
     } catch (err) {
-      setError(err.response?.data?.detail || err.response?.data?.rating || 'We could not save your response. Please try again.');
+      setError(err.response?.data?.detail || err.response?.data?.rating || 'We couldn’t save your response. Try again.');
     } finally {
       setSaving(false);
     }
@@ -57,7 +57,7 @@ export default function BookingFeedbackPage() {
           <div className="text-center">
             <CheckCircle className="mx-auto mb-4 h-12 w-12 text-gold-dark" aria-hidden="true" />
             <h1 className="text-2xl font-black">Thank you for your feedback</h1>
-            <p className="mt-2 text-sm leading-relaxed text-espresso/65">Your response has been saved for our team to review.</p>
+            <p className="mt-2 text-sm leading-relaxed text-espresso/65">Our team will review your response.</p>
             <Link to="/" className="mt-6 inline-block text-sm font-bold text-gold-dark underline">Return to CAV</Link>
           </div>
         ) : error && !booking ? (

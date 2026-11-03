@@ -46,7 +46,7 @@ export default function CompletedBookingsManager() {
       setCount(Number(response.data?.count) || 0);
       setOffset(nextOffset);
     } catch (error) {
-      setLoadError(getApiErrorMessage(error, 'Completed bookings could not be loaded.'));
+      setLoadError(getApiErrorMessage(error, 'Couldn’t load completed bookings.'));
     } finally {
       setLoading(false);
     }
@@ -138,7 +138,7 @@ export default function CompletedBookingsManager() {
       setUploadProgress(100);
       setUploadSuccess(added.length === 1 ? 'Attachment delivered to the customer.' : `${added.length} photos delivered to the customer.`);
     } catch (error) {
-      setUploadError(getApiErrorMessage(error, 'The photo attachment could not be uploaded. Please try again.'));
+      setUploadError(getApiErrorMessage(error, 'Couldn’t upload the photo. Try again.'));
     } finally {
       setUploadingBookingId(null);
     }
@@ -204,7 +204,7 @@ export default function CompletedBookingsManager() {
                       {editing ? 'Close' : attachments.length ? 'Add Photos' : 'Attach Photos'}
                     </Button>
                   </div>
-                  {!customerAccountExists && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">This session is not linked to a customer account, so it cannot appear in My Photos.</p>}
+                  {!customerAccountExists && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">This session isn’t linked to a customer account, so it won’t appear in My Photos.</p>}
 
                   {editing && customerAccountExists && (
                     <div className="mt-4 space-y-4 border-t border-espresso/[0.08] pt-4">
@@ -239,7 +239,7 @@ export default function CompletedBookingsManager() {
                         <div className="space-y-1.5" role="status" aria-label={`Uploading photos ${uploadProgress}%`}>
                           <div className="flex justify-between text-[10px] font-bold text-espresso/55"><span>Uploading securely</span><span>{uploadProgress}%</span></div>
                           <div className="h-2 overflow-hidden rounded-full bg-cream"><div className="h-full rounded-full bg-gold transition-[width] duration-200" style={{ width: `${uploadProgress}%` }} /></div>
-                          <div className="flex items-center gap-2 text-[10px] text-espresso/45"><LoadingSpinner size="sm" />Please keep this page open while files upload.</div>
+                          <div className="flex items-center gap-2 text-[10px] text-espresso/45"><LoadingSpinner size="sm" />Keep this page open while files upload.</div>
                         </div>
                       )}
                       {uploadError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800">{uploadError}</p>}

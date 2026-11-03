@@ -144,6 +144,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     paid_at = serializers.DateTimeField(required=False, default=timezone.now)
     verified_by_details = UserSerializer(source='verified_by', read_only=True)
     required_down_payment = serializers.SerializerMethodField()
+    verification_history = serializers.SerializerMethodField()
     idempotency_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
@@ -152,7 +153,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             'id', 'booking', 'booking_details', 'reference_number', 'amount', 'method', 'method_label',
             'paid_at', 'receipt', 'receipt_url', 'status', 'verified_by',
             'verified_by_details', 'verified_at', 'admin_note',
-            'required_down_payment', 'idempotency_key', 'created_at', 'updated_at'
+            'required_down_payment', 'verification_history', 'idempotency_key', 'created_at', 'updated_at'
         ]
         read_only_fields = [
             'status', 'verified_by', 'verified_at', 'admin_note',
@@ -191,10 +192,18 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             'customer_profile_picture_url': UserSerializer(booking.customer, context=self.context).data.get('profile_picture_url', '') if booking.customer_id else '',
             'package_name': booking.package.name,
             'package_price': booking.package.price,
+            'package_description': booking.package.description,
+            'package_inclusions': booking.package.inclusions,
             'total_amount': total_amount,
             'amount_paid': amount_paid,
             'remaining_balance': max(Decimal('0.00'), total_amount - amount_paid),
             'service_name': booking.package.service.name,
+            'status': booking.status,
+            'is_walk_in': booking.is_walk_in,
+            'notes': booking.notes or '',
+            'items': booking.items or [],
+            'cancellation_reason': booking.cancellation_reason,
+            'created_at': booking.created_at,
         }
 
     def get_method_label(self, obj):
@@ -210,6 +219,56 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
 
     def get_required_down_payment(self, obj):
         return MINIMUM_BOOKING_DOWN_PAYMENT
+
+    def get_verification_history(self, obj):
+        from audit.models import AuditLog
+        from django.db.models import Q
+
+        events = AuditLog.objects.filter(
+            Q(metadata__payment_id=obj.pk)
+            | Q(
+                action='BOOKING_PAYMENT_SUBMIT',
+                description=f'Submitted payment #{obj.pk} for booking #{obj.booking_id}.',
+            ),
+            action__in=[
+                'BOOKING_PAYMENT_SUBMIT',
+                'BOOKING_PAYMENT_APPROVED',
+                'BOOKING_PAYMENT_REJECTED',
+                'BOOKING_PAYMENT_VERIFICATION_ISSUE',
+            ],
+        ).order_by('timestamp', 'id')
+        history = [{
+            'id': event.pk,
+            'action': event.action,
+            'description': event.description,
+            'actor_name': event.actor_name or (event.user.get_full_name().strip() or event.user.username if event.user_id else 'System'),
+            'timestamp': event.timestamp,
+            'details': event.metadata,
+        } for event in events]
+        if not any(event['action'] == 'BOOKING_PAYMENT_SUBMIT' for event in history):
+            history.insert(0, {
+                'id': f'submission-{obj.pk}',
+                'action': 'BOOKING_PAYMENT_SUBMIT',
+                'description': f'Submitted payment #{obj.pk} for booking #{obj.booking_id}.',
+                'actor_name': 'Recorded submission',
+                'timestamp': obj.created_at,
+                'details': {'payment_id': obj.pk, 'booking_id': obj.booking_id, 'status': 'PENDING_VERIFICATION'},
+            })
+        if obj.verified_at and not any(event['action'] != 'BOOKING_PAYMENT_SUBMIT' for event in history):
+            status_action = {
+                'APPROVED': 'BOOKING_PAYMENT_APPROVED',
+                'REJECTED': 'BOOKING_PAYMENT_REJECTED',
+            }.get(obj.status)
+            if status_action:
+                history.append({
+                    'id': f'verification-{obj.pk}',
+                    'action': status_action,
+                    'description': f"{obj.status.title()} payment #{obj.pk} for booking #{obj.booking_id}." + (f' Verification issue recorded: {obj.admin_note}' if obj.admin_note else ''),
+                    'actor_name': obj.verified_by.get_full_name().strip() or obj.verified_by.username if obj.verified_by else 'Staff',
+                    'timestamp': obj.verified_at,
+                    'details': {'payment_id': obj.pk, 'booking_id': obj.booking_id, 'status': obj.status, 'admin_note': obj.admin_note},
+                })
+        return history
 
     def validate_receipt(self, value):
         return validate_receipt_upload(value)

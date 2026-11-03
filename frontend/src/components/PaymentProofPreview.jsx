@@ -49,7 +49,7 @@ export default function PaymentProofPreview({ payment }) {
       .catch(requestError => {
         if (!active) return;
         if (requestError?.response?.status === 404) setMissing(true);
-        else setError(getApiErrorMessage(requestError, 'Payment proof could not be loaded.'));
+        else setError(getApiErrorMessage(requestError, 'Payment proof didn’t load.'));
       })
       .finally(() => { if (active) setLoading(false); });
 
@@ -122,7 +122,7 @@ export default function PaymentProofPreview({ payment }) {
               <img
                 src={previewUrl}
                 alt={`Payment proof for booking ${bookingId}`}
-                onError={() => setError('The payment proof image could not be displayed. Try loading it again.')}
+                onError={() => setError('The payment proof image didn’t load. Try again.')}
                 className="mx-auto h-auto max-h-[65vh] object-contain transition-[width] duration-150"
                 style={{ width: `${zoom * 100}%` }}
               />
@@ -139,7 +139,7 @@ export default function PaymentProofPreview({ payment }) {
           </div>
         ) : previewUrl ? (
           <div className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-red-100 bg-red-50 p-6 text-center">
-            <p role="alert" className="text-sm font-semibold text-red-700">This payment proof file type cannot be previewed.</p>
+            <p role="alert" className="text-sm font-semibold text-red-700">Can’t preview this payment proof file type.</p>
             <Button type="button" variant="outline" size="sm" icon={RotateCcw} onClick={retry}>
               Try again
             </Button>

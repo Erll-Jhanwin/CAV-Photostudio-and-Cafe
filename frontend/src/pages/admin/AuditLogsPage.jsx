@@ -186,7 +186,7 @@ export default function AuditLogsPage() {
     const timer = window.setTimeout(() => {
       client.get('/api/audit/logs/', { params: { search, role, module, action, kind, start, end, page, page_size: pageSize } })
         .then(response => { if (active) { setPayload(response.data); setError(''); } })
-        .catch(err => { if (active) setError(getApiErrorMessage(err, 'Could not load audit logs.')); })
+        .catch(err => { if (active) setError(getApiErrorMessage(err, 'Couldn’t load audit logs.')); })
         .finally(() => { if (active) setLoading(false); });
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };

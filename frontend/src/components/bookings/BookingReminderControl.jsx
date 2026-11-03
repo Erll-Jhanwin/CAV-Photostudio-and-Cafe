@@ -38,7 +38,7 @@ export default function BookingReminderControl({ booking }) {
       setSessionTime(response.data?.session_time || String(booking.scheduled_time || '').slice(0, 5));
       setAlreadySent(Boolean(response.data?.already_sent));
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Reminder preview could not be loaded.'));
+      setError(getApiErrorMessage(requestError, 'Couldn’t load the reminder preview.'));
     } finally {
       setLoading(false);
     }
@@ -57,7 +57,7 @@ export default function BookingReminderControl({ booking }) {
       setAlreadySent(true);
       setSuccess(response.data?.created === false ? 'A reminder was already sent for this booking today.' : 'Reminder sent to the customer’s Notifications page.');
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Reminder could not be sent.'));
+      setError(getApiErrorMessage(requestError, 'Couldn’t send the reminder.'));
     } finally {
       setSending(false);
     }

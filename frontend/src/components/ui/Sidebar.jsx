@@ -63,12 +63,12 @@ export function Sidebar({
         last_name: res.data.last_name,
         profile_picture_url: res.data.profile_picture_url,
       });
-      alert(remove ? 'Profile picture removed successfully.' : 'Profile picture updated successfully.');
+      alert(remove ? 'Profile picture removed.' : 'Profile picture updated.');
     } catch (err) {
       const data = err.response?.data;
       const message = data && typeof data === 'object'
         ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
-        : 'Failed to update profile picture.';
+        : 'Couldn’t update profile picture.';
       alert(message);
     } finally {
       setPhotoSaving(false);
@@ -224,7 +224,7 @@ export function Sidebar({
       <Modal
         open={signOutOpen}
         onClose={onSignOutCancel}
-        title="Confirm Sign Out"
+        title="Sign out"
         size="sm"
       >
         <div className="space-y-6 text-center">
@@ -232,9 +232,9 @@ export function Sidebar({
             <LogOut className="w-8 h-8" />
           </div>
           <div className="space-y-2">
-            <p className="text-base font-black text-espresso">Are you sure you want to sign out?</p>
+            <p className="text-base font-black text-espresso">Sign out?</p>
             <p className="text-xs text-espresso/55 leading-relaxed">
-              This will revoke your server session, clear local profile state, and remove cached dashboard data from this browser.
+              You’ll be signed out on this device.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -243,7 +243,7 @@ export function Sidebar({
               onClick={onSignOutCancel}
               className="rounded-2xl"
             >
-              Stay Signed In
+              Stay signed in
             </Button>
             <Button
               variant="danger"
@@ -251,7 +251,7 @@ export function Sidebar({
               onClick={handleConfirmSignOut}
               className="rounded-2xl justify-center gap-2 whitespace-nowrap"
             >
-              Sign Out
+              Sign out
             </Button>
           </div>
         </div>

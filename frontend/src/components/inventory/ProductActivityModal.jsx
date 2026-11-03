@@ -36,7 +36,7 @@ export default function ProductActivityModal({ product, activityType = 'sales', 
     }).then(response => {
       if (!cancelled) setRecords(Array.isArray(response.data) ? response.data : []);
     }).catch(() => {
-      if (!cancelled) setError('Could not load these transaction records. Please close the window and try again.');
+      if (!cancelled) setError('Couldn’t load these transactions. Close this window and try again.');
     }).finally(() => {
       if (!cancelled) setLoading(false);
     });

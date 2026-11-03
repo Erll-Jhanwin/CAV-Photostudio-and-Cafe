@@ -69,7 +69,7 @@ export const syncPushSubscription = async (subscription) => {
       user_agent: navigator.userAgent,
     });
   } catch (error) {
-    throw getPushError(error, 'Could not save this device for push notifications.');
+    throw getPushError(error, 'Couldn’t save this device for push notifications.');
   }
   return subscription;
 };
@@ -83,7 +83,7 @@ export const enablePushNotifications = async () => {
   try {
     configResponse = await client.get('/api/notifications/push/config/');
   } catch (error) {
-    throw getPushError(error, 'Could not check push notification configuration.');
+    throw getPushError(error, 'Couldn’t check push notification settings.');
   }
   const { enabled, public_key: publicKey } = configResponse.data || {};
   if (!enabled || !publicKey) {
@@ -115,7 +115,7 @@ export const enablePushNotifications = async () => {
     if (error?.name === 'NotAllowedError') {
       throw new Error('The browser did not allow this push subscription. Check site permissions and try again.');
     }
-    throw getPushError(error, 'Could not create a push subscription in this browser.');
+    throw getPushError(error, 'Couldn’t set up push notifications in this browser.');
   }
 
   return syncPushSubscription(subscription);
@@ -131,7 +131,7 @@ export const disablePushNotifications = async () => {
       data: { endpoint: payload.endpoint },
     });
   } catch (error) {
-    throw getPushError(error, 'Could not remove this device from push notifications.');
+    throw getPushError(error, 'Couldn’t remove this device from push notifications.');
   }
   return subscription.unsubscribe();
 };

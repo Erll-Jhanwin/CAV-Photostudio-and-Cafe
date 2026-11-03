@@ -147,7 +147,7 @@ export default function BookingGuidePage() {
             </nav>
 
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-              <Link to={user ? '/customer' : '/login'} className="hidden rounded-2xl px-3 py-2 text-sm font-bold text-[#170D09]/68 transition-colors hover:bg-[#F4EBDD] hover:text-[#170D09] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D7AD2D] sm:block">{user ? 'Dashboard' : 'Login'}</Link>
+              <Link to={user ? '/customer' : '/login'} className="hidden rounded-2xl px-3 py-2 text-sm font-bold text-[#170D09]/68 transition-colors hover:bg-[#F4EBDD] hover:text-[#170D09] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#D7AD2D] sm:block">{user ? 'Dashboard' : 'Log in'}</Link>
               <button type="button" onClick={handleBookNow} className="hidden items-center gap-2 rounded-2xl bg-[#D7AD2D] px-4 py-2.5 text-sm font-black text-[#170D09] shadow-[0_8px_18px_rgba(215,173,45,0.2)] transition-all hover:-translate-y-0.5 hover:bg-[#E6C761] sm:inline-flex">Reserve <span className="hidden lg:inline">Your Session</span> <ArrowRight className="h-3.5 w-3.5" /></button>
               <button type="button" onClick={() => setMobileNavOpen(!mobileNavOpen)} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[#170D09]/10 bg-white text-[#170D09] transition-colors hover:bg-[#F4EBDD] md:hidden" aria-expanded={mobileNavOpen} aria-label="Toggle navigation">{mobileNavOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
             </div>

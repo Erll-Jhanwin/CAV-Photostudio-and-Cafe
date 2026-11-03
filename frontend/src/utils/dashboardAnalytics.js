@@ -26,7 +26,7 @@ export const validateDashboardAnalytics = (payload, expectedRange) => {
     return 'The dashboard response is missing a valid previous-period comparison.';
   }
   if (!payload.range || payload.range.start !== expectedRange.start || payload.range.end !== expectedRange.end) {
-    return 'The dashboard returned results for a different date range. Please retry.';
+    return 'The dashboard returned data for a different date range. Try again.';
   }
   if (!payload.record_counts || ['paid_orders', 'pos_transactions', 'booking_payments', 'bookings'].some(key => (
     !Number.isInteger(Number(payload.record_counts[key])) || Number(payload.record_counts[key]) < 0

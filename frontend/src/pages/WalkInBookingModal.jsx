@@ -43,7 +43,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
         setServices(list);
         if (list.length) setServiceId(String(list[0].id));
       })
-      .catch(err => active && setError(getApiErrorMessage(err, 'Could not load booking services.')))
+      .catch(err => active && setError(getApiErrorMessage(err, 'Couldn’t load booking services.')))
       .finally(() => active && setLoadingServices(false));
     return () => { active = false; };
   }, [open]);
@@ -62,7 +62,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
         if (!available.length) setNotice(data?.notice || 'No available times for this date. Choose another date.');
         else setNotice('');
       })
-      .catch(err => active && setError(getApiErrorMessage(err, 'Could not check availability.')))
+      .catch(err => active && setError(getApiErrorMessage(err, 'Couldn’t check availability.')))
       .finally(() => active && setLoadingSlots(false));
     return () => { active = false; };
   }, [open, packageId, date]);
@@ -81,7 +81,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
         return;
       }
       if (paymentAmount > totalAmount) {
-        setError('Payment amount cannot exceed the package total.');
+        setError('Payment can’t exceed the package total.');
         return;
       }
     }
@@ -125,7 +125,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
       });
       onCreated?.(data);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Could not save this walk-in booking. Check availability and try again.'));
+      setError(getApiErrorMessage(err, 'Couldn’t save this walk-in booking. Check availability and try again.'));
     } finally {
       inFlight.current = false;
       setSaving(false);
@@ -139,11 +139,11 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
   };
 
   return (
-    <Modal open={open} onClose={resetClose} title={savedReceipt ? 'Booking saved successfully' : 'Create Walk-in Booking'} size="2xl" bodyClassName="max-h-[calc(100vh-12rem)]">
+    <Modal open={open} onClose={resetClose} title={savedReceipt ? 'Booking saved' : 'Create Walk-in Booking'} size="2xl" bodyClassName="max-h-[calc(100vh-12rem)]">
       {savedReceipt ? (
         <div className="space-y-4">
           <div role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center">
-            <p className="text-sm font-black text-emerald-900">Walk-in booking #{savedReceipt.bookingId} saved successfully.</p>
+            <p className="text-sm font-black text-emerald-900">Walk-in booking #{savedReceipt.bookingId} saved.</p>
             <p className="mt-1 text-xs text-emerald-800">The booking and any payment are recorded. Printing or closing this window will not change them.</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">

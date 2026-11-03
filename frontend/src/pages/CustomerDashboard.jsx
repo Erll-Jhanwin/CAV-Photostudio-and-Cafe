@@ -76,7 +76,7 @@ const splitPackageText = (text) => (
 
 const formatApiError = (error, fallback) => {
   const status = error?.response?.status;
-  if (status === 401) return 'Your session has expired. Please sign in again and retry the booking.';
+  if (status === 401) return 'Your session expired. Sign in again to finish booking.';
 
   const data = error?.response?.data;
   if (typeof data === 'string' && data.trim()) return data.trim();
@@ -423,6 +423,7 @@ export default function CustomerDashboard() {
   const bookingIdempotencyKeyRef = useRef('');
   const paymentIdempotencyKeyRef = useRef('');
   const bookingRequestStartedRef = useRef(false);
+  const bookingDeepLinkHandledRef = useRef(false);
   const paymentRequestStartedRef = useRef(false);
   const dashboardFetchSeqRef = useRef(0);
   const dashboardRefreshInFlightRef = useRef(false);
@@ -464,7 +465,7 @@ export default function CustomerDashboard() {
       ...current,
       images,
       loading: false,
-      error: failed ? 'Some photos could not be opened. You can still view the photos that loaded.' : '',
+      error: failed ? 'Some photos didn’t open. You can still view the rest.' : '',
     } : current);
   }, []);
 
@@ -490,7 +491,7 @@ export default function CustomerDashboard() {
     } catch (error) {
       setPhotoGallery(current => current?.booking.bookingId === bookingId ? {
         ...current,
-        error: getApiErrorMessage(error, 'We could not create or download the ZIP. Please try again.'),
+        error: getApiErrorMessage(error, 'Couldn’t create or download the ZIP. Try again.'),
       } : current);
     } finally {
       photoZipRequestRef.current = false;
@@ -567,7 +568,7 @@ export default function CustomerDashboard() {
         ...current,
         permission: window.Notification.permission,
         loading: false,
-        error: error.message || 'Push notifications could not be enabled.',
+        error: error.message || 'Couldn’t enable push notifications.',
       }));
     }
   };
@@ -744,7 +745,7 @@ export default function CustomerDashboard() {
         })
         .catch(() => {
           if (requestSeq === dashboardFetchSeqRef.current) {
-            setDashboardError(current => current || 'Your bookings loaded, but account details could not refresh. Retry to refresh them.');
+            setDashboardError(current => current || 'Your bookings loaded, but your account details didn’t. Retry to refresh.');
           }
         });
 
@@ -759,7 +760,7 @@ export default function CustomerDashboard() {
       if (results[1].status === 'fulfilled') setBookings(normalizeBookings(results[1].value.data));
       else failures.push('bookings');
       setGalleryImages(normalizeGalleryImages(localGalleryImages));
-      if (failures.length) setDashboardError(`Some dashboard data could not load (${failures.join(', ')}). Retry to refresh it.`);
+      if (failures.length) setDashboardError(`Some dashboard data didn’t load (${failures.join(', ')}). Retry to refresh.`);
       void profileRequest;
       // Notifications are supplemental to the account view. Keep older backend
       // deployments from blocking the dashboard while they receive the API migration.
@@ -767,7 +768,7 @@ export default function CustomerDashboard() {
     } catch (err) {
       console.error('Customer dashboard refresh failed.');
       if (requestSeq === dashboardFetchSeqRef.current) {
-        setDashboardError(getApiErrorMessage(err, 'Could not refresh your bookings and profile.'));
+        setDashboardError(getApiErrorMessage(err, 'Couldn’t refresh your bookings and profile.'));
       }
     } finally {
       dashboardRefreshInFlightRef.current = false;
@@ -865,6 +866,19 @@ export default function CustomerDashboard() {
   }, [userId, navigate, fetchDashboardData]);
 
   useEffect(() => {
+    if (!initialDataReady || activeTab !== 'history' || bookingDeepLinkHandledRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const requestedBookingId = params.get('booking');
+    if (!requestedBookingId) return;
+    bookingDeepLinkHandledRef.current = true;
+    const requestedBooking = bookings.find(booking => String(booking.id) === requestedBookingId);
+    if (requestedBooking) setSelectedBookingDetails(requestedBooking);
+    params.delete('booking');
+    const search = params.toString();
+    navigate(`/customer${search ? `?${search}` : ''}`, { replace: true });
+  }, [activeTab, bookings, initialDataReady, navigate]);
+
+  useEffect(() => {
     if (!userId) return undefined;
     return startVisiblePolling(() => fetchDashboardData({ background: true }), 60000);
   }, [userId, fetchDashboardData]);
@@ -925,7 +939,7 @@ export default function CustomerDashboard() {
       });
       setProfileErrors({});
       fetchDashboardData({ background: true });
-      alert('Profile updated successfully.');
+      alert('Profile updated.');
     } catch (err) {
       const data = err.response?.data || {};
       const asText = (value) => Array.isArray(value) ? value.join(' ') : value;
@@ -939,7 +953,7 @@ export default function CustomerDashboard() {
         currentPassword: asText(data.current_password) || current.currentPassword,
         newPassword: asText(data.new_password) || current.newPassword,
       }));
-      alert(getApiErrorMessage(err, 'Failed to update profile.'));
+      alert(getApiErrorMessage(err, 'Couldn’t update your profile.'));
     } finally {
       setProfileSaving(false);
     }
@@ -975,7 +989,7 @@ export default function CustomerDashboard() {
       });
       setMonthAvailability(availabilityMap);
     } catch {
-      if (requestIsCurrent()) setAvailabilityError('Could not load calendar availability.');
+      if (requestIsCurrent()) setAvailabilityError('Couldn’t load calendar availability.');
     } finally {
       if (requestIsCurrent()) setAvailabilityLoading(false);
     }
@@ -1001,7 +1015,7 @@ export default function CustomerDashboard() {
       ));
       return res.data;
     } catch {
-      if (requestIsCurrent()) setAvailabilityError('Could not load time-slot availability.');
+      if (requestIsCurrent()) setAvailabilityError('Couldn’t load available times.');
       return null;
     } finally {
       if (requestIsCurrent()) setSlotLoading(false);
@@ -1062,7 +1076,7 @@ export default function CustomerDashboard() {
       setPaymentReferenceStatus({
         checking: false,
         exists: false,
-        message: 'Could not check this reference number yet. Staff will still verify it.',
+        message: 'We couldn’t check this reference yet. Staff will still verify it.',
       });
       return false;
     }
@@ -1134,7 +1148,7 @@ export default function CustomerDashboard() {
       });
       return res.data;
     } catch {
-      setEditError('Could not load available time slots.');
+      setEditError('Couldn’t load available times.');
       return null;
     } finally {
       setEditSlotLoading(false);
@@ -1169,7 +1183,7 @@ export default function CustomerDashboard() {
   const submitEditBooking = async () => {
     if (!editingBooking || !editForm || editSaving) return;
     if (!editForm.package || !editForm.scheduled_date || !editForm.scheduled_time) {
-      setEditError('Please select a package, date, and available time slot.');
+      setEditError('Select a package, date, and available time.');
       return;
     }
 
@@ -1187,7 +1201,7 @@ export default function CustomerDashboard() {
       const latestAvailability = await fetchEditDayAvailability(editForm.scheduled_date, editForm.package);
       const selectedSlot = latestAvailability?.slots?.find(slot => slot.time === editForm.scheduled_time);
       if (!selectedSlot?.available) {
-        setEditError('This schedule is no longer available. Please choose another time slot.');
+      setEditError('This time is no longer available. Choose another slot.');
         return;
       }
 
@@ -1213,10 +1227,10 @@ export default function CustomerDashboard() {
       setPhone(editForm.phone_number);
       setAddress(editForm.address);
       closeEditBooking(true);
-      alert('Booking updated successfully.');
+      alert('Booking updated.');
     } catch (err) {
       const errorData = err.response?.data || {};
-      setEditError(errorData.scheduled_time || errorData.detail || 'Failed to update booking.');
+      setEditError(errorData.scheduled_time || errorData.detail || 'Couldn’t update booking.');
     } finally {
       setEditSaving(false);
       setEditConfirmOpen(false);
@@ -1233,7 +1247,7 @@ export default function CustomerDashboard() {
     setCustomerPhotosLoading(true);
     client.get('/api/gallery/customer-photos/')
       .then(response => { if (active) { setCustomerPhotos(Array.isArray(response.data) ? response.data : []); setCustomerPhotosError(''); } })
-      .catch(error => { if (active) setCustomerPhotosError(getApiErrorMessage(error, 'Your photos could not be loaded.')); })
+      .catch(error => { if (active) setCustomerPhotosError(getApiErrorMessage(error, 'Couldn’t load your photos.')); })
       .finally(() => { if (active) setCustomerPhotosLoading(false); });
     return () => { active = false; };
   }, [activeTab]);
@@ -1252,17 +1266,17 @@ export default function CustomerDashboard() {
     bookingSubmitClickRef.current = now;
 
     if (!selectedPackage || !selectedDate || !selectedTime) {
-      alert('Please fill in all booking details.');
+      alert('Fill in all booking details.');
       return;
     }
     if (!paymentMethod || paymentQrFailed || !selectedPaymentMethod?.configured || !selectedPaymentMethod?.qr_url) {
-      alert(paymentQrFailed ? 'The selected payment QR code could not be loaded. Please choose another method or contact the studio.' : 'Online payment methods are not configured yet. Please contact the studio before submitting payment.');
+      alert(paymentQrFailed ? 'This payment QR code didn’t load. Choose another method or contact the studio.' : 'Online payments aren’t set up yet. Contact the studio before submitting payment.');
       return;
     }
     const requiredDownPayment = calculateDownPayment(selectedPackage.price);
     const paidAmount = Number(paymentAmount);
     if (!paymentMethod || !paymentReference.trim() || !paymentAmount || !paymentDate || !paymentTime) {
-      alert('Please enter the payment method, reference number, amount, date, and time.');
+      alert('Enter the payment method, reference number, amount, date, and time.');
       return;
     }
     if (!isValidPaymentReference(paymentReference)) {
@@ -1274,15 +1288,15 @@ export default function CustomerDashboard() {
       return;
     }
     if (paidAmount > totalCart) {
-      alert('Payment amount cannot exceed the total booking amount.');
+      alert('Payment can’t exceed the booking total.');
       return;
     }
     if (paymentReferenceStatus.checking && !paymentRequestStartedRef.current) {
-      alert('Please wait until the reference number check is complete.');
+      alert('Wait for the reference number check to finish.');
       return;
     }
     if (paymentReferenceStatus.exists && !paymentRequestStartedRef.current) {
-      alert('This payment reference number has already been submitted. Please enter a different reference number.');
+      alert('This payment reference was already submitted. Enter a different one.');
       return;
     }
     bookingSubmitInFlightRef.current = true;
@@ -1309,13 +1323,13 @@ export default function CustomerDashboard() {
       }
       const duplicateReference = await checkPaymentReferenceDuplicate(paymentReference);
       if (duplicateReference) {
-        alert('This payment reference number has already been submitted. Please enter a different reference number.');
+        alert('This payment reference was already submitted. Enter a different one.');
         setPaymentSubmitting(false);
         return;
       }
       const fullName = `${firstName} ${lastName}`.trim();
       if (fullName.length < 2 || !isValidEmail(bookingEmail) || !isValidPhone(phone)) {
-        alert('Please enter your full name, a valid email address, and a valid contact number.');
+        alert('Enter your full name, a valid email, and a valid contact number.');
         setPaymentSubmitting(false);
         return;
       }
@@ -1323,10 +1337,10 @@ export default function CustomerDashboard() {
       if (!bookingId) {
         if (!bookingRequestStartedRef.current) {
           const latestAvailability = await fetchDayAvailability(selectedDate);
-          if (!latestAvailability) throw new Error('Could not check availability. Please retry when the server is reachable.');
+          if (!latestAvailability) throw new Error('Couldn’t check availability. Try again when the server is reachable.');
           const latestSlot = latestAvailability.slots?.find(slot => slot.time === selectedTime);
           if (!latestSlot?.available) {
-            alert('This schedule is no longer available. Please choose another date or time slot.');
+            alert('This time is no longer available. Choose another date or time.');
             return;
           }
         }
@@ -1393,9 +1407,9 @@ export default function CustomerDashboard() {
       setCurrentStep(1);
       fetchDashboardData({ background: true });
       setActiveTab('history');
-      alert('Booking submitted successfully.');
+      alert('Booking submitted.');
     } catch (err) {
-      const errorMessage = formatApiError(err, 'The request could not be completed. Please try again.');
+      const errorMessage = formatApiError(err, 'We couldn’t complete your request. Try again.');
       if (bookingSavedForPayment && bookingId) {
         // The server may have committed the payment while the response was
         // lost. Read the booking's payments before asking the customer to retry.
@@ -1435,8 +1449,8 @@ export default function CustomerDashboard() {
           }
         }
         alert(
-          `Booking #${bookingId} was saved, but we could not confirm the payment submission. `
-          + `${errorMessage} You can retry the payment without creating another booking.`
+          `Booking #${bookingId} was saved, but we couldn’t confirm the payment. `
+          + `${errorMessage} You can retry payment without creating another booking.`
         );
       } else {
         alert(errorMessage);
@@ -1482,7 +1496,7 @@ export default function CustomerDashboard() {
     const suggestions = reviewForm.suggestions.trim();
     const errors = {};
     if (!Number.isInteger(Number(reviewForm.rating)) || Number(reviewForm.rating) < 1 || Number(reviewForm.rating) > 5) {
-      errors.rating = 'Please choose a star rating.';
+      errors.rating = 'Choose a star rating.';
     }
     if (feedback.length > 2000) errors.feedback = 'Feedback must be 2,000 characters or less.';
     if (suggestions.length > 2000) errors.suggestions = 'Suggestions must be 2,000 characters or less.';
@@ -1505,10 +1519,10 @@ export default function CustomerDashboard() {
       setBookings(current => normalizeBookings(current.map(item => item.id === updatedBooking.id ? updatedBooking : item)));
       setSelectedBookingDetails(current => current?.id === updatedBooking.id ? updatedBooking : current);
       setReviewingBooking(updatedBooking);
-      setReviewNotice({ type: 'success', message: 'Thank you. Your review has been saved.' });
+      setReviewNotice({ type: 'success', message: 'Thanks for your review.' });
     } catch (err) {
       const responseData = err.response?.data || {};
-      const detail = responseData.detail || responseData.booking?.[0] || 'We could not save your review. Please try again.';
+      const detail = responseData.detail || responseData.booking?.[0] || 'We couldn’t save your review. Try again.';
       setReviewNotice({ type: 'error', message: detail });
     } finally {
       setReviewSaving(false);
@@ -1519,7 +1533,7 @@ export default function CustomerDashboard() {
     if (action.key === 'pay') {
       const service = services.find(item => item.packages?.some(pkg => pkg.id === booking.package));
       const pkg = service?.packages?.find(item => item.id === booking.package);
-      if (!pkg) return alert('Could not load this booking package. Refresh the page and try again.');
+      if (!pkg) return alert('Couldn’t load this booking package. Refresh the page and try again.');
       resetPendingBooking();
       setPendingPaymentBookingId(booking.id);
       setSelectedService(service);
@@ -1565,9 +1579,9 @@ export default function CustomerDashboard() {
       const normalizedBooking = normalizeBooking(res.data);
       setBookings(current => normalizeBookings(current.map(item => item.id === booking.id ? normalizedBooking : item)));
       setSelectedBookingDetails(current => current?.id === booking.id ? normalizedBooking : current);
-      alert('Booking cancelled successfully.');
+      alert('Booking cancelled.');
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to cancel booking.');
+      alert(err.response?.data?.detail || 'Couldn’t cancel booking.');
     } finally {
       setCancellingBookingId(null);
     }
@@ -1592,7 +1606,7 @@ export default function CustomerDashboard() {
     } catch {
       const fallback = /\b(ba|po|paano|magkano|pakete|saan|nasaan|bukas|ngayon)\b/i.test(msg)
         ? 'Hindi ko ma-verify ang impormasyon ngayon. Subukan muli o makipag-ugnayan sa staff ng CAV.'
-        : 'I cannot verify that information right now. Please try again or contact CAV staff directly.';
+        : 'I can’t check that right now. Try again or contact CAV staff.';
       setChatMessages(p => [...p, { role: 'assistant', content: fallback }]);
     } finally {
       setChatLoading(false);
@@ -1608,7 +1622,7 @@ export default function CustomerDashboard() {
   };
 
   const handleLogout = useCallback(() => {
-    alert('Signed out successfully.');
+    alert('Signed out.');
     logout();
     navigate('/login', { replace: true });
   }, [logout, navigate]);
@@ -1782,7 +1796,7 @@ export default function CustomerDashboard() {
             <div className="mb-6 flex items-start gap-3 border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm" role="alert">
               <XCircle className="mt-0.5 h-5 w-5 shrink-0" />
               <div className="flex-1 text-sm">
-                <p className="font-bold">Could not refresh your account data</p>
+                <p className="font-bold">Couldn’t refresh your account</p>
                 <p className="mt-1 text-xs text-red-700">{dashboardError}</p>
               </div>
               <Button variant="outline" size="sm" onClick={() => fetchDashboardData()} className="border-red-200 bg-white text-red-800 hover:bg-red-100">Retry</Button>
@@ -2343,7 +2357,7 @@ export default function CustomerDashboard() {
                               placeholder="Juan Dela Cruz"
                             />
                             {customerFullName && customerFullName.length < 2 && (
-                              <p className="text-[11px] font-bold text-red-600">Please enter your full name.</p>
+                              <p className="text-[11px] font-bold text-red-600">Enter your full name.</p>
                             )}
 
                             <Input
@@ -2527,7 +2541,7 @@ export default function CustomerDashboard() {
                                 <div className="rounded-xl border border-espresso/10 bg-white p-3 text-center">
                                   <p className="mb-2 text-xs font-bold text-espresso">Scan to pay with {selectedPaymentMethod.label}</p>
                                   <img src={selectedPaymentMethod.qr_url} alt={`${selectedPaymentMethod.label} payment QR code`} onError={() => setPaymentQrFailed(true)} className="mx-auto max-h-56 max-w-full object-contain" />
-                                  {paymentQrFailed && <p role="alert" className="mt-2 text-xs text-red-700">This payment QR code could not be loaded. Choose another method or contact the studio.</p>}
+                                  {paymentQrFailed && <p role="alert" className="mt-2 text-xs text-red-700">This payment QR code didn’t load. Choose another method or contact the studio.</p>}
                                 </div>
                               ) : <p role="status" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">The {selectedPaymentMethod?.label || 'selected payment'} QR code is not configured. Contact the studio before paying.</p>}
                               {paymentReferenceStatus.message && (
@@ -2921,7 +2935,7 @@ export default function CustomerDashboard() {
                         </div>
                         <p className="text-center text-xs font-semibold text-espresso/55">Photo {photoGallery.activeIndex + 1} of {photoGallery.images.length}</p>
                       </div>
-                    ) : <div className="flex min-h-40 items-center justify-center text-sm text-espresso/55">Photos could not be opened. You can retry the ZIP download below.</div>}
+                    ) : <div className="flex min-h-40 items-center justify-center text-sm text-espresso/55">Photos didn’t open. You can retry the ZIP download below.</div>}
                     <div className="flex flex-col justify-end gap-2 border-t border-espresso/[0.07] pt-3 sm:flex-row">
                       {photoGallery.driveUrl && <Button variant="outline" icon={ExternalLink} onClick={() => window.open(photoGallery.driveUrl, '_blank', 'noopener,noreferrer')}>Open Google Drive</Button>}
                       <Button variant="gold" icon={Download} loading={photoZipLoading} disabled={photoZipLoading} onClick={downloadAllCustomerPhotos}>Download All Photos</Button>
@@ -3330,7 +3344,7 @@ export default function CustomerDashboard() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs text-espresso/50">Package inclusions will be confirmed by staff.</p>
+                      <p className="text-xs text-espresso/50">Staff will confirm what’s included.</p>
                     )}
                   </div>
 
@@ -3631,7 +3645,7 @@ export default function CustomerDashboard() {
           {editForm && (
             <div className="space-y-5">
               <p className="text-sm text-espresso/70 leading-relaxed">
-                Save these changes to your booking? Staff will be notified and availability will be rechecked before saving.
+                Save these booking changes? Staff will be notified, and we’ll check availability again.
               </p>
               <div className="rounded-2xl bg-cream/70 border border-espresso/5 p-4 text-xs space-y-2">
                 <div className="flex justify-between gap-3">

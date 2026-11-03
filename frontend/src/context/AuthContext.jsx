@@ -135,9 +135,9 @@ export const AuthProvider = ({ children }) => {
       console.error('Login request failed.');
       const message = error.response?.status === 401
         ? (error.config?.skipAuthRedirect
-          ? 'Your credentials were accepted, but the authenticated session could not be established. Please try again.'
+          ? 'Your details were accepted, but we couldn’t start your session. Try again.'
           : 'Invalid username or password.')
-        : getApiErrorMessage(error, 'Unable to sign in. Please try again.');
+        : getApiErrorMessage(error, 'Couldn’t sign in. Try again.');
       return { success: false, error: message };
     } finally {
       loginInFlightRef.current = false;

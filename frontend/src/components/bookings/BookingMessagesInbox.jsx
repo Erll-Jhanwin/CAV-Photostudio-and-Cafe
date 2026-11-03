@@ -20,7 +20,7 @@ export default function BookingMessagesInbox({ currentUserId }) {
       setUnreadCount(Number(response.data?.unread_count || 0));
       setError('');
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Booking messages could not be loaded.'));
+      setError(getApiErrorMessage(requestError, 'Couldn’t load booking messages.'));
     } finally {
       if (showLoading) setLoading(false);
     }

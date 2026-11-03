@@ -84,7 +84,7 @@ export function StyledAlertProvider({ children }) {
     confirmationResolverRef.current = resolve;
     setConfirmation({
       title: options.title || 'Confirm Action',
-      message: options.message || 'Are you sure you want to continue?',
+      message: options.message || 'Continue?',
       confirmLabel: options.confirmLabel || 'Confirm',
       cancelLabel: options.cancelLabel || 'Cancel',
       type: options.type || 'warning',

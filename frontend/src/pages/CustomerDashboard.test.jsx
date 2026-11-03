@@ -273,6 +273,28 @@ test('booking history resumes a saved booking without creating another reservati
   expect(client.post.mock.calls[0][1].booking).toBe(42);
 });
 
+test('a booking ID in the home handoff opens that exact booking from history', async () => {
+  window.history.replaceState({}, '', '/?tab=history&booking=42');
+  client.get.mockImplementation((url, options) => {
+    if (url === '/api/bookings/') return Promise.resolve({ data: [{
+      ...booking,
+      package_details: { ...pkg, service: { name: service.name } },
+      customer_name: 'Test Customer',
+      customer_email: mockUser.email,
+      customer_phone: mockUser.phone_number,
+    }] });
+    if (url === '/api/bookings/payment-methods/') return Promise.resolve({ data: { methods: [] } });
+    if (url === '/api/auth/profile/') return Promise.resolve({ data: mockUser });
+    return Promise.resolve({ data: [] });
+  });
+
+  render(<CustomerDashboard />);
+
+  const details = await screen.findByRole('dialog', { name: 'Booking Details' });
+  expect(within(details).getByText('Solo Test')).toBeInTheDocument();
+  expect(within(details).getByText(`${date} at 09:00`)).toBeInTheDocument();
+});
+
 test('booking history filters canonical statuses and shows matching status counts', async () => {
   window.history.replaceState({}, '', '/?tab=history');
   const rows = [

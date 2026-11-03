@@ -41,7 +41,7 @@ const unitLabel = (value) => ({ G: 'g', ML: 'mL' }[String(value || '').toUpperCa
 
 const emptyStateFor = (statusLabel) => ({
   title: `No ${statusLabel.toLocaleLowerCase()} ingredients`,
-  description: `There are currently no ingredients with ${statusLabel.toLocaleLowerCase()} stock status.`,
+  description: `No ingredients currently have ${statusLabel.toLocaleLowerCase()} stock status.`,
 });
 
 export default function IngredientStatusModal({ open, onClose, statusKey = 'EXPIRED', statusLabel = 'Expired' }) {
@@ -72,7 +72,7 @@ export default function IngredientStatusModal({ open, onClose, statusKey = 'EXPI
         } while (active && batch.length === PAGE_SIZE);
         if (active) setIngredients(rows.filter(row => row.inventory_status === statusKey));
       } catch (requestError) {
-        if (active) setError(getApiErrorMessage(requestError, 'Could not load expired ingredients.'));
+        if (active) setError(getApiErrorMessage(requestError, 'Couldn’t load expired ingredients.'));
       } finally {
         if (active) setLoading(false);
       }

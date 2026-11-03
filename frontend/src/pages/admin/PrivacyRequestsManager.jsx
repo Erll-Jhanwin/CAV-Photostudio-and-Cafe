@@ -28,7 +28,7 @@ export default function PrivacyRequestsManager() {
       const response = await client.get('/api/privacy/requests/admin/');
       setItems(Array.isArray(response.data) ? response.data : []);
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Could not load privacy requests.'));
+      setError(getApiErrorMessage(requestError, 'Couldn’t load privacy requests.'));
     } finally {
       setLoading(false);
     }
@@ -53,7 +53,7 @@ export default function PrivacyRequestsManager() {
       setNotice(`Request #${item.id} updated to ${status.replace('_', ' ').toLowerCase()}.`);
       await loadRequests();
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Could not update the privacy request.'));
+      setError(getApiErrorMessage(requestError, 'Couldn’t update the privacy request.'));
     } finally {
       setSavingId(null);
     }

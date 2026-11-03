@@ -81,14 +81,17 @@ test('Staff payment verification opens proof on demand and keeps its verify acti
   expect(screen.getByRole('button', { name: 'Daily Sales Logs' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Payment Booking Verification' }));
 
-  const proofButton = await screen.findByRole('button', { name: 'View proof of payment for booking 48' });
-  expect(screen.getByRole('button', { name: 'Confirm Payment' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Flag Payment Issue' })).toBeInTheDocument();
-  expect(screen.getByText('PHP 200')).toBeInTheDocument();
+  const customerButton = await screen.findByRole('button', { name: 'Open booking 48 details for Jamie Reyes' });
+  expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   expect(client.get).not.toHaveBeenCalledWith('/api/bookings/payments/18/receipt/', { responseType: 'blob' });
   expect(screen.queryByRole('img', { name: 'Payment proof for booking 48' })).not.toBeInTheDocument();
 
-  fireEvent.click(proofButton);
+  fireEvent.click(customerButton);
+  const detailsDialog = await screen.findByRole('dialog', { name: 'Booking #48 · Payment details' });
+  expect(within(detailsDialog).getAllByText('PHP 1,250').length).toBeGreaterThan(0);
+  expect(within(detailsDialog).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+  expect(within(detailsDialog).getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+  fireEvent.click(within(detailsDialog).getByRole('button', { name: 'View proof of payment for booking 48' }));
   expect(await screen.findByRole('dialog', { name: 'Payment proof · Booking #48' })).toBeInTheDocument();
   await waitFor(() => expect(client.get).toHaveBeenCalledWith(
     '/api/bookings/payments/18/receipt/', { responseType: 'blob' },
@@ -111,11 +114,18 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
     booking_details: {
       customer_name: `Payment Customer ${index + 1}`,
       customer_email: `customer${index + 1}@example.test`,
+      customer_phone: '09171234567',
       package_name: 'Portrait Session',
+      service_name: 'Studio',
       scheduled_date: '2026-11-15',
       scheduled_time: '10:30',
+      status: 'PENDING',
+      notes: 'Bring a printed reference photo.',
       total_amount: '1000.00', amount_paid: '500.00', remaining_balance: '500.00',
     },
+    created_at: '2026-10-27T10:00:00Z',
+    updated_at: '2026-10-28T10:00:00Z',
+    verification_history: [{ id: 1, action: 'BOOKING_PAYMENT_SUBMIT', actor_name: 'Payment Customer', description: `Submitted payment #${70 + index} for booking #${170 + index}.`, timestamp: '2026-10-28T10:00:00Z' }],
   }));
   const alerts = jest.spyOn(window, 'alert').mockImplementation(() => {});
   const print = jest.spyOn(window, 'print').mockImplementation(() => {});
@@ -172,9 +182,22 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   expect(await screen.findByText('Payment Customer 1')).toBeInTheDocument();
   expect(screen.getByText('Payment Customer 2')).toBeInTheDocument();
   expect(screen.getByText('Payment Customer 3')).toBeInTheDocument();
-  expect(within(list).getAllByRole('button', { name: 'Print Receipt' })).toHaveLength(4);
+  expect(within(list).getAllByRole('button', { name: /Open booking .* details/ })).toHaveLength(4);
+  expect(within(list).queryByRole('button', { name: 'Print Receipt' })).not.toBeInTheDocument();
 
-  fireEvent.click(within(list).getAllByRole('button', { name: 'Print Receipt' })[0]);
+  const selectedCustomerButton = within(list).getByRole('button', { name: 'Open booking 170 details for Payment Customer 1' });
+  selectedCustomerButton.focus();
+  fireEvent.click(selectedCustomerButton);
+  const bookingDialog = await screen.findByRole('dialog', { name: 'Booking #170 · Payment details' });
+  expect(within(bookingDialog).getByText('Payment Customer 1')).toBeInTheDocument();
+  expect(within(bookingDialog).getByText('Bring a printed reference photo.')).toBeInTheDocument();
+  expect(within(bookingDialog).getByText('REF-0')).toBeInTheDocument();
+  expect(within(bookingDialog).getByRole('heading', { name: 'Verification history' })).toBeInTheDocument();
+  expect(within(bookingDialog).getByText(/Payment submitted/)).toBeInTheDocument();
+  expect(within(bookingDialog).getByRole('button', { name: 'Print Receipt' })).toBeInTheDocument();
+  expect(within(bookingDialog).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+  expect(within(bookingDialog).getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+  fireEvent.click(within(bookingDialog).getByRole('button', { name: 'Print Receipt' }));
   const reprintDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
   expect(within(reprintDialog).getByText('Pending verification')).toBeInTheDocument();
   expect(within(reprintDialog).getByLabelText('Receipt printer')).toBeInTheDocument();
@@ -184,12 +207,12 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   expect(print).not.toHaveBeenCalled();
   fireEvent.click(within(reprintDialog).getByRole('button', { name: 'Done' }));
 
-  fireEvent.click(screen.getByRole('button', { name: 'View proof of payment for booking 170' }));
+  fireEvent.click(within(bookingDialog).getByRole('button', { name: 'View proof of payment for booking 170' }));
   expect(await screen.findByRole('dialog', { name: 'Payment proof · Booking #170' })).toBeInTheDocument();
   await waitFor(() => expect(client.get).toHaveBeenCalledWith('/api/bookings/payments/70/receipt/', { responseType: 'blob' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Close modal' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: 'Payment proof · Booking #170' })).getByRole('button', { name: 'Close modal' }));
 
-  fireEvent.click(within(list).getAllByRole('button', { name: 'Confirm Payment' })[0]);
+  fireEvent.click(within(bookingDialog).getByRole('button', { name: 'Approve' }));
   await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/api/bookings/payments/70/verify/', { status: 'APPROVED' }));
   const receiptDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
   expect(within(receiptDialog).getByText(/Booking reference/)).toBeInTheDocument();
@@ -199,9 +222,18 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   expect(alerts).toHaveBeenCalledWith('Payment approved successfully.');
   await waitFor(() => expect(print).toHaveBeenCalled());
   fireEvent.click(within(receiptDialog).getByRole('button', { name: 'Done' }));
-  fireEvent.click(within(list).getByRole('button', { name: 'Flag Payment Issue' }));
+  await waitFor(() => expect(within(bookingDialog).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument());
+  expect(within(bookingDialog).queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
+  fireEvent.click(within(bookingDialog).getByRole('button', { name: 'Close modal' }));
+  expect(document.activeElement).toBe(selectedCustomerButton);
+  list.scrollTop = 360;
+  fireEvent.click(within(list).getByRole('button', { name: 'Open booking 173 details for Payment Customer 4' }));
+  const pendingDialog = await screen.findByRole('dialog', { name: 'Booking #173 · Payment details' });
+  expect(within(pendingDialog).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+  fireEvent.click(within(pendingDialog).getByRole('button', { name: 'Reject' }));
   await waitFor(() => expect(client.patch).toHaveBeenCalledWith('/api/bookings/payments/73/verify/', { status: 'REJECTED' }));
-  expect(screen.getByText('Payment Customer 1').closest('div')).toBeInTheDocument();
+  expect(list.scrollTop).toBe(360);
+  expect(within(filters).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
   alerts.mockRestore();
   print.mockRestore();
   localBridge.mockRestore();
@@ -235,8 +267,41 @@ test('Staff payment pages request only the selected status and current offset', 
   }, { force: false });
 });
 
+test('Same-name customers open the payment record for the selected booking ID', async () => {
+  const sameCustomerPayments = [170, 171].map((bookingId, index) => ({
+    ...payment,
+    id: 270 + index,
+    booking: bookingId,
+    status: 'APPROVED',
+    booking_details: {
+      ...payment.booking_details,
+      customer_name: 'Jamie Reyes',
+      scheduled_date: `2026-11-${15 + index}`,
+    },
+  }));
+  getCached.mockImplementation(url => url === '/api/bookings/payments/'
+    ? Promise.resolve({ data: { count: 2, results: sameCustomerPayments } })
+    : Promise.resolve({ data: [] }));
+
+  render(<StaffDashboard />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
+  const list = await screen.findByLabelText('Booking payment list');
+  const selectedBookingButton = within(list).getByRole('button', { name: 'Open booking 171 details for Jamie Reyes' });
+  selectedBookingButton.focus();
+  fireEvent.click(selectedBookingButton);
+
+  const details = await screen.findByRole('dialog', { name: 'Booking #171 · Payment details' });
+  expect(within(details).getAllByText(/2026-11-16/).length).toBeGreaterThan(0);
+  expect(within(details).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+  expect(within(details).queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
+  expect(within(details).getByRole('button', { name: 'Print Receipt' })).toBeInTheDocument();
+});
+
 test('Staff payment verification remains compact at desktop and mobile viewport widths', async () => {
   const originalWidth = window.innerWidth;
+  getCached.mockImplementation(url => url === '/api/bookings/payments/'
+    ? Promise.resolve({ data: { count: 1, results: [payment] } })
+    : Promise.resolve({ data: [] }));
   for (const width of [1280, 390]) {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
     const { unmount } = render(<StaffDashboard />);
@@ -247,6 +312,14 @@ test('Staff payment verification remains compact at desktop and mobile viewport 
     expect(filters).toHaveClass('grid-cols-2', 'sm:flex');
     expect(filters.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(list).toHaveClass('overflow-y-auto', 'min-h-0');
+    const customerButton = await within(list).findByRole('button', { name: 'Open booking 48 details for Jamie Reyes' });
+    customerButton.focus();
+    fireEvent.click(customerButton);
+    const details = await screen.findByRole('dialog', { name: 'Booking #48 · Payment details' });
+    expect(details.querySelector('.overflow-y-auto')).toBeInTheDocument();
+    expect(within(details).getByRole('button', { name: 'Print Receipt' })).toBeInTheDocument();
+    fireEvent.click(within(details).getByRole('button', { name: 'Close modal' }));
+    expect(document.activeElement).toBe(customerButton);
     unmount();
   }
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });

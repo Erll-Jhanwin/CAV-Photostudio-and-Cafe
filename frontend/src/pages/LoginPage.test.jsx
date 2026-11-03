@@ -58,6 +58,10 @@ describe('responsive authentication layout', () => {
     expect(loginForm.querySelector('.max-w-md')).toHaveClass('w-full', 'min-w-0');
 
     const loginPassword = screen.getByLabelText('Password');
+    expect(screen.getByLabelText('Username')).toHaveAttribute('name', 'username');
+    expect(screen.getByLabelText('Username')).toHaveAttribute('autocomplete', 'username');
+    expect(loginPassword).toHaveAttribute('name', 'password');
+    expect(loginPassword).toHaveAttribute('autocomplete', 'current-password');
     const forgotLink = screen.getByRole('button', { name: 'Forgot password?' });
     const loginRecaptcha = screen.getByTestId('recaptcha-widget');
     const loginSubmit = screen.getByRole('button', { name: 'Enter My Dashboard' });
@@ -107,6 +111,24 @@ describe('password authentication submissions', () => {
     await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('member', 'MemberPassword#2026', {
       recaptcha_token: 'test-recaptcha-token',
     }));
+  });
+
+  test('submits credentials populated by browser autofill even when React has not observed input events', async () => {
+    mockLogin.mockResolvedValue({ success: false, error: 'Invalid username or password.' });
+    renderLogin();
+    const username = screen.getByLabelText('Username');
+    const password = screen.getByLabelText('Password');
+    username.value = 'autofilled-member';
+    password.value = 'AutofilledPassword#2026';
+
+    const submit = screen.getByRole('button', { name: 'Enter My Dashboard' });
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(mockLogin).toHaveBeenCalledWith('autofilled-member', 'AutofilledPassword#2026', {
+      recaptcha_token: 'test-recaptcha-token',
+    }));
+    expect(await screen.findByText('Invalid username or password.')).toBeInTheDocument();
   });
 
   test.each([

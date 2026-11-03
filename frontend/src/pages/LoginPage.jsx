@@ -166,7 +166,7 @@ export default function LoginPage() {
 
   const showLoginSuccess = (authUser) => {
     const displayName = authUser?.username || authUser?.email || 'User';
-    window.alert(`${displayName} logged in successfully.`);
+    window.alert(`Welcome, ${displayName}.`);
   };
 
   const keepGoogleProfileForCompletion = useCallback((credential, errors) => {
@@ -199,7 +199,7 @@ export default function LoginPage() {
   const completeGoogleLogin = useCallback(async (credential) => {
     if (googleRequestInFlightRef.current) return;
     if (!credential) {
-      setError('Google did not return a sign-in token. Please try again.');
+      setError('Google didn’t return a sign-in token. Try again.');
       return;
     }
     const captchaToken = getRecaptchaToken();
@@ -252,7 +252,7 @@ export default function LoginPage() {
           pendingGoogleCredentialRef.current = '';
           setGoogleCompletionPending(false);
           setGoogleRegistrationRequired(false);
-          setError('Your Google sign-in expired or could not be verified. Choose Google again to continue.');
+          setError('Your Google sign-in expired or couldn’t be verified. Choose Google again.');
         } else {
           setError(res.error);
         }
@@ -299,7 +299,7 @@ export default function LoginPage() {
         .catch((initError) => {
           if (cancelled) return;
           console.error('Native Google login initialization failed:', initError);
-          setGoogleInitError('Google sign-in is unavailable on this device. Please use your username and password.');
+          setGoogleInitError('Google sign-in isn’t available on this device. Sign in with your username and password.');
         });
 
       return () => {
@@ -363,12 +363,12 @@ export default function LoginPage() {
         ? response.result.idToken
         : null;
       if (!credential) {
-        setError('Google did not return a sign-in token. Please try again.');
+        setError('Google didn’t return a sign-in token. Try again.');
       }
     } catch {
       resetRecaptcha();
       console.error('Native Google login failed.');
-      setError('Google sign-in was cancelled or could not be completed. Please try again.');
+      setError('Google sign-in was cancelled or couldn’t be completed. Try again.');
     } finally {
       googleRequestInFlightRef.current = false;
       setLoading(false);
@@ -379,9 +379,12 @@ export default function LoginPage() {
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const submittedForm = new FormData(e.currentTarget);
+    const submittedUsername = String(submittedForm.get('username') || form.username || '');
+    const submittedPassword = String(submittedForm.get('password') || form.password || '');
     const errors = adminMfaStep
       ? (adminMfaToken && adminMfaOtp.length === 6 ? {} : { otp: 'Enter the 6-digit verification code.' })
-      : validateLoginForm();
+      : validateLoginForm({ ...form, username: submittedUsername, password: submittedPassword });
     setFormErrors(errors);
     if (Object.keys(errors).length) return;
     const captchaToken = getRecaptchaToken();
@@ -392,7 +395,7 @@ export default function LoginPage() {
       : { recaptcha_token: captchaToken };
     const res = adminMfaStep && adminMfaProvider === 'google'
       ? await loginWithGoogle(adminMfaGoogleCredential, '', verification)
-      : await login(form.username, form.password, verification);
+      : await login(submittedUsername, submittedPassword, verification);
     resetRecaptcha();
     setLoading(false);
     if (res.mfaRequired) {
@@ -403,7 +406,7 @@ export default function LoginPage() {
         setAdminMfaContactHint('');
         setAdminMfaOtp('');
         setSuccess('');
-        setError('Admin verification must use SMS. Please sign in again to request a new code.');
+        setError('Admin verification uses SMS. Sign in again to request a new code.');
         return;
       }
       setAdminMfaStep(true);
@@ -442,7 +445,7 @@ export default function LoginPage() {
           recaptcha_token: captchaToken,
         });
         resetRecaptcha();
-        setSuccess(response.data?.message || 'Account created successfully! Please log in.');
+        setSuccess(response.data?.message || 'Account created. Log in to continue.');
         setIsRegister(false);
         setRegisterStep('details');
         setRegistrationToken('');
@@ -570,11 +573,11 @@ export default function LoginPage() {
         reset_token: forgotResetToken,
         new_password: forgotPassword,
       });
-      setSuccess(res.data?.detail || 'Password updated successfully. You can now sign in.');
+      setSuccess(res.data?.detail || 'Password updated. You can now sign in.');
       resetForgotPasswordFlow();
       setForm((f) => ({ ...f, password: '' }));
     } catch (err) {
-      const msg = getApiErrorMessage(err, 'Unable to complete password recovery. Please try again.');
+      const msg = getApiErrorMessage(err, 'Couldn’t reset your password. Try again.');
       setForgotResult({ detail: msg, error: true });
     } finally {
       setForgotLoading(false);
@@ -624,7 +627,7 @@ export default function LoginPage() {
       resetRecaptcha();
       const retryAfter = Number(err.response?.data?.retry_after_seconds);
       if (retryAfter > 0) setRegistrationResendCooldown(retryAfter);
-      setError(getApiErrorMessage(err, 'Unable to resend the verification code. Please try again later.'));
+      setError(getApiErrorMessage(err, 'Couldn’t resend the verification code. Try again later.'));
     } finally {
       setLoading(false);
     }
@@ -642,7 +645,7 @@ export default function LoginPage() {
       setForgotResendCooldown(res.data?.resend_cooldown_seconds || 60);
       setForgotOtpExpiresMinutes(res.data?.expires_in_minutes || 10);
     } catch (err) {
-      setForgotResult({ detail: getApiErrorMessage(err, 'Unable to resend the OTP right now. Please try again later.'), error: true });
+      setForgotResult({ detail: getApiErrorMessage(err, 'Couldn’t resend the code. Try again later.'), error: true });
     } finally {
       setForgotLoading(false);
     }
@@ -664,7 +667,7 @@ export default function LoginPage() {
       resetRecaptcha();
       const retryAfter = Number(err.response?.data?.retry_after_seconds);
       if (retryAfter > 0) setAdminMfaResendCooldown(retryAfter);
-      setError(getApiErrorMessage(err, 'Unable to resend the admin verification code. Please try again later.'));
+      setError(getApiErrorMessage(err, 'Couldn’t resend the admin verification code. Try again later.'));
     } finally {
       setLoading(false);
     }
@@ -1018,7 +1021,7 @@ export default function LoginPage() {
                   </div>
                 </form>
               ) : (
-                <form onSubmit={googleCompletionPending ? handleGoogleCompletionSubmit : isRegister ? handleRegisterSubmit : handleLoginSubmit} className={isRegister ? 'space-y-3' : 'space-y-4'} noValidate>
+                <form autoComplete="on" onSubmit={googleCompletionPending ? handleGoogleCompletionSubmit : isRegister ? handleRegisterSubmit : handleLoginSubmit} className={isRegister ? 'space-y-3' : 'space-y-4'} noValidate>
                   {googleCompletionPending ? (
                     <div className="space-y-4">
                       <div className="rounded-2xl border border-gold/20 bg-gold/5 p-4">
@@ -1165,6 +1168,10 @@ export default function LoginPage() {
                         label="Username"
                         icon={User}
                         type="text"
+                        name="username"
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        spellCheck={false}
                         required
                         value={form.username}
                         onChange={update('username')}
@@ -1226,6 +1233,8 @@ export default function LoginPage() {
                         label="Password"
                         icon={Key}
                         type={showPassword ? 'text' : 'password'}
+                        name="password"
+                        autoComplete={isRegister ? 'new-password' : 'current-password'}
                         required
                         value={form.password}
                         onChange={update('password')}
@@ -1310,14 +1319,14 @@ export default function LoginPage() {
                       variant="gold"
                       size="lg"
                       loading={loading}
-                      disabled={loading || (isRegister ? !isRegisterValid : !isLoginValid)}
+                      disabled={loading || (isRegister ? !isRegisterValid : adminMfaStep && !isLoginValid)}
                       className="mt-1 w-full"
                     >
                       {isRegister
                         ? (registerStep === 'otp' ? 'Verify & Create Account' : 'Send Verification Code')
                         : adminMfaStep
                           ? 'Verify Admin Access'
-                          : 'Enter My Dashboard'}
+                          : 'Log in'}
                     </Button>
                   )}
                 </form>

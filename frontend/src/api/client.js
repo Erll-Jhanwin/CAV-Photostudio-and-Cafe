@@ -153,14 +153,14 @@ export const clearStoredAuth = () => {
   clearQueryCache();
 };
 
-export const getApiErrorMessage = (error, fallback = 'Something went wrong. Please try again.') => {
-  if (error?.code === 'ECONNABORTED') return 'The server is taking too long to respond. Please try again.';
-  if (!error?.response) return 'Cannot reach the server. Check your connection and try again.';
+export const getApiErrorMessage = (error, fallback = 'Something went wrong. Try again.') => {
+  if (error?.code === 'ECONNABORTED') return 'The server is taking too long to respond. Try again.';
+  if (!error?.response) return 'Can’t reach the server. Check your connection and try again.';
 
   const { status, data } = error.response;
-  if (status === 401) return 'Your session has expired. Please sign in again.';
-  if (status === 403) return 'You do not have permission to perform this action.';
-  if (status === 429) return 'Too many requests. Please wait a moment and try again.';
+  if (status === 401) return 'Your session expired. Sign in again.';
+  if (status === 403) return 'You don’t have permission to do this.';
+  if (status === 429) return 'Too many requests. Wait a moment and try again.';
   if (typeof data === 'string' && data.trim()) return data.trim();
   if (data && typeof data === 'object') {
     const messages = Object.entries(data).flatMap(([field, value]) => {

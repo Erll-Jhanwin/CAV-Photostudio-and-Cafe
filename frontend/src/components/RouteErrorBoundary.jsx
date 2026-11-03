@@ -40,7 +40,7 @@ export class RouteErrorBoundary extends React.Component {
     return (
       <div className="min-h-screen bg-cream flex items-center justify-center px-4">
         <div className="w-full max-w-md rounded-2xl border border-espresso/10 bg-white p-6 text-center shadow-[0_24px_65px_rgba(46,26,17,0.10)]">
-          <h1 className="text-xl font-black text-espresso">This screen could not be opened</h1>
+          <h1 className="text-xl font-black text-espresso">This page didn’t load</h1>
           <p className="mt-2 text-sm leading-relaxed text-espresso/60">A screen component did not finish rendering. Your session and current URL are unchanged.</p>
           <button
             type="button"

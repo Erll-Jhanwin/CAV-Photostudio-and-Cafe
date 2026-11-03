@@ -179,9 +179,14 @@ class BookingLifecycleTests(WorkflowFixtures, TestCase):
         }, format='json')
         self.assertEqual(first.status_code, 201, first.data)
         self.assertEqual(first.data['required_down_payment'], Decimal('200.00'))
+        self.assertEqual([event['action'] for event in first.data['verification_history']], ['BOOKING_PAYMENT_SUBMIT'])
         self.client.force_authenticate(self.staff)
         approved = self.client.patch(f"/api/bookings/payments/{first.data['id']}/verify/", {'status': 'APPROVED'}, format='json')
         self.assertEqual(approved.status_code, 200, approved.data)
+        self.assertEqual(
+            [event['action'] for event in approved.data['verification_history']],
+            ['BOOKING_PAYMENT_SUBMIT', 'BOOKING_PAYMENT_APPROVED'],
+        )
         self.assertEqual(approved.data['booking_details']['total_amount'], Decimal('1000.00'))
         self.assertEqual(approved.data['booking_details']['amount_paid'], Decimal('200.00'))
         self.assertEqual(approved.data['booking_details']['remaining_balance'], Decimal('800.00'))

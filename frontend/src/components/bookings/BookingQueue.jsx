@@ -134,7 +134,7 @@ export default function BookingQueue({ bookings = [], loading = false, onBooking
         setCancelReason('');
       }
     } catch (error) {
-      setActionError(getApiErrorMessage(error, 'Could not update this booking. Please try again.'));
+      setActionError(getApiErrorMessage(error, 'Couldn’t update this booking. Try again.'));
     } finally {
       busyActionsRef.current.delete(booking.id);
       setBusyActions(current => {

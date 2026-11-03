@@ -8,7 +8,7 @@ const loadRecaptcha = () => {
   if (!scriptPromise) {
     scriptPromise = new Promise((resolve, reject) => {
       let script = document.getElementById(SCRIPT_ID);
-      const fail = () => reject(new Error('Google security check could not be loaded.'));
+      const fail = () => reject(new Error('Google security check didn’t load.'));
       if (script && !window.grecaptcha) {
         script.remove();
         script = null;
@@ -64,10 +64,10 @@ export default function RecaptchaChallenge({ onTokenChange, resetKey = 0 }) {
         sitekey: siteKey,
         callback: (token) => onTokenChange(token, ''),
         'expired-callback': () => onTokenChange('', 'The security check expired. Complete it again to retry.'),
-        'error-callback': () => onTokenChange('', 'The security check could not connect. Retry the check.'),
+        'error-callback': () => onTokenChange('', 'The security check couldn’t connect. Try again.'),
       });
     }).catch(() => {
-      if (active) setLoadError('Google security check could not be loaded. Check your connection and retry.');
+      if (active) setLoadError('Google security check didn’t load. Check your connection and try again.');
     });
     return () => { active = false; };
   }, [siteKey, attempt, onTokenChange]);

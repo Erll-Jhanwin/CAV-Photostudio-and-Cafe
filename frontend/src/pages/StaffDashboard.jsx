@@ -35,6 +35,7 @@ import BookingMessagesInbox from '../components/bookings/BookingMessagesInbox';
 import useBookingMessagesUnreadCount from '../components/bookings/useBookingMessagesUnreadCount';
 import { startVisiblePolling } from '../utils/visiblePolling';
 import { MINIMUM_BOOKING_DOWN_PAYMENT } from '../utils/bookingPayments';
+import { getPosProductImage } from '../utils/posProductImages';
 
 export function StaffSkeleton() {
   return (
@@ -296,6 +297,7 @@ export default function StaffDashboard() {
   const [adjUnit, setAdjUnit] = useState('ML');
   const [adjMovementType, setAdjMovementType] = useState('IN');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
+  const [selectedVerificationPayment, setSelectedVerificationPayment] = useState(null);
   const [paymentRefreshToken, setPaymentRefreshToken] = useState(0);
   const paymentForceRefreshRef = useRef(false);
   const paymentQueryKeyRef = useRef('');
@@ -483,7 +485,7 @@ export default function StaffDashboard() {
 
       setLoadedTabs(current => ({ ...current, [tab]: true }));
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to load dashboard data.'));
+      setError(getApiErrorMessage(err, 'Couldn’t load dashboard data.'));
     } finally {
       tabLoadInFlightRef.current.delete(tab);
       tabLoadStartedAtRef.current.delete(tab);
@@ -621,7 +623,7 @@ export default function StaffDashboard() {
         setBookingPaymentsTotal(total);
       })
       .catch(err => {
-        if (active) setError(getApiErrorMessage(err, 'Failed to load payment verification records.'));
+        if (active) setError(getApiErrorMessage(err, 'Couldn’t load payment verification records.'));
       })
       .finally(() => {
         if (active) setLoadingResources(current => ({ ...current, payments: false }));
@@ -762,9 +764,9 @@ export default function StaffDashboard() {
   const getReceiptFallbackMessage = (printStatus) => {
     const error = printStatus?.error || '';
     if (/No printer command|no receipt printer is available|no default or available printer/i.test(error)) {
-      return 'Payment saved. This server cannot access a receipt printer. Open the receipt preview and print from the browser, or run the backend on the cashier PC with a default 58mm printer installed.';
+      return 'Payment saved. This server can’t access a receipt printer. Open the receipt preview and print in your browser, or run the backend on the cashier PC with a default 58mm printer.';
     }
-    return error || 'Payment saved, but the receipt could not be printed. Open the receipt preview and print from the browser.';
+    return error || 'Payment saved, but the receipt didn’t print. Open the receipt preview and print it from your browser.';
   };
 
   const handleBrowserPrintReceipt = () => {
@@ -876,7 +878,7 @@ export default function StaffDashboard() {
       setTransactionId('');
       setAmountReceived('');
       checkoutIdempotencyKeyRef.current = '';
-      alert('Sale completed successfully.');
+      alert('Sale complete.');
     } catch (err) {
       alert(getApiErrorMessage(err, 'Checkout failed.'));
     } finally {
@@ -892,7 +894,7 @@ export default function StaffDashboard() {
     if (verifyingPaymentId === payment.id) return;
     const confirmed = await confirm({
       title: `${newStatus === 'APPROVED' ? 'Approve' : 'Reject'} Payment`,
-      message: `Are you sure you want to ${action} payment ${payment.reference_number}?`,
+      message: `Do you want to ${action} payment ${payment.reference_number}?`,
       confirmLabel: newStatus === 'APPROVED' ? 'Approve Payment' : 'Reject Payment',
       type: newStatus === 'APPROVED' ? 'success' : 'error',
     });
@@ -901,13 +903,14 @@ export default function StaffDashboard() {
       setVerifyingPaymentId(payment.id);
       const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
       setBookingPayments(current => normalizePayments(current.map(item => item.id === payment.id ? res.data : item)));
-      alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'} successfully.`);
+      setSelectedVerificationPayment(current => current?.id === payment.id ? res.data : current);
+      alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'}.`);
       if (newStatus === 'APPROVED') {
         setBookingReceiptAutoPrint(true);
         setBookingReceipt(bookingReceiptFromPayment(res.data));
       }
     } catch (err) {
-      alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
+      alert(err.response?.data?.detail || err.response?.data?.status || 'Couldn’t verify payment.');
     } finally {
       setVerifyingPaymentId(null);
     }
@@ -941,8 +944,8 @@ export default function StaffDashboard() {
         .map(product => ({ ...product, item_type: 'PRODUCT' }));
       setStockActionProducts(cachedProducts);
       setStockActionProductsError(cachedProducts.length
-        ? 'Could not refresh the product list. Showing previously loaded products.'
-        : 'Could not load products. Check your connection and retry.');
+        ? 'Couldn’t refresh the product list. Showing previously loaded products.'
+        : 'Couldn’t load products. Check your connection and try again.');
     } finally {
       setStockActionProductsLoading(false);
     }
@@ -984,7 +987,7 @@ export default function StaffDashboard() {
       }
       alert(`${payload.action_type === 'REFUND' ? 'Refund' : 'Wastage'} recorded for ${response.data.transaction_id}.`);
     } catch (actionError) {
-      setStockActionError(getApiErrorMessage(actionError, 'Could not save this stock action. Check the transaction and quantities, then try again.'));
+      setStockActionError(getApiErrorMessage(actionError, 'Couldn’t save this stock action. Check the transaction and quantities, then try again.'));
     } finally {
       stockActionInFlightRef.current = false;
       setStockActionSubmitting(false);
@@ -1055,7 +1058,7 @@ export default function StaffDashboard() {
         return { ...updatedProduct, available_servings: getProductAvailable(updatedProduct) };
       }), row => row?.name));
       setManualAdjIngredient(null);
-      alert(isAdding ? 'Stock added successfully.' : 'Stock adjusted successfully.');
+      alert(isAdding ? 'Stock added.' : 'Stock adjusted.');
     } catch {
       alert('Adjustment failed.');
     } finally {
@@ -1177,12 +1180,12 @@ export default function StaffDashboard() {
       setEditingIngredient(null);
       setEditIngredientForm(emptyProductForm());
       setEditIngredientErrors({});
-      alert('Record updated successfully.');
+      alert('Ingredient updated.');
     } catch (err) {
       const data = err.response?.data;
       const message = data && typeof data === 'object'
         ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
-        : 'Failed to update ingredient.';
+        : 'Couldn’t update ingredient.';
       alert(message);
     } finally {
       setEditIngredientSaving(false);
@@ -1222,12 +1225,12 @@ export default function StaffDashboard() {
       setProductForm(emptyProductForm());
       setProductErrors({});
       setProductModalOpen(false);
-      alert('Stock added successfully.');
+      alert('Stock added.');
     } catch (err) {
       const data = err.response?.data;
       const message = data && typeof data === 'object'
         ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\n')
-        : 'Failed to create stock item.';
+        : 'Couldn’t create stock item.';
       alert(message);
     } finally {
       setProductSaving(false);
@@ -1324,10 +1327,10 @@ export default function StaffDashboard() {
       setCatalogProductForm(emptyCatalogProductForm());
       setCatalogProductErrors({});
       await reloadCatalogWorkspace();
-      alert(editingCatalogProduct ? 'Catalog product updated successfully.' : 'Catalog product created successfully.');
+      alert(editingCatalogProduct ? 'Product updated.' : 'Product created.');
     } catch (err) {
       setCatalogProductErrors(apiValidationErrors(err));
-      alert(getApiErrorMessage(err, 'Failed to save catalog product.'));
+      alert(getApiErrorMessage(err, 'Couldn’t save product.'));
     } finally {
       setCatalogProductSaving(false);
     }
@@ -1346,9 +1349,9 @@ export default function StaffDashboard() {
       if (activating) await client.patch(`/api/inventory/products/${product.id}/`, { is_active: true });
       else await client.delete(`/api/inventory/products/${product.id}/`);
       await reloadCatalogWorkspace();
-      alert(`Product ${activating ? 'activated' : 'deactivated'} successfully.`);
+      alert(`Product ${activating ? 'activated' : 'deactivated'}.`);
     } catch (err) {
-      alert(getApiErrorMessage(err, 'Failed to update product status.'));
+      alert(getApiErrorMessage(err, 'Couldn’t update product status.'));
     }
   };
 
@@ -1374,10 +1377,10 @@ export default function StaffDashboard() {
       await request;
       setCategoryModalOpen(false);
       await reloadCatalogWorkspace();
-      alert(editingCategory ? 'Category updated successfully.' : 'Category created successfully.');
+      alert(editingCategory ? 'Category updated.' : 'Category created.');
     } catch (err) {
       setCategoryErrors(apiValidationErrors(err));
-      alert(getApiErrorMessage(err, 'Failed to save category.'));
+      alert(getApiErrorMessage(err, 'Couldn’t save category.'));
     } finally {
       setCategorySaving(false);
     }
@@ -1397,7 +1400,7 @@ export default function StaffDashboard() {
       else await client.delete(`/api/inventory/categories/${category.id}/`);
       await reloadCatalogWorkspace();
     } catch (err) {
-      alert(getApiErrorMessage(err, 'Failed to update category status.'));
+      alert(getApiErrorMessage(err, 'Couldn’t update category status.'));
     }
   };
 
@@ -1431,10 +1434,10 @@ export default function StaffDashboard() {
       await request;
       setSupplierModalOpen(false);
       await reloadCatalogWorkspace();
-      alert(editingSupplier ? 'Supplier updated successfully.' : 'Supplier created successfully.');
+      alert(editingSupplier ? 'Supplier updated.' : 'Supplier created.');
     } catch (err) {
       setSupplierErrors(apiValidationErrors(err));
-      alert(getApiErrorMessage(err, 'Failed to save supplier.'));
+      alert(getApiErrorMessage(err, 'Couldn’t save supplier.'));
     } finally {
       setSupplierSaving(false);
     }
@@ -1454,7 +1457,7 @@ export default function StaffDashboard() {
       else await client.delete(`/api/inventory/suppliers/${supplier.id}/`);
       await reloadCatalogWorkspace();
     } catch (err) {
-      alert(getApiErrorMessage(err, 'Failed to update supplier status.'));
+      alert(getApiErrorMessage(err, 'Couldn’t update supplier status.'));
     }
   };
 
@@ -1521,10 +1524,10 @@ export default function StaffDashboard() {
       setEditingPurchaseOrder(null);
       setPurchaseOrderForm(emptyPurchaseOrderForm());
       await loadTabData('catalog', true);
-      alert(editingPurchaseOrder ? 'Purchase order updated successfully.' : 'Purchase order created successfully.');
+      alert(editingPurchaseOrder ? 'Purchase order updated.' : 'Purchase order created.');
     } catch (err) {
       setPurchaseOrderErrors(apiValidationErrors(err));
-      alert(getApiErrorMessage(err, 'Failed to save purchase order.'));
+      alert(getApiErrorMessage(err, 'Couldn’t save purchase order.'));
     } finally {
       setPurchaseOrderSaving(false);
     }
@@ -1546,14 +1549,14 @@ export default function StaffDashboard() {
       await refreshProducts();
       alert(`Purchase order #${purchaseOrder.id} marked ${nextStatus.toLowerCase()}.`);
     } catch (err) {
-      alert(getApiErrorMessage(err, 'Failed to update purchase order status.'));
+      alert(getApiErrorMessage(err, 'Couldn’t update purchase order status.'));
     } finally {
       setPurchaseOrderActionId(null);
     }
   };
 
   const handleLogout = useCallback(() => {
-    alert('Signed out successfully.');
+    alert('Signed out.');
     logout();
     navigate('/login', { replace: true });
   }, [logout, navigate]);
@@ -1886,6 +1889,7 @@ export default function StaffDashboard() {
                 <div className="grid grid-cols-2 auto-rows-max content-start items-start gap-3 sm:grid-cols-3 md:gap-4 xl:grid-cols-4 lg:min-h-0 lg:flex-1">
                   {pagedProducts.map((prod, i) => {
                     const availableServings = getProductAvailable(prod);
+                    const productImage = getPosProductImage(prod);
                     return (
                     <button
                       key={prod.id}
@@ -1897,10 +1901,10 @@ export default function StaffDashboard() {
                     >
                       {/* Drink image */}
                       <div className="relative w-full h-20 sm:h-24 bg-cream overflow-hidden shrink-0">
-                        {prod.image_url ? (
+                        {productImage ? (
                           <img
-                            src={prod.image_url}
-                            srcSet={getPosProductImageSrcSet(prod.image_url)}
+                            src={productImage}
+                            srcSet={getPosProductImageSrcSet(productImage)}
                             sizes="(max-width: 640px) 42vw, (max-width: 1024px) 30vw, 18vw"
                             alt={prod.name}
                             loading={i < 4 ? 'eager' : 'lazy'}
@@ -1912,7 +1916,7 @@ export default function StaffDashboard() {
                         ) : null}
                         <div
                           className="w-full h-full flex items-center justify-center text-3xl"
-                          style={{ display: prod.image_url ? 'none' : 'flex' }}
+                          style={{ display: productImage ? 'none' : 'flex' }}
                         >
                           ☕
                         </div>
@@ -2143,74 +2147,25 @@ export default function StaffDashboard() {
                   </div>
 
                   <div ref={paymentListRef} aria-label="Booking payment list" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 scrollbar-thin">
-                    {filteredBookingPayments.length > 0 ? <div className="space-y-2 pb-1">
-                      {pagedBookingPayments.map((payment, i) => {
+                    {filteredBookingPayments.length > 0 ? <div className="space-y-1.5 pb-1">
+                      {pagedBookingPayments.map(payment => {
                         const details = payment.booking_details || {};
-                        const isPending = payment.status === 'PENDING_VERIFICATION';
                         return (
-                          <div key={payment.id} className="overflow-hidden rounded-2xl border border-espresso/10 bg-white shadow-sm animate-in-up" style={{ animationDelay: `${i * 35}ms` }}>
-                            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-espresso/[0.07] bg-cream/35 px-3 py-2.5 md:px-4">
-                              <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                                <Avatar user={{ username: details.customer_name, email: details.customer_email, profile_picture_url: details.customer_profile_picture_url }} size="sm" />
-                                <p className="min-w-0 font-black text-espresso">{details.customer_name || 'N/A'}</p>
-                                <StatusBadge status={payment.status} />
-                              </div>
-                              <p className="text-xs font-black uppercase tracking-wide text-espresso/65">Booking <span className="text-espresso">#{payment.booking}</span></p>
+                          <div key={payment.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 rounded-xl border border-espresso/10 bg-white px-3 py-2 shadow-sm sm:grid-cols-[minmax(10rem,1.35fr)_minmax(6.5rem,.6fr)_minmax(10rem,1fr)_auto] sm:gap-4 sm:px-4">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Avatar user={{ username: details.customer_name, email: details.customer_email, profile_picture_url: details.customer_profile_picture_url }} size="sm" />
+                              <button
+                                type="button"
+                                onClick={() => setSelectedVerificationPayment(payment)}
+                                aria-label={`Open booking ${payment.booking} details for ${details.customer_name || 'customer'}`}
+                                className="min-w-0 truncate rounded-md text-left text-sm font-black text-espresso underline decoration-gold/70 decoration-2 underline-offset-4 hover:text-gold-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+                              >
+                                {details.customer_name || 'N/A'}
+                              </button>
                             </div>
-
-                            <div className="grid grid-cols-1 gap-3 px-3 py-3 text-xs sm:grid-cols-2 md:grid-cols-3 md:gap-0 md:px-4">
-                              <section className="min-w-0 md:pr-4">
-                                <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Booking Details</h3>
-                                <dl className="space-y-1.5">
-                                  <div><dt className="inline text-espresso/50">Package: </dt><dd className="inline font-bold text-espresso">{details.service_name ? `${details.service_name} · ` : ''}{details.package_name || details.package_details?.name || 'N/A'}</dd></div>
-                                  <div><dt className="inline text-espresso/50">Schedule: </dt><dd className="inline font-bold text-espresso">{details.scheduled_date} at {details.scheduled_time}</dd></div>
-                                  <div className="min-w-0"><dt className="inline text-espresso/50">Email: </dt><dd className="break-all font-bold text-espresso">{details.customer_email || 'No email'}</dd></div>
-                                </dl>
-                              </section>
-
-                              <section className="min-w-0 border-t border-espresso/10 pt-3 sm:border-t-0 sm:pt-0 md:border-l md:border-t-0 md:px-4 md:pt-0">
-                                <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Payment Details</h3>
-                                <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                                  <div className="min-w-0"><dt className="text-espresso/50">Method</dt><dd className="break-words font-bold text-espresso">{payment.method_label || payment.method || 'Unknown'}</dd></div>
-                                  <div className="min-w-0"><dt className="text-espresso/50">Reference</dt><dd className="break-all font-bold text-espresso">{payment.reference_number}</dd></div>
-                                  <div><dt className="text-espresso/50">Payment Amount</dt><dd className="font-black text-gold-dark">{formatCurrency(payment.amount)}</dd></div>
-                                  <div><dt className="text-espresso/50">Required DP</dt><dd className="font-bold text-espresso">{formatCurrency(MINIMUM_BOOKING_DOWN_PAYMENT)}</dd></div>
-                                  <div><dt className="text-espresso/50">Total Amount</dt><dd className="font-bold text-espresso">{formatCurrency(details.total_amount)}</dd></div>
-                                  <div><dt className="text-espresso/50">Down Payment Paid</dt><dd className="font-bold text-espresso">{formatCurrency(details.amount_paid)}</dd></div>
-                                  <div><dt className="text-espresso/50">Remaining Balance</dt><dd className="font-black text-espresso">{formatCurrency(details.remaining_balance)}</dd></div>
-                                  <div className="col-span-2"><dt className="inline text-espresso/50">Paid At: </dt><dd className="inline font-bold text-espresso">{formatManilaDateTime(payment.paid_at)}</dd></div>
-                                  <div className="col-span-2 pt-0.5"><PaymentProofPreview payment={payment} /></div>
-                                </dl>
-                              </section>
-
-                              <section className="min-w-0 border-t border-espresso/10 pt-3 sm:col-span-2 md:col-span-1 md:border-l md:border-t-0 md:px-4 md:pt-0">
-                                <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Verification</h3>
-                                <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
-                                  <Button size="sm" variant="outline" icon={Printer} onClick={() => openBookingReceipt(payment)}>
-                                    Print Receipt
-                                  </Button>
-                                  {isPending ? (
-                                    <>
-                                      <Button size="sm" variant="success" icon={Check} loading={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}>
-                                        Confirm Payment
-                                      </Button>
-                                      <Button size="sm" variant="danger" icon={X} disabled={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}>
-                                        Flag Payment Issue
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <div className="text-xs text-espresso/60">
-                                      <p className="font-black text-espresso">Verified by</p>
-                                      <div className="mt-1.5 flex items-center gap-2">
-                                        <Avatar user={payment.verified_by_details} size="xs" />
-                                        <p>{payment.verified_by_details?.username || 'N/A'}</p>
-                                      </div>
-                                      <p>{payment.verified_at ? formatManilaDateTime(payment.verified_at) : 'No timestamp'}</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </section>
-                            </div>
+                            <p className="text-xs font-black text-espresso/70 sm:text-sm">Booking <span className="text-espresso">#{payment.booking}</span></p>
+                            <p className="col-span-2 text-xs font-semibold text-espresso/65 sm:col-span-1">{details.scheduled_date || 'Date unavailable'} <span className="text-espresso/35">·</span> {details.scheduled_time || 'Time unavailable'}</p>
+                            <div className="justify-self-end"><StatusBadge status={payment.status} /></div>
                           </div>
                         );
                       })}
@@ -2233,6 +2188,99 @@ export default function StaffDashboard() {
                   )}
                 </div>
               </Card>
+              <Modal
+                open={Boolean(selectedVerificationPayment)}
+                onClose={() => setSelectedVerificationPayment(null)}
+                title={`Booking #${selectedVerificationPayment?.booking || ''} · Payment details`}
+                size="5xl"
+                bodyClassName="bg-cream/35"
+              >
+                {selectedVerificationPayment && (() => {
+                  const payment = selectedVerificationPayment;
+                  const details = payment.booking_details || {};
+                  const history = payment.verification_history || [];
+                  const isPending = payment.status === 'PENDING_VERIFICATION';
+                  const bookingItems = Array.isArray(details.items) ? details.items : [];
+                  return (
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-espresso/10 bg-white p-4">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Avatar user={{ username: details.customer_name, email: details.customer_email, profile_picture_url: details.customer_profile_picture_url }} size="md" />
+                          <div className="min-w-0">
+                            <h3 className="break-words text-base font-black text-espresso">{details.customer_name || 'N/A'}</h3>
+                            <p className="text-xs text-espresso/60">Booking #{payment.booking} <span className="px-1">·</span> {details.scheduled_date || 'Date unavailable'} at {details.scheduled_time || 'Time unavailable'}</p>
+                          </div>
+                        </div>
+                        <StatusBadge status={payment.status} />
+                      </div>
+
+                      <section className="rounded-2xl border border-espresso/10 bg-white p-4">
+                        <h3 className="mb-3 text-xs font-black uppercase tracking-wider text-gold-dark">Booking details</h3>
+                        <dl className="grid grid-cols-1 gap-x-5 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                          <div><dt className="text-xs text-espresso/50">Service and package</dt><dd className="font-bold text-espresso">{details.service_name || 'N/A'} · {details.package_name || details.package_details?.name || 'N/A'}</dd></div>
+                          {details.package_description && <div><dt className="text-xs text-espresso/50">Package description</dt><dd className="break-words font-medium text-espresso">{details.package_description}</dd></div>}
+                          {details.package_inclusions && <div><dt className="text-xs text-espresso/50">Package inclusions</dt><dd className="whitespace-pre-wrap break-words font-medium text-espresso">{details.package_inclusions}</dd></div>}
+                          <div><dt className="text-xs text-espresso/50">Session</dt><dd className="font-bold text-espresso">{details.scheduled_date || 'N/A'} at {details.scheduled_time || 'N/A'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Booking status</dt><dd className="font-bold text-espresso">{details.status || 'N/A'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Booking source</dt><dd className="font-bold text-espresso">{details.is_walk_in ? 'Walk-in' : 'Online booking'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Booking created</dt><dd className="font-bold text-espresso">{details.created_at ? formatManilaDateTime(details.created_at) : 'N/A'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Customer email</dt><dd className="break-all font-bold text-espresso">{details.customer_email || 'No email'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Customer phone</dt><dd className="font-bold text-espresso">{details.customer_phone || 'No phone'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Package total</dt><dd className="font-bold text-espresso">{formatCurrency(details.total_amount)}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Package price</dt><dd className="font-bold text-espresso">{formatCurrency(details.package_price)}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Paid toward booking</dt><dd className="font-bold text-espresso">{formatCurrency(details.amount_paid)}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Remaining balance</dt><dd className="font-black text-espresso">{formatCurrency(details.remaining_balance)}</dd></div>
+                          {details.notes && <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-espresso/50">Booking notes</dt><dd className="whitespace-pre-wrap break-words font-medium text-espresso">{details.notes}</dd></div>}
+                          {details.cancellation_reason && <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-espresso/50">Cancellation reason</dt><dd className="whitespace-pre-wrap break-words font-medium text-espresso">{details.cancellation_reason}</dd></div>}
+                          {bookingItems.length > 0 && <div className="sm:col-span-2 lg:col-span-3"><dt className="text-xs text-espresso/50">Booking items</dt><dd className="mt-1 space-y-1">{bookingItems.map((item, index) => <p key={`${item.name || item.id || 'item'}-${index}`} className="break-words font-medium text-espresso">{typeof item === 'string' ? item : `${item.quantity ? `${item.quantity} × ` : ''}${item.name || item.title || JSON.stringify(item)}`}</p>)}</dd></div>}
+                        </dl>
+                      </section>
+
+                      <section className="rounded-2xl border border-espresso/10 bg-white p-4">
+                        <h3 className="mb-3 text-xs font-black uppercase tracking-wider text-gold-dark">Payment details</h3>
+                        <dl className="grid grid-cols-2 gap-x-5 gap-y-3 text-sm sm:grid-cols-3">
+                          <div><dt className="text-xs text-espresso/50">Payment record</dt><dd className="font-bold text-espresso">#{payment.id}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Payment status</dt><dd className="font-bold text-espresso">{payment.status?.replaceAll('_', ' ') || 'Unknown'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Method</dt><dd className="font-bold text-espresso">{payment.method_label || payment.method || 'Unknown'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Reference number</dt><dd className="break-all font-bold text-espresso">{payment.reference_number || 'N/A'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Payment amount</dt><dd className="font-black text-gold-dark">{formatCurrency(payment.amount)}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Required down payment</dt><dd className="font-bold text-espresso">{formatCurrency(payment.required_down_payment ?? MINIMUM_BOOKING_DOWN_PAYMENT)}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Paid at</dt><dd className="font-bold text-espresso">{payment.paid_at ? formatManilaDateTime(payment.paid_at) : 'N/A'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Submitted</dt><dd className="font-bold text-espresso">{payment.created_at ? formatManilaDateTime(payment.created_at) : 'N/A'}</dd></div>
+                          <div><dt className="text-xs text-espresso/50">Last updated</dt><dd className="font-bold text-espresso">{payment.updated_at ? formatManilaDateTime(payment.updated_at) : 'N/A'}</dd></div>
+                          {payment.admin_note && <div className="col-span-2 sm:col-span-3"><dt className="text-xs text-espresso/50">Staff note</dt><dd className="whitespace-pre-wrap break-words font-medium text-espresso">{payment.admin_note}</dd></div>}
+                          <div className="col-span-2 pt-1 sm:col-span-3"><PaymentProofPreview payment={payment} /></div>
+                        </dl>
+                      </section>
+
+                      <section className="rounded-2xl border border-espresso/10 bg-white p-4">
+                        <h3 className="mb-3 text-xs font-black uppercase tracking-wider text-gold-dark">Verification history</h3>
+                        {history.length ? (
+                          <ol className="space-y-3">
+                            {history.map(event => (
+                              <li key={event.id} className="border-l-2 border-gold/60 pl-3">
+                                <p className="text-sm font-black text-espresso">{event.action === 'BOOKING_PAYMENT_SUBMIT' ? 'Payment submitted' : event.action === 'BOOKING_PAYMENT_APPROVED' ? 'Payment approved' : event.action === 'BOOKING_PAYMENT_REJECTED' ? 'Payment rejected' : 'Verification issue recorded'}</p>
+                                <p className="text-xs text-espresso/65">{event.actor_name || 'Staff'} <span className="px-1">·</span> {event.timestamp ? formatManilaDateTime(event.timestamp) : 'Time unavailable'}</p>
+                                <p className="mt-0.5 break-words text-xs text-espresso/75">{event.description}</p>
+                              </li>
+                            ))}
+                          </ol>
+                        ) : payment.verified_at ? (
+                          <div className="flex items-start gap-2 text-sm text-espresso/75"><Avatar user={payment.verified_by_details} size="xs" /><p>Verified by <strong className="text-espresso">{payment.verified_by_details?.username || 'Staff'}</strong> · {formatManilaDateTime(payment.verified_at)}</p></div>
+                        ) : <p className="text-sm text-espresso/55">No verification activity recorded yet.</p>}
+                      </section>
+
+                      <div className="flex flex-col-reverse gap-2 border-t border-espresso/10 pt-3 sm:flex-row sm:justify-end">
+                        <Button type="button" variant="outline" icon={Printer} onClick={() => openBookingReceipt(payment)}>Print Receipt</Button>
+                        {isPending && <>
+                          <Button type="button" variant="danger" icon={X} disabled={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}>Reject</Button>
+                          <Button type="button" variant="success" icon={Check} loading={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}>Approve</Button>
+                        </>}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </Modal>
             </div>
           )}
 

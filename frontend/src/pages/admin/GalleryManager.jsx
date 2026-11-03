@@ -57,7 +57,7 @@ export default function GalleryManager() {
       setImages(Array.isArray(response.data) ? response.data : []);
       setBrokenImageIds(new Set());
     } catch (requestError) {
-      setLoadError(getApiErrorMessage(requestError, 'Could not load gallery images.'));
+      setLoadError(getApiErrorMessage(requestError, 'Couldn’t load gallery images.'));
     } finally {
       setLoading(false);
     }
@@ -196,7 +196,7 @@ export default function GalleryManager() {
       resetForm();
       await loadImages();
     } catch (requestError) {
-      setFormError(getApiErrorMessage(requestError, 'Could not save the gallery image.'));
+      setFormError(getApiErrorMessage(requestError, 'Couldn’t save the gallery image.'));
     } finally {
       setSaving(false);
     }
@@ -213,7 +213,7 @@ export default function GalleryManager() {
       setNotice('Gallery image deleted.');
       await loadImages();
     } catch (requestError) {
-      setFormError(getApiErrorMessage(requestError, 'Could not delete the gallery image.'));
+      setFormError(getApiErrorMessage(requestError, 'Couldn’t delete the gallery image.'));
     } finally {
       setDeletingId(null);
     }
@@ -375,7 +375,7 @@ export default function GalleryManager() {
                       ) : (
                         <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-xs text-espresso/60">
                           <Camera className="h-7 w-7 text-espresso/30" />
-                          {image.image_url ? 'This image could not be loaded. Upload a replacement to restore it.' : 'Archived gallery record. Upload a replacement image before publishing.'}
+                          {image.image_url ? 'This image didn’t load. Upload a replacement to restore it.' : 'Archived gallery image. Upload a replacement before publishing.'}
                         </div>
                       )}
                       <span className={`absolute left-3 top-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold shadow-sm backdrop-blur ${image.is_featured ? 'bg-emerald-50/95 text-emerald-800' : 'bg-white/90 text-espresso/65'}`}>

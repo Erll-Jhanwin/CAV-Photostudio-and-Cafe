@@ -31,7 +31,7 @@ export default function BookingConversationModal({ open, bookingId, customerName
           setError('');
         }
       } catch (requestError) {
-        if (active) setError(getApiErrorMessage(requestError, 'Conversation could not be loaded.'));
+        if (active) setError(getApiErrorMessage(requestError, 'Couldn’t load this conversation.'));
       } finally {
         if (active && showLoading) setLoading(false);
       }
@@ -64,7 +64,7 @@ export default function BookingConversationModal({ open, bookingId, customerName
       if (allowConcern) setConversation({ concern, concern_label: concern[0] + concern.slice(1).toLowerCase() });
       setDraft('');
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Message could not be sent.'));
+      setError(getApiErrorMessage(requestError, 'Couldn’t send your message.'));
     } finally {
       setSending(false);
     }

@@ -93,7 +93,7 @@ export default function LiveInventoryPage({ ingredients = [], productSalesInvent
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold">{error}</p>
-            <p className="mt-1 text-[11px] text-red-700/80">Inventory data could not be loaded. Retry when the connection is available.</p>
+            <p className="mt-1 text-[11px] text-red-700/80">Couldn’t load inventory. Try again when you’re connected.</p>
           </div>
           <Button variant="outline" size="sm" onClick={onRefresh} loading={loading} className="shrink-0 border-red-200 bg-white text-red-800 hover:bg-red-100">Retry Inventory</Button>
         </div>

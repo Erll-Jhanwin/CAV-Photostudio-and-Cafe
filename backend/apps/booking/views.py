@@ -1135,7 +1135,8 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                     idempotency_key=idempotency_key or None,
                 )
                 AuditLog.objects.create(user=request.user, action='BOOKING_PAYMENT_SUBMIT',
-                                        description=f'Submitted payment #{payment.id} for booking #{booking.id}.')
+                                        description=f'Submitted payment #{payment.id} for booking #{booking.id}.',
+                                        metadata={'payment_id': payment.id, 'booking_id': booking.id, 'status': payment.status})
                 if payment.booking.customer_id:
                     notify_booking_payment(payment)
         except IntegrityError as exc:

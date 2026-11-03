@@ -13,7 +13,7 @@ const quickLinks = [
 ];
 
 const informationLinks = [
-  { label: 'Access Account', to: '/login' },
+  { label: 'Log in', to: '/login' },
   { label: 'Security & Privacy', to: '/privacy-policy' },
   { label: 'Book a Session', to: '/login?redirect=book' },
 ];

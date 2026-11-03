@@ -107,7 +107,7 @@ export default function PosStockActionModal({
         setTransactionLookupError('No completed sale matches that transaction ID. Check it and try again.');
       }
     }).catch(() => {
-      if (active && transactionRequestRef.current === requestId) setTransactionLookupError('Could not load this transaction. Check your connection and try again.');
+      if (active && transactionRequestRef.current === requestId) setTransactionLookupError('Couldn’t load this transaction. Check your connection and try again.');
     }).finally(() => {
       if (active && transactionRequestRef.current === requestId) setTransactionLookupLoading(false);
     });
@@ -196,7 +196,7 @@ export default function PosStockActionModal({
       const eligibleLines = (loadedOrder.items || []).filter(line => Number(line.quantity || 0) > Number(isRefund ? line.returned_quantity || 0 : line.wasted_quantity || 0));
       setTransactionLookupError(eligibleLines.length ? '' : `This sale has no eligible items for ${isRefund ? 'a refund' : 'wastage'}.`);
     } catch {
-      if (transactionRequestRef.current === requestId) setTransactionLookupError('Could not load this transaction. Check your connection and try again.');
+      if (transactionRequestRef.current === requestId) setTransactionLookupError('Couldn’t load this transaction. Check your connection and try again.');
     } finally {
       if (transactionRequestRef.current === requestId) setTransactionLookupLoading(false);
     }

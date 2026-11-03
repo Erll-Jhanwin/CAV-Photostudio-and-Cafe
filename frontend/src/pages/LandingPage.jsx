@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import {
   Camera, Coffee, ChevronRight, ChevronLeft, Send, X,
   ArrowRight, Star, Menu, Check,
-  User, Users, Heart, Cake, CalendarCheck
+  User, Users, Heart, Cake, CalendarCheck, Clock
 } from 'lucide-react';
 import axios from 'axios';
 import { API_BASE_URL } from '../api/config';
@@ -13,8 +13,63 @@ import { Button } from '../components/ui/Button';
 import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
 import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
 import SiteFooter from '../components/SiteFooter';
-import { normalizeGalleryImages, normalizeRowsById, normalizeServices, recordKey, uniqueBy } from '../utils/uniqueRecords';
+import { normalizeBookings, normalizeGalleryImages, normalizeRowsById, normalizeServices, recordKey, uniqueBy } from '../utils/uniqueRecords';
 import { brandAssets, businessAssets, decorateServicesWithAssets, localGalleryImages } from '../utils/cavAssets';
+import { MANILA_TIME_ZONE } from '../utils/dateTime';
+
+const studioPreviewOptions = [
+  {
+    id: 'solo',
+    label: 'Solo',
+    image: encodeURI('/assets/pics/solo/solo pic portrait.jpg'),
+    thumbnail: encodeURI('/assets/pics/solo/solo pic portrait.jpg'),
+    alt: 'Solo studio portrait',
+  },
+  {
+    id: 'couples',
+    label: 'Couples',
+    image: encodeURI('/assets/pics/couple/studio session couple-960w.webp'),
+    thumbnail: encodeURI('/assets/pics/couple/studio session couple-480w.webp'),
+    alt: 'Couples portrait in the CAV studio',
+  },
+  {
+    id: 'friends',
+    label: 'Friends',
+    image: encodeURI('/assets/pics/friends/studio session friends-960w.webp'),
+    thumbnail: encodeURI('/assets/pics/friends/studio session friends-480w.webp'),
+    alt: 'Friends portrait in the CAV studio',
+  },
+];
+
+export const getNextUpcomingBooking = (rows, now = Date.now()) => {
+  const futureBookings = (Array.isArray(rows) ? rows : [])
+    .filter(booking => ['PENDING', 'CONFIRMED', 'CONFIRMED_DP'].includes(String(booking?.status || '').toUpperCase()))
+    .map(booking => {
+      const date = String(booking?.scheduled_date || '').slice(0, 10);
+      const time = String(booking?.scheduled_time || '').slice(0, 5);
+      const startsAt = new Date(`${date}T${time}:00+08:00`).getTime();
+      return { booking, startsAt };
+    })
+    .filter(item => Number.isFinite(item.startsAt) && item.startsAt > now)
+    .sort((a, b) => a.startsAt - b.startsAt);
+  return futureBookings[0]?.booking || null;
+};
+
+const formatSessionDate = (value) => {
+  const date = new Date(`${String(value || '').slice(0, 10)}T00:00:00+08:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-PH', {
+    timeZone: MANILA_TIME_ZONE,
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  });
+};
+
+const formatSessionTime = (value) => {
+  const [hour = '', minute = ''] = String(value || '').slice(0, 5).split(':');
+  const date = new Date(`2020-01-01T${hour}:${minute}:00+08:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString('en-PH', {
+    timeZone: MANILA_TIME_ZONE, hour: 'numeric', minute: '2-digit',
+  });
+};
 
 export function LandingSkeleton() {
   return (
@@ -608,11 +663,33 @@ export default function LandingPage({ page = 'home' }) {
   const [landingSelectedService, setLandingSelectedService] = useState(null);
   const [landingPackageSlide, setLandingPackageSlide] = useState(0);
   const [landingCardsPerSlide, setLandingCardsPerSlide] = useState(2);
+  const [activeStudioPreviewId, setActiveStudioPreviewId] = useState('solo');
+  const [upcomingBooking, setUpcomingBooking] = useState(null);
+  const [upcomingBookingLoading, setUpcomingBookingLoading] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     setMobileNavOpen(false);
   }, [page]);
+
+  useEffect(() => {
+    if (page !== 'home' || user?.role !== 'CUSTOMER') {
+      setUpcomingBooking(null);
+      setUpcomingBookingLoading(false);
+      return undefined;
+    }
+    let active = true;
+    setUpcomingBookingLoading(true);
+    getCached('/api/bookings/', {}, { force: true })
+      .then(response => {
+        if (!active) return;
+        const rows = Array.isArray(response.data) ? response.data : response.data?.results || [];
+        setUpcomingBooking(getNextUpcomingBooking(normalizeBookings(rows)));
+      })
+      .catch(() => { if (active) setUpcomingBooking(null); })
+      .finally(() => { if (active) setUpcomingBookingLoading(false); });
+    return () => { active = false; };
+  }, [page, user?.id, user?.role]);
 
   useEffect(() => {
     const handleResize = () => setLandingCardsPerSlide(window.innerWidth < 640 ? 1 : 2);
@@ -748,7 +825,7 @@ export default function LandingPage({ page = 'home' }) {
     } catch {
       const fallback = /\b(ba|po|paano|magkano|pakete|saan|nasaan|bukas|ngayon)\b/i.test(msg)
         ? 'Hindi ko ma-verify ang impormasyon ngayon. Subukan muli o makipag-ugnayan sa staff ng CAV.'
-        : 'I cannot verify that information right now. Please try again or contact CAV staff directly.';
+        : 'I can’t check that right now. Try again or contact CAV staff.';
       setChatMessages(p => [...p, { role: 'assistant', content: fallback }]);
     } finally {
       setChatLoading(false);
@@ -819,7 +896,7 @@ export default function LandingPage({ page = 'home' }) {
               ) : (
                 <>
                   <Link to="/login" className="hidden rounded-2xl px-3 py-2 text-sm font-bold text-espresso/68 transition-colors hover:bg-cream hover:text-espresso focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold sm:block">
-                    Login
+                    Log in
                   </Link>
                   <Button variant="gold" size="sm" onClick={handleBookNow} className="hidden rounded-2xl px-4 font-black sm:inline-flex">
                     Reserve <span className="hidden lg:inline">Your Session</span> <ArrowRight className="w-3.5 h-3.5" />
@@ -873,53 +950,127 @@ export default function LandingPage({ page = 'home' }) {
       </header>
 
       {/* Hero Section */}
-      {page === 'home' && <section id="hero" className="relative flex-grow flex items-center min-h-[calc(100vh-4rem)] premium-section bg-gradient-to-br from-espresso-dark via-espresso to-espresso-light text-cream overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.07] bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-gold via-transparent to-transparent" />
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(28,15,10,0.22),transparent_45%,rgba(212,175,55,0.05))]" />
-        <div className="relative z-10 mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 lg:grid-cols-12 lg:gap-20">
-          <div className="min-w-0 space-y-8 md:space-y-10 lg:col-span-7">
-            <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-gold/20 bg-gold/[0.12] px-4 py-2 text-sm font-semibold leading-snug text-gold shadow-[0_14px_34px_rgba(212,175,55,0.10)] animate-in-up">
-              <Coffee className="h-4 w-4 shrink-0" />
-              <span className="min-w-0">Coffee &amp; Creative Studio Sessions</span>
-            </div>
-            <h1 className="font-sans text-5xl font-black leading-[0.98] tracking-tight text-white text-balance md:text-6xl lg:text-7xl">
-               Capture the <span className="text-gold italic">moment</span>,<br />
-               savor the <span className="text-gold italic">flavor</span>.
-             </h1>
-            <p className="max-w-2xl text-lg font-light leading-relaxed text-cream/78 md:text-xl">
-              CAV combines a premium, fully-equipped photography studio with a curated boutique café.
-              Express yourself in front of the lens while enjoying rich artisanal coffees.
-            </p>
-            <div className="flex max-w-full flex-col gap-4 pt-2 sm:flex-row">
-              <Button variant="gold" size="xl" onClick={handleBookNow} className="group">
-                Start Your Studio Session
-                <ArrowRight className="h-5 w-5 shrink-0 transition-transform duration-300 group-hover:translate-x-1" />
-              </Button>
-              <Link to="/cafe-menu" className="inline-flex items-center justify-center gap-2 rounded-[20px] border border-cream/20 px-6 py-4 text-sm font-semibold text-cream shadow-[0_12px_30px_rgba(0,0,0,0.10)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-cream/45 hover:bg-white/8 hover:shadow-[0_16px_36px_rgba(0,0,0,0.16)] active:translate-y-0 active:scale-[0.98] md:px-8">
-                Explore Café Favorites
-              </Link>
-            </div>
-          </div>
-          <div className="min-w-0 lg:col-span-5">
-            <div className="group relative mx-auto aspect-[4/5] w-full max-w-[430px] overflow-hidden rounded-[24px] border border-white/10 shadow-[0_34px_90px_rgba(0,0,0,0.34)]">
-              <img
-                src={businessAssets.hero}
-                alt="Professional studio setup with camera and lighting equipment"
-                loading="lazy"
-                style={{ objectPosition: '50% 32%' }}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
-              />
-              <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-espresso-dark/92 via-espresso-dark/10 to-transparent p-6 md:p-8">
-                <div className="mb-2 flex items-center gap-1 text-gold">
-                  {[...Array(5)].map((_, i) => <Star key={i} className="h-4 w-4 fill-current" />)}
+      {page === 'home' && (() => {
+        const isCustomer = user?.role === 'CUSTOMER';
+        const sessionName = upcomingBooking?.package_details?.name || upcomingBooking?.package_name || 'Studio Session';
+        const activeStudioPreview = studioPreviewOptions.find(option => option.id === activeStudioPreviewId) || studioPreviewOptions[0];
+        return (
+          <section id="hero" className="relative flex flex-grow items-center overflow-hidden bg-gradient-to-br from-espresso-dark via-espresso to-espresso-light text-cream">
+            <div className="absolute inset-0 opacity-[0.07] bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-gold via-transparent to-transparent" />
+            <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(28,15,10,0.22),transparent_45%,rgba(212,175,55,0.05))]" />
+            <div className="relative z-10 mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-9 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-12 lg:gap-14 lg:px-8 lg:py-20">
+              <div className="min-w-0 space-y-6 lg:col-span-7 lg:space-y-8">
+                <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-gold/20 bg-gold/[0.12] px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-gold shadow-[0_14px_34px_rgba(212,175,55,0.10)]">
+                  <Coffee className="h-4 w-4 shrink-0" />
+                  <span>Coffee &amp; creative studio sessions</span>
                 </div>
-                <p className="mb-1 text-sm font-light italic">&ldquo;Fun studio sessions and excellent coffee.&rdquo;</p>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gold">- Angela C., Studio Client</p>
+                <div className="space-y-4">
+                  <h1 className="max-w-3xl font-sans text-4xl font-black leading-[1.02] tracking-tight text-white text-balance sm:text-5xl md:text-6xl lg:text-7xl">
+                    Capture the <span className="text-gold italic">moment</span>,<br className="hidden sm:block" /> savor the <span className="text-gold italic">flavor</span>.
+                  </h1>
+                  <p className="max-w-xl text-base font-light leading-relaxed text-cream/75 sm:text-lg">
+                    Step into the studio for a portrait worth keeping, then savor a little café time at CAV.
+                  </p>
+                </div>
+
+                <div className="flex max-w-full flex-col gap-3 pt-1 sm:flex-row sm:flex-wrap sm:items-center">
+                  <Button variant="gold" size="xl" onClick={handleBookNow} className="group">
+                    Start Your Studio Session
+                    <ArrowRight className="h-5 w-5 shrink-0 transition-transform duration-300 group-hover:translate-x-1" />
+                  </Button>
+                  <Link to="/cafe-menu" className="inline-flex min-h-[56px] items-center justify-center gap-2 rounded-[20px] border border-cream/25 bg-white/[0.03] px-6 py-4 text-sm font-semibold text-cream shadow-[0_12px_30px_rgba(0,0,0,0.10)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-gold/65 hover:bg-gold/10 hover:shadow-[0_16px_36px_rgba(0,0,0,0.16)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-espresso active:translate-y-0 active:scale-[0.98] md:px-8">
+                    Explore Café Favorites
+                  </Link>
+                </div>
+
+                {isCustomer && upcomingBookingLoading ? (
+                  <div role="status" aria-label="Loading your next booking" className="max-w-2xl animate-pulse rounded-[24px] border border-cream/70 bg-cream p-6 text-espresso shadow-[0_24px_60px_rgba(0,0,0,0.18)] sm:p-8">
+                    <div className="h-3 w-36 rounded bg-espresso/10" />
+                    <div className="mt-4 h-7 w-2/3 rounded bg-espresso/10" />
+                    <div className="mt-5 h-4 w-1/2 rounded bg-espresso/10" />
+                  </div>
+                ) : isCustomer && upcomingBooking ? (
+                  <article aria-label="Your next booking" className="relative max-w-2xl overflow-hidden rounded-[24px] border border-cream/80 bg-cream p-5 text-espresso shadow-[0_24px_60px_rgba(0,0,0,0.22)] sm:p-7">
+                    <div className="absolute inset-x-5 top-3 border-t border-dashed border-espresso/20 sm:inset-x-7" aria-hidden="true" />
+                    <div className="pt-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gold-dark">Your next session</p>
+                        <p className="rounded-full bg-gold/15 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-espresso">Booking #{upcomingBooking.id}</p>
+                      </div>
+                      <h2 className="mt-3 break-words font-sans text-2xl font-black leading-tight text-espresso sm:text-3xl">{sessionName}</h2>
+                      {upcomingBooking.package_details?.service?.name && <p className="mt-1 text-sm font-semibold text-espresso/55">{upcomingBooking.package_details.service.name}</p>}
+                      <div className="mt-5 grid grid-cols-1 gap-3 border-t border-dashed border-espresso/20 pt-4 sm:grid-cols-2 sm:gap-5">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-espresso/5 text-gold-dark"><CalendarCheck className="h-4 w-4" /></span>
+                          <div><p className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Session date</p><p className="mt-1 text-sm font-bold text-espresso">{formatSessionDate(upcomingBooking.scheduled_date)}</p></div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-espresso/5 text-gold-dark"><Clock className="h-4 w-4" /></span>
+                          <div><p className="text-[10px] font-black uppercase tracking-wider text-espresso/45">Session time</p><p className="mt-1 text-sm font-bold text-espresso">{formatSessionTime(upcomingBooking.scheduled_time)}</p></div>
+                        </div>
+                      </div>
+                      <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
+                        <Button variant="gold" size="lg" onClick={() => navigate(`/customer?tab=history&booking=${encodeURIComponent(upcomingBooking.id)}`)} className="group rounded-2xl px-5 font-black">
+                          View My Booking <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                        </Button>
+                        <Button variant="outline" size="lg" onClick={() => navigate('/customer?tab=book')} className="rounded-2xl border-espresso/20 bg-white/65 px-5 font-bold text-espresso hover:bg-white">
+                          Book Another Session
+                        </Button>
+                      </div>
+                    </div>
+                  </article>
+                ) : null}
+              </div>
+
+              <div className="min-w-0 lg:col-span-5">
+                <div className="mx-auto w-full max-w-[620px] rounded-[28px] border border-gold/20 bg-cream/95 p-3 shadow-[0_34px_90px_rgba(0,0,0,0.34)] sm:p-4">
+                  <div className="grid grid-cols-1 items-start gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_132px]">
+                    <figure className="group relative aspect-[4/5] min-w-0 overflow-hidden rounded-[20px] bg-espresso/10 sm:rounded-[22px]">
+                      <img
+                        key={activeStudioPreview.id}
+                        id="studio-preview-image"
+                        src={activeStudioPreview.image}
+                        alt={activeStudioPreview.alt}
+                        loading="eager"
+                        fetchPriority="high"
+                        decoding="async"
+                        className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
+                        style={{ objectPosition: activeStudioPreview.id === 'solo' ? '50% 24%' : '50% 28%' }}
+                      />
+                      <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-espresso/80 via-espresso/15 to-transparent px-5 pb-5 pt-16 text-sm font-black uppercase tracking-[0.16em] text-white sm:px-6 sm:pb-6">
+                        {activeStudioPreview.label} Studio Preview
+                      </figcaption>
+                    </figure>
+                    <div role="group" aria-label="Choose a studio portrait" className="grid grid-cols-3 gap-2 lg:grid-cols-1 lg:gap-3">
+                      {studioPreviewOptions.map(option => {
+                        const isActive = option.id === activeStudioPreview.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            aria-label={`Show ${option.label} studio portrait`}
+                            aria-pressed={isActive}
+                            aria-controls="studio-preview-image"
+                            onClick={() => setActiveStudioPreviewId(option.id)}
+                            className={`group min-w-0 rounded-xl border p-1.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-cream sm:rounded-2xl sm:p-2 ${isActive ? 'border-gold bg-gold/15 shadow-[0_8px_22px_rgba(212,175,55,0.22)] ring-2 ring-gold/50' : 'border-espresso/10 bg-white/80 hover:border-gold/55 hover:bg-white'}`}
+                          >
+                            <span className="block aspect-[4/3] overflow-hidden rounded-lg bg-espresso/10 sm:rounded-xl">
+                              <img src={option.thumbnail} alt="" aria-hidden="true" loading="eager" decoding="async" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                            </span>
+                            <span className={`mt-1.5 block truncate text-center text-[10px] font-black tracking-wide sm:mt-2 sm:text-xs ${isActive ? 'text-gold-dark' : 'text-espresso/65'}`}>
+                              {option.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </section>}
+          </section>
+        );
+      })()}
 
       {/* Studio Section */}
       {page === 'studio' && <section id="studio" className="premium-section bg-cream-dark">

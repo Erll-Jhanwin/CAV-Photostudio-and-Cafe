@@ -441,7 +441,7 @@ class DashboardChartBoundary extends React.Component {
 
     return (
       <div className="flex h-full min-h-24 items-center justify-center rounded-xl bg-cream/70 px-4 text-center text-xs font-semibold text-espresso/55">
-        This chart could not be displayed. The dashboard data is still available below.
+        This chart didn’t load. Dashboard data is still available below.
       </div>
     );
   }
@@ -692,7 +692,7 @@ export default function AdminDashboard() {
         setProductSalesInventory(normalizeRowsById(productSalesRes.data, row => row?.product_id || row?.product_name));
       }
     } catch (error) {
-      const message = getApiErrorMessage(error, `Could not load ${tab} data.`);
+      const message = getApiErrorMessage(error, `Couldn’t load ${tab} data.`);
       if (tab === 'inventory') setInventoryError(message);
       else setDataError(message);
     } finally {
@@ -726,7 +726,7 @@ export default function AdminDashboard() {
     } catch (error) {
       if (requestSeq === forecastFetchSeqRef.current) {
         setForecast(null);
-        setForecastError(getApiErrorMessage(error, 'Forecast data could not be loaded.'));
+        setForecastError(getApiErrorMessage(error, 'Couldn’t load forecast data.'));
       }
     } finally {
       if (requestSeq === forecastFetchSeqRef.current) setForecastLoading(false);
@@ -753,7 +753,7 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error('Admin analytics request failed.');
       if (requestSeq === dashboardFetchSeqRef.current) {
-        setAnalyticsError(getApiErrorMessage(err, 'Failed to load Business Overview metrics.'));
+        setAnalyticsError(getApiErrorMessage(err, 'Couldn’t load Business Overview data.'));
       }
     } finally {
       if (!background && requestSeq === dashboardFetchSeqRef.current) {
@@ -819,7 +819,7 @@ export default function AdminDashboard() {
         )));
       })
       .catch(() => {
-        if (active) setPaymentHistoryError('Verification history could not be loaded.');
+        if (active) setPaymentHistoryError('Couldn’t load verification history.');
       })
       .finally(() => { if (active) setPaymentHistoryLoading(false); });
     return () => { active = false; };
@@ -890,7 +890,7 @@ export default function AdminDashboard() {
       setCreateAccountOpen(false);
       fetchData({ background: true });
       loadAdminTabData('staff', { force: true });
-      alert('Account created successfully.');
+      alert('Account created.');
     } catch (err) {
       const payload = err.response?.data || {};
       setNewStaffErrors(current => ({
@@ -903,7 +903,7 @@ export default function AdminDashboard() {
         phone_number: getAccountErrorMessage(payload.phone_number) || current.phone_number,
         address: getAccountErrorMessage(payload.address) || current.address,
       }));
-      alert(payload.detail || 'Failed to create account.');
+      alert(payload.detail || 'Couldn’t create account.');
     } finally {
       setCreatingStaff(false);
     }
@@ -958,7 +958,7 @@ export default function AdminDashboard() {
       setEditStaffErrors({});
       fetchData({ background: true });
       loadAdminTabData('staff', { force: true });
-      alert('Record updated successfully.');
+      alert('Account updated.');
     } catch (err) {
       const payload = err.response?.data || {};
       setEditStaffErrors(current => ({
@@ -971,7 +971,7 @@ export default function AdminDashboard() {
         phone_number: getAccountErrorMessage(payload.phone_number) || current.phone_number,
         address: getAccountErrorMessage(payload.address) || current.address,
       }));
-      alert(payload.detail || 'Failed to update account.');
+      alert(payload.detail || 'Couldn’t update account.');
     } finally {
       setStaffSaving(false);
     }
@@ -993,9 +993,9 @@ export default function AdminDashboard() {
       setStaffPage(page => Math.max(1, Math.min(page, Math.ceil((staffList.length - 1) / staffPageSize) || 1)));
       fetchData({ background: true });
       loadAdminTabData('staff', { force: true });
-      alert('Record deleted successfully.');
+      alert('Account deleted.');
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to delete account.');
+      alert(err.response?.data?.detail || 'Couldn’t delete account.');
     } finally {
       setDeletingStaffId(null);
     }
@@ -1032,9 +1032,9 @@ export default function AdminDashboard() {
       }
       setFaqQuestion(''); setFaqAnswer(''); setFaqTags(''); setEditingFaq(null); setFaqErrors({});
       fetchData({ background: true });
-      alert(editingFaq ? 'Record updated successfully.' : 'Record added successfully.');
+      alert(editingFaq ? 'FAQ updated.' : 'FAQ added.');
     } catch {
-      alert('Failed to save FAQ.');
+      alert('Couldn’t save FAQ.');
     } finally {
       setFaqSaving(false);
     }
@@ -1063,7 +1063,7 @@ export default function AdminDashboard() {
       setSalesHistoryFile(null);
       await loadForecast({ force: true });
     } catch (error) {
-      setForecastError(getApiErrorMessage(error, 'Sales history could not be imported.'));
+      setForecastError(getApiErrorMessage(error, 'Couldn’t import sales history.'));
     } finally {
       setSalesHistoryUploadLoading(false);
     }
@@ -1084,9 +1084,9 @@ export default function AdminDashboard() {
       setFaqs(current => current.filter(faq => faq.id !== id));
       setFaqPage(page => Math.max(1, Math.min(page, Math.ceil((faqs.length - 1) / faqPageSize) || 1)));
       fetchData({ background: true });
-      alert('Record deleted successfully.');
+      alert('FAQ deleted.');
     } catch {
-      alert('Failed to delete FAQ.');
+      alert('Couldn’t delete FAQ.');
     } finally {
       setDeletingFaqId(null);
     }
@@ -1124,9 +1124,9 @@ export default function AdminDashboard() {
       });
       setBookingPage(page => Math.max(1, Math.min(page, Math.ceil((sortedBookings.length - 1) / bookingPageSize) || 1)));
       fetchData({ background: true });
-      alert('Record deleted successfully.');
+      alert('Booking deleted.');
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to delete booking.');
+      alert(err.response?.data?.detail || 'Couldn’t delete booking.');
     } finally {
       setDeletingBookingId(null);
     }
@@ -1161,7 +1161,7 @@ export default function AdminDashboard() {
       alert('Studio unavailable date saved.');
     } catch (err) {
       const data = err.response?.data || {};
-      setStudioCalendarError(data.date || data.reason || data.detail || 'Could not save studio unavailable date.');
+      setStudioCalendarError(data.date || data.reason || data.detail || 'Couldn’t save the unavailable date.');
     } finally {
       setStudioUnavailableSaving(false);
     }
@@ -1181,7 +1181,7 @@ export default function AdminDashboard() {
       fetchData({ background: true });
       alert('Studio unavailable date removed.');
     } catch (err) {
-      setStudioCalendarError(err.response?.data?.detail || 'Could not remove studio unavailable date.');
+      setStudioCalendarError(err.response?.data?.detail || 'Couldn’t remove the unavailable date.');
     }
   };
 
@@ -1190,7 +1190,7 @@ export default function AdminDashboard() {
     if (verifyingPaymentId === payment.id) return;
     const confirmed = await confirm({
       title: `${newStatus === 'APPROVED' ? 'Approve' : 'Reject'} Payment`,
-      message: `Are you sure you want to ${action} payment ${payment.reference_number}?`,
+      message: `Do you want to ${action} payment ${payment.reference_number}?`,
       confirmLabel: newStatus === 'APPROVED' ? 'Approve Payment' : 'Reject Payment',
       type: newStatus === 'APPROVED' ? 'success' : 'error',
     });
@@ -1200,13 +1200,13 @@ export default function AdminDashboard() {
       const res = await client.patch(`/api/bookings/payments/${payment.id}/verify/`, { status: newStatus });
       setBookingPayments(current => normalizePayments(current.map(item => item.id === payment.id ? res.data : item)));
       fetchData({ background: true });
-      alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'} successfully.`);
+      alert(`Payment ${newStatus === 'APPROVED' ? 'approved' : 'rejected'}.`);
       if (newStatus === 'APPROVED') {
         setBookingReceiptAutoPrint(true);
         setBookingReceipt(bookingReceiptFromPayment(res.data));
       }
     } catch (err) {
-      alert(err.response?.data?.detail || err.response?.data?.status || 'Failed to verify payment.');
+      alert(err.response?.data?.detail || err.response?.data?.status || 'Couldn’t verify payment.');
     } finally {
       setVerifyingPaymentId(null);
     }
@@ -1316,7 +1316,7 @@ export default function AdminDashboard() {
       setLocalPrintStatus(`Closeout printed locally${result.printer ? ` on ${result.printer}` : ''}.`);
       return true;
     } catch (err) {
-      const message = err?.message || getApiErrorMessage(err, 'The local printer could not print the closeout.');
+      const message = err?.message || getApiErrorMessage(err, 'The local printer couldn’t print the closeout.');
       setLocalPrintStatus(`Local print failed: ${message}`);
       setReceiptPrintError(`Report saved, but local printing failed: ${message}`);
       try {
@@ -1381,9 +1381,9 @@ export default function AdminDashboard() {
       setEndOfDayGrossSales('');
       setEndOfDayExpectedCash('');
       const printed = await handleLocalEndOfDayPrint(res.data);
-      alert(printed ? 'End-of-day report saved and printed successfully.' : 'End-of-day report saved. Use Reprint Closeout after the cashier printer is ready.');
+      alert(printed ? 'End-of-day report saved and printed.' : 'End-of-day report saved. Use Reprint Closeout when the cashier printer is ready.');
     } catch (err) {
-      alert(getApiErrorMessage(err, 'Could not save the end-of-day report. Please try again.'));
+      alert(getApiErrorMessage(err, 'Couldn’t save the end-of-day report. Try again.'));
     } finally {
       setEndOfDayPrinting(false);
     }
@@ -1401,7 +1401,7 @@ export default function AdminDashboard() {
     setReceiptPrintError('');
     const printed = await handleLocalEndOfDayPrint(report);
     setEndOfDayReprintingId(null);
-    if (printed) alert('Report reprinted successfully.');
+    if (printed) alert('Report reprinted.');
   };
 
   const handleOpenSavedEndOfDayReport = async (report) => {
@@ -1420,7 +1420,7 @@ export default function AdminDashboard() {
       if (endOfDayDetailsRequestRef.current === requestId) setSelectedEndOfDayReport(response.data);
     } catch (error) {
       if (endOfDayDetailsRequestRef.current === requestId) {
-        setEndOfDayDetailError(getApiErrorMessage(error, 'Could not load transaction details for this saved report.'));
+        setEndOfDayDetailError(getApiErrorMessage(error, 'Couldn’t load transaction details for this report.'));
       }
     } finally {
       if (endOfDayDetailsRequestRef.current === requestId) setEndOfDayDetailLoading(false);
@@ -1435,7 +1435,7 @@ export default function AdminDashboard() {
   };
 
   const handleLogout = useCallback(() => {
-    alert('Signed out successfully.');
+    alert('Signed out.');
     logout();
     navigate('/login', { replace: true });
   }, [logout, navigate]);
@@ -1447,7 +1447,7 @@ export default function AdminDashboard() {
         on_duty: nextProfile.on_duty,
       });
     } catch (error) {
-      setDataError(getApiErrorMessage(error, 'Could not save staff access restrictions.'));
+      setDataError(getApiErrorMessage(error, 'Couldn’t save staff access settings.'));
       void loadAdminTabData('staff-access', { force: true });
     }
   };
@@ -2232,7 +2232,7 @@ export default function AdminDashboard() {
                       onSort={(key) => toggleSort(reorderSort, setReorderSort, key)}
                       emptyIcon={Package}
                       emptyTitle="All stocks optimal"
-                      emptyDescription="No reorder actions needed at this time."
+                      emptyDescription="No reorder actions needed right now."
                       minWidth={860}
                     />
                     {reorderRows.length > 0 && (

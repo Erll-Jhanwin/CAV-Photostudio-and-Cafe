@@ -49,7 +49,7 @@ export default function MachineLearningPage() {
       setHistory(response.data.history || []);
       setError('');
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Forecast data could not be loaded.'));
+      setError(getApiErrorMessage(requestError, 'Couldn’t load forecast data.'));
     } finally { setLoading(false); }
   }, []);
 
@@ -63,7 +63,7 @@ export default function MachineLearningPage() {
       setHistory(previous => [response.data, ...previous.filter(row => row.id !== response.data.id)].slice(0, 20));
       setError('');
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, 'Forecast batch could not be generated.'));
+      setError(getApiErrorMessage(requestError, 'Couldn’t generate the forecast.'));
     } finally { setTraining(false); }
   };
 
