@@ -1605,8 +1605,6 @@ export default function AdminDashboard() {
     : null;
   const backtestAvailable = forecastAccuracy !== null && forecastMetrics.holdout_days > 0;
   const salesModel = asRecord(forecast?.model);
-  const trainingComputation = asRecord(salesModel.training_computation);
-  const finalComputation = asRecord(salesModel.final_model_computation);
   const productForecastSummary = asArray(forecast?.product_forecast_summary);
   const forecastQualityMessage = forecast?.data_sufficiency?.message || 'No model evaluation is available.';
   const topProducts = asArray(analytics?.top_selling_products);
@@ -2173,37 +2171,6 @@ export default function AdminDashboard() {
                   </div>
                 </Card>
               </div>
-
-              <Card padding={false} className="rounded-[24px]">
-                <div className="p-5 md:p-6">
-                  <CardHeader title="Linear regression: How it works" subtitle="The imported daily sales are sorted by date; x is elapsed calendar days and y is daily sales in PHP." className="mb-4" />
-                  {trainingComputation.sample_count ? <>
-                    <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-                      <p><b>Training n:</b> {trainingComputation.sample_count}</p>
-                      <p><b>Σx:</b> {Number(trainingComputation.sum_x).toLocaleString()}</p>
-                      <p><b>Σy:</b> {formatCurrency(trainingComputation.sum_y)}</p>
-                      <p><b>Σx²:</b> {Number(trainingComputation.sum_x2).toLocaleString()}</p>
-                      <p><b>Σxy:</b> {Number(trainingComputation.sum_xy).toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
-                      <p><b>Training slope m:</b> {Number(trainingComputation.slope).toFixed(10)}</p>
-                      <p><b>Training intercept b:</b> {formatCurrency(trainingComputation.intercept)}</p>
-                      <p><b>Holdout days:</b> {forecastMetrics.holdout_days ?? '—'}</p>
-                    </div>
-                    <div className="mt-4 space-y-2 rounded-2xl bg-cream/70 p-4 text-xs text-espresso/75">
-                      <p>ŷ = mx + b</p>
-                      <p>m = [nΣxy − (Σx)(Σy)] / [nΣx² − (Σx)²]</p>
-                      <p>b = (Σy − mΣx) / n</p>
-                      <p><b>Worked slope:</b> m = [{trainingComputation.sample_count} × {Number(trainingComputation.sum_xy).toLocaleString()} − {Number(trainingComputation.sum_x).toLocaleString()} × {Number(trainingComputation.sum_y).toLocaleString()}] / [{trainingComputation.sample_count} × {Number(trainingComputation.sum_x2).toLocaleString()} − {Number(trainingComputation.sum_x).toLocaleString()}²] = {Number(trainingComputation.slope).toFixed(10)}.</p>
-                      <p><b>Holdout:</b> {forecast.sales_backtest?.length ? `${formatForecastDate(forecast.sales_backtest[0].date)} actual ${formatCurrency(forecast.sales_backtest[0].actual_sales)}; predicted ${formatCurrency(forecast.sales_backtest[0].predicted_sales)}.` : 'No held-out predictions are available.'}</p>
-                      <p><b>Future fit:</b> Refit on all {finalComputation.sample_count ?? '—'} daily values, then evaluate ŷ at dates after {formatForecastDate(forecast.history_end)}. First forecast: {forecast.sales_forecast?.length ? `${formatForecastDate(forecast.sales_forecast[0].target_date)} · ${formatCurrency(forecast.sales_forecast[0].predicted_sales)}` : 'unavailable'}.</p>
-                    </div>
-                    <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[480px] text-left text-xs"><thead className="bg-cream text-espresso/60"><tr>{['Model / baseline', 'MAE (PHP)', 'RMSE (PHP)', 'R²', 'WAPE'].map(label => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>
-                      <tr className="border-t border-espresso/5"><td className="p-2 font-bold">Linear regression</td><td className="p-2">{formatForecastAmount(finiteForecastValue(forecastMetrics.mae))}</td><td className="p-2">{formatForecastAmount(finiteForecastValue(forecastMetrics.rmse))}</td><td className="p-2">{finiteForecastValue(forecastMetrics.r2)?.toFixed(4) ?? 'N/A'}</td><td className="p-2">{finiteForecastValue(forecastMetrics.wape) == null ? 'N/A' : Number(forecastMetrics.wape).toLocaleString('en-PH', { style: 'percent', maximumFractionDigits: 1 })}</td></tr>
-                      {forecastMetrics.baseline && <tr className="border-t border-espresso/5"><td className="p-2 font-bold">Training mean baseline</td><td className="p-2">{formatForecastAmount(finiteForecastValue(forecastMetrics.baseline.mae))}</td><td className="p-2">{formatForecastAmount(finiteForecastValue(forecastMetrics.baseline.rmse))}</td><td className="p-2">{finiteForecastValue(forecastMetrics.baseline.r2)?.toFixed(4) ?? 'N/A'}</td><td className="p-2">{finiteForecastValue(forecastMetrics.baseline.wape) == null ? 'N/A' : Number(forecastMetrics.baseline.wape).toLocaleString('en-PH', { style: 'percent', maximumFractionDigits: 1 })}</td></tr>}
-                    </tbody></table></div>
-                    <p className="mt-3 text-xs text-espresso/55">Linear regression models a trend and may miss seasonality. This source is synthetic; its backtest does not establish real-world accuracy.</p>
-                  </> : <p className="rounded-xl bg-cream/70 p-4 text-sm text-espresso/60">Training details appear after validated CSV records reach the model.</p>}
-                </div>
-              </Card>
 
               <div className="animate-in-up">
                 <Card className="rounded-[24px]" padding={false}>

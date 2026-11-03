@@ -446,7 +446,7 @@ describe('AdminDashboard', () => {
     await act(async () => resolveForecast({ data: { sales_forecast: [], reorder_recommendations: [] } }));
   });
 
-  it('shows calculated sales forecast cards, backtest reliability, and the training computation', async () => {
+  it('shows sales forecast cards and backtest reliability without the model computation panel', async () => {
     const forecastRows = Array.from({ length: 14 }, (_, index) => ({
       target_date: `2025-08-${String(index + 1).padStart(2, '0')}`,
       predicted_sales: (index + 1) * 10,
@@ -494,8 +494,7 @@ describe('AdminDashboard', () => {
     expect(screen.getByText('PHP 280')).toBeInTheDocument();
     expect(screen.getByText('PHP 770')).toBeInTheDocument();
     expect(screen.getAllByText('50%')).toHaveLength(2);
-    expect(screen.getByText('Linear regression: How it works')).toBeInTheDocument();
-    expect(screen.getAllByText('876').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Linear regression: How it works')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Following week' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upcoming months' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Actual' })).toBeInTheDocument();
