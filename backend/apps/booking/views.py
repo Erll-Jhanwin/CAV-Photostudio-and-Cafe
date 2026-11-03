@@ -13,18 +13,21 @@ from decimal import Decimal, InvalidOperation
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Case, IntegerField, Prefetch, Sum, Value, When
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status, filters, views
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from django.utils import timezone
-from booking.models import Service, Package, Booking, BookingDateLock, BookingReview, StudioUnavailableDate
+from booking.models import Service, Package, Booking, BookingConversation, BookingDateLock, BookingMessage, BookingReview, StudioUnavailableDate
 from booking.email_notifications import FEEDBACK_SALT
 from booking.serializers import (
     ServiceSerializer,
     PackageSerializer,
     BookingSerializer,
     BookingPaymentSerializer,
+    BookingMessageSerializer,
+    BookingConversationSerializer,
     WalkInBookingCreateSerializer,
     BookingReviewSerializer,
     StudioUnavailableDateSerializer,
@@ -47,6 +50,8 @@ from audit.models import AuditLog
 from notifications.booking_events import (
     notify_booking_created, notify_booking_status, notify_booking_updated, notify_booking_payment,
 )
+from notifications.models import Notification
+from notifications.serializers import NotificationSerializer
 from users.permissions import IsAdmin, IsStaffOrAdmin
 
 User = get_user_model()
@@ -766,6 +771,206 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
         )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+BOOKING_REMINDER_STUDIO_LOCATION = '028B M.P. Casanova St., Purok 1, Tambo, Lipa City, Batangas'
+
+
+class BookingSessionReminderView(views.APIView):
+    permission_classes = [IsStaffOrAdmin]
+
+    def get_booking(self, booking_id):
+        return get_object_or_404(
+            Booking.objects.select_related('customer', 'package', 'package__service'),
+            pk=booking_id,
+        )
+
+    def get_reminder_details(self, booking):
+        is_photo_booking = is_studio_session_package(booking.package) or is_photo_service_event_package(booking.package)
+        eligible = (
+            booking.status in {'CONFIRMED', 'CONFIRMED_DP'}
+            and booking.scheduled_date == timezone.localdate()
+            and is_photo_booking
+            and booking.customer_id is not None
+        )
+        default_location = (
+            BOOKING_REMINDER_STUDIO_LOCATION
+            if is_studio_session_package(booking.package)
+            else (booking.notes or '').strip()
+        )
+        event_key = f'booking-session-reminder:{booking.id}:{booking.scheduled_date.isoformat()}'
+        notification = Notification.objects.filter(event_key=event_key).first()
+        customer_name = (
+            booking.contact_name
+            or (booking.customer.get_full_name().strip() or booking.customer.username if booking.customer_id else 'there')
+        )
+        time_label = booking.scheduled_time.strftime('%I:%M %p').lstrip('0')
+        return {
+            'eligible': eligible,
+            'already_sent': notification is not None,
+            'notification_id': notification.id if notification else None,
+            'reason': '' if eligible else 'Reminders are available only for confirmed photo bookings scheduled for today with a customer account.',
+            'session_time': time_label,
+            'default_location': default_location,
+            'default_message': f"Hi {customer_name}, we look forward to seeing you for your photo session today. Please arrive a few minutes before your scheduled time.",
+        }
+
+    def get(self, request, pk):
+        booking = self.get_booking(pk)
+        return Response(self.get_reminder_details(booking))
+
+    def post(self, request, pk):
+        booking = self.get_booking(pk)
+        details = self.get_reminder_details(booking)
+        if not details['eligible']:
+            return Response({'detail': details['reason']}, status=status.HTTP_400_BAD_REQUEST)
+        if details['already_sent']:
+            notification = Notification.objects.get(pk=details['notification_id'])
+            return Response({**NotificationSerializer(notification).data, 'created': False}, status=status.HTTP_200_OK)
+
+        message = str(request.data.get('message') or '').strip()
+        location = str(request.data.get('location') or '').strip()
+        if not message:
+            return Response({'message': 'Reminder message is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(message) > 1200:
+            return Response({'message': 'Reminder message must be 1,200 characters or less.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not location:
+            return Response({'location': 'Enter the session location before sending the reminder.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(location) > 300:
+            return Response({'location': 'Location must be 300 characters or less.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        event_key = f'booking-session-reminder:{booking.id}:{booking.scheduled_date.isoformat()}'
+        session_message = (
+            f'{message}\n\nSession time: {details["session_time"]} (Asia/Manila)\n'
+            f'Location: {location}'
+        )
+        with transaction.atomic():
+            notification, created = Notification.objects.get_or_create(
+                event_key=event_key,
+                defaults={
+                    'user_id': booking.customer_id,
+                    'booking_id': booking.id,
+                    'notification_type': 'BOOKING_SESSION_REMINDER',
+                    'title': f"Today's photo session · Booking #{booking.id}",
+                    'message': session_message,
+                },
+            )
+            if created:
+                conversation, _ = BookingConversation.objects.get_or_create(
+                    booking=booking,
+                    defaults={'concern': BookingConversation.CONCERN_BOOKING},
+                )
+                BookingMessage.objects.create(
+                    booking=booking,
+                    author=request.user,
+                    message=session_message,
+                    read_by_customer=False,
+                    read_by_staff=True,
+                )
+                conversation.save(update_fields=['updated_at'])
+        return Response({**NotificationSerializer(notification).data, 'created': created}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class BookingConversationView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_booking(self, request, booking_id):
+        role = getattr(request.user, 'role', None)
+        if role == 'CUSTOMER':
+            queryset = Booking.objects.filter(customer=request.user)
+        elif role in {'ADMIN', 'STAFF'}:
+            if role == 'STAFF':
+                from users.models import StaffAccessProfile
+                if not StaffAccessProfile.objects.filter(user=request.user, on_duty=True).exists():
+                    raise PermissionDenied('Staff access is off duty.')
+            queryset = Booking.objects.filter(customer__isnull=False)
+        else:
+            raise PermissionDenied('Only the booking customer and on-duty staff can access this conversation.')
+        return get_object_or_404(queryset, pk=booking_id)
+
+    def get(self, request, booking_id):
+        booking = self.get_booking(request, booking_id)
+        conversation = BookingConversation.objects.filter(booking=booking).first()
+        if conversation:
+            if request.user.role == 'CUSTOMER':
+                booking.conversation_messages.filter(read_by_customer=False).exclude(author=request.user).update(read_by_customer=True)
+            else:
+                booking.conversation_messages.filter(read_by_staff=False, author__role='CUSTOMER').update(read_by_staff=True)
+        messages = list(booking.conversation_messages.select_related('author').order_by('-created_at', '-id')[:200])
+        messages.reverse()
+        return Response({
+            'conversation': BookingConversationSerializer(conversation).data if conversation else None,
+            'messages': BookingMessageSerializer(messages, many=True).data,
+        })
+
+    def post(self, request, booking_id):
+        booking = self.get_booking(request, booking_id)
+        message = str(request.data.get('message') or '').strip()
+        if not message:
+            return Response({'message': 'Message cannot be blank.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(message) > 4000:
+            return Response({'message': 'Message must be 4,000 characters or less.'}, status=status.HTTP_400_BAD_REQUEST)
+        role = request.user.role
+        concern = str(request.data.get('concern') or BookingConversation.CONCERN_BOOKING).upper()
+        if concern not in dict(BookingConversation.CONCERN_CHOICES):
+            return Response({'concern': 'Choose Booking, Payment, or Other.'}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            conversation, created = BookingConversation.objects.get_or_create(
+                booking=booking,
+                defaults={'concern': concern},
+            )
+            row = BookingMessage.objects.create(
+                booking=booking,
+                author=request.user,
+                message=message,
+                read_by_customer=role == 'CUSTOMER',
+                read_by_staff=role != 'CUSTOMER',
+            )
+            conversation_fields = ['updated_at']
+            if role == 'CUSTOMER' and conversation.concern != concern:
+                conversation.concern = concern
+                conversation_fields.append('concern')
+            conversation.save(update_fields=conversation_fields)
+            if role != 'CUSTOMER':
+                Notification.objects.create(
+                    user=booking.customer,
+                    booking=booking,
+                    notification_type='BOOKING_MESSAGE',
+                    title=f'New message about booking #{booking.id}',
+                    message=message[:1200],
+                    event_key=f'booking-message:{row.id}',
+                )
+        return Response(BookingMessageSerializer(row).data, status=status.HTTP_201_CREATED)
+
+
+class BookingConversationInboxView(views.APIView):
+    permission_classes = [IsStaffOrAdmin]
+
+    def get(self, request):
+        conversations = BookingConversation.objects.select_related(
+            'booking', 'booking__customer', 'booking__package', 'booking__package__service'
+        ).prefetch_related('booking__conversation_messages__author').order_by('-updated_at')[:300]
+        rows = []
+        for conversation in conversations:
+            booking = conversation.booking
+            thread = list(booking.conversation_messages.order_by('-created_at', '-id')[:1])
+            last_message = thread[0] if thread else None
+            unread_count = booking.conversation_messages.filter(read_by_staff=False, author__role='CUSTOMER').count()
+            rows.append({
+                'booking_id': booking.id,
+                'customer_name': booking.contact_name or (booking.customer.get_full_name().strip() or booking.customer.username if booking.customer_id else 'Customer'),
+                'customer_id': booking.customer_id,
+                'scheduled_date': booking.scheduled_date,
+                'scheduled_time': booking.scheduled_time.strftime('%I:%M %p').lstrip('0'),
+                'package_name': booking.package.name,
+                'booking_status': booking.status,
+                'concern': conversation.concern,
+                'concern_label': conversation.get_concern_display(),
+                'unread_count': unread_count,
+                'updated_at': conversation.updated_at,
+                'last_message': BookingMessageSerializer(last_message).data if last_message else None,
+            })
+        return Response({'results': rows, 'unread_count': sum(row['unread_count'] for row in rows)})
 
 
 class BookingReviewCreateView(generics.CreateAPIView):

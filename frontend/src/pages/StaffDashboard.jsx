@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from
 import { useAuth } from '../context/AuthContext';
 import client, { DATA_CHANGED_EVENT, getApiErrorMessage, getCached } from '../api/client';
 import {
-  ShoppingBag, Package, DollarSign, Search, Plus,
+  ShoppingBag, Package, DollarSign, Search, Plus, MessageSquare,
   Minus, RefreshCw, AlertTriangle, Check, X, ShieldAlert, CreditCard, Eye, Pencil,
   PackageCheck, Clock, CalendarOff, Archive, Printer, ClipboardList, Settings2,
   Trash2, Truck, Save, Calendar
@@ -22,6 +22,7 @@ import BookingReceiptPrintDialog, { bookingReceiptFromPayment } from '../compone
 import PosStockActionModal from './PosStockActionModal';
 import WalkInBookingModal from './WalkInBookingModal';
 import ProductActivityModal from '../components/inventory/ProductActivityModal';
+import ProductSalesLossSummary from '../components/inventory/ProductSalesLossSummary';
 import { DataTable, PaginationControls, paginateRows, sortRows } from '../components/ui/DataTable';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar } from '../components/ui/Avatar';
@@ -30,6 +31,8 @@ import { normalizePayments, normalizeRowsById } from '../utils/uniqueRecords';
 import { formatManilaDateTime, getManilaDateInputValue } from '../utils/dateTime';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
 import BookingQueue from '../components/bookings/BookingQueue';
+import BookingMessagesInbox from '../components/bookings/BookingMessagesInbox';
+import useBookingMessagesUnreadCount from '../components/bookings/useBookingMessagesUnreadCount';
 import { startVisiblePolling } from '../utils/visiblePolling';
 import { MINIMUM_BOOKING_DOWN_PAYMENT } from '../utils/bookingPayments';
 
@@ -237,6 +240,9 @@ export default function StaffDashboard() {
   const [catalogProducts, setCatalogProducts] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [productSalesInventory, setProductSalesInventory] = useState([]);
+  const [productSalesStartDate, setProductSalesStartDate] = useState(() => getManilaDateInputValue());
+  const [productSalesEndDate, setProductSalesEndDate] = useState(() => getManilaDateInputValue());
+  const productSalesLoadedRangeRef = useRef('');
   const [categories, setCategories] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [catalogCategories, setCatalogCategories] = useState([]);
@@ -383,6 +389,17 @@ export default function StaffDashboard() {
     writeStaffCache(user?.id, 'products', uniqueProducts);
   }, [user?.id]);
 
+  const refreshProductSalesInventory = useCallback(async (force = false) => {
+    const rangeKey = `${productSalesStartDate}|${productSalesEndDate}`;
+    const response = await getCached('/api/inventory/product-sales/', {
+      params: { start_date: productSalesStartDate, end_date: productSalesEndDate },
+    }, { force });
+    const rows = Array.isArray(response.data) ? response.data : [];
+    setProductSalesInventory(rows);
+    productSalesLoadedRangeRef.current = rangeKey;
+    return rows;
+  }, [productSalesStartDate, productSalesEndDate]);
+
   const ensureDefaultRecipesOnce = useCallback(async () => {
     if (sessionStorage.getItem('staff:recipesChecked')) return;
     sessionStorage.setItem('staff:recipesChecked', 'true');
@@ -435,13 +452,12 @@ export default function StaffDashboard() {
         const bookingsRes = await getCached('/api/bookings/', { params: { limit: 500, queue: 'true' } }, { force });
         setStaffBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
       } else if (tab === 'inventory') {
-        const [, ingredientsRes, productSalesRes] = await Promise.all([
+        const [, ingredientsRes] = await Promise.all([
           loadStaticInventoryOptions(force),
           getCached('/api/inventory/ingredients/', { params: { limit: 300 } }, { force }),
-          getCached('/api/inventory/product-sales/', {}, { force }),
         ]);
         setIngredients(normalizeRowsById(ingredientsRes.data, row => row?.name));
-        setProductSalesInventory(Array.isArray(productSalesRes.data) ? productSalesRes.data : []);
+        await refreshProductSalesInventory(force);
       } else if (tab === 'catalog') {
         const [catalogProductsRes, catalogCategoriesRes, catalogSuppliersRes, purchaseOrdersRes] = await Promise.all([
           getCached('/api/inventory/products/', { params: { limit: 300, include_inactive: true } }, { force }),
@@ -479,7 +495,7 @@ export default function StaffDashboard() {
         window.setTimeout(() => { void loadTabData(tab, true); }, 0);
       }
     }
-  }, [activeTab, loadedTabs, ensureDefaultRecipesOnce, loadStaticInventoryOptions, salesCustomerSearch, user?.id]);
+  }, [activeTab, loadedTabs, ensureDefaultRecipesOnce, loadStaticInventoryOptions, refreshProductSalesInventory, salesCustomerSearch, user?.id]);
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) {
@@ -489,6 +505,13 @@ export default function StaffDashboard() {
     if (user.role === 'STAFF' && (!staffAccessReady || !staffAccess?.on_duty)) return;
     loadTabData(activeTab);
   }, [user, navigate, activeTab, loadTabData, staffAccessReady, staffAccess]);
+
+  useEffect(() => {
+    if (activeTab !== 'inventory' || inventorySection !== 'product-sales' || !loadedTabs.inventory) return;
+    const rangeKey = `${productSalesStartDate}|${productSalesEndDate}`;
+    if (productSalesLoadedRangeRef.current === rangeKey) return;
+    void refreshProductSalesInventory(true);
+  }, [activeTab, inventorySection, loadedTabs.inventory, productSalesStartDate, productSalesEndDate, refreshProductSalesInventory]);
 
   useEffect(() => {
     if (!user || user.role !== 'STAFF') {
@@ -954,6 +977,11 @@ export default function StaffDashboard() {
     try {
       const response = await client.post('/api/pos/stock-actions/', payload);
       setStockActionType(null);
+      try {
+        await refreshProductSalesInventory(true);
+      } catch {
+        // The stock action is already saved; a later inventory refresh can retry the summary.
+      }
       alert(`${payload.action_type === 'REFUND' ? 'Refund' : 'Wastage'} recorded for ${response.data.transaction_id}.`);
     } catch (actionError) {
       setStockActionError(getApiErrorMessage(actionError, 'Could not save this stock action. Check the transaction and quantities, then try again.'));
@@ -1530,9 +1558,13 @@ export default function StaffDashboard() {
     navigate('/login', { replace: true });
   }, [logout, navigate]);
 
+  const unreadBookingMessages = useBookingMessagesUnreadCount(
+    user?.role === 'ADMIN' || (user?.role === 'STAFF' && staffAccessReady && staffAccess?.on_duty),
+  );
   const allNavItems = [
     { key: 'pos', label: 'POS Terminal', icon: ShoppingBag, active: activeTab === 'pos', onClick: () => setActiveTab('pos') },
     { key: 'bookings', label: 'Bookings', icon: Calendar, active: activeTab === 'bookings', onClick: () => setActiveTab('bookings') },
+    { key: 'messages', label: 'Booking Messages', icon: MessageSquare, badge: unreadBookingMessages || undefined, active: activeTab === 'messages', onClick: () => setActiveTab('messages') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
     { key: 'catalog', label: 'Catalog & Purchasing', icon: ClipboardList, active: activeTab === 'catalog', onClick: () => setActiveTab('catalog') },
@@ -1540,7 +1572,7 @@ export default function StaffDashboard() {
   ];
   const navItems = allNavItems;
 
-  const pageTitles = { pos: 'POS Terminal', bookings: 'Bookings', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs' };
+  const pageTitles = { pos: 'POS Terminal', bookings: 'Bookings', messages: 'Booking Messages', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs' };
   const isCurrentTabLoading = !!loadingResources[activeTab];
   const toggleSort = (current, setter, key, column = {}) => {
     setter(current.key === key
@@ -1738,6 +1770,8 @@ export default function StaffDashboard() {
               <Button variant="outline" size="sm" icon={RefreshCw} onClick={() => loadTabData(activeTab, true)}>Reconnect Dashboard</Button>
             </div>
           )}
+
+          {activeTab === 'messages' && <BookingMessagesInbox currentUserId={user?.id} />}
 
           {receiptPrintError && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-2xl mb-6 flex flex-col gap-3 shadow-sm sm:flex-row sm:items-start">
@@ -2389,11 +2423,20 @@ export default function StaffDashboard() {
               ) : (
                 <section role="tabpanel" id="inventory-panel-product-sales" aria-labelledby="inventory-tab-product-sales" className="flex min-h-0 flex-1 flex-col overflow-hidden">
                   <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">
-                    <CardHeader title="Today’s Product Sales, Returns & Wastage" subtitle="Serving counts reconcile to the beginning stock snapshot. A returned wasted drink remains consumed stock while its sale is removed from net sold and revenue." className="mb-3 shrink-0" />
-                    <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-red-100 bg-red-50/70 px-3 py-2">
-                      <span className="text-xs font-bold text-espresso/65">Wastage cost plus refunded sales</span>
-                      <span className="text-sm font-black tabular-nums text-red-800">Total loss {formatCurrency(productSalesInventory.reduce((total, row) => total + Number(row.loss || 0), 0))}</span>
-                    </div>
+                    <CardHeader title="Product Sales, Returns & Wastage" subtitle="Losses include wastage cost and actual refunds recorded during the selected date range. Returned wasted products count both amounts once." className="mb-3 shrink-0" />
+                    <ProductSalesLossSummary
+                      rows={productSalesInventory}
+                      startDate={productSalesStartDate}
+                      endDate={productSalesEndDate}
+                      onStartDateChange={value => {
+                        setProductSalesStartDate(value);
+                        if (value > productSalesEndDate) setProductSalesEndDate(value);
+                      }}
+                      onEndDateChange={value => {
+                        setProductSalesEndDate(value);
+                        if (value < productSalesStartDate) setProductSalesStartDate(value);
+                      }}
+                    />
                     <div ref={productSalesTableAreaRef} className="min-h-0 flex-1">
                       <DataTable
                         columns={[
@@ -2427,6 +2470,8 @@ export default function StaffDashboard() {
                 product={selectedProductActivity?.product || null}
                 activityType={selectedProductActivity?.type || 'sales'}
                 reportDate={selectedProductActivity?.product?.date}
+                reportStartDate={selectedProductActivity?.product?.start_date || productSalesStartDate}
+                reportEndDate={selectedProductActivity?.product?.end_date || productSalesEndDate}
                 onClose={() => setSelectedProductActivity(null)}
               />
             </div>

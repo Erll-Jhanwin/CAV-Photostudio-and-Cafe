@@ -5,7 +5,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import serializers
 from booking.availability import parse_time_value
-from booking.models import Service, Package, Booking, BookingReview, StudioUnavailableDate
+from booking.models import Service, Package, Booking, BookingConversation, BookingMessage, BookingReview, StudioUnavailableDate
 from booking.availability import is_slot_available
 from payment.models import Payment
 from users.serializers import UserSerializer, validate_unique_email, validate_unique_phone_number
@@ -247,6 +247,30 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
             validate_booking_payment_amount(booking, amount, exclude_payment_id=self.instance.pk if self.instance else None)
 
         return attrs
+
+
+class BookingMessageSerializer(serializers.ModelSerializer):
+    booking = serializers.IntegerField(source='booking_id', read_only=True)
+    author_id = serializers.IntegerField(read_only=True)
+    author_name = serializers.SerializerMethodField()
+    author_role = serializers.CharField(source='author.role', read_only=True, default='SYSTEM')
+
+    class Meta:
+        model = BookingMessage
+        fields = ['id', 'booking', 'author_id', 'author_name', 'author_role', 'message', 'created_at', 'read_by_customer', 'read_by_staff']
+
+    def get_author_name(self, obj):
+        if not obj.author:
+            return 'Former account'
+        return obj.author.get_full_name().strip() or obj.author.username
+
+
+class BookingConversationSerializer(serializers.ModelSerializer):
+    concern_label = serializers.CharField(source='get_concern_display', read_only=True)
+
+    class Meta:
+        model = BookingConversation
+        fields = ['id', 'booking_id', 'concern', 'concern_label', 'created_at', 'updated_at']
 
 
 

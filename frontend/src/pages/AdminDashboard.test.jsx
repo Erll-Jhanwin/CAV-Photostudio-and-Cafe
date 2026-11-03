@@ -1,4 +1,5 @@
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import client, { getCached } from '../api/client';
 import { getManilaMonthValue } from '../utils/dateTime';
@@ -51,6 +52,9 @@ jest.mock('../api/client', () => ({
 
 import AdminDashboard from './AdminDashboard';
 
+const initialViewportWidth = window.innerWidth;
+afterEach(() => Object.defineProperty(window, 'innerWidth', { configurable: true, value: initialViewportWidth }));
+
 describe('AdminDashboard', () => {
   it('opens the shared Live Inventory screen from Admin navigation', async () => {
     getCached.mockImplementation(url => url.includes('/api/dashboard/analytics/')
@@ -93,6 +97,7 @@ describe('AdminDashboard', () => {
 
     render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open booking #48 details for Jamie Reyes' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Print Receipt' }));
     const reprintDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
     expect(within(reprintDialog).getByText('Pending verification')).toBeInTheDocument();
@@ -102,7 +107,7 @@ describe('AdminDashboard', () => {
     expect(localBridge).not.toHaveBeenCalled();
     expect(print).not.toHaveBeenCalled();
     fireEvent.click(within(reprintDialog).getByRole('button', { name: 'Done' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm Payment' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
 
     const receiptDialog = await screen.findByRole('dialog', { name: 'Booking receipt' });
     expect(alert).toHaveBeenCalledWith('Payment approved successfully.');
@@ -260,11 +265,13 @@ describe('AdminDashboard', () => {
     render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Open booking #48 details for Jamie Reyes' }));
     const proofButton = await screen.findByRole('button', { name: 'View proof of payment for booking 48' });
-    expect(screen.getByRole('button', { name: 'Confirm Payment' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Flag Payment Issue' })).toBeInTheDocument();
-    expect(screen.getByText('PHP 200')).toBeInTheDocument();
-    expect(client.get).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
+    expect(screen.getAllByText('PHP 1,250')).toHaveLength(2);
+    expect(client.get).toHaveBeenCalledWith('/api/audit/logs/', { params: { search: 'booking #48', page: 1, page_size: 100 } });
+    expect(client.get).not.toHaveBeenCalledWith('/api/bookings/payments/18/receipt/', expect.anything());
 
     fireEvent.click(proofButton);
     expect(await screen.findByRole('dialog', { name: 'Payment proof · Booking #48' })).toBeInTheDocument();
@@ -336,6 +343,68 @@ describe('AdminDashboard', () => {
     expect(screen.getByText('Payment Customer 1')).toBeInTheDocument();
     expect(screen.getByText('Payment Customer 2')).toBeInTheDocument();
     expect(screen.getByText('Payment Customer 3')).toBeInTheDocument();
+  });
+
+  it('groups payments by booking and opens the correct customer booking detail with its history', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    const details = {
+      id: 501, customer_name: 'Jamie Reyes', customer_email: 'jamie@example.test', customer_phone: '09170000000',
+      service_name: 'Studio', package_name: 'Portrait Session', scheduled_date: '2026-11-15', scheduled_time: '10:30',
+      status: 'PENDING', total_amount: '2500.00', amount_paid: '500.00', remaining_balance: '2000.00',
+    };
+    const payments = [
+      { id: 201, booking: 501, booking_details: details, status: 'PENDING_VERIFICATION', reference_number: 'REF-501-A', amount: '500.00', method_label: 'GCash', paid_at: '2026-10-28T10:00:00Z' },
+      { id: 202, booking: 501, booking_details: details, status: 'APPROVED', reference_number: 'REF-501-B', amount: '250.00', method_label: 'Maya', paid_at: '2026-10-29T10:00:00Z' },
+      { id: 203, booking: 502, booking_details: { ...details, id: 502, scheduled_date: '2026-11-16' }, status: 'PENDING_VERIFICATION', reference_number: 'REF-502', amount: '500.00', method_label: 'GCash', paid_at: '2026-10-30T10:00:00Z' },
+    ];
+    getCached.mockImplementation(url => {
+      if (url.includes('/api/bookings/payments/')) return Promise.resolve({ data: payments });
+      if (url.includes('/api/forecasting/predictions/')) return Promise.resolve({ data: { sales_forecast: [], reorder_recommendations: [] } });
+      return Promise.resolve({ data: {
+        metrics: { total_revenue: 0, booking_revenue: 0, pos_revenue: 0, cafe_income: 0 },
+        sales_history_chart: [], recent_bookings: [], recent_pos_transactions: [],
+        top_selling_products: [], top_booked_packages: [], inventory_status_counts: {}, low_stock_alerts: [], inventory_alerts: [],
+      } });
+    });
+    client.get.mockResolvedValue({ data: { results: [
+      { id: 1, action: 'BOOKING_PAYMENT_SUBMIT', name: 'Jamie Reyes', description: 'Submitted payment #203 for booking #502.', timestamp: '2026-10-30T10:00:00Z' },
+      { id: 2, action: 'BOOKING_PAYMENT_APPROVED', name: 'Admin', description: 'Approved payment #201 for booking #501.', details: { booking_id: 501 }, timestamp: '2026-10-29T10:00:00Z' },
+    ] } });
+
+    render(<MemoryRouter><AdminDashboard /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
+    const filterGroup = await screen.findByRole('group', { name: 'Booking payment status filter' });
+    fireEvent.click(within(filterGroup).getByRole('button', { name: 'All' }));
+    const list = screen.getByLabelText('Booking payment list');
+    expect(within(list).getAllByRole('button', { name: /Open booking #501 details/ })).toHaveLength(1);
+
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 1000 });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 240 });
+    list.scrollTop = 160;
+    const otherBookingButton = screen.getByRole('button', { name: 'Open booking #502 details for Jamie Reyes' });
+    otherBookingButton.focus();
+    userEvent.keyboard('{enter}');
+
+    const bookingDialog = await screen.findByRole('dialog', { name: 'Booking #502 · Jamie Reyes' });
+    expect(window.innerWidth).toBe(390);
+    expect(otherBookingButton.parentElement).toHaveClass('sm:grid-cols-[minmax(0,1.35fr)_minmax(74px,0.45fr)_minmax(145px,0.9fr)_minmax(150px,1fr)]');
+    expect(bookingDialog.querySelector('.max-h-\\[calc\\(100dvh-7rem\\)\\]')).toBeInTheDocument();
+    expect(within(bookingDialog).getByText('Payment reference REF-502')).toBeInTheDocument();
+    expect(within(bookingDialog).queryByText('Payment reference REF-501-A')).not.toBeInTheDocument();
+    expect(await within(bookingDialog).findByText('Submitted payment #203 for booking #502.')).toBeInTheDocument();
+    expect(within(bookingDialog).queryByText('Approved payment #201 for booking #501.')).not.toBeInTheDocument();
+    fireEvent.click(within(bookingDialog).getByRole('button', { name: 'Close modal' }));
+    expect(list.scrollTop).toBe(160);
+    expect(within(filterGroup).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Open booking #502 details for Jamie Reyes' })).toBeInTheDocument();
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
+    fireEvent.click(screen.getByRole('button', { name: 'Open booking #501 details for Jamie Reyes' }));
+    const desktopDialog = await screen.findByRole('dialog', { name: 'Booking #501 · Jamie Reyes' });
+    expect(window.innerWidth).toBe(1280);
+    expect(within(desktopDialog).getByText('Payment reference REF-501-A')).toBeInTheDocument();
+    expect(within(desktopDialog).getByText('Payment reference REF-501-B')).toBeInTheDocument();
+    fireEvent.click(within(desktopDialog).getByRole('button', { name: 'Close modal' }));
   });
 
   it('renders the admin shell and opens Accounts with Lucide action icons', async () => {

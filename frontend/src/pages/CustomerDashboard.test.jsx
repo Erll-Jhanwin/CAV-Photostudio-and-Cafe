@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import client, { getCached } from '../api/client';
 import { getManilaMonthValue } from '../utils/dateTime';
 import CustomerDashboard from './CustomerDashboard';
@@ -301,7 +302,7 @@ test('booking history filters canonical statuses and shows matching status count
 test('notification status and type filters combine immediately and preserve unread counts', async () => {
   const notificationRows = [
     { id: 81, notification_type: 'BOOKING_CREATED', title: 'Booking request received', message: 'We received your request.', is_read: false, created_at: '2026-10-20T04:00:00Z' },
-    { id: 82, notification_type: 'BOOKING_PAYMENT_APPROVED', title: 'Payment approved', message: 'Your payment is approved.', is_read: false, created_at: '2026-10-20T05:00:00Z' },
+    { id: 82, booking_id: 242, notification_type: 'BOOKING_PAYMENT_APPROVED', title: 'Payment approved', message: 'Your payment is approved. Booking #242 payment received: PHP 500.', is_read: false, created_at: '2026-10-20T05:00:00Z' },
     { id: 83, notification_type: 'BOOKING_PAYMENT_REJECTED', title: 'Payment needs review', message: 'Please check your payment.', is_read: true, created_at: '2026-10-20T06:00:00Z' },
   ];
   const defaultGet = client.get.getMockImplementation();
@@ -331,13 +332,23 @@ test('notification status and type filters combine immediately and preserve unre
 
   fireEvent.click(screen.getByRole('button', { name: 'Unread 2' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Unread notification: Payment approved' }));
+  const detailDialog = await screen.findByRole('dialog', { name: 'Payment approved' });
+  expect(within(detailDialog).getByText('Your payment is approved. Booking #242 payment received: PHP 500.')).toBeInTheDocument();
+  expect(within(detailDialog).getByText('Booking #242')).toBeInTheDocument();
+  expect(within(detailDialog).getByText('Received')).toBeInTheDocument();
   await waitFor(() => expect(screen.getByText('No notifications match these filters')).toBeInTheDocument());
   expect(screen.getByRole('button', { name: 'Unread 1' })).toBeInTheDocument();
   expect(client.patch).toHaveBeenCalledWith('/api/notifications/82/read/');
 
+  fireEvent.click(within(detailDialog).getByRole('button', { name: 'Close modal' }));
   fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
   expect(await screen.findByRole('button', { name: 'Unread notification: Booking request received' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Read notification: Payment approved' })).toBeInTheDocument();
+  const readCard = screen.getByRole('button', { name: 'Read notification: Payment approved' });
+  readCard.focus();
+  userEvent.keyboard('{enter}');
+  expect(await screen.findByRole('dialog', { name: 'Payment approved' })).toBeInTheDocument();
+  expect(client.patch).toHaveBeenCalledTimes(1);
 });
 
 test('notifications paginate inside the dashboard while filters remain available', async () => {
@@ -367,4 +378,38 @@ test('notifications paginate inside the dashboard while filters remain available
   expect(await screen.findByRole('button', { name: 'Read notification: Booking update 11' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Unread notification: Booking update 1' })).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
+});
+
+test.each([
+  ['desktop', 1280],
+  ['mobile', 390],
+])('notification details open and close at %s viewport width', async (_device, width) => {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+  const notificationRows = [{
+    id: 91,
+    booking_id: 342,
+    notification_type: 'BOOKING_PAYMENT_APPROVED',
+    title: 'A long payment notification title',
+    message: 'Payment approved for booking #342. Amount: PHP 750.',
+    is_read: true,
+    created_at: '2026-10-20T05:00:00Z',
+  }];
+  const defaultGet = client.get.getMockImplementation();
+  client.get.mockImplementation((url, options) => url === '/api/notifications/'
+    ? Promise.resolve({ data: notificationRows })
+    : defaultGet(url, options));
+  const defaultCachedGet = getCached.getMockImplementation();
+  getCached.mockImplementation((url, ...args) => url === '/api/notifications/'
+    ? Promise.resolve({ data: notificationRows })
+    : defaultCachedGet(url, ...args));
+
+  render(<CustomerDashboard />);
+  fireEvent.click(await screen.findByRole('button', { name: /Notifications/ }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Read notification: A long payment notification title' }));
+  const dialog = await screen.findByRole('dialog', { name: 'A long payment notification title' });
+  expect(within(dialog).getByText('Payment approved for booking #342. Amount: PHP 750.')).toBeInTheDocument();
+  expect(within(dialog).getByText('Booking #342')).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Close modal' }));
+  expect(screen.getByRole('button', { name: 'Read notification: A long payment notification title' })).toBeInTheDocument();
+  expect(client.patch).not.toHaveBeenCalled();
 });

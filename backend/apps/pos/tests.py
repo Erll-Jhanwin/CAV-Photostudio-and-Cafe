@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import json
 
@@ -692,6 +692,43 @@ class POSStockActionApiTests(TestCase):
         self.assertEqual(self.product.stock_level, 7)
         self.assertEqual(POSStockAction.objects.count(), 1)
         self.assertEqual(InventoryEvent.objects.filter(product=self.product, reason__startswith='POS WASTAGE').count(), 1)
+
+    def test_selected_date_range_counts_recorded_wastage_and_partial_refund_once_after_reload(self):
+        self.product.price = Decimal('50.00')
+        self.product.cost = Decimal('80.00')
+        self.product.save(update_fields=['price', 'cost', 'updated_at'])
+        sale_response = self.client.post('/api/pos/orders/', {
+            'items': [{'product_id': self.product.id, 'quantity': 2}],
+            'payment': {'amount': '100.00', 'method': 'CASH'},
+        }, format='json')
+        self.assertEqual(sale_response.status_code, 201, sale_response.data)
+        Order.objects.filter(pk=sale_response.data['id']).update(created_at=timezone.now() - timedelta(days=2))
+
+        wastage = self.client.post('/api/pos/stock-actions/', self.action_payload(
+            sale_response.data, 'WASTAGE', quantity=1, key='range-wastage-entry-001',
+        ), format='json')
+        refund = self.client.post('/api/pos/stock-actions/', self.action_payload(
+            sale_response.data, 'REFUND', quantity=1, disposition='RESTOCKED', key='range-refund-entry-001',
+        ), format='json')
+        self.assertEqual(wastage.status_code, 201, wastage.data)
+        self.assertEqual(refund.status_code, 201, refund.data)
+
+        today = timezone.localdate().isoformat()
+        first_load = self.client.get('/api/inventory/product-sales/', {'start_date': today, 'end_date': today})
+        second_load = self.client.get('/api/inventory/product-sales/', {'start_date': today, 'end_date': today})
+        row = next(item for item in first_load.data if item['product_id'] == self.product.id)
+        reloaded_row = next(item for item in second_load.data if item['product_id'] == self.product.id)
+        self.assertEqual(row['loss'], '130.00')
+        self.assertEqual(reloaded_row['loss'], '130.00')
+        wastage_records = self.client.get('/api/inventory/product-sales/transactions/', {
+            'product_id': self.product.id,
+            'start_date': today,
+            'end_date': today,
+            'type': 'wastage',
+        })
+        self.assertEqual(wastage_records.status_code, 200, wastage_records.data)
+        self.assertEqual(len(wastage_records.data), 1)
+        self.assertEqual(wastage_records.data[0]['quantity'], 1)
 
     def test_recipe_product_wastage_uses_existing_recipe_stock_movements(self):
         ingredient = Product.objects.create(

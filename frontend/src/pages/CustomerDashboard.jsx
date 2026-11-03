@@ -11,6 +11,7 @@ import { LoadingSpinner, Skeleton, SkeletonProfileCard } from '../components/ui/
 import { Sidebar } from '../components/ui/Sidebar';
 import { MobileHeader } from '../components/ui/MobileHeader';
 import { Modal } from '../components/ui/Modal';
+import BookingConversationModal from '../components/bookings/BookingConversationModal';
 import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar, getAvatarUrl } from '../components/ui/Avatar';
@@ -341,6 +342,8 @@ export default function CustomerDashboard() {
   const [paymentMethod, setPaymentMethod] = useState('');
   const [paymentQrFailed, setPaymentQrFailed] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [selectedNotification, setSelectedNotification] = useState(null);
+  const notificationReadRequests = useRef(new Set());
   const [notificationStatusFilter, setNotificationStatusFilter] = useState('all');
   const [notificationTypeFilter, setNotificationTypeFilter] = useState('all');
   const [notificationPage, setNotificationPage] = useState(1);
@@ -378,6 +381,7 @@ export default function CustomerDashboard() {
   const [bookingConfirmation, setBookingConfirmation] = useState(null);
   const [pendingPaymentBookingId, setPendingPaymentBookingId] = useState(null);
   const [selectedBookingDetails, setSelectedBookingDetails] = useState(null);
+  const [bookingConversationId, setBookingConversationId] = useState(null);
   const [reviewingBooking, setReviewingBooking] = useState(null);
   const [reviewForm, setReviewForm] = useState({ rating: 0, feedback: '', suggestions: '' });
   const [reviewErrors, setReviewErrors] = useState({});
@@ -806,18 +810,25 @@ export default function CustomerDashboard() {
   }, [userId, fetchNotifications]);
 
   const handleNotificationRead = async (notification) => {
-    if (!notification || notification.is_read) return;
+    if (!notification || notification.is_read || notificationReadRequests.current.has(notification.id)) return;
+    notificationReadRequests.current.add(notification.id);
     setNotifications(current => current.map(item => (
       item.id === notification.id ? { ...item, is_read: true, read_at: new Date().toISOString() } : item
     )));
     try {
       await client.patch(`/api/notifications/${notification.id}/read/`);
     } catch {
+      notificationReadRequests.current.delete(notification.id);
       setNotifications(current => current.map(item => (
         item.id === notification.id ? { ...item, is_read: false, read_at: null } : item
       )));
       console.warn('Customer notification status could not be updated.');
     }
+  };
+
+  const openNotification = (notification) => {
+    setSelectedNotification(notification);
+    void handleNotificationRead(notification);
   };
 
   const handleProfilePictureChange = (file) => {
@@ -3180,7 +3191,7 @@ export default function CustomerDashboard() {
                     <button
                       type="button"
                       key={n.id}
-                      onClick={() => handleNotificationRead(n)}
+                      onClick={() => openNotification(n)}
                       className={`w-full text-left p-5 rounded-2xl border shadow-sm flex items-start gap-4 hover:shadow-md transition-all animate-in-up ${unread ? 'bg-gold/[0.06] border-gold/30' : 'bg-white border-espresso/5'}`}
                       style={{ animationDelay: `${i * 50}ms` }}
                       aria-label={`${unread ? 'Unread' : 'Read'} notification: ${n.title}`}
@@ -3225,6 +3236,59 @@ export default function CustomerDashboard() {
             </div>
           )}
         </main>
+
+        <Modal
+          open={Boolean(selectedNotification)}
+          onClose={() => setSelectedNotification(null)}
+          title={selectedNotification?.title || 'Notification details'}
+          size="lg"
+          bodyClassName="bg-cream/40"
+        >
+          {selectedNotification && (() => {
+            const currentNotification = notifications.find(item => item.id === selectedNotification.id) || selectedNotification;
+            return (
+              <article className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider ${currentNotification.is_read ? 'bg-espresso/5 text-espresso/55' : 'bg-gold/15 text-gold-dark'}`}>
+                    {currentNotification.is_read ? 'Read' : 'Unread'}
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-wider text-espresso/55">
+                    {getNotificationCategories([currentNotification])[0] || 'General'}
+                  </span>
+                </div>
+
+                <div className="rounded-2xl border border-espresso/5 bg-white p-4 sm:p-5">
+                  <p className="whitespace-pre-wrap break-words text-sm leading-6 text-espresso/80">{selectedNotification.message}</p>
+                </div>
+
+                {selectedNotification.booking_id != null && (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-espresso/5 bg-white px-4 py-3">
+                    <span className="text-xs font-bold text-espresso/55">Related booking</span>
+                    <span className="text-xs font-black text-espresso">Booking #{selectedNotification.booking_id}</span>
+                  </div>
+                )}
+
+                <div className="border-t border-espresso/10 pt-3">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-espresso/40">Received</p>
+                  <p className="mt-1 text-xs font-semibold text-espresso/65">{formatManilaDateTime(selectedNotification.created_at)}</p>
+                </div>
+                {selectedNotification.booking_id != null && ['BOOKING_SESSION_REMINDER', 'BOOKING_MESSAGE'].includes(selectedNotification.notification_type) && (
+                  <Button
+                    type="button"
+                    variant="gold"
+                    icon={MessageSquare}
+                    className="w-full"
+                    onClick={() => {
+                      const bookingId = selectedNotification.booking_id;
+                      setSelectedNotification(null);
+                      setBookingConversationId(bookingId);
+                    }}
+                  >Reply in booking messages</Button>
+                )}
+              </article>
+            );
+          })()}
+        </Modal>
 
         <Modal
           open={!!packageDetails}
@@ -3851,6 +3915,9 @@ export default function CustomerDashboard() {
                     Refine Booking
                   </Button>
                 )}
+                <Button type="button" variant="outline" icon={MessageSquare} className="flex-1" onClick={() => setBookingConversationId(selectedBookingDetails.id)}>
+                  Message Studio
+                </Button>
                 <Button variant="outline" className="flex-1" onClick={() => setSelectedBookingDetails(null)}>
                   Back to My Bookings
                 </Button>
@@ -3858,6 +3925,15 @@ export default function CustomerDashboard() {
             </div>
           )}
         </Modal>
+
+        <BookingConversationModal
+          open={bookingConversationId !== null}
+          bookingId={bookingConversationId}
+          customerName="CAV Studio team"
+          currentUserId={userId}
+          allowConcern
+          onClose={() => setBookingConversationId(null)}
+        />
 
         {/* Floating Chatbot Widget */}
         <div className="fixed bottom-4 right-4 md:bottom-5 md:right-5 z-50">

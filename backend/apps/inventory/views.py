@@ -1,17 +1,18 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
+from collections import defaultdict
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
 
 from audit.models import AuditLog
 from inventory.models import Category, InventoryEvent, Product, Supplier
 from inventory.recipe_defaults import ensure_default_ingredients_and_recipes
-from pos.models import Order
+from pos.models import Order, POSStockAction
 from inventory.serializers import (
     CategorySerializer,
     IngredientSerializer,
@@ -256,19 +257,32 @@ class ProductSalesInventoryView(views.APIView):
 
     def get(self, request):
         raw_date = request.query_params.get('date')
-        day = parse_date(raw_date) if raw_date else timezone.localdate()
-        if not day:
-            return Response({'date': 'Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+        raw_start = request.query_params.get('start_date')
+        raw_end = request.query_params.get('end_date')
+        if raw_start or raw_end:
+            start_day = parse_date(raw_start) if raw_start else parse_date(raw_end)
+            end_day = parse_date(raw_end) if raw_end else start_day
+            if not start_day or not end_day:
+                return Response({'date': 'Use YYYY-MM-DD for the selected date range.'}, status=status.HTTP_400_BAD_REQUEST)
+            if end_day < start_day:
+                return Response({'end_date': 'End date must be on or after the start date.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            start_day = parse_date(raw_date) if raw_date else timezone.localdate()
+            if not start_day:
+                return Response({'date': 'Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+            end_day = start_day
+
+        day = start_day
         products = list(Product.objects.filter(item_type=Product.PRODUCT, is_active=True).order_by('name'))
         product_ids = {row.id for row in products}
         sales = {}
-        day_start = timezone.make_aware(datetime.combine(day, time.min))
-        day_end = timezone.make_aware(datetime.combine(day + timedelta(days=1), time.min))
+        day_start = timezone.make_aware(datetime.combine(start_day, time.min))
+        day_end = timezone.make_aware(datetime.combine(end_day + timedelta(days=1), time.min))
         orders = Order.objects.filter(
             payment_status='PAID',
             created_at__gte=day_start,
             created_at__lt=day_end,
-        ).exclude(order_type='END_OF_DAY_REPORT').only('id', 'created_at', 'line_items').order_by('created_at', 'id')
+        ).exclude(order_type='END_OF_DAY_REPORT').only('id', 'created_at', 'line_items', 'return_events').order_by('created_at', 'id')
         for order in orders:
             for line in order.line_items or []:
                 product_id = int(line.get('product') or 0)
@@ -281,7 +295,6 @@ class ProductSalesInventoryView(views.APIView):
                     'restocked': 0,
                     'revenue': Decimal('0.00'),
                     'cost': Decimal('0.00'),
-                    'loss': Decimal('0.00'),
                 })
                 quantity = int(line.get('quantity') or 0)
                 returned = int(line.get('returned_quantity') or 0)
@@ -294,13 +307,102 @@ class ProductSalesInventoryView(views.APIView):
                 refunded = Decimal(str(line.get('refunded_amount') or '0'))
                 entry['revenue'] += max(line_revenue - refunded, Decimal('0.00'))
                 entry['cost'] += Decimal(str(line.get('cost') or '0')) * max(quantity - restocked, 0)
-                # These line totals are the canonical rollup of return_events and
-                # wastage_events. Reading the event arrays as well would count the
-                # same stock action twice.
-                entry['loss'] += (
-                    Decimal(str(line.get('cost') or '0')) * wasted
-                    + refunded
-                )
+        # Losses are keyed to the date the staff recorded them, not the date of
+        # the original sale. POSStockAction is canonical; its matching
+        # Order.return_events are mirrors and are removed from the fallback below.
+        loss_by_product = defaultdict(lambda: Decimal('0.00'))
+        wastage_by_product = defaultdict(int)
+        action_signature_counts = defaultdict(int)
+
+        def line_cost_for(order, product_id):
+            line = next((row for row in order.line_items or [] if int(row.get('product') or row.get('product_id') or 0) == product_id), {})
+            return Decimal(str(line.get('cost') or '0.00'))
+
+        def event_signature(order_id, product_id, action_type, quantity, refund_amount):
+            return (order_id, product_id, action_type, quantity, str(refund_amount.quantize(Decimal('0.01'))))
+
+        actions = POSStockAction.objects.filter(
+            created_at__gte=day_start,
+            created_at__lt=day_end,
+        ).select_related('order').only('id', 'action_type', 'items', 'order_id', 'order__line_items')
+        for action in actions:
+            for item in action.items or []:
+                try:
+                    product_id = int(item.get('product_id') or 0)
+                    quantity = int(item.get('quantity') or 0)
+                    refund_amount = Decimal(str(item.get('refund_amount') or '0.00'))
+                except (TypeError, ValueError, InvalidOperation, AttributeError):
+                    continue
+                if product_id not in product_ids or quantity <= 0:
+                    continue
+                is_wastage = action.action_type == POSStockAction.WASTAGE or item.get('disposition') == 'WASTED'
+                if action.action_type == POSStockAction.REFUND:
+                    loss_by_product[product_id] += refund_amount
+                if is_wastage:
+                    loss_by_product[product_id] += line_cost_for(action.order, product_id) * quantity
+                    wastage_by_product[product_id] += quantity
+                action_signature_counts[event_signature(action.order_id, product_id, action.action_type, quantity, refund_amount)] += 1
+
+        legacy_event_orders = Order.objects.filter(
+            payment_status='PAID',
+            return_events__isnull=False,
+        ).exclude(order_type='END_OF_DAY_REPORT').only('id', 'created_at', 'line_items', 'return_events')
+        for order in legacy_event_orders:
+            for event in order.return_events or []:
+                try:
+                    product_id = int(event.get('product_id') or 0)
+                    quantity = int(event.get('quantity') or 0)
+                    refund_amount = Decimal(str(event.get('refund_amount') or '0.00'))
+                except (TypeError, ValueError, InvalidOperation, AttributeError):
+                    continue
+                if product_id not in product_ids or quantity <= 0:
+                    continue
+                timestamp = event.get('timestamp')
+                if timestamp:
+                    from django.utils.dateparse import parse_datetime
+                    event_at = parse_datetime(str(timestamp))
+                    if event_at is None:
+                        continue
+                    if timezone.is_naive(event_at):
+                        event_at = timezone.make_aware(event_at)
+                    event_day = timezone.localtime(event_at).date()
+                else:
+                    event_day = timezone.localtime(order.created_at).date()
+                if event_day < start_day or event_day > end_day:
+                    continue
+
+                action_type = str(event.get('action_type') or ('REFUND' if 'refund_amount' in event else 'WASTAGE')).upper()
+                signature = event_signature(order.pk, product_id, action_type, quantity, refund_amount)
+                if action_signature_counts[signature] > 0:
+                    action_signature_counts[signature] -= 1
+                    continue
+                disposition = str(event.get('disposition') or '').upper()
+                is_wastage = action_type == 'WASTAGE' or disposition == 'WASTED'
+                if action_type == 'REFUND':
+                    loss_by_product[product_id] += refund_amount
+                if is_wastage:
+                    loss_at_cost = Decimal(str(event.get('loss_at_cost') or '0.00'))
+                    if loss_at_cost <= 0:
+                        loss_at_cost = line_cost_for(order, product_id) * quantity
+                    loss_by_product[product_id] += loss_at_cost
+                    wastage_by_product[product_id] += quantity
+
+        # Older rows may only have the line-level totals and no event history.
+        # Include those only on the original sale date so they remain reportable.
+        for order in orders:
+            if order.return_events:
+                continue
+            for line in order.line_items or []:
+                try:
+                    product_id = int(line.get('product') or line.get('product_id') or 0)
+                    wasted = int(line.get('wasted_quantity') or 0)
+                    refunded = Decimal(str(line.get('refunded_amount') or '0.00'))
+                    unit_cost = Decimal(str(line.get('cost') or '0.00'))
+                except (TypeError, ValueError, InvalidOperation, AttributeError):
+                    continue
+                if product_id in product_ids:
+                    loss_by_product[product_id] += unit_cost * wasted + refunded
+                    wastage_by_product[product_id] += wasted
         ingredient_ids = {int(row.get('ingredient')) for product in products for row in (product.recipe_data or []) if row.get('ingredient')}
         ingredients = {row.id: row for row in Product.objects.filter(id__in=ingredient_ids, item_type=Product.INGREDIENT)}
         result = []
@@ -317,7 +419,7 @@ class ProductSalesInventoryView(views.APIView):
             else:
                 beginning = int(entry['beginning_stock'])
             sold = int(entry.get('quantity_sold') or 0)
-            wasted = int(entry.get('wastage') or 0)
+            wasted = int(wastage_by_product.get(product.id) or 0)
             restocked = int(entry.get('restocked') or 0)
             current_servings = []
             for recipe_item in product.recipe_data or []:
@@ -328,14 +430,16 @@ class ProductSalesInventoryView(views.APIView):
             live_ending = min(current_servings) if current_servings else product.stock_level
             # quantity_sold already excludes all returned units. A RESTOCKED
             # return therefore must not be added back a second time here.
-            ending = live_ending if day == timezone.localdate() else max(beginning - sold - wasted, 0)
+            ending = live_ending if end_day == timezone.localdate() else max(beginning - sold - wasted, 0)
             revenue = entry.get('revenue') or Decimal('0.00')
             cost = entry.get('cost') or Decimal('0.00')
-            loss = entry.get('loss') or Decimal('0.00')
+            loss = loss_by_product.get(product.id) or Decimal('0.00')
             result.append({
                 'product_id': product.id,
                 'product_name': product.name,
                 'date': day.isoformat(),
+                'start_date': start_day.isoformat(),
+                'end_date': end_day.isoformat(),
                 'beginning_stock': beginning,
                 'quantity_sold': sold,
                 'wastage': wasted,
@@ -361,9 +465,21 @@ class ProductSalesTransactionListView(views.APIView):
             return Response({'product_id': 'A product ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         raw_date = request.query_params.get('date')
-        day = parse_date(raw_date) if raw_date else timezone.localdate()
-        if not day:
-            return Response({'date': 'Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+        raw_start = request.query_params.get('start_date')
+        raw_end = request.query_params.get('end_date')
+        if raw_start or raw_end:
+            start_day = parse_date(raw_start) if raw_start else parse_date(raw_end)
+            end_day = parse_date(raw_end) if raw_end else start_day
+            if not start_day or not end_day:
+                return Response({'date': 'Use YYYY-MM-DD for the selected date range.'}, status=status.HTTP_400_BAD_REQUEST)
+            if end_day < start_day:
+                return Response({'end_date': 'End date must be on or after the start date.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            start_day = parse_date(raw_date) if raw_date else timezone.localdate()
+            if not start_day:
+                return Response({'date': 'Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+            end_day = start_day
+        day = start_day
 
         record_type = str(request.query_params.get('type') or 'sales').strip().lower()
         if record_type not in {'sales', 'wastage'}:
@@ -371,10 +487,10 @@ class ProductSalesTransactionListView(views.APIView):
         if not Product.objects.filter(pk=product_id, item_type=Product.PRODUCT).exists():
             return Response({'detail': 'Product not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        day_start = timezone.make_aware(datetime.combine(day, time.min))
-        day_end = timezone.make_aware(datetime.combine(day + timedelta(days=1), time.min))
+        day_start = timezone.make_aware(datetime.combine(start_day, time.min))
+        day_end = timezone.make_aware(datetime.combine(end_day + timedelta(days=1), time.min))
         order_fields = ['id', 'created_at', 'transaction_id', 'staff_id']
-        order_fields.append('line_items' if record_type == 'sales' else 'return_events')
+        order_fields.extend(['line_items'] if record_type == 'sales' else ['line_items', 'return_events'])
         orders = Order.objects.filter(
             payment_status='PAID',
             created_at__gte=day_start,
@@ -411,43 +527,88 @@ class ProductSalesTransactionListView(views.APIView):
                     })
             return Response(results)
 
-        staff_ids = set()
-        wastage_events = []
-        for order in orders:
-            for event in order.return_events or []:
+        action_signatures = defaultdict(int)
+        action_orders = POSStockAction.objects.filter(created_at__gte=day_start, created_at__lt=day_end).select_related('order')
+        for action in action_orders:
+            for index, item in enumerate(action.items or []):
+                try:
+                    item_product_id = int(item.get('product_id') or 0)
+                    quantity = int(item.get('quantity') or 0)
+                    refund = Decimal(str(item.get('refund_amount') or '0.00'))
+                except (TypeError, ValueError, InvalidOperation, AttributeError):
+                    continue
+                signature = (action.order_id, item_product_id, action.action_type, quantity, str(refund.quantize(Decimal('0.01'))))
+                action_signatures[signature] += 1
+                is_wastage = action.action_type == POSStockAction.WASTAGE or (action.action_type == POSStockAction.REFUND and item.get('disposition') == 'WASTED')
+                if item_product_id != product_id or quantity <= 0 or not is_wastage:
+                    continue
+                results.append({
+                    'id': f'action-{action.pk}-{index}',
+                    'transaction_id': action.transaction_id or f'POS-{action.order_id}',
+                    'date_time': action.created_at.isoformat(),
+                    'quantity': quantity,
+                    'staff_name': action.staff_name or 'Not recorded',
+                    'reason': action.reason,
+                })
+
+        legacy_orders = Order.objects.filter(payment_status='PAID', return_events__isnull=False).exclude(
+            order_type='END_OF_DAY_REPORT',
+        ).only('id', 'created_at', 'transaction_id', 'return_events')
+        for order in legacy_orders:
+            for index, event in enumerate(order.return_events or []):
                 try:
                     event_product_id = int(event.get('product_id') or 0)
                     quantity = int(event.get('quantity') or 0)
+                    refund = Decimal(str(event.get('refund_amount') or '0.00'))
+                except (TypeError, ValueError, InvalidOperation, AttributeError):
+                    continue
+                if event_product_id != product_id or quantity <= 0:
+                    continue
+                timestamp = event.get('timestamp')
+                event_at = parse_datetime(str(timestamp)) if timestamp else order.created_at
+                if event_at is None:
+                    continue
+                if timezone.is_naive(event_at):
+                    event_at = timezone.make_aware(event_at)
+                event_day = timezone.localtime(event_at).date()
+                if event_day < start_day or event_day > end_day:
+                    continue
+                action_type = str(event.get('action_type') or ('REFUND' if 'refund_amount' in event else 'WASTAGE')).upper()
+                signature = (order.pk, event_product_id, action_type, quantity, str(refund.quantize(Decimal('0.01'))))
+                if action_signatures[signature] > 0:
+                    action_signatures[signature] -= 1
+                    continue
+                is_wastage = action_type == 'WASTAGE' or str(event.get('disposition') or '').upper() == 'WASTED'
+                if not is_wastage:
+                    continue
+                results.append({
+                    'id': f'legacy-{order.pk}-{index}',
+                    'transaction_id': event.get('transaction_id') or order.transaction_id or f'POS-{order.pk}',
+                    'date_time': event_at.isoformat(),
+                    'quantity': quantity,
+                    'staff_name': event.get('staff_name') or 'Not recorded',
+                    'reason': str(event.get('reason') or '').strip(),
+                })
+
+        # Very old records may have line totals without dated events. Attribute
+        # those to the original sale date only and avoid counting modern rows twice.
+        for order in orders:
+            for line in order.line_items or []:
+                try:
+                    line_product_id = int(line.get('product') or line.get('product_id') or 0)
+                    quantity = int(line.get('wasted_quantity') or 0)
                 except (TypeError, ValueError, AttributeError):
                     continue
-                action_type = str(event.get('action_type') or '').upper()
-                disposition = str(event.get('disposition') or '').upper()
-                is_wastage = action_type == 'WASTAGE' or disposition == 'WASTED'
-                if event_product_id != product_id or not is_wastage or quantity <= 0:
+                if line_product_id != product_id or quantity <= 0 or order.return_events:
                     continue
-                try:
-                    staff_id = int(event.get('staff_id') or 0)
-                except (TypeError, ValueError):
-                    staff_id = 0
-                if staff_id > 0:
-                    staff_ids.add(staff_id)
-                wastage_events.append((order, event, quantity, staff_id))
-
-        staff_model = get_user_model()
-        staff_names = {
-            staff.pk: staff.get_full_name() or staff.username
-            for staff in staff_model.objects.filter(pk__in=staff_ids)
-        }
-        for order, event, quantity, staff_id in wastage_events:
-            timestamp = event.get('timestamp') or order.created_at.isoformat()
-            results.append({
-                'id': f"{order.pk}-{event.get('timestamp') or len(results)}-{len(results)}",
-                'transaction_id': event.get('transaction_id') or order.transaction_id or f'POS-{order.pk}',
-                'date_time': timestamp,
-                'quantity': quantity,
-                'staff_name': event.get('staff_name') or staff_names.get(staff_id) or 'Not recorded',
-                'reason': str(event.get('reason') or '').strip(),
-            })
+                results.append({
+                    'id': f'legacy-line-{order.pk}-{product_id}',
+                    'transaction_id': order.transaction_id or f'POS-{order.pk}',
+                    'date_time': order.created_at.isoformat(),
+                    'quantity': quantity,
+                    'staff_name': 'Not recorded',
+                    'reason': 'Wastage recorded on sale',
+                })
         results.sort(key=lambda record: record['date_time'], reverse=True)
         return Response(results)
 

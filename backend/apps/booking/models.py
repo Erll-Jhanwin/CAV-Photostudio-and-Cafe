@@ -138,6 +138,49 @@ class Booking(models.Model):
         return f"Booking {self.id}: {customer_name} - {self.package.name} on {self.scheduled_date} at {self.scheduled_time}"
 
 
+class BookingConversation(models.Model):
+    CONCERN_BOOKING = 'BOOKING'
+    CONCERN_PAYMENT = 'PAYMENT'
+    CONCERN_OTHER = 'OTHER'
+    CONCERN_CHOICES = [
+        (CONCERN_BOOKING, 'Booking'),
+        (CONCERN_PAYMENT, 'Payment'),
+        (CONCERN_OTHER, 'Other'),
+    ]
+
+    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='conversation')
+    concern = models.CharField(max_length=12, choices=CONCERN_CHOICES, default=CONCERN_BOOKING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'Booking #{self.booking_id} conversation ({self.get_concern_display()})'
+
+
+class BookingMessage(models.Model):
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='conversation_messages')
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='booking_conversation_messages',
+    )
+    message = models.TextField(max_length=4000)
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_by_customer = models.BooleanField(default=False)
+    read_by_staff = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        indexes = [
+            models.Index(fields=['booking', 'created_at'], name='booking_message_thread_idx'),
+        ]
+
+    def __str__(self):
+        return f'Booking #{self.booking_id} message by {self.author_id or "deleted user"}'
+
+
 class BookingReview(models.Model):
     booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='review')
     customer = models.ForeignKey(

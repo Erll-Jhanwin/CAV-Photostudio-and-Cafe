@@ -7,6 +7,7 @@ import { Textarea } from '../ui/Input';
 import { Skeleton } from '../ui/Skeleton';
 import { StatusBadge } from '../ui/Badge';
 import { getManilaDateInputValue } from '../../utils/dateTime';
+import BookingReminderControl from './BookingReminderControl';
 
 const ACTIVE_STATUSES = new Set(['PENDING', 'CONFIRMED', 'CONFIRMED_DP']);
 const timeKey = booking => `${booking.scheduled_time || ''}`.slice(0, 8);
@@ -66,6 +67,7 @@ function BookingCard({ booking, busyAction, onComplete, onCancel, onDelete }) {
         </div>
         {ACTIVE_STATUSES.has(booking.status) && (
           <div className="flex shrink-0 flex-col gap-2 sm:w-44">
+            <BookingReminderControl booking={booking} />
             <Button size="sm" variant="success" icon={Check} loading={busyAction === 'complete'} disabled={actionInProgress} onClick={() => onComplete(booking)}>Photo Shoot Done</Button>
             <Button size="sm" variant="outline" icon={X} disabled={actionInProgress} className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => onCancel(booking)}>Cancel Booking</Button>
           </div>

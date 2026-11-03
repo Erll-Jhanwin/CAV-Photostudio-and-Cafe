@@ -33,6 +33,7 @@ from users.views import (
 )
 from booking.views import (
     ServiceListView, PackageListView, BookingListCreateView, WalkInBookingCreateView, BookingDetailUpdateView,
+    BookingSessionReminderView, BookingConversationView, BookingConversationInboxView,
     BookingPaymentListCreateView, BookingPaymentVerifyView, BookingAvailabilityView,
     BookingPaymentReferenceCheckView,
     BookingPaymentMethodsView, BookingPaymentReceiptView,
@@ -103,6 +104,9 @@ urlpatterns = [
     path('api/bookings/', BookingListCreateView.as_view(), name='booking_list_create'),
     path('api/bookings/walk-in/', WalkInBookingCreateView.as_view(), name='booking_walk_in_create'),
     path('api/bookings/<int:pk>/', BookingDetailUpdateView.as_view(), name='booking_detail_update'),
+    path('api/bookings/<int:pk>/reminder/', BookingSessionReminderView.as_view(), name='booking_session_reminder'),
+    path('api/bookings/<int:booking_id>/conversation/', BookingConversationView.as_view(), name='booking_conversation'),
+    path('api/bookings/conversations/inbox/', BookingConversationInboxView.as_view(), name='booking_conversation_inbox'),
     path('api/bookings/reviews/', BookingReviewCreateView.as_view(), name='booking_review_create'),
     path('api/bookings/reviews/all/', BookingReviewListView.as_view(), name='booking_review_list'),
     path('api/bookings/reviews/survey/', BookingFeedbackSurveyView.as_view(), name='booking_feedback_survey'),

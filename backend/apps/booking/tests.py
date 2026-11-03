@@ -11,9 +11,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from booking.availability import get_available_slots, is_slot_available
-from booking.models import Booking, BookingDateLock, BookingReview, Package, Service, StudioUnavailableDate
-from notifications.models import NotificationDelivery
+from booking.models import Booking, BookingConversation, BookingDateLock, BookingMessage, BookingReview, Package, Service, StudioUnavailableDate
+from notifications.models import Notification, NotificationDelivery
 from payment.models import Payment
+from users.models import StaffAccessProfile
 
 
 class BookingAvailabilityPolicyTests(TestCase):
@@ -464,3 +465,124 @@ class BookingReviewApiTests(TestCase):
         self.assertEqual(first_response.status_code, 201)
         self.assertEqual(duplicate_response.status_code, 400)
         self.assertEqual(BookingReview.objects.filter(booking=self.completed_booking).count(), 1)
+
+
+class BookingReminderAndConversationApiTests(TestCase):
+    def setUp(self):
+        users = get_user_model().objects
+        self.customer = users.create_user(username='reminder-customer', email='reminder-customer@example.test', password='Customer123!')
+        self.other_customer = users.create_user(username='other-booking-customer', email='other-booking@example.test', password='Customer123!')
+        self.admin = users.create_user(username='booking-admin', email='booking-admin@example.test', password='Admin123!', role='ADMIN')
+        self.staff = users.create_user(username='booking-staff', email='booking-staff@example.test', password='Staff123!', role='STAFF')
+        StaffAccessProfile.objects.create(user=self.staff, on_duty=True)
+        service = Service.objects.create(name='Studio Session', description='Studio photos', duration_minutes=60, base_price='1000.00')
+        self.package = Package.objects.create(service=service, name='Portrait Package', description='Studio portrait', price='1000.00', inclusions='Studio session')
+        self.booking = Booking.objects.create(
+            customer=self.customer,
+            package=self.package,
+            scheduled_date=timezone.localdate(),
+            scheduled_time='14:30',
+            status='CONFIRMED',
+        )
+        self.customer_client = APIClient()
+        self.customer_client.force_authenticate(self.customer)
+        self.admin_client = APIClient()
+        self.admin_client.force_authenticate(self.admin)
+        self.staff_client = APIClient()
+        self.staff_client.force_authenticate(self.staff)
+
+    def test_reminder_preview_delivery_is_in_app_and_idempotent_for_admin_and_on_duty_staff(self):
+        url = f'/api/bookings/{self.booking.id}/reminder/'
+        preview = self.admin_client.get(url)
+        self.assertEqual(preview.status_code, 200)
+        self.assertTrue(preview.data['eligible'])
+        self.assertEqual(preview.data['session_time'], '2:30 PM')
+        self.assertIn('Casanova', preview.data['default_location'])
+
+        payload = {'message': 'We are excited to see you today.', 'location': preview.data['default_location']}
+        first = self.staff_client.post(url, payload, format='json')
+        second = self.admin_client.post(url, payload, format='json')
+
+        self.assertEqual(first.status_code, 201)
+        self.assertTrue(first.data['created'])
+        self.assertEqual(second.status_code, 200)
+        self.assertFalse(second.data['created'])
+        self.assertEqual(Notification.objects.filter(booking=self.booking, notification_type='BOOKING_SESSION_REMINDER').count(), 1)
+        reminder_notification = Notification.objects.get(booking=self.booking, notification_type='BOOKING_SESSION_REMINDER')
+        self.assertFalse(NotificationDelivery.objects.filter(notification=reminder_notification).exists())
+        self.assertIn('Session time: 2:30 PM (Asia/Manila)', first.data['message'])
+        self.assertIn(f'Location: {payload["location"]}', first.data['message'])
+        self.assertEqual(BookingMessage.objects.filter(booking=self.booking).count(), 1)
+        self.assertIn('Session time: 2:30 PM', BookingMessage.objects.get(booking=self.booking).message)
+
+        inbox = self.customer_client.get('/api/notifications/')
+        self.assertEqual(inbox.status_code, 200)
+        self.assertEqual(len([row for row in inbox.data if row['id'] == first.data['id']]), 1)
+        self.assertEqual(inbox.data[0]['booking_id'], self.booking.id)
+
+        conversation = self.customer_client.get(f'/api/bookings/{self.booking.id}/conversation/')
+        self.assertEqual(conversation.data['messages'][0]['message'], first.data['message'])
+        self.assertEqual(conversation.data['conversation']['concern'], 'BOOKING')
+        customer_reply = self.customer_client.post(f'/api/bookings/{self.booking.id}/conversation/', {'message': 'I will be there.', 'concern': 'OTHER'}, format='json')
+        self.assertEqual(customer_reply.status_code, 201)
+        self.assertEqual(BookingConversation.objects.get(booking=self.booking).concern, 'OTHER')
+
+    def test_reminder_is_restricted_to_confirmed_today_bookings_and_on_duty_staff(self):
+        url = f'/api/bookings/{self.booking.id}/reminder/'
+        customer_attempt = self.customer_client.post(url, {'message': 'Please arrive.', 'location': 'Studio'}, format='json')
+        self.assertEqual(customer_attempt.status_code, 403)
+
+        StaffAccessProfile.objects.filter(user=self.staff).update(on_duty=False)
+        off_duty_attempt = self.staff_client.get(url)
+        self.assertEqual(off_duty_attempt.status_code, 403)
+
+        StaffAccessProfile.objects.filter(user=self.staff).update(on_duty=True)
+        self.booking.status = 'PENDING'
+        self.booking.save(update_fields=['status'])
+        pending_preview = self.admin_client.get(url)
+        self.assertEqual(pending_preview.status_code, 200)
+        self.assertFalse(pending_preview.data['eligible'])
+        pending_send = self.admin_client.post(url, {'message': 'Please arrive.', 'location': 'Studio'}, format='json')
+        self.assertEqual(pending_send.status_code, 400)
+        self.assertFalse(Notification.objects.filter(booking=self.booking, notification_type='BOOKING_SESSION_REMINDER').exists())
+
+    def test_booking_conversation_supports_replies_and_enforces_customer_ownership(self):
+        url = f'/api/bookings/{self.booking.id}/conversation/'
+        self.assertEqual(self.customer_client.get(url).status_code, 200)
+        first = self.customer_client.post(url, {'message': 'Where should we meet?', 'concern': 'PAYMENT'}, format='json')
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(first.data['author_id'], self.customer.id)
+        self.assertEqual(BookingConversation.objects.get(booking=self.booking).concern, 'PAYMENT')
+
+        staff_inbox = self.staff_client.get('/api/bookings/conversations/inbox/')
+        self.assertEqual(staff_inbox.status_code, 200)
+        self.assertEqual(staff_inbox.data['unread_count'], 1)
+        self.assertEqual(staff_inbox.data['results'][0]['booking_id'], self.booking.id)
+
+        reply = self.staff_client.post(url, {'message': 'We will meet at the studio entrance.'}, format='json')
+        self.assertEqual(reply.status_code, 201)
+        customer_alerts = self.customer_client.get('/api/notifications/')
+        self.assertTrue(any(row['notification_type'] == 'BOOKING_MESSAGE' and row['booking_id'] == self.booking.id for row in customer_alerts.data))
+        customer_message_alert = Notification.objects.get(booking=self.booking, notification_type='BOOKING_MESSAGE')
+        self.assertFalse(NotificationDelivery.objects.filter(notification=customer_message_alert).exists())
+        thread = self.customer_client.get(url)
+        self.assertEqual([row['message'] for row in thread.data['messages']], [
+            'Where should we meet?',
+            'We will meet at the studio entrance.',
+        ])
+        self.admin_client.get(url)
+        read_inbox = self.admin_client.get('/api/bookings/conversations/inbox/')
+        self.assertEqual(read_inbox.data['unread_count'], 0)
+        self.assertEqual(BookingMessage.objects.filter(booking=self.booking).count(), 2)
+
+        other_customer_client = APIClient()
+        other_customer_client.force_authenticate(self.other_customer)
+        self.assertEqual(other_customer_client.get(url).status_code, 404)
+        self.assertEqual(other_customer_client.post(url, {'message': 'Intruding message'}, format='json').status_code, 404)
+        self.assertEqual(self.customer_client.get('/api/bookings/conversations/inbox/').status_code, 403)
+        self.assertEqual(self.staff_client.get(url).status_code, 200)
+        self.assertEqual(self.admin_client.get(url).status_code, 200)
+
+        StaffAccessProfile.objects.filter(user=self.staff).update(on_duty=False)
+        self.assertEqual(self.staff_client.get(url).status_code, 403)
+        self.assertEqual(self.staff_client.get('/api/bookings/conversations/inbox/').status_code, 403)

@@ -10,7 +10,7 @@ import { calculateSalesRowsPerPage } from '../../pages/salesLogLayout';
 
 const formatCurrency = value => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
-export default function ProductActivityModal({ product, activityType = 'sales', reportDate, onClose }) {
+export default function ProductActivityModal({ product, activityType = 'sales', reportDate, reportStartDate, reportEndDate, onClose }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -18,6 +18,9 @@ export default function ProductActivityModal({ product, activityType = 'sales', 
   const [pageSize, setPageSize] = useState(10);
   const tableAreaRef = useRef(null);
   const date = reportDate || getManilaDateInputValue();
+  const startDate = reportStartDate || product?.start_date || date;
+  const endDate = reportEndDate || product?.end_date || date;
+  const dateRangeLabel = startDate === endDate ? startDate : `${startDate} – ${endDate}`;
   const isWastage = activityType === 'wastage';
   const visibleRecords = paginateRows(records, page, pageSize);
 
@@ -29,7 +32,7 @@ export default function ProductActivityModal({ product, activityType = 'sales', 
     setRecords([]);
     setPage(1);
     client.get('/api/inventory/product-sales/transactions/', {
-      params: { product_id: product.product_id, date, type: activityType },
+      params: { product_id: product.product_id, start_date: startDate, end_date: endDate, type: activityType },
     }).then(response => {
       if (!cancelled) setRecords(Array.isArray(response.data) ? response.data : []);
     }).catch(() => {
@@ -38,7 +41,7 @@ export default function ProductActivityModal({ product, activityType = 'sales', 
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [product?.product_id, date, activityType]);
+  }, [product?.product_id, startDate, endDate, activityType]);
 
   useLayoutEffect(() => {
     const area = tableAreaRef.current;
@@ -87,7 +90,7 @@ export default function ProductActivityModal({ product, activityType = 'sales', 
       <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-espresso/[0.07] bg-cream/60 px-3 py-2.5 sm:px-4">
         <div className="min-w-0">
           <p className="truncate text-sm font-black text-espresso">{product?.product_name || product?.name}</p>
-          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-espresso/45">{isWastage ? 'Wastage activity' : 'Completed sales'} · Reporting date {date}</p>
+          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-espresso/45">{isWastage ? 'Wastage activity' : 'Completed sales'} · Reporting dates {dateRangeLabel}</p>
         </div>
         <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${isWastage ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
           {records.length} record{records.length === 1 ? '' : 's'}
@@ -108,7 +111,7 @@ export default function ProductActivityModal({ product, activityType = 'sales', 
               rows={visibleRecords}
               emptyIcon={Package}
               emptyTitle={loading ? 'Loading records' : `No ${isWastage ? 'wastage' : 'sales'} records`}
-              emptyDescription={loading ? 'Matching transactions are being loaded.' : `No ${isWastage ? 'wastage' : 'sales'} were recorded for this product on ${date}.`}
+              emptyDescription={loading ? 'Matching transactions are being loaded.' : `No ${isWastage ? 'wastage' : 'sales'} were recorded for this product during ${dateRangeLabel}.`}
               minWidth={isWastage ? 720 : 680}
               containerClassName="h-full"
               emptyStateClassName="h-full !py-4"

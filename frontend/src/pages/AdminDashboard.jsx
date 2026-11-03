@@ -27,6 +27,9 @@ import { Avatar } from '../components/ui/Avatar';
 import { PasswordStrength } from '../components/ui/PasswordStrength';
 import { calculateSalesRowsPerPage } from './salesLogLayout';
 import BookingQueue from '../components/bookings/BookingQueue';
+import BookingConversationModal from '../components/bookings/BookingConversationModal';
+import BookingMessagesInbox from '../components/bookings/BookingMessagesInbox';
+import useBookingMessagesUnreadCount from '../components/bookings/useBookingMessagesUnreadCount';
 import CompletedBookingsManager from '../components/bookings/CompletedBookingsManager';
 import WalkInBookingModal from './WalkInBookingModal';
 import { MINIMUM_BOOKING_DOWN_PAYMENT } from '../utils/bookingPayments';
@@ -563,6 +566,7 @@ export default function AdminDashboard() {
   });
   const [bookingCalendarMonth, setBookingCalendarMonth] = useState(monthValue());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState('');
+  const [bookingConversation, setBookingConversation] = useState(null);
   const [studioUnavailableDate, setStudioUnavailableDate] = useState(todayValue());
   const [studioUnavailableReason, setStudioUnavailableReason] = useState('');
   const [studioUnavailableSaving, setStudioUnavailableSaving] = useState(false);
@@ -599,6 +603,10 @@ export default function AdminDashboard() {
   const [deletingBookingId, setDeletingBookingId] = useState(null);
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
+  const [selectedPaymentBookingId, setSelectedPaymentBookingId] = useState(null);
+  const [paymentVerificationHistory, setPaymentVerificationHistory] = useState([]);
+  const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
+  const [paymentHistoryError, setPaymentHistoryError] = useState('');
   const [bookingReceipt, setBookingReceipt] = useState(null);
   const [bookingReceiptAutoPrint, setBookingReceiptAutoPrint] = useState(false);
   const [walkInBookingOpen, setWalkInBookingOpen] = useState(false);
@@ -788,6 +796,34 @@ export default function AdminDashboard() {
     if (!user || user.role !== 'ADMIN') return;
     void loadAdminTabData(activeTab);
   }, [activeTab, bookingCalendarMonth, loadAdminTabData, user]);
+
+  useEffect(() => {
+    if (selectedPaymentBookingId === null) {
+      setPaymentVerificationHistory([]);
+      setPaymentHistoryError('');
+      return undefined;
+    }
+    let active = true;
+    setPaymentHistoryLoading(true);
+    setPaymentHistoryError('');
+    Promise.resolve(client.get('/api/audit/logs/', { params: { search: `booking #${selectedPaymentBookingId}`, page: 1, page_size: 100 } }))
+      .then(response => {
+        if (!active) return;
+        const rows = Array.isArray(response?.data) ? response.data : (response?.data?.results || []);
+        setPaymentVerificationHistory(rows.filter(row => (
+          String(row.action || '').startsWith('BOOKING_PAYMENT')
+          && (
+            Number(row.details?.booking_id) === Number(selectedPaymentBookingId)
+            || String(row.description || '').match(/booking #(\d+)/i)?.[1] === String(selectedPaymentBookingId)
+          )
+        )));
+      })
+      .catch(() => {
+        if (active) setPaymentHistoryError('Verification history could not be loaded.');
+      })
+      .finally(() => { if (active) setPaymentHistoryLoading(false); });
+    return () => { active = false; };
+  }, [selectedPaymentBookingId]);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') return undefined;
@@ -1416,6 +1452,7 @@ export default function AdminDashboard() {
     }
   };
 
+  const unreadBookingMessages = useBookingMessagesUnreadCount(user?.role === 'ADMIN');
   const navItems = [
     { key: 'analytics', label: 'InsightHub Dashboard', icon: BarChart2, active: activeTab === 'analytics', onClick: () => setActiveTab('analytics') },
     { key: 'booking', label: 'Booking', icon: Calendar, active: ['calendar', 'live', 'completed-bookings'].includes(activeTab), children: [
@@ -1424,6 +1461,7 @@ export default function AdminDashboard() {
       { key: 'completed-bookings', label: 'Completed Bookings', active: activeTab === 'completed-bookings', onClick: () => setActiveTab('completed-bookings') },
     ] },
     { key: 'reports', label: 'End-of-Day Reports', icon: Printer, active: activeTab === 'reports', onClick: () => setActiveTab('reports') },
+    { key: 'messages', label: 'Booking Messages', icon: MessageSquare, badge: unreadBookingMessages || undefined, active: activeTab === 'messages', onClick: () => setActiveTab('messages') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
     { key: 'staff', label: 'Accounts', icon: Users, active: activeTab === 'staff', onClick: () => setActiveTab('staff') },
@@ -1433,7 +1471,7 @@ export default function AdminDashboard() {
     { key: 'audit', label: 'Audit Logs', icon: ClipboardList, active: activeTab === 'audit', onClick: () => setActiveTab('audit') },
   ];
 
-  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', live: 'Live Bookings', 'completed-bookings': 'Completed Bookings', reports: 'End-of-Day Reports', payments: 'Payment Booking Verification', inventory: 'Live Inventory', staff: 'Accounts', 'staff-access': 'Staff Restrictions', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', audit: 'Audit Logs' };
+  const pageTitles = { analytics: 'InsightHub Dashboard', calendar: 'Booking Calendar', live: 'Live Bookings', 'completed-bookings': 'Completed Bookings', reports: 'End-of-Day Reports', messages: 'Booking Messages', payments: 'Payment Booking Verification', inventory: 'Live Inventory', staff: 'Accounts', 'staff-access': 'Staff Restrictions', faq: 'Chatbot Manager', reviews: 'Reviews & Feedback', audit: 'Audit Logs' };
   const expectedAnalyticsRange = getDashboardRangeDates(datePreset, customStart, customEnd);
   const analyticsRangeMatches = analytics?.range?.start === expectedAnalyticsRange.start
     && analytics?.range?.end === expectedAnalyticsRange.end;
@@ -1584,10 +1622,24 @@ export default function AdminDashboard() {
     ...meta,
     value: inventoryCounts[key] || 0,
   }));
-  const filteredBookingPayments = bookingPayments.filter(payment => (
-    paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
+  const paymentBookingGroups = Array.from(bookingPayments.reduce((groups, payment) => {
+    const bookingId = payment.booking ?? payment.booking_details?.id ?? `payment-${payment.id}`;
+    const key = String(bookingId);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        bookingId,
+        bookingDetails: payment.booking_details || {},
+        payments: [],
+      });
+    }
+    groups.get(key).payments.push(payment);
+    return groups;
+  }, new Map()).values());
+  const filteredPaymentBookings = paymentBookingGroups.filter(group => (
+    paymentStatusFilter === 'ALL' || group.payments.some(payment => payment.status === paymentStatusFilter)
   ));
-  const paymentPageRows = paginateRows(filteredBookingPayments, paymentPage, paymentPageSize);
+  const paymentPageRows = paginateRows(filteredPaymentBookings, paymentPage, paymentPageSize);
+  const selectedPaymentBooking = paymentBookingGroups.find(group => String(group.bookingId) === String(selectedPaymentBookingId));
   const reportPageRows = paginateRows(endOfDayReports, reportsPage, reportsPageSize);
   const staffRoleFilterOptions = [
     { value: 'ALL', label: 'All' },
@@ -1745,6 +1797,8 @@ export default function AdminDashboard() {
               <Button variant="outline" size="sm" onClick={() => loadAdminTabData(activeTab, { force: true })} className="border-red-200 bg-white text-red-800 hover:bg-red-100">Retry</Button>
             </div>
           )}
+
+          {activeTab === 'messages' && <BookingMessagesInbox currentUserId={user?.id} />}
 
           {/* INSIGHTHUB DASHBOARD */}
           {activeTab === 'analytics' && (
@@ -2508,7 +2562,14 @@ export default function AdminDashboard() {
                             <p className="mt-1 font-bold text-espresso/75">{String(booking.scheduled_time || '').slice(0, 5) || 'Time not set'}</p>
                           </div>
                           <div className="justify-self-start sm:justify-self-end">
-                            <StatusBadge status={booking.status} />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <StatusBadge status={booking.status} />
+                              {booking.customer && (
+                                <Button type="button" size="sm" variant="outline" icon={MessageSquare} onClick={() => setBookingConversation({ id: booking.id, customerName: getCalendarBookingName(booking) })}>
+                                  Message customer
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </article>
                       ))}
@@ -2734,96 +2795,44 @@ export default function AdminDashboard() {
                   </div>
 
                 <div ref={paymentListRef} aria-label="Booking payment list" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 scrollbar-thin">
-                {filteredBookingPayments.length > 0 ? <div className="space-y-2 pb-1">
-                    {paymentPageRows.map((payment, i) => {
-                      const details = payment.booking_details || {};
-                      const isPending = payment.status === 'PENDING_VERIFICATION';
-                      return (
-                        <div key={payment.id} className="overflow-hidden rounded-2xl border border-espresso/10 bg-white shadow-sm animate-in-up" style={{ animationDelay: `${i * 35}ms` }}>
-                          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-espresso/[0.07] bg-cream/35 px-3 py-2.5 md:px-4">
-                            <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                              <Avatar user={{ username: details.customer_name, email: details.customer_email, profile_picture_url: details.customer_profile_picture_url }} size="sm" />
-                              <p className="min-w-0 font-black text-espresso">{details.customer_name || 'N/A'}</p>
-                              <StatusBadge status={payment.status} />
-                            </div>
-                            <p className="text-xs font-black uppercase tracking-wide text-espresso/65">Booking <span className="text-espresso">#{payment.booking}</span></p>
-                          </div>
-
-                          <div className="grid grid-cols-1 gap-3 px-3 py-3 text-xs sm:grid-cols-2 md:grid-cols-3 md:gap-0 md:px-4">
-                            <section className="min-w-0 md:pr-4">
-                              <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Booking Details</h3>
-                              <dl className="space-y-1.5">
-                                <div><dt className="inline text-espresso/50">Package: </dt><dd className="inline font-bold text-espresso">{details.service_name ? `${details.service_name} · ` : ''}{details.package_name || details.package_details?.name || 'N/A'}</dd></div>
-                                <div><dt className="inline text-espresso/50">Schedule: </dt><dd className="inline font-bold text-espresso">{details.scheduled_date} at {details.scheduled_time}</dd></div>
-                                <div className="min-w-0"><dt className="inline text-espresso/50">Email: </dt><dd className="break-all font-bold text-espresso">{details.customer_email || 'No email'}</dd></div>
-                              </dl>
-                            </section>
-
-                            <section className="min-w-0 border-t border-espresso/10 pt-3 sm:border-t-0 sm:pt-0 md:border-l md:border-t-0 md:px-4 md:pt-0">
-                              <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Payment Details</h3>
-                              <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                                <div className="min-w-0"><dt className="text-espresso/50">Method</dt><dd className="break-words font-bold text-espresso">{payment.method_label || payment.method || 'Unknown'}</dd></div>
-                                <div className="min-w-0"><dt className="text-espresso/50">Reference</dt><dd className="break-all font-bold text-espresso">{payment.reference_number}</dd></div>
-                                <div><dt className="text-espresso/50">Payment Amount</dt><dd className="font-black text-gold-dark">{formatCurrency(payment.amount)}</dd></div>
-                                <div><dt className="text-espresso/50">Required DP</dt><dd className="font-bold text-espresso">{formatCurrency(MINIMUM_BOOKING_DOWN_PAYMENT)}</dd></div>
-                                <div><dt className="text-espresso/50">Total Amount</dt><dd className="font-bold text-espresso">{formatCurrency(details.total_amount)}</dd></div>
-                                <div><dt className="text-espresso/50">Down Payment Paid</dt><dd className="font-bold text-espresso">{formatCurrency(details.amount_paid)}</dd></div>
-                                <div><dt className="text-espresso/50">Remaining Balance</dt><dd className="font-black text-espresso">{formatCurrency(details.remaining_balance)}</dd></div>
-                                <div className="col-span-2"><dt className="inline text-espresso/50">Paid At: </dt><dd className="inline font-bold text-espresso">{formatManilaDateTime(payment.paid_at)}</dd></div>
-                                <div className="col-span-2 pt-0.5"><PaymentProofPreview payment={payment} /></div>
-                              </dl>
-                            </section>
-
-                            <section className="min-w-0 border-t border-espresso/10 pt-3 sm:col-span-2 md:col-span-1 md:border-l md:border-t-0 md:px-4 md:pt-0">
-                              <h3 className="mb-2 text-[11px] font-black uppercase tracking-wider text-gold-dark">Verification</h3>
-                              <div className="flex flex-col gap-2 sm:flex-row md:flex-col">
-                              <Button size="sm" variant="outline" icon={Printer} onClick={() => openBookingReceipt(payment)}>
-                                Print Receipt
-                              </Button>
-                              {isPending ? (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="success"
-                                    icon={Check}
-                                    loading={verifyingPaymentId === payment.id}
-                                    onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}
-                                  >
-                                    Confirm Payment
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="danger"
-                                    icon={X}
-                                    disabled={verifyingPaymentId === payment.id}
-                                    onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}
-                                  >
-                                    Flag Payment Issue
-                                  </Button>
-                                </>
-                              ) : (
-                                <div className="text-xs text-espresso/60">
-                                  <p className="font-black text-espresso">Verified by</p>
-                                  <div className="mt-1.5 flex items-center gap-2">
-                                    <Avatar user={payment.verified_by_details} size="xs" />
-                                    <p>{payment.verified_by_details?.username || 'N/A'}</p>
-                                  </div>
-                                  <p>{payment.verified_at ? formatManilaDateTime(payment.verified_at) : 'No timestamp'}</p>
-                                </div>
-                              )}
-                              </div>
-                            </section>
-                            </div>
+                {filteredPaymentBookings.length > 0 ? <div className="space-y-2 pb-1">
+                  {paymentPageRows.map((group, i) => {
+                    const details = group.bookingDetails;
+                    const paymentStatuses = [...new Set(group.payments.map(payment => payment.status || 'UNKNOWN'))];
+                    const customerName = details.customer_name || 'N/A';
+                    return (
+                      <div key={group.bookingId} className="grid grid-cols-1 items-center gap-x-3 gap-y-2 rounded-xl border border-espresso/10 bg-white px-3 py-2.5 shadow-sm animate-in-up sm:grid-cols-[minmax(0,1.35fr)_minmax(74px,0.45fr)_minmax(145px,0.9fr)_minmax(150px,1fr)] sm:px-4" style={{ animationDelay: `${i * 30}ms` }}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPaymentBookingId(group.bookingId)}
+                          aria-label={`Open booking #${group.bookingId} details for ${customerName}`}
+                          className="flex min-h-10 min-w-0 items-center gap-2.5 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+                        >
+                          <Avatar user={{ username: customerName, email: details.customer_email, profile_picture_url: details.customer_profile_picture_url }} size="sm" />
+                          <span className="truncate text-sm font-black text-espresso underline decoration-gold/50 underline-offset-2">{customerName}</span>
+                        </button>
+                        <div className="flex items-center justify-between gap-3 text-xs sm:block">
+                          <span className="text-espresso/45 sm:hidden">Booking ID</span>
+                          <span className="font-black text-espresso">#{group.bookingId}</span>
                         </div>
-                      );
-                    })}
+                        <div className="flex items-center justify-between gap-3 text-xs sm:block">
+                          <span className="text-espresso/45 sm:hidden">Session</span>
+                          <span className="font-bold text-espresso">{details.scheduled_date || 'Date unavailable'}{details.scheduled_time ? ` · ${details.scheduled_time}` : ''}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-start">
+                          <span className="text-xs text-espresso/45 sm:hidden">Payment status</span>
+                          <div className="flex flex-wrap gap-1.5">{paymentStatuses.map(status => <StatusBadge key={status} status={status} />)}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div> : (
-                  <EmptyState icon={CreditCard} title="No payments found" description="Submitted booking payments will appear here for verification." />
+                  <EmptyState icon={CreditCard} title="No bookings found" description="Submitted booking payments will appear here for verification." />
                 )}
                 </div>
-                {filteredBookingPayments.length > 0 && (
+                {filteredPaymentBookings.length > 0 && (
                   <div className="mt-2 shrink-0 border-t border-espresso/[0.06] pt-2">
-                    <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={paymentPageSize} setPageSize={setPaymentPageSize} />
+                    <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredPaymentBookings.length} pageSize={paymentPageSize} setPageSize={setPaymentPageSize} />
                   </div>
                 )}
                 </div>
@@ -3311,6 +3320,105 @@ export default function AdminDashboard() {
       </div>
 
       <Modal
+        open={Boolean(selectedPaymentBooking)}
+        onClose={() => setSelectedPaymentBookingId(null)}
+        title={selectedPaymentBooking ? `Booking #${selectedPaymentBooking.bookingId} · ${selectedPaymentBooking.bookingDetails.customer_name || 'Customer'}` : 'Booking details'}
+        size="5xl"
+        className="max-h-[calc(100dvh-2rem)] overflow-hidden"
+        bodyClassName="max-h-[calc(100dvh-7rem)] space-y-4 overflow-y-auto bg-cream/35 p-3 sm:p-5"
+      >
+        {selectedPaymentBooking && (() => {
+          const bookingDetails = selectedPaymentBooking.bookingDetails;
+          const payments = selectedPaymentBooking.payments;
+          return (
+            <>
+              <section className="rounded-2xl border border-espresso/10 bg-white p-4 sm:p-5">
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Avatar user={{ username: bookingDetails.customer_name, email: bookingDetails.customer_email, profile_picture_url: bookingDetails.customer_profile_picture_url }} size="md" />
+                    <div className="min-w-0">
+                      <h3 className="break-words text-base font-black text-espresso">{bookingDetails.customer_name || 'N/A'}</h3>
+                      <p className="text-xs font-bold text-espresso/55">Booking #{selectedPaymentBooking.bookingId}</p>
+                    </div>
+                  </div>
+                  <StatusBadge status={bookingDetails.status || 'UNKNOWN'} />
+                </div>
+                <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                  <div><dt className="font-semibold text-espresso/50">Session date and time</dt><dd className="mt-0.5 font-bold text-espresso">{bookingDetails.scheduled_date || 'N/A'}{bookingDetails.scheduled_time ? ` · ${bookingDetails.scheduled_time}` : ''}</dd></div>
+                  <div><dt className="font-semibold text-espresso/50">Service and package</dt><dd className="mt-0.5 font-bold text-espresso">{bookingDetails.service_name ? `${bookingDetails.service_name} · ` : ''}{bookingDetails.package_name || bookingDetails.package_details?.name || 'N/A'}</dd></div>
+                  <div><dt className="font-semibold text-espresso/50">Customer email</dt><dd className="mt-0.5 break-all font-bold text-espresso">{bookingDetails.customer_email || 'No email'}</dd></div>
+                  <div><dt className="font-semibold text-espresso/50">Customer phone</dt><dd className="mt-0.5 font-bold text-espresso">{bookingDetails.customer_phone || 'No phone number'}</dd></div>
+                  <div><dt className="font-semibold text-espresso/50">Booking total</dt><dd className="mt-0.5 font-bold text-espresso">{formatCurrency(bookingDetails.total_amount)}</dd></div>
+                  <div><dt className="font-semibold text-espresso/50">Paid / remaining</dt><dd className="mt-0.5 font-bold text-espresso">{formatCurrency(bookingDetails.amount_paid)} paid · {formatCurrency(bookingDetails.remaining_balance)} remaining</dd></div>
+                </dl>
+              </section>
+
+              <section className="space-y-3" aria-label="Payments for this booking">
+                <h3 className="px-1 text-xs font-black uppercase tracking-wider text-gold-dark">Payments and verification</h3>
+                {payments.map(payment => {
+                  const isPending = payment.status === 'PENDING_VERIFICATION';
+                  return (
+                    <article key={payment.id} className="rounded-2xl border border-espresso/10 bg-white p-4 sm:p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-espresso/10 pb-3">
+                        <div className="min-w-0">
+                          <h4 className="break-all text-sm font-black text-espresso">Payment reference {payment.reference_number || 'N/A'}</h4>
+                          <p className="mt-1 text-xs text-espresso/55">Submitted {payment.paid_at ? formatManilaDateTime(payment.paid_at) : 'time unavailable'}</p>
+                        </div>
+                        <StatusBadge status={payment.status || 'UNKNOWN'} />
+                      </div>
+
+                      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-xs sm:grid-cols-3 lg:grid-cols-4">
+                        <div><dt className="text-espresso/50">Payment method</dt><dd className="mt-0.5 font-bold text-espresso">{payment.method_label || payment.method || 'Unknown'}</dd></div>
+                        <div><dt className="text-espresso/50">Payment amount</dt><dd className="mt-0.5 font-black text-gold-dark">{formatCurrency(payment.amount)}</dd></div>
+                        <div><dt className="text-espresso/50">Required down payment</dt><dd className="mt-0.5 font-bold text-espresso">{formatCurrency(payment.required_down_payment ?? MINIMUM_BOOKING_DOWN_PAYMENT)}</dd></div>
+                        <div><dt className="text-espresso/50">Verified by</dt><dd className="mt-0.5 font-bold text-espresso">{payment.verified_by_details?.username || 'Not verified'}</dd></div>
+                        <div className="col-span-2 sm:col-span-3 lg:col-span-4"><dt className="text-espresso/50">Verification time / note</dt><dd className="mt-0.5 whitespace-pre-wrap break-words font-semibold text-espresso">{payment.verified_at ? formatManilaDateTime(payment.verified_at) : 'Not verified'}{payment.admin_note ? ` · ${payment.admin_note}` : ''}</dd></div>
+                      </dl>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-espresso/10 pt-3">
+                        <PaymentProofPreview payment={payment} />
+                        <Button size="sm" variant="outline" icon={Printer} onClick={() => openBookingReceipt(payment)}>Print Receipt</Button>
+                        {isPending && (
+                          <>
+                            <Button size="sm" variant="success" icon={Check} loading={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'APPROVED')}>Approve</Button>
+                            <Button size="sm" variant="danger" icon={X} disabled={verifyingPaymentId === payment.id} onClick={() => handleVerifyBookingPayment(payment, 'REJECTED')}>Reject</Button>
+                          </>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+
+              <section className="rounded-2xl border border-espresso/10 bg-white p-4 sm:p-5" aria-label="Verification history">
+                <h3 className="text-xs font-black uppercase tracking-wider text-gold-dark">Verification history</h3>
+                {paymentHistoryLoading ? (
+                  <p className="mt-3 text-xs font-semibold text-espresso/55" aria-live="polite">Loading verification history…</p>
+                ) : paymentHistoryError ? (
+                  <p className="mt-3 text-xs font-semibold text-red-700" role="alert">{paymentHistoryError}</p>
+                ) : paymentVerificationHistory.length ? (
+                  <ol className="mt-3 space-y-3">
+                    {paymentVerificationHistory.map(event => (
+                      <li key={event.id} className="border-l-2 border-gold/50 pl-3">
+                        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                          <p className="text-xs font-black text-espresso">{String(event.action).replace('BOOKING_PAYMENT_', '').replace(/_/g, ' ')}</p>
+                          <time className="text-[10px] font-semibold text-espresso/45">{formatManilaDateTime(event.timestamp)}</time>
+                        </div>
+                        <p className="mt-0.5 break-words text-xs leading-relaxed text-espresso/65">{event.description}</p>
+                        <p className="mt-0.5 text-[10px] font-bold text-espresso/45">By {event.name || 'Unknown'}</p>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="mt-3 text-xs text-espresso/55">No submission or verification history is available for this booking.</p>
+                )}
+              </section>
+            </>
+          );
+        })()}
+      </Modal>
+
+      <Modal
         open={!!editingStaff}
         onClose={() => {
           if (staffSaving) return;
@@ -3515,6 +3623,14 @@ export default function AdminDashboard() {
         detectingPrinters={localPrinterLoading}
         autoPrint={bookingReceiptAutoPrint}
         onClose={() => { setBookingReceipt(null); setBookingReceiptAutoPrint(false); }}
+      />
+
+      <BookingConversationModal
+        open={Boolean(bookingConversation)}
+        bookingId={bookingConversation?.id}
+        customerName={bookingConversation?.customerName || 'Customer'}
+        currentUserId={user?.id}
+        onClose={() => setBookingConversation(null)}
       />
 
       <IngredientStatusModal

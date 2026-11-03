@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 
 export function Modal({ open, onClose, title, children, className = '', bodyClassName = '', size = 'md' }) {
+  const titleId = useId();
   const overlayRef = useRef(null);
   const restoreFocusRef = useRef(null);
   const onCloseRef = useRef(onClose);
@@ -12,6 +13,8 @@ export function Modal({ open, onClose, title, children, className = '', bodyClas
     restoreFocusRef.current = document.activeElement;
     document.body.style.overflow = 'hidden';
     const handleKeyDown = (event) => {
+      const openDialogs = Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"]'));
+      if (openDialogs[openDialogs.length - 1] !== overlayRef.current) return;
       if (event.key === 'Escape') {
         onCloseRef.current?.();
         return;
@@ -58,7 +61,7 @@ export function Modal({ open, onClose, title, children, className = '', bodyClas
       ref={overlayRef}
       role="dialog"
       aria-modal="true"
-      aria-labelledby={title ? 'modal-title' : undefined}
+      aria-labelledby={title ? titleId : undefined}
       aria-label={title ? undefined : 'Dialog'}
       tabIndex={-1}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in"
@@ -67,7 +70,7 @@ export function Modal({ open, onClose, title, children, className = '', bodyClas
       <div className={`relative max-h-[calc(100dvh-2rem)] overflow-hidden bg-white rounded-[20px] border border-espresso/[0.08] shadow-[0_24px_64px_rgba(28,15,10,0.22)] w-full ${sizes[size] || sizes.md} animate-in-scale ${className}`}>
         {title && (
           <div className="flex items-center justify-between gap-3 p-4 sm:p-5 border-b border-espresso/[0.06]">
-            <h2 id="modal-title" className="heading-dialog text-espresso">{title}</h2>
+            <h2 id={titleId} className="heading-dialog text-espresso">{title}</h2>
             <button
               onClick={onClose}
               aria-label="Close modal"
