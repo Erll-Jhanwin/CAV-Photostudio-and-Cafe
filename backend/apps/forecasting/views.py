@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from ml.forecasting_engine import generate_forecast_report
-from ml.sales_history_repository import DEFAULT_SOURCE_NAME, get_active_sales_history, import_sales_history_csv
+from ml.sales_history_repository import DEFAULT_CSV_FILENAME, DEFAULT_SOURCE_NAME, get_active_sales_history, import_sales_history_csv
 from ml.linear_regression_forecasting import MODEL_VERSION, create_forecast_run, serialize_run
 from forecasting.models import ForecastRun
 from users.permissions import IsStaffOrAdmin
@@ -115,9 +115,9 @@ class MachineLearningForecastView(views.APIView):
             'latest': serialize_run(runs[0]) if runs else None,
             'history': [serialize_run(run) for run in runs],
             'forecast_horizon_default_days': 7,
-            'dataset_file': 'CAV_Three_Year_Synthetic_Sales-Daily sales.csv',
+            'dataset_file': DEFAULT_CSV_FILENAME,
             'dataset_type': 'Synthetic daily sales data',
-            'implementation_assumption': 'Linear regression fits daily Sales (PHP) against elapsed calendar days. Exact duplicate rows are removed, duplicate dates are summed, invalid date or sales rows are skipped, and missing calendar dates are filled with zero. Evaluation uses the first 80% of dates for training and the later 20% for testing. The default forecast horizon is seven calendar days.',
+            'implementation_assumption': 'Linear regression fits the explicit daily sales/revenue column (daily_sales_php_y for the default CSV) against elapsed calendar days; revenue is never inferred from drink quantities or fitted estimates. Exact duplicate rows are removed, duplicate dates are summed, invalid date or sales rows are skipped, and missing calendar dates are filled with zero. Evaluation uses the first 80% of dates for training and the later 20% for testing. The default forecast horizon is seven calendar days.',
         })
 
     def post(self, request, *args, **kwargs):

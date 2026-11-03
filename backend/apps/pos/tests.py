@@ -265,6 +265,38 @@ class PosIdempotencyTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.staff)
 
+    def test_selling_one_americano_deducts_exactly_one_serving_of_its_ingredients(self):
+        espresso = Product.objects.create(
+            name='Americano Recipe Espresso', sku='AMERICANO-RECIPE-ESP',
+            item_type=Product.INGREDIENT, base_unit='ML', stock_quantity=Decimal('5000.00'),
+        )
+        water = Product.objects.create(
+            name='Americano Recipe Water', sku='AMERICANO-RECIPE-WATER',
+            item_type=Product.INGREDIENT, base_unit='ML', stock_quantity=Decimal('10000.00'),
+        )
+        americano = Product.objects.create(
+            name='Americano', sku='AMERICANO-RECIPE-TEST', item_type=Product.PRODUCT,
+            price=Decimal('150.00'), stock_level=100,
+            recipe_data=[
+                {'ingredient': espresso.id, 'quantity': '60.00', 'base_unit': 'ML'},
+                {'ingredient': water.id, 'quantity': '180.00', 'base_unit': 'ML'},
+            ],
+        )
+
+        response = self.client.post('/api/pos/orders/', {
+            'items': [{'product_id': americano.id, 'quantity': 1}],
+            'order_type': 'WALK_IN',
+            'payment': {'amount': '150.00', 'method': 'CASH'},
+        }, format='json')
+
+        self.assertEqual(response.status_code, 201, response.data)
+        espresso.refresh_from_db()
+        water.refresh_from_db()
+        self.assertEqual(espresso.stock_quantity, Decimal('4940.00'))
+        self.assertEqual(water.stock_quantity, Decimal('9820.00'))
+        self.assertEqual(InventoryEvent.objects.get(product=espresso).quantity, Decimal('60.00'))
+        self.assertEqual(InventoryEvent.objects.get(product=water).quantity, Decimal('180.00'))
+
     def test_repeated_checkout_returns_the_original_order_without_double_deducting_stock(self):
         payload = {
             'items': [{'product_id': self.product.id, 'quantity': 2}],

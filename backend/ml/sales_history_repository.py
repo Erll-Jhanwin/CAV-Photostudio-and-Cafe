@@ -18,8 +18,8 @@ from django.utils import timezone
 from forecasting.models import SalesHistoryImport, SalesHistoryRecord
 
 
-DEFAULT_SOURCE_NAME = 'cav_synthetic_daily_sales'
-DEFAULT_CSV_FILENAME = 'CAV_Three_Year_Synthetic_Sales-Daily sales.csv'
+DEFAULT_SOURCE_NAME = 'cav_daily_drink_sales_2023_to_2026'
+DEFAULT_CSV_FILENAME = 'CAV_Daily_Drink_Sales_2023_to_2026.csv'
 EXCLUDED_STATUS_PATTERN = re.compile(r'cancel|void|refund|reject|failed|declined', re.IGNORECASE)
 
 
@@ -123,10 +123,10 @@ def import_sales_history_csv(csv_path=None, source_name=DEFAULT_SOURCE_NAME, sou
 
     date_column = _find_column(raw.columns, ['Date/Time', 'Date Time', 'Datetime', 'Date', 'Timestamp'])
     status_column = _find_column(raw.columns, ['Status', 'State'])
-    quantity_column = _find_column(raw.columns, ['Qty.', 'Qty', 'Quantity', 'Units'])
+    quantity_column = _find_column(raw.columns, ['Qty.', 'Qty', 'Quantity', 'Units', 'drinks_sold'])
     total_amount_column = _find_column(raw.columns, ['Total amount', 'Subtotal', 'Amount'])
-    daily_sales_column = _find_column(raw.columns, ['Sales (PHP)'])
-    total_column = _find_column(raw.columns, ['Total', 'Sales', 'Sales (PHP)', 'Revenue'])
+    daily_sales_column = _find_column(raw.columns, ['Sales (PHP)', 'daily_sales_php_y'])
+    total_column = _find_column(raw.columns, ['Total', 'Sales', 'Sales (PHP)', 'Revenue', 'daily_sales_php_y'])
     items_column = _find_column(raw.columns, ['Items Description', 'Item Description', 'Items', 'Product', 'Description'])
     number_column = _find_column(raw.columns, ['Number', 'Transaction', 'Transaction ID', 'Order'])
 

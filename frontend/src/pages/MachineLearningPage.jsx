@@ -94,7 +94,7 @@ export default function MachineLearningPage() {
             <Link to="/admin" className="text-xs font-bold text-gold hover:underline">← Admin dashboard</Link>
             <p className="mt-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.24em] text-gold"><BrainCircuit size={15} /> CAV InsightHub</p>
             <h1 className="mt-2 text-3xl font-black">Daily Sales Forecast</h1>
-            <p className="mt-2 max-w-2xl text-sm text-white/65">Linear regression over the supplied synthetic daily sales history. Values are in Philippine pesos (PHP).</p>
+            <p className="mt-2 max-w-2xl text-sm text-white/65">Linear regression over the CAV daily drink sales history. Sales values are in Philippine pesos (PHP).</p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-xs font-bold text-white/80">Forecast horizon (days)
@@ -107,11 +107,11 @@ export default function MachineLearningPage() {
         </header>
 
         <div role="note" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950">
-          Synthetic dataset: CAV_Three_Year_Synthetic_Sales-Daily sales.csv. Results from synthetic data do not establish real-world forecasting accuracy.
+          Source dataset: CAV_Daily_Drink_Sales_2023_to_2026.csv. Forecast revenue uses the explicit daily_sales_php_y values in the CSV.
         </div>
         {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">{error}</div>}
         {loading && !report && <div className="min-h-24 animate-pulse rounded-xl bg-white" aria-hidden="true" />}
-        {!loading && !report && <Card><p className="font-bold text-espresso">No forecast run saved yet.</p><p className="mt-1 text-sm text-espresso/60">Generate a forecast to validate the synthetic dataset, evaluate the holdout, and calculate future sales.</p></Card>}
+        {!loading && !report && <Card><p className="font-bold text-espresso">No forecast run saved yet.</p><p className="mt-1 text-sm text-espresso/60">Generate a forecast to validate the daily drink sales history, evaluate the holdout, and calculate future sales.</p></Card>}
 
         {report && <>
           <Card className="!p-5">
