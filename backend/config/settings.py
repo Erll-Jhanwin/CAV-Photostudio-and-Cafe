@@ -399,6 +399,7 @@ CORS_ALLOW_HEADERS = [
 ]
 CSRF_TRUSTED_ORIGINS = list(dict.fromkeys([
     *[origin for origin in CORS_ALLOWED_ORIGINS if origin.startswith(('http://', 'https://'))],
+    *CAPACITOR_ALLOWED_ORIGINS,
     *[normalize_origin(origin) for origin in env_list('CSRF_TRUSTED_ORIGINS')],
 ]))
 

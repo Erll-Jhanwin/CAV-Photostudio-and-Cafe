@@ -865,7 +865,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
             return [IsStaffOrAdmin()]
         return super().get_permissions()
 
-    def get_queryset(self):
+    def get_base_queryset(self):
         user = self.request.user
         queryset = Payment.objects.filter(payment_type=Payment.BOOKING).select_related(
             'booking',
@@ -877,11 +877,28 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
         status_param = self.request.query_params.get('status')
         if status_param:
             queryset = queryset.filter(status=status_param)
+        booking_param = self.request.query_params.get('booking') or self.request.query_params.get('booking_id')
+        if booking_param:
+            try:
+                queryset = queryset.filter(booking_id=int(booking_param))
+            except (TypeError, ValueError):
+                queryset = queryset.none()
         if self.request.query_params.get('search'):
             queryset = filters.SearchFilter().filter_queryset(self.request, queryset, self)
         if user.role in ['STAFF', 'ADMIN']:
-            return apply_limit(queryset, self.request, default=100)
-        return apply_limit(queryset.filter(booking__customer=user), self.request, default=100)
+            return queryset
+        return queryset.filter(booking__customer=user)
+
+    def get_queryset(self):
+        return apply_limit(self.get_base_queryset(), self.request, default=100)
+
+    def list(self, request, *args, **kwargs):
+        if request.query_params.get('include_count') != 'true':
+            return super().list(request, *args, **kwargs)
+        total = self.get_base_queryset().count()
+        response = super().list(request, *args, **kwargs)
+        response.data = {'count': total, 'results': response.data}
+        return response
 
     def create(self, request, *args, **kwargs):
         idempotency_key = get_idempotency_key(request)

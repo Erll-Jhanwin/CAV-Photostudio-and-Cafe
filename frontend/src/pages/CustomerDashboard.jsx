@@ -1352,6 +1352,9 @@ export default function CustomerDashboard() {
       }
       paymentRequestStartedRef.current = true;
       const paymentRes = await client.post('/api/bookings/payments/', paymentData);
+      if (!paymentRes.data?.id || !paymentRes.data?.status) {
+        throw new Error('The server response did not confirm a saved payment.');
+      }
       if (createdBooking) {
         setBookings(current => normalizeBookings([
           { ...createdBooking, payments: [paymentRes.data] },
@@ -1365,7 +1368,7 @@ export default function CustomerDashboard() {
         time: selectedTime,
         paymentReference: paymentRes.data?.reference_number,
         amount: paymentRes.data?.amount,
-        paymentStatus: paymentRes.data?.status || 'PENDING_VERIFICATION',
+        paymentStatus: paymentRes.data.status,
       });
       setSelectedService(null); setSelectedPackage(null);
       setSelectedDate(''); setSelectedTime(''); setNotes('');
@@ -1383,6 +1386,43 @@ export default function CustomerDashboard() {
     } catch (err) {
       const errorMessage = formatApiError(err, 'The request could not be completed. Please try again.');
       if (bookingSavedForPayment && bookingId) {
+        // The server may have committed the payment while the response was
+        // lost. Read the booking's payments before asking the customer to retry.
+        if (!err.response || err.response.status >= 500) {
+          try {
+            const statusRes = await client.get('/api/bookings/payments/', {
+              params: { booking: bookingId, limit: 100 },
+            });
+            const savedPayments = Array.isArray(statusRes.data)
+              ? statusRes.data
+              : (statusRes.data?.results || []);
+            const savedPayment = savedPayments.find(payment => (
+              String(payment.booking) === String(bookingId)
+              && String(payment.reference_number || '').trim().toLowerCase() === paymentReference.trim().toLowerCase()
+            ));
+            if (savedPayment?.id && savedPayment?.status) {
+              setBookingConfirmation({
+                id: bookingId,
+                packageName: selectedPackage.name,
+                date: selectedDate,
+                time: selectedTime,
+                paymentReference: savedPayment.reference_number,
+                amount: savedPayment.amount,
+                paymentStatus: savedPayment.status,
+              });
+              setSelectedService(null); setSelectedPackage(null);
+              setSelectedDate(''); setSelectedTime(''); setNotes('');
+              setPaymentReference(''); setPaymentAmount(''); setPaymentProof(null);
+              resetPendingBooking();
+              setCurrentStep(1);
+              fetchDashboardData({ background: true });
+              setActiveTab('history');
+              return;
+            }
+          } catch {
+            // Keep the form and idempotency key so retry can safely resolve it.
+          }
+        }
         alert(
           `Booking #${bookingId} was saved, but we could not confirm the payment submission. `
           + `${errorMessage} You can retry the payment without creating another booking.`
@@ -2528,7 +2568,9 @@ export default function CustomerDashboard() {
                           disabled={paymentSubmitting || !paymentMethod || !selectedPaymentMethod?.configured || !selectedPaymentMethod?.qr_url || paymentQrFailed || (!paymentRequestStartedRef.current && (paymentReferenceStatus.checking || paymentReferenceStatus.exists))}
                           className="px-6 text-xs bg-emerald-600 border-emerald-600 hover:bg-emerald-700 text-white"
                         >
-                          {paymentSubmitting ? 'Saving Payment & Reserving...' : 'Reserve Your Session'}
+                          {paymentSubmitting
+                            ? (pendingPaymentBookingId ? 'Submitting Payment...' : 'Saving Payment & Reserving...')
+                            : (pendingPaymentBookingId ? `Retry Payment for Booking #${pendingPaymentBookingId}` : 'Reserve Your Session')}
                         </Button>
                       )}
                     </div>
@@ -3297,9 +3339,15 @@ export default function CustomerDashboard() {
               <CheckCircle className="w-7 h-7" />
             </div>
             <div className="space-y-2">
-              <p className="text-sm font-bold text-espresso">Your reservation and payment reference were submitted.</p>
+              <p className="text-sm font-bold text-espresso">
+                {bookingConfirmation?.paymentStatus === 'PENDING_VERIFICATION'
+                  ? 'Submitted for verification'
+                  : `Payment status: ${formatStatusLabel(bookingConfirmation?.paymentStatus || 'PENDING')}`}
+              </p>
               <p className="text-xs text-espresso/60 leading-relaxed">
-                Your payment is pending verification. Staff will confirm the booking after checking the selected payment provider.
+                {bookingConfirmation?.paymentStatus === 'PENDING_VERIFICATION'
+                  ? 'Staff will confirm the booking after checking the selected payment provider.'
+                  : 'Your booking history now shows the payment status confirmed by the server.'}
               </p>
             </div>
             {bookingConfirmation && (

@@ -1,9 +1,11 @@
 from datetime import timedelta
 from unittest.mock import Mock, patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import connection
-from django.test import TestCase, override_settings
+from django.middleware.csrf import CsrfViewMiddleware
+from django.test import RequestFactory, TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -192,6 +194,12 @@ class BookingWriteSafetyTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.customer)
 
+    def test_capacitor_webview_origin_is_trusted_for_csrf_protected_writes(self):
+        request = RequestFactory().post('/', HTTP_ORIGIN='capacitor://localhost')
+        middleware = CsrfViewMiddleware(lambda value: None)
+        self.assertIn('capacitor://localhost', settings.CSRF_TRUSTED_ORIGINS)
+        self.assertTrue(middleware._origin_verified(request))
+
     def test_booking_creation_acquires_a_date_lock(self):
         scheduled_date = timezone.localdate() + timedelta(days=14)
         response = self.client.post('/api/bookings/', {
@@ -312,6 +320,25 @@ class BookingEndToEndApiTests(TestCase):
         self.assertEqual(replay_response.status_code, 200)
         self.assertEqual(Payment.objects.filter(booking_id=booking_id).count(), 1)
         self.assertEqual(mocked_post.call_count, 1)
+        status_response = self.client.get('/api/bookings/payments/', {'booking': booking_id})
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(len(status_response.data), 1)
+        self.assertEqual(status_response.data[0]['id'], payment.id)
+        self.assertEqual(status_response.data[0]['status'], 'PENDING_VERIFICATION')
+        paged_status_response = self.client.get('/api/bookings/payments/', {
+            'booking': booking_id,
+            'status': 'PENDING_VERIFICATION',
+            'limit': 1,
+            'offset': 0,
+            'include_count': 'true',
+        })
+        self.assertEqual(paged_status_response.status_code, 200)
+        self.assertEqual(paged_status_response.data['count'], 1)
+        self.assertEqual(len(paged_status_response.data['results']), 1)
+        self.client.force_authenticate(other_customer)
+        hidden_status_response = self.client.get('/api/bookings/payments/', {'booking': booking_id})
+        self.assertEqual(hidden_status_response.status_code, 200)
+        self.assertEqual(hidden_status_response.data, [])
 
     @override_settings(PAYMENT_QR_GCASH_URL='/media/payments/gcash.png', PAYMENT_QR_MAYA_URL='', PAYMENT_QR_MARIBANK_URL='https://example.test/maribank.png')
     def test_payment_method_list_reports_configuration_for_each_supported_method(self):

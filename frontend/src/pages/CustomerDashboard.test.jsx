@@ -148,10 +148,11 @@ async function completeWizard() {
 }
 
 test('available slot completes the wizard and sends Manila payment timestamp and idempotency keys', async () => {
-  client.post.mockImplementation(async url => ({ data: url === '/api/bookings/' ? booking : { id: 7, status: 'PENDING_VERIFICATION' } }));
+  client.post.mockImplementation(async url => ({ data: url === '/api/bookings/' ? booking : { id: 7, booking: 42, reference_number: 'GCASH-TEST-001', amount: '200.00', status: 'PENDING_VERIFICATION' } }));
   await completeWizard();
   fireEvent.click(screen.getByRole('button', { name: 'Reserve Your Session' }));
   await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Booking submitted successfully.'));
+  expect(await screen.findByText('Submitted for verification')).toBeInTheDocument();
   expect(client.post).toHaveBeenCalledTimes(2);
   expect(client.post.mock.calls[0][1]).toMatchObject({ scheduled_date: date, scheduled_time: '09:00', idempotency_key: expect.any(String) });
   const payment = client.post.mock.calls[1][1];
@@ -167,7 +168,7 @@ test('available slot completes the wizard and sends Manila payment timestamp and
 });
 
 test('selected payment proof is sent as multipart data for private storage', async () => {
-  client.post.mockImplementation(async url => ({ data: url === '/api/bookings/' ? booking : { id: 7, status: 'PENDING_VERIFICATION' } }));
+  client.post.mockImplementation(async url => ({ data: url === '/api/bookings/' ? booking : { id: 7, booking: 42, reference_number: 'GCASH-TEST-001', amount: '200.00', status: 'PENDING_VERIFICATION' } }));
   const container = await completeWizard();
   const proof = new File(['proof bytes'], 'transfer.png', { type: 'image/png' });
   fireEvent.change(screen.getByLabelText(/Payment Proof/), { target: { files: [proof] } });
@@ -205,7 +206,7 @@ test('lost payment response keeps the saved booking and retries only payment wit
   client.get.mockResolvedValue({ data: { exists: true, date, slots: [] } });
   const realNow = Date.now();
   const clock = jest.spyOn(Date, 'now').mockReturnValue(realNow + 2000);
-  fireEvent.click(screen.getByRole('button', { name: 'Reserve Your Session' }));
+  fireEvent.click(screen.getByRole('button', { name: /Retry Payment for Booking #42/ }));
   await waitFor(() => expect(window.alert).toHaveBeenCalledWith('Booking submitted successfully.'));
   clock.mockRestore();
   const bookingCalls = client.post.mock.calls.filter(([url]) => url === '/api/bookings/');
@@ -214,6 +215,29 @@ test('lost payment response keeps the saved booking and retries only payment wit
   expect(payments).toHaveLength(2);
   expect(payments[0].idempotency_key).toBe(payments[1].idempotency_key);
   expect(payments[1].booking).toBe(42);
+});
+
+test('when payment saved but its response dropped, status lookup confirms it without retrying', async () => {
+  let paymentCalls = 0;
+  const fallbackGet = client.get.getMockImplementation();
+  client.post.mockImplementation(async url => {
+    if (url === '/api/bookings/') return { data: booking };
+    paymentCalls += 1;
+    throw new Error('Network Error');
+  });
+  client.get.mockImplementation((url, options) => {
+    if (url === '/api/bookings/payments/' && options?.params?.booking === 42) {
+      return Promise.resolve({ data: [{
+        id: 7, booking: 42, reference_number: 'GCASH-TEST-001', amount: '200.00', status: 'PENDING_VERIFICATION',
+      }] });
+    }
+    return fallbackGet(url, options);
+  });
+  await completeWizard();
+  fireEvent.click(screen.getByRole('button', { name: 'Reserve Your Session' }));
+  expect(await screen.findByText('Submitted for verification')).toBeInTheDocument();
+  expect(paymentCalls).toBe(1);
+  expect(client.post.mock.calls.filter(([url]) => url === '/api/bookings/')).toHaveLength(1);
 });
 
 test('a genuine backend slot conflict is shown and never submits payment', async () => {

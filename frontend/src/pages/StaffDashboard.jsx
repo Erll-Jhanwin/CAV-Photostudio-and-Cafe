@@ -243,6 +243,7 @@ export default function StaffDashboard() {
   const [catalogSuppliers, setCatalogSuppliers] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [bookingPayments, setBookingPayments] = useState([]);
+  const [bookingPaymentsTotal, setBookingPaymentsTotal] = useState(0);
   const [bookingReceipt, setBookingReceipt] = useState(null);
   const [bookingReceiptAutoPrint, setBookingReceiptAutoPrint] = useState(false);
   const [orders, setOrders] = useState([]);
@@ -289,6 +290,9 @@ export default function StaffDashboard() {
   const [adjUnit, setAdjUnit] = useState('ML');
   const [adjMovementType, setAdjMovementType] = useState('IN');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('PENDING_VERIFICATION');
+  const [paymentRefreshToken, setPaymentRefreshToken] = useState(0);
+  const paymentForceRefreshRef = useRef(false);
+  const paymentQueryKeyRef = useRef('');
   const [verifyingPaymentId, setVerifyingPaymentId] = useState(null);
   const paymentListRef = useRef(null);
   const [inventoryFilter, setInventoryFilter] = useState('ALL');
@@ -392,6 +396,11 @@ export default function StaffDashboard() {
     }
   }, [refreshProducts]);
 
+  const refreshPaymentList = useCallback(() => {
+    paymentForceRefreshRef.current = true;
+    setPaymentRefreshToken(current => current + 1);
+  }, []);
+
   const loadTabData = useCallback(async (tab = activeTab, force = false) => {
     if (tabLoadInFlightRef.current.has(tab)) {
       const startedAt = tabLoadStartedAtRef.current.get(tab) || Date.now();
@@ -421,8 +430,7 @@ export default function StaffDashboard() {
         writeStaffCache(user?.id, 'products', uniqueProducts);
         ensureDefaultRecipesOnce();
       } else if (tab === 'payments') {
-        const paymentsRes = await getCached('/api/bookings/payments/', { params: { limit: 100 } }, { force });
-        setBookingPayments(normalizePayments(paymentsRes.data));
+        // The payment list has its own status/page-aware loader below.
       } else if (tab === 'bookings') {
         const bookingsRes = await getCached('/api/bookings/', { params: { limit: 500, queue: 'true' } }, { force });
         setStaffBookings(normalizeRowsById(bookingsRes.data, row => row?.id));
@@ -511,8 +519,11 @@ export default function StaffDashboard() {
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) return undefined;
     const intervalMs = ['payments', 'bookings'].includes(activeTab) ? 15000 : 60000;
-    return startVisiblePolling(() => loadTabData(activeTab, true), intervalMs);
-  }, [user, activeTab, loadTabData]);
+    return startVisiblePolling(
+      () => (activeTab === 'payments' ? refreshPaymentList() : loadTabData(activeTab, true)),
+      intervalMs,
+    );
+  }, [user, activeTab, loadTabData, refreshPaymentList]);
 
   useEffect(() => {
     if (!user || (user.role !== 'STAFF' && user.role !== 'ADMIN')) return undefined;
@@ -541,16 +552,59 @@ export default function StaffDashboard() {
         });
         return changed ? next : current;
       });
-      if (affectedTabs.includes(activeTab)) void loadTabData(activeTab, true);
+      if (affectedTabs.includes(activeTab)) {
+        if (activeTab === 'payments') refreshPaymentList();
+        else void loadTabData(activeTab, true);
+      }
     };
     window.addEventListener(DATA_CHANGED_EVENT, refreshChangedData);
     return () => window.removeEventListener(DATA_CHANGED_EVENT, refreshChangedData);
-  }, [user, activeTab, loadTabData]);
+  }, [user, activeTab, loadTabData, refreshPaymentList]);
 
   useEffect(() => { setProductPage(1); }, [posSearch]);
-  useEffect(() => { setPaymentPage(1); }, [paymentStatusFilter]);
   useEffect(() => { setInventoryPage(1); }, [invSearch, inventoryFilter]);
   useEffect(() => { setSalesPage(1); }, [salesPaymentFilter, salesStartDate, salesEndDate, salesCustomerSearch]);
+
+  useEffect(() => {
+    if (activeTab !== 'payments') return undefined;
+    let active = true;
+    const params = {
+      limit: paymentPageSize,
+      offset: (paymentPage - 1) * paymentPageSize,
+      include_count: 'true',
+    };
+    if (paymentStatusFilter !== 'ALL') params.status = paymentStatusFilter;
+    const queryKey = JSON.stringify(params);
+    if (paymentQueryKeyRef.current !== queryKey) {
+      setBookingPayments([]);
+      setBookingPaymentsTotal(0);
+      paymentQueryKeyRef.current = queryKey;
+    }
+    const forceRefresh = paymentForceRefreshRef.current;
+    paymentForceRefreshRef.current = false;
+    setLoadingResources(current => ({ ...current, payments: true }));
+    setError('');
+    getCached('/api/bookings/payments/', { params }, { force: forceRefresh })
+      .then(response => {
+        if (!active) return;
+        const rows = response.data?.results || response.data;
+        const total = Number(response.data?.count ?? rows?.length ?? 0);
+        const lastPage = Math.max(1, Math.ceil(total / paymentPageSize));
+        if (paymentPage > lastPage) {
+          setPaymentPage(lastPage);
+          return;
+        }
+        setBookingPayments(normalizePayments(rows));
+        setBookingPaymentsTotal(total);
+      })
+      .catch(err => {
+        if (active) setError(getApiErrorMessage(err, 'Failed to load payment verification records.'));
+      })
+      .finally(() => {
+        if (active) setLoadingResources(current => ({ ...current, payments: false }));
+      });
+    return () => { active = false; };
+  }, [activeTab, paymentStatusFilter, paymentPage, paymentPageSize, paymentRefreshToken]);
 
   useEffect(() => {
     if (activeTab !== 'sales' || !loadedTabs.sales) return undefined;
@@ -1581,14 +1635,8 @@ export default function StaffDashboard() {
       window.removeEventListener('resize', measureInventoryTable);
     };
   }, [activeTab, inventorySection]);
-  const filteredBookingPayments = bookingPayments.filter(payment => (
-    paymentStatusFilter === 'ALL' || payment.status === paymentStatusFilter
-  ));
-  const pagedBookingPayments = paginateRows(filteredBookingPayments, paymentPage, paymentPageSize);
-  const paymentStatusCounts = bookingPayments.reduce((counts, payment) => {
-    counts[payment.status] = (counts[payment.status] || 0) + 1;
-    return counts;
-  }, {});
+  const filteredBookingPayments = bookingPayments;
+  const pagedBookingPayments = bookingPayments;
   const filteredCatalogProducts = catalogProducts.filter(product => {
     const search = catalogSearch.toLowerCase();
     const matchesSearch = [product.name, product.sku, product.category_details?.name, product.supplier_details?.name]
@@ -2027,19 +2075,6 @@ export default function StaffDashboard() {
 
           {activeTab === 'payments' && (
             <div className="flex h-full min-h-0 w-full flex-1 flex-col gap-3 animate-in-up" key="payments">
-              <div className="grid shrink-0 grid-cols-3 gap-2">
-                {[
-                  ['Pending Verification', paymentStatusCounts.PENDING_VERIFICATION || 0, 'bg-amber-50 text-amber-700 border-amber-200'],
-                  ['Approved', paymentStatusCounts.APPROVED || 0, 'bg-emerald-50 text-emerald-700 border-emerald-200'],
-                  ['Rejected', paymentStatusCounts.REJECTED || 0, 'bg-red-50 text-red-700 border-red-200'],
-                ].map(([label, value, className]) => (
-                  <div key={label} className={`rounded-2xl border px-3 py-2.5 shadow-sm ${className}`}>
-                    <p className="text-[9px] uppercase tracking-[0.16em] font-black opacity-80">{label}</p>
-                    <p className="text-2xl font-black leading-tight mt-1">{value}</p>
-                  </div>
-                ))}
-              </div>
-
               <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="flex min-h-0 flex-1 flex-col p-3 sm:p-4 md:p-5">
                   <CardHeader
@@ -2047,7 +2082,7 @@ export default function StaffDashboard() {
                     subtitle="Review the booking details, then match the reference number and amount with the selected payment provider before approving."
                     className="mb-2 shrink-0 gap-2 sm:flex-col sm:items-start"
                   />
-                  <div role="group" aria-label="Booking payment status filter" className="mb-3 flex shrink-0 gap-1 overflow-x-auto rounded-xl bg-cream/70 p-1 scrollbar-thin">
+                  <div role="group" aria-label="Booking payment status filter" className="mb-3 grid shrink-0 grid-cols-2 gap-1 rounded-xl bg-cream/70 p-1 sm:flex">
                     {[
                       ['ALL', 'All'],
                       ['PENDING_VERIFICATION', 'Pending Verification'],
@@ -2065,7 +2100,7 @@ export default function StaffDashboard() {
                             setPaymentPage(1);
                             if (paymentListRef.current) paymentListRef.current.scrollTop = 0;
                           }}
-                          className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-[10px] font-black transition-colors sm:text-xs ${active ? 'bg-espresso text-gold shadow-sm' : 'text-espresso/60 hover:bg-white hover:text-espresso'}`}
+                          className={`w-full whitespace-nowrap rounded-lg px-2 py-2 text-[10px] font-black transition-colors sm:w-auto sm:px-3 sm:text-xs ${active ? 'bg-espresso text-gold shadow-sm' : 'text-espresso/60 hover:bg-white hover:text-espresso'}`}
                         >
                           {label}
                         </button>
@@ -2147,13 +2182,19 @@ export default function StaffDashboard() {
                       })}
                     </div> : (
                       <div className="flex min-h-full items-center justify-center">
-                        <EmptyState icon={CreditCard} title={isCurrentTabLoading ? 'Loading payments' : 'No payments found'} description={isCurrentTabLoading ? 'Submitted booking payments are loading.' : 'Booking payments will appear here when customers submit their reference numbers.'} />
+                        <EmptyState
+                          icon={CreditCard}
+                          title={isCurrentTabLoading ? 'Loading payments' : 'No payments match this filter'}
+                          description={isCurrentTabLoading
+                            ? 'Submitted booking payments are loading.'
+                            : 'Try another payment status or refresh the verification list.'}
+                        />
                       </div>
                     )}
                   </div>
-                  {filteredBookingPayments.length > 0 && (
+                  {bookingPaymentsTotal > 0 && (
                     <div className="mt-2 shrink-0 border-t border-espresso/[0.06] pt-2">
-                      <PaginationControls page={paymentPage} setPage={setPaymentPage} total={filteredBookingPayments.length} pageSize={paymentPageSize} setPageSize={setPaymentPageSize} />
+                      <PaginationControls page={paymentPage} setPage={setPaymentPage} total={bookingPaymentsTotal} pageSize={paymentPageSize} setPageSize={setPaymentPageSize} />
                     </div>
                   )}
                 </div>

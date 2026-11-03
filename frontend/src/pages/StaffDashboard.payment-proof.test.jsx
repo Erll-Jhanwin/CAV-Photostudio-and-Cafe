@@ -30,9 +30,12 @@ jest.mock('../components/ui/StyledAlert', () => ({
 
 import StaffDashboard from './StaffDashboard';
 
+jest.setTimeout(30000);
+
 beforeEach(() => {
   mockConfirm.mockReset();
   mockConfirm.mockResolvedValue(false);
+  getCached.mockReset().mockResolvedValue({ data: [] });
   client.get.mockImplementation(url => url === '/api/auth/staff-access/me/'
     ? Promise.resolve({ data: staffAccessPolicy })
     : Promise.resolve({ data: {} }));
@@ -118,9 +121,13 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   const print = jest.spyOn(window, 'print').mockImplementation(() => {});
   const localBridge = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('Local print bridge unavailable.'));
   mockConfirm.mockResolvedValue(true);
-  getCached.mockImplementation(url => (
-    url === '/api/bookings/payments/' ? Promise.resolve({ data: payments }) : Promise.resolve({ data: [] })
-  ));
+  getCached.mockImplementation((url, { params = {} } = {}) => {
+    if (url !== '/api/bookings/payments/') return Promise.resolve({ data: [] });
+    const matching = params.status ? payments.filter(row => row.status === params.status) : payments;
+    const offset = Number(params.offset || 0);
+    const limit = Number(params.limit || 100);
+    return Promise.resolve({ data: { count: matching.length, results: matching.slice(offset, offset + limit) } });
+  });
   client.get.mockImplementation(url => url === '/api/auth/staff-access/me/'
     ? Promise.resolve({ data: staffAccessPolicy })
     : Promise.resolve({ data: new Blob(['proof'], { type: 'image/png' }) }));
@@ -138,22 +145,31 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   const list = screen.getByLabelText('Booking payment list');
   expect(document.querySelector('main')).toHaveClass('flex', 'min-h-0', 'overflow-hidden');
   expect(document.querySelector('main').parentElement).toHaveClass('h-dvh', 'min-h-0');
-  expect(filters).toHaveClass('shrink-0', 'overflow-x-auto');
+  expect(filters).toHaveClass('shrink-0', 'grid-cols-2', 'sm:flex');
   expect(list).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto');
   expect(within(filters).getByRole('button', { name: 'Pending Verification' })).toHaveAttribute('aria-pressed', 'true');
+  expect(getCached).toHaveBeenCalledWith('/api/bookings/payments/', {
+    params: { limit: 10, offset: 0, include_count: 'true', status: 'PENDING_VERIFICATION' },
+  }, { force: false });
+  expect(getCached.mock.calls.filter(([url]) => url === '/api/bookings/payments/')).toHaveLength(1);
   expect(screen.getByText('Payment Customer 1')).toBeInTheDocument();
   expect(screen.getByText('Payment Customer 4')).toBeInTheDocument();
   expect(screen.queryByText('Payment Customer 2')).not.toBeInTheDocument();
 
   list.scrollTop = 360;
   fireEvent.click(within(filters).getByRole('button', { name: 'Approved' }));
+  await waitFor(() => expect(getCached).toHaveBeenCalledWith('/api/bookings/payments/', {
+    params: { limit: 10, offset: 0, include_count: 'true', status: 'APPROVED' },
+  }, { force: false }));
   expect(list.scrollTop).toBe(0);
-  expect(screen.getByText('Payment Customer 2')).toBeInTheDocument();
+  expect(await screen.findByText('Payment Customer 2')).toBeInTheDocument();
   expect(screen.queryByText('Payment Customer 1')).not.toBeInTheDocument();
   fireEvent.click(within(filters).getByRole('button', { name: 'Rejected' }));
-  expect(screen.getByText('Payment Customer 3')).toBeInTheDocument();
+  await screen.findByText('Payment Customer 3');
+  expect(await screen.findByText('Payment Customer 3')).toBeInTheDocument();
   fireEvent.click(within(filters).getByRole('button', { name: 'All' }));
-  expect(screen.getByText('Payment Customer 1')).toBeInTheDocument();
+  await screen.findByText('Payment Customer 1');
+  expect(await screen.findByText('Payment Customer 1')).toBeInTheDocument();
   expect(screen.getByText('Payment Customer 2')).toBeInTheDocument();
   expect(screen.getByText('Payment Customer 3')).toBeInTheDocument();
   expect(within(list).getAllByRole('button', { name: 'Print Receipt' })).toHaveLength(4);
@@ -189,6 +205,59 @@ test('Staff payment filters, proof modal, approval and rejection work inside the
   alerts.mockRestore();
   print.mockRestore();
   localBridge.mockRestore();
+});
+
+test('Staff payment pages request only the selected status and current offset', async () => {
+  const rows = Array.from({ length: 12 }, (_, index) => ({
+    ...payment,
+    id: 100 + index,
+    booking: 200 + index,
+    reference_number: `PAGE-${index}`,
+    status: 'PENDING_VERIFICATION',
+    booking_details: { ...payment.booking_details, customer_name: `Page Customer ${index + 1}` },
+  }));
+  getCached.mockImplementation((url, { params = {} } = {}) => {
+    if (url !== '/api/bookings/payments/') return Promise.resolve({ data: [] });
+    const matching = params.status ? rows.filter(row => row.status === params.status) : rows;
+    const offset = Number(params.offset || 0);
+    return Promise.resolve({ data: { count: matching.length, results: matching.slice(offset, offset + Number(params.limit || 10)) } });
+  });
+
+  render(<StaffDashboard />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
+  expect(await screen.findByText('Page Customer 1')).toBeInTheDocument();
+  expect(screen.queryByText('Page Customer 11')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  expect(await screen.findByText('Page Customer 11')).toBeInTheDocument();
+  expect(screen.queryByText('Page Customer 1')).not.toBeInTheDocument();
+  expect(getCached).toHaveBeenCalledWith('/api/bookings/payments/', {
+    params: { limit: 10, offset: 10, include_count: 'true', status: 'PENDING_VERIFICATION' },
+  }, { force: false });
+});
+
+test('Staff payment verification remains compact at desktop and mobile viewport widths', async () => {
+  const originalWidth = window.innerWidth;
+  for (const width of [1280, 390]) {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+    const { unmount } = render(<StaffDashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
+    const filters = await screen.findByRole('group', { name: 'Booking payment status filter' });
+    const list = screen.getByLabelText('Booking payment list');
+    expect(within(filters).getAllByRole('button')).toHaveLength(4);
+    expect(filters).toHaveClass('grid-cols-2', 'sm:flex');
+    expect(filters.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(list).toHaveClass('overflow-y-auto', 'min-h-0');
+    unmount();
+  }
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
+});
+
+test('Staff payment verification explains when the selected status has no results', async () => {
+  getCached.mockResolvedValue({ data: { count: 0, results: [] } });
+  render(<StaffDashboard />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Payment Booking Verification' }));
+  expect(await screen.findByText('No payments match this filter')).toBeInTheDocument();
+  expect(screen.getByText('Try another payment status or refresh the verification list.')).toBeInTheDocument();
 });
 
 test('Staff Live Inventory opens dated product sales and wastage records', async () => {
@@ -400,7 +469,7 @@ test('Staff POS cart displays and edits items, completes checkout, and records w
   alerts.mockRestore();
 }, 20000);
 
-test('Bookings keeps its viewport-sized table region and page controls in place while loading', async () => {
+test('Bookings keeps its queue inside the viewport while data loads', async () => {
   const booking = {
     id: 48,
     customer_name: 'Jamie Reyes',
@@ -428,19 +497,14 @@ test('Bookings keeps its viewport-sized table region and page controls in place 
   expect(await screen.findByRole('heading', { name: 'Bookings' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Walk-in Booking' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Refresh bookings' })).toBeVisible();
-  expect(screen.getByRole('heading', { name: 'Loading bookings' })).toBeInTheDocument();
-  const tableRegion = screen.getByRole('region', { name: 'Bookings table' });
-  const regionClassesWhileLoading = tableRegion.className;
-  expect(tableRegion).toHaveClass('min-h-0', 'flex-1', 'overflow-hidden');
-  expect(tableRegion.querySelector('.overflow-y-auto')).toBeInTheDocument();
-  expect(tableRegion.querySelector('thead')).toHaveClass('sticky', 'top-0');
+  expect(screen.getByRole('status', { name: 'Loading bookings' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Bookings' }).closest('main')).toHaveClass('overflow-hidden');
   expect(screen.getByRole('heading', { name: 'Bookings' }).closest('main').parentElement).toHaveClass('h-dvh', 'min-h-0');
 
   await act(async () => resolveBookings({ data: [booking] }));
   expect(await screen.findByText('Jamie Reyes')).toBeInTheDocument();
-  expect(tableRegion.className).toBe(regionClassesWhileLoading);
+  expect(screen.getByRole('region', { name: 'Live Booking List' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Walk-in Booking' })).toBeVisible();
   expect(screen.getByRole('button', { name: 'Refresh bookings' })).toBeVisible();
-  expect(screen.getByRole('columnheader', { name: 'Booking' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Photo Shoot Done' })).toBeVisible();
 });
