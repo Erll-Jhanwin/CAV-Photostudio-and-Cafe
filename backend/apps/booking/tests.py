@@ -269,6 +269,7 @@ class BookingEndToEndApiTests(TestCase):
             )
 
         self.assertEqual(booking_response.status_code, 201)
+        self.assertEqual(booking_response.data['package_details']['service_name'], 'Booking E2E Studio')
         booking_id = booking_response.data['id']
         self.assertEqual(Booking.objects.filter(pk=booking_id).count(), 1)
         sms_delivery = NotificationDelivery.objects.get(channel='sms')

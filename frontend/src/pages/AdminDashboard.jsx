@@ -564,6 +564,7 @@ export default function AdminDashboard() {
     combined: true,
   });
   const [bookingCalendarMonth, setBookingCalendarMonth] = useState(monthValue());
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState('');
   const [studioUnavailableDate, setStudioUnavailableDate] = useState(todayValue());
   const [studioUnavailableReason, setStudioUnavailableReason] = useState('');
   const [studioUnavailableSaving, setStudioUnavailableSaving] = useState(false);
@@ -592,6 +593,7 @@ export default function AdminDashboard() {
   const [faqPageSize, setFaqPageSize] = useState(10);
   const [reviewPage, setReviewPage] = useState(1);
   const [reviewPageSize, setReviewPageSize] = useState(10);
+  const [reviewSentimentFilter, setReviewSentimentFilter] = useState('ALL');
   const [bookingSort, setBookingSort] = useState({ key: 'created_at', dir: 'desc' });
   const [posSort, setPosSort] = useState({ key: 'date', dir: 'desc' });
   const [reorderSort, setReorderSort] = useState({ key: 'projected_stock', dir: 'asc' });
@@ -1642,7 +1644,10 @@ export default function AdminDashboard() {
     };
   }, [activeTab, staffPage, staffPageSize, staffSort, staffList, staffSearch, staffRoleFilter, filteredStaffList.length]);
   const faqPageRows = paginateRows(faqs, faqPage, faqPageSize);
-  const reviewPageRows = paginateRows(reviews, reviewPage, reviewPageSize);
+  const filteredReviews = reviewSentimentFilter === 'ALL'
+    ? reviews
+    : reviews.filter(review => review.sentiment === reviewSentimentFilter);
+  const reviewPageRows = paginateRows(filteredReviews, reviewPage, reviewPageSize);
   const reviewCounts = reviews.reduce((acc, review) => {
     acc[review.sentiment] = (acc[review.sentiment] || 0) + 1;
     return acc;
@@ -1655,9 +1660,16 @@ export default function AdminDashboard() {
     return packageName.includes('event') || packageName.includes('photo service');
   };
   const getCalendarBookingName = (booking) => (
-    booking.customer?.first_name || booking.customer?.last_name
+    booking.customer_name || booking.contact_name
+      || (booking.customer?.first_name || booking.customer?.last_name
       ? `${booking.customer?.first_name || ''} ${booking.customer?.last_name || ''}`.trim()
-      : booking.customer?.username || `Booking #${booking.id}`
+      : booking.customer?.username || `Booking #${booking.id}`)
+  );
+  const getCalendarServiceName = (booking) => (
+    booking.package_details?.service_name
+      || booking.service_name
+      || booking.package_details?.name
+      || (booking.package ? `Package #${booking.package}` : 'Service not specified')
   );
   const bookingsByDate = calendarMonthBookings.reduce((acc, booking) => {
     const key = booking.scheduled_date;
@@ -1665,6 +1677,12 @@ export default function AdminDashboard() {
     acc[key].push(booking);
     return acc;
   }, {});
+  const selectedCalendarBookings = (bookingsByDate[selectedCalendarDate] || [])
+    .slice()
+    .sort((left, right) => (
+      String(left.scheduled_time || '99:99:99').slice(0, 8).localeCompare(String(right.scheduled_time || '99:99:99').slice(0, 8))
+      || Number(left.id || 0) - Number(right.id || 0)
+    ));
   const unavailableByDate = studioUnavailableDates.reduce((acc, row) => {
     acc[row.date] = row;
     return acc;
@@ -2341,9 +2359,12 @@ export default function AdminDashboard() {
                       const eventBlocked = eventBlockedDates.has(day.date);
                       const studioUnavailable = manualBlock || eventBlocked;
                       return (
-                        <div
+                        <button
+                          type="button"
                           key={day.date}
-                          className={`min-h-28 rounded-2xl border p-2 text-left transition-colors ${
+                          onClick={() => setSelectedCalendarDate(day.date)}
+                          aria-label={`Open bookings for ${day.date}. ${dayBookings.length} bookings.`}
+                          className={`min-h-28 w-full rounded-2xl border p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
                             studioUnavailable
                               ? 'border-amber-200 bg-amber-50'
                               : dayBookings.length
@@ -2382,7 +2403,7 @@ export default function AdminDashboard() {
                               <p className="text-[9px] font-black text-espresso/45">+{dayBookings.length - 3} more</p>
                             )}
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -2393,9 +2414,12 @@ export default function AdminDashboard() {
                       const eventBlocked = eventBlockedDates.has(day.date);
                       const studioUnavailable = manualBlock || eventBlocked;
                       return (
-                        <div
+                        <button
+                          type="button"
                           key={day.date}
-                          className={`rounded-xl border p-3 ${
+                          onClick={() => setSelectedCalendarDate(day.date)}
+                          aria-label={`Open bookings for ${day.date}. ${dayBookings.length} bookings.`}
+                          className={`w-full rounded-xl border p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
                             studioUnavailable
                               ? 'border-amber-200 bg-amber-50'
                               : dayBookings.length
@@ -2434,11 +2458,52 @@ export default function AdminDashboard() {
                               ))}
                             </div>
                           )}
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
                 </div>
+
+                <Modal
+                  open={Boolean(selectedCalendarDate)}
+                  onClose={() => setSelectedCalendarDate('')}
+                  title={selectedCalendarDate ? `Bookings · ${getCalendarDayLabel(selectedCalendarDate)}` : 'Bookings'}
+                  size="2xl"
+                  className="h-[80dvh] max-h-[calc(100dvh-2rem)]"
+                  bodyClassName="!flex !h-[calc(80dvh-5rem)] !min-h-0 !flex-col !overflow-hidden"
+                >
+                  {selectedCalendarBookings.length ? (
+                    <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1" aria-label="Bookings for selected date">
+                      {selectedCalendarBookings.map(booking => (
+                        <article key={booking.id} className="grid grid-cols-1 gap-3 rounded-2xl border border-espresso/10 bg-cream/40 p-3 text-xs sm:grid-cols-[minmax(6rem,0.75fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_minmax(5rem,0.7fr)_auto] sm:items-center">
+                          <div className="min-w-0">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-espresso/45">Booking</p>
+                            <p className="mt-1 break-all font-black text-espresso">Booking #{booking.id}</p>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-espresso/45">Customer</p>
+                            <p className="mt-1 break-words font-bold text-espresso/75">{getCalendarBookingName(booking)}</p>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-espresso/45">Service</p>
+                            <p className="mt-1 break-words font-bold text-espresso/75">{getCalendarServiceName(booking)}</p>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-[9px] font-black uppercase tracking-wider text-espresso/45">Session time</p>
+                            <p className="mt-1 font-bold text-espresso/75">{String(booking.scheduled_time || '').slice(0, 5) || 'Time not set'}</p>
+                          </div>
+                          <div className="justify-self-start sm:justify-self-end">
+                            <StatusBadge status={booking.status} />
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex min-h-0 flex-1 items-center justify-center">
+                      <EmptyState icon={Calendar} title="No bookings for this date" description="There are no studio or event bookings scheduled for this day." />
+                    </div>
+                  )}
+                </Modal>
 
                 <div className="flex min-w-0 flex-col gap-4">
                   <div className="rounded-[20px] border border-espresso/[0.08] bg-white p-4 shadow-sm">
@@ -3116,23 +3181,38 @@ export default function AdminDashboard() {
 
               <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-4">
                 {[
-                  { label: 'All reviews', value: reviews.length, icon: MessageSquare, className: 'text-espresso' },
-                  { label: 'Positive', value: reviewCounts.Positive || 0, icon: ThumbsUp, className: 'text-emerald-600' },
-                  { label: 'Neutral', value: reviewCounts.Neutral || 0, icon: Minus, className: 'text-amber-600' },
-                  { label: 'Negative', value: reviewCounts.Negative || 0, icon: ThumbsDown, className: 'text-red-600' },
-                ].map(({ label, value, icon: Icon, className }) => (
-                  <Card key={label} className="!p-3.5 md:!p-4">
-                    <div className={`mb-2 flex items-center gap-2 text-xs font-bold ${className}`}>
-                      <Icon className="h-4 w-4" /> {label}
-                    </div>
-                    <p className="text-2xl font-black text-espresso">{value}</p>
-                  </Card>
-                ))}
+                  { key: 'ALL', label: 'All reviews', value: reviews.length, icon: MessageSquare, className: 'text-espresso' },
+                  { key: 'Positive', label: 'Positive', value: reviewCounts.Positive || 0, icon: ThumbsUp, className: 'text-emerald-600' },
+                  { key: 'Neutral', label: 'Neutral', value: reviewCounts.Neutral || 0, icon: Minus, className: 'text-amber-600' },
+                  { key: 'Negative', label: 'Negative', value: reviewCounts.Negative || 0, icon: ThumbsDown, className: 'text-red-600' },
+                ].map(({ key, label, value, icon: Icon, className }) => {
+                  const selected = reviewSentimentFilter === key;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => {
+                        setReviewSentimentFilter(key);
+                        setReviewPage(1);
+                      }}
+                      className={`w-full rounded-2xl border bg-white/95 p-3.5 text-left shadow-[0_12px_32px_rgba(46,26,17,0.06)] transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold md:p-4 ${selected ? 'border-gold/60 bg-gold/[0.06] ring-2 ring-gold/35' : 'border-espresso/[0.06] hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(46,26,17,0.10)]'}`}
+                    >
+                      <div className={`mb-2 flex items-center gap-2 text-xs font-bold ${className}`}>
+                        <Icon className="h-4 w-4" /> {label}
+                      </div>
+                      <p className="text-2xl font-black text-espresso">{value}</p>
+                    </button>
+                  );
+                })}
               </div>
 
               <Card padding={false} className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="flex min-h-0 flex-1 flex-col p-4 md:p-5">
-                <CardHeader title="All customer reviews" className="mb-3 shrink-0" />
+                <CardHeader
+                  title={reviewSentimentFilter === 'ALL' ? 'All customer reviews' : `${reviewSentimentFilter} customer reviews`}
+                  className="mb-3 shrink-0"
+                />
                 {reviewPageRows.length > 0 ? (
                   <>
                     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1 scrollbar-thin">
@@ -3178,12 +3258,18 @@ export default function AdminDashboard() {
                       })}
                     </div>
                     <div className="shrink-0 pt-3">
-                      <PaginationControls page={reviewPage} setPage={setReviewPage} total={reviews.length} pageSize={reviewPageSize} setPageSize={setReviewPageSize} />
+                      <PaginationControls page={reviewPage} setPage={setReviewPage} total={filteredReviews.length} pageSize={reviewPageSize} setPageSize={setReviewPageSize} />
                     </div>
                   </>
                 ) : (
                   <div className="flex min-h-0 flex-1 items-center justify-center">
-                    <EmptyState icon={Star} title="No reviews yet" description="Customer reviews will appear here after completed bookings are submitted." />
+                    <EmptyState
+                      icon={Star}
+                      title={reviewSentimentFilter === 'ALL' ? 'No reviews yet' : `No ${reviewSentimentFilter.toLowerCase()} reviews`}
+                      description={reviewSentimentFilter === 'ALL'
+                        ? 'Customer reviews will appear here after completed bookings are submitted.'
+                        : 'No reviews match this sentiment. Choose another summary card to see more reviews.'}
+                    />
                   </div>
                 )}
                 </div>

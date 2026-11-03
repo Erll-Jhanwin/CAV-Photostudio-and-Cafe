@@ -25,9 +25,11 @@ def get_booking_total_amount(booking):
 
 
 class PackageSerializer(serializers.ModelSerializer):
+    service_name = serializers.CharField(source='service.name', read_only=True)
+
     class Meta:
         model = Package
-        fields = ['id', 'service', 'name', 'description', 'price', 'inclusions']
+        fields = ['id', 'service', 'service_name', 'name', 'description', 'price', 'inclusions']
 
 class ServiceSerializer(serializers.ModelSerializer):
     packages = PackageSerializer(many=True, read_only=True)
