@@ -123,7 +123,7 @@ test('My Photos groups booking attachments and opens the image, ZIP, and Drive d
 
 async function fillPayment(container) {
   fireEvent.change(screen.getByLabelText('GCash Reference No.'), { target: { value: 'GCASH-TEST-001' } });
-  fireEvent.change(screen.getByLabelText('Amount Paid'), { target: { value: '500' } });
+  fireEvent.change(screen.getByLabelText('Amount Paid'), { target: { value: '200' } });
   fireEvent.change(screen.getByLabelText('Payment Date'), { target: { value: '2026-10-18' } });
   fireEvent.change(screen.getByLabelText('Payment Time'), { target: { value: '12:30' } });
 }
@@ -141,6 +141,7 @@ async function completeWizard() {
   fireEvent.click(screen.getByRole('button', { name: 'Continue Booking' }));
   fireEvent.click(screen.getByRole('button', { name: 'Continue Booking' }));
   await fillPayment(container);
+  expect(screen.getByText('A minimum down payment of ₱200 is required to confirm your booking. The remaining balance is payable separately.')).toBeInTheDocument();
   expect(await screen.findByRole('img', { name: 'GCash payment QR code' })).toHaveAttribute('src', '/gcash-qr.png');
   return container;
 }
@@ -156,7 +157,7 @@ test('available slot completes the wizard and sends Manila payment timestamp and
   expect(payment).toMatchObject({
     booking: 42,
     reference_number: 'GCASH-TEST-001',
-    amount: '500.00',
+    amount: '200.00',
     paid_at: '2026-10-18T04:30:00.000Z',
     method: 'GCASH',
     idempotency_key: expect.any(String),

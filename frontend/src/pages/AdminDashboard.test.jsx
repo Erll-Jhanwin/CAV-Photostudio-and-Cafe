@@ -114,7 +114,7 @@ describe('AdminDashboard', () => {
     expect(within(receiptDialog).getByText('2026-11-15')).toBeInTheDocument();
     expect(within(receiptDialog).getByText('10:30')).toBeInTheDocument();
     expect(within(receiptDialog).getByText('PHP 2,500.00')).toBeInTheDocument();
-    expect(within(receiptDialog).getByText('Amount paid to date')).toBeInTheDocument();
+    expect(within(receiptDialog).getByText('Down Payment Paid')).toBeInTheDocument();
     expect(within(receiptDialog).getAllByText('PHP 1,250.00')).toHaveLength(3);
     expect(within(receiptDialog).getByText('GCash')).toBeInTheDocument();
     expect(within(receiptDialog).getByRole('button', { name: 'Print Customer Copy' })).toBeInTheDocument();
@@ -484,7 +484,7 @@ describe('AdminDashboard', () => {
     expect(screen.getByRole('combobox', { name: 'Sort expired ingredients' })).toBeInTheDocument();
   });
 
-  it('groups calendar and live bookings under Booking and excludes unapproved downpayments', async () => {
+  it('groups calendar and live bookings under Booking with payment balances', async () => {
     const bookingMonth = getManilaMonthValue();
     getCached.mockImplementation(url => {
       if (url.includes('/api/bookings/studio-unavailable-dates/')) return Promise.resolve({ data: [] });
@@ -527,21 +527,16 @@ describe('AdminDashboard', () => {
 
     expect(screen.queryByText('jamie@example.com')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Live Booking List' }));
-    expect(await screen.findByText('Ready for service')).toBeInTheDocument();
+    expect(await screen.findByText('CONFIRMED_DP')).toBeInTheDocument();
     expect(await screen.findByText('jamie@example.com')).toBeInTheDocument();
-    expect(screen.queryByText('pending@example.com')).not.toBeInTheDocument();
-    expect(screen.getByText('+639171234567')).toBeInTheDocument();
-    expect(screen.getByText('Down payment: PHP 1,250')).toBeInTheDocument();
-    expect(screen.getByText('Printed photo × 2 · PHP 150')).toBeInTheDocument();
-    expect(screen.getByText('Please call upon arrival.')).toBeInTheDocument();
-    expect(screen.getByText('Includes: One printed portrait')).toBeInTheDocument();
-    expect(screen.getByText('PHP 1,250 · GCash · APPROVED · Ref GC-48')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Booking 48 status' })).toBeInTheDocument();
-
-    const bookingCard = screen.getByText('Booking items').closest('.rounded-2xl');
-    expect(bookingCard).toHaveClass('min-w-0');
-    expect(bookingCard.querySelector('.grid')).toHaveClass('sm:grid-cols-2', 'xl:grid-cols-4');
-    expect(bookingCard.parentElement).toHaveClass('grid-cols-1');
+    expect(screen.getByText('pending@example.com')).toBeInTheDocument();
+    expect(screen.getAllByText('Total Amount')).toHaveLength(2);
+    expect(screen.getAllByText('Down Payment Paid')).toHaveLength(2);
+    expect(screen.getAllByText('Remaining Balance')).toHaveLength(2);
+    expect(screen.getByText('PHP 2,800.00')).toBeInTheDocument();
+    expect(screen.getByText('PHP 1,250.00')).toBeInTheDocument();
+    expect(screen.getByText('PHP 1,550.00')).toBeInTheDocument();
+    expect(screen.getByText('PHP 0.00')).toBeInTheDocument();
   });
 
   it('opens saved closeout details from the card while keeping reprint independent', async () => {

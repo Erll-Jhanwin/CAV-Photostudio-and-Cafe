@@ -9,6 +9,7 @@ import { BookingReceiptDocument, printBookingReceipt } from '../components/Booki
 
 const idempotencyKey = () => `walk-in-${window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`}`.slice(0, 100);
 const peso = value => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const MINIMUM_DOWN_PAYMENT = 200;
 
 export default function WalkInBookingModal({ open, onClose, onCreated, printerName = '' }) {
   const [services, setServices] = useState([]);
@@ -72,6 +73,18 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
   const submit = async event => {
     event.preventDefault();
     if (inFlight.current || saving) return;
+    if (form.paymentAmount !== '') {
+      const paymentAmount = Number(form.paymentAmount);
+      const totalAmount = Number(selectedPackage?.price || 0);
+      if (!Number.isFinite(paymentAmount) || paymentAmount < MINIMUM_DOWN_PAYMENT) {
+        setError(`A minimum down payment of ${peso(MINIMUM_DOWN_PAYMENT)} is required to confirm this booking.`);
+        return;
+      }
+      if (paymentAmount > totalAmount) {
+        setError('Payment amount cannot exceed the package total.');
+        return;
+      }
+    }
     inFlight.current = true;
     setSaving(true);
     setError('');
@@ -88,7 +101,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
     try {
       const { data } = await client.post('/api/bookings/walk-in/', payload);
       const payment = (data.payments || []).find(item => ['APPROVED', 'PAID'].includes(item.status));
-      const totalAmount = Number(data.package_details?.price ?? selectedPackage?.price ?? 0);
+      const totalAmount = Number(data.total_amount ?? data.package_details?.price ?? selectedPackage?.price ?? 0);
       const amountPaid = (data.payments || []).filter(item => ['APPROVED', 'PAID'].includes(item.status))
         .reduce((total, item) => total + Number(item.amount || 0), 0);
       setReceiptCopy('Customer Copy');
@@ -165,13 +178,13 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
           <Input label="Customer name" value={form.name} onChange={setField('name')} autoComplete="name" required maxLength={200} />
           <Input label="Contact number" type="tel" value={form.phone} onChange={setField('phone')} autoComplete="tel" required maxLength={30} />
           <Input label="Email (optional)" type="email" value={form.email} onChange={setField('email')} autoComplete="email" maxLength={254} />
-          <Input label="Payment amount (optional)" type="number" min="0.01" max={selectedPackage?.price || undefined} step="0.01" value={form.paymentAmount} onChange={setField('paymentAmount')} placeholder="Leave blank if unpaid" />
+          <Input label="Payment amount (optional)" type="number" min={MINIMUM_DOWN_PAYMENT} max={selectedPackage?.price || undefined} step="0.01" value={form.paymentAmount} onChange={setField('paymentAmount')} placeholder="Leave blank if unpaid" />
         </div>
         {form.paymentAmount !== '' && <div className="grid gap-4 sm:grid-cols-2">
           <Select label="Payment method" value={form.paymentMethod} onChange={setField('paymentMethod')} options={[{ value: 'CASH', label: 'Cash' }, { value: 'GCASH', label: 'GCash' }, { value: 'MAYA', label: 'Maya' }, { value: 'MARIBANK', label: 'MariBank' }]} />
           {form.paymentMethod !== 'CASH' && <Input label="Payment reference" value={form.paymentReference} onChange={setField('paymentReference')} required minLength={6} maxLength={100} />}
-          <p className="sm:col-span-2 text-xs text-espresso/55">Staff-recorded payments are verified when the walk-in booking is saved. The downpayment must be at least 50% of the package price ({selectedPackage ? peso(Number(selectedPackage.price) * 0.5) : '—'}).</p>
         </div>}
+        <p className="text-xs text-espresso/55">Staff-recorded payments are verified when the walk-in booking is saved. A minimum down payment of {peso(MINIMUM_DOWN_PAYMENT)} is required to confirm this booking; leave payment blank to save it as pending.</p>
         <Textarea label="Notes (optional)" value={form.notes} onChange={setField('notes')} rows={2} maxLength={2000} />
         {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         <div className="flex flex-col-reverse gap-2 border-t border-espresso/10 pt-4 sm:flex-row sm:justify-end">

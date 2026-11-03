@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 import logging
 import re
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import serializers
 from booking.availability import parse_time_value
@@ -12,6 +13,8 @@ from users.phone_numbers import normalize_philippine_mobile_number
 from users.uploads import receipt_upload_path, validate_receipt_upload
 
 logger = logging.getLogger(__name__)
+MINIMUM_BOOKING_DOWN_PAYMENT = Decimal('200.00')
+VERIFIED_BOOKING_PAYMENT_STATUSES = {'APPROVED', 'PAID'}
 
 
 def get_booking_total_amount(booking):
@@ -22,6 +25,31 @@ def get_booking_total_amount(booking):
         except (AttributeError, TypeError, ValueError, InvalidOperation):
             continue
     return total
+
+
+def get_booking_amount_paid(booking):
+    prefetched_payments = getattr(booking, '_prefetched_objects_cache', {}).get('payments')
+    payments = prefetched_payments if prefetched_payments is not None else booking.payments.all()
+    return sum(
+        (payment.amount for payment in payments if payment.status in VERIFIED_BOOKING_PAYMENT_STATUSES),
+        Decimal('0.00'),
+    )
+
+
+def validate_booking_payment_amount(booking, amount, exclude_payment_id=None):
+    payments = Payment.objects.filter(payment_type=Payment.BOOKING, booking_id=booking.pk)
+    if exclude_payment_id is not None:
+        payments = payments.exclude(pk=exclude_payment_id)
+
+    paid_total = payments.filter(status__in=VERIFIED_BOOKING_PAYMENT_STATUSES).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    minimum = MINIMUM_BOOKING_DOWN_PAYMENT if paid_total <= 0 else Decimal('0.01')
+    if amount < minimum:
+        raise serializers.ValidationError({'amount': f'Minimum down payment is PHP {MINIMUM_BOOKING_DOWN_PAYMENT}.'})
+
+    reserved_total = payments.exclude(status='REJECTED').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    booking_total = get_booking_total_amount(booking)
+    if reserved_total + amount > booking_total:
+        raise serializers.ValidationError({'amount': f'Payment cannot exceed the total booking amount of PHP {booking_total}.'})
 
 
 class PackageSerializer(serializers.ModelSerializer):
@@ -85,9 +113,8 @@ class WalkInBookingCreateSerializer(serializers.Serializer):
         if attrs.get('payment_amount') is not None:
             amount = attrs['payment_amount']
             price = attrs['package'].price
-            minimum = price * Decimal('0.50')
-            if amount < minimum or amount > price:
-                raise serializers.ValidationError({'payment_amount': f'Payment must be between PHP {minimum} and PHP {price}.'})
+            if amount < MINIMUM_BOOKING_DOWN_PAYMENT or amount > price:
+                raise serializers.ValidationError({'payment_amount': f'Payment must be at least PHP {MINIMUM_BOOKING_DOWN_PAYMENT} and cannot exceed the package total of PHP {price}.'})
             if attrs.get('payment_method') != 'CASH':
                 reference = attrs['payment_reference'].strip()
                 if not re.fullmatch(r'[A-Za-z0-9\- ]{6,100}', reference):
@@ -152,10 +179,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
     def get_booking_details(self, obj):
         booking = obj.booking
         total_amount = get_booking_total_amount(booking)
-        amount_paid = sum(
-            (payment.amount for payment in booking.payments.all() if payment.status in {'APPROVED', 'PAID'}),
-            Decimal('0.00'),
-        )
+        amount_paid = get_booking_amount_paid(booking)
         return {
             'id': booking.id,
             'status': booking.status,
@@ -185,7 +209,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(url) if request else url
 
     def get_required_down_payment(self, obj):
-        return obj.booking.package.price * Decimal('0.50')
+        return MINIMUM_BOOKING_DOWN_PAYMENT
 
     def validate_receipt(self, value):
         return validate_receipt_upload(value)
@@ -220,11 +244,7 @@ class BookingPaymentSerializer(serializers.ModelSerializer):
         if booking and amount is not None:
             if amount <= 0:
                 raise serializers.ValidationError({'amount': 'Amount must be greater than zero.'})
-            required_down_payment = booking.package.price * Decimal('0.50')
-            if amount < required_down_payment:
-                raise serializers.ValidationError({
-                    'amount': f'Minimum down payment is PHP {required_down_payment}.'
-                })
+            validate_booking_payment_amount(booking, amount, exclude_payment_id=self.instance.pk if self.instance else None)
 
         return attrs
 
@@ -324,6 +344,8 @@ class BookingSerializer(serializers.ModelSerializer):
     change_history = serializers.JSONField(read_only=True)
     cancellation_reason = serializers.CharField(read_only=True)
     required_down_payment = serializers.SerializerMethodField()
+    total_amount = serializers.SerializerMethodField()
+    amount_paid = serializers.SerializerMethodField()
     remaining_balance = serializers.SerializerMethodField()
     can_edit = serializers.BooleanField(source='is_customer_editable', read_only=True)
     edit_locked_reason = serializers.CharField(source='customer_edit_lock_reason', read_only=True)
@@ -342,7 +364,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'is_walk_in', 'contact_name', 'contact_email', 'contact_phone', 'created_by',
             'created_by_name', 'booking_type', 'customer_name', 'customer_email', 'customer_phone',
             'scheduled_time', 'status', 'cancellation_reason', 'notes', 'created_at', 'items',
-            'payments', 'required_down_payment', 'remaining_balance', 'change_history',
+            'payments', 'required_down_payment', 'total_amount', 'amount_paid', 'remaining_balance', 'change_history',
             'review',
             'can_edit', 'edit_locked_reason', 'edit_deadline',
             'first_name', 'last_name', 'email', 'phone_number', 'address',
@@ -356,14 +378,16 @@ class BookingSerializer(serializers.ModelSerializer):
         validators = []
 
     def get_required_down_payment(self, obj):
-        return obj.package.price * Decimal('0.50')
+        return MINIMUM_BOOKING_DOWN_PAYMENT
+
+    def get_total_amount(self, obj):
+        return get_booking_total_amount(obj)
+
+    def get_amount_paid(self, obj):
+        return get_booking_amount_paid(obj)
 
     def get_remaining_balance(self, obj):
-        received = sum(
-            (payment.amount for payment in obj.payments.all() if payment.status in {'APPROVED', 'PAID'}),
-            Decimal('0.00'),
-        )
-        return max(Decimal('0.00'), get_booking_total_amount(obj) - received)
+        return max(Decimal('0.00'), self.get_total_amount(obj) - self.get_amount_paid(obj))
 
     def get_customer_name(self, obj):
         if obj.contact_name:

@@ -2749,8 +2749,11 @@ export default function AdminDashboard() {
                               <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                                 <div className="min-w-0"><dt className="text-espresso/50">Method</dt><dd className="break-words font-bold text-espresso">{payment.method_label || payment.method || 'Unknown'}</dd></div>
                                 <div className="min-w-0"><dt className="text-espresso/50">Reference</dt><dd className="break-all font-bold text-espresso">{payment.reference_number}</dd></div>
-                                <div><dt className="text-espresso/50">Amount Paid</dt><dd className="font-black text-gold-dark">{formatCurrency(payment.amount)}</dd></div>
+                                <div><dt className="text-espresso/50">Payment Amount</dt><dd className="font-black text-gold-dark">{formatCurrency(payment.amount)}</dd></div>
                                 <div><dt className="text-espresso/50">Required DP</dt><dd className="font-bold text-espresso">{formatCurrency(payment.required_down_payment)}</dd></div>
+                                <div><dt className="text-espresso/50">Total Amount</dt><dd className="font-bold text-espresso">{formatCurrency(details.total_amount)}</dd></div>
+                                <div><dt className="text-espresso/50">Down Payment Paid</dt><dd className="font-bold text-espresso">{formatCurrency(details.amount_paid)}</dd></div>
+                                <div><dt className="text-espresso/50">Remaining Balance</dt><dd className="font-black text-espresso">{formatCurrency(details.remaining_balance)}</dd></div>
                                 <div className="col-span-2"><dt className="inline text-espresso/50">Paid At: </dt><dd className="inline font-bold text-espresso">{formatManilaDateTime(payment.paid_at)}</dd></div>
                                 <div className="col-span-2 pt-0.5"><PaymentProofPreview payment={payment} /></div>
                               </dl>

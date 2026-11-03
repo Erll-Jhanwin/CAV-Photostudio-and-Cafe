@@ -28,7 +28,7 @@ test('booking receipt preview uses the 58 mm thermal layout and includes booking
     'Booking reference', '#55', 'Customer', 'Jamie Reyes', 'Package', 'Portrait Session',
     'Session date', '2026-12-01', 'Session time', '09:00 AM', 'Total amount',
     'Remaining balance', 'Payment method', 'Cash',
-    'Amount paid to date', 'Payment amount', 'Payment status', 'Approved',
+    'Down Payment Paid', 'Payment amount', 'Payment status', 'Approved',
   ].forEach(value => expect(screen.getByText(value)).toBeInTheDocument());
   expect(screen.getByText('PHP 1,000.00')).toBeInTheDocument();
   expect(screen.getAllByText('PHP 500.00')).toHaveLength(3);
@@ -41,12 +41,20 @@ test('verified booking receipt uses the approved payment and remaining balance r
     status: 'APPROVED',
     method: 'CASH',
     booking_details: {
-      total_amount: '1000.00', amount_paid: '500.00', remaining_balance: '500.00',
+      total_amount: '1000.00', amount_paid: '200.00', remaining_balance: '800.00',
       customer_name: 'Jamie Reyes', package_name: 'Portrait Session',
       scheduled_date: '2026-12-01', scheduled_time: '09:00 AM',
     },
   });
-  expect(mapped).toMatchObject({ bookingId: 55, amountPaid: 500, currentPaymentAmount: 200, remainingBalance: 500, totalAmount: 1000, paymentStatus: 'Approved' });
+  expect(mapped).toMatchObject({ bookingId: 55, amountPaid: 200, currentPaymentAmount: 200, remainingBalance: 800, totalAmount: 1000, paymentStatus: 'Approved' });
+});
+
+test('pending payments do not count toward down payment paid on receipts', () => {
+  const mapped = bookingReceiptFromPayment({
+    booking: 55, amount: '200.00', status: 'PENDING_VERIFICATION', method: 'GCASH',
+    booking_details: { total_amount: '1000.00', customer_name: 'Jamie Reyes' },
+  });
+  expect(mapped).toMatchObject({ totalAmount: 1000, amountPaid: 0, currentPaymentAmount: 200, remainingBalance: 1000 });
 });
 
 test('verification receipt offers both copies and sends each through the local printer bridge', async () => {

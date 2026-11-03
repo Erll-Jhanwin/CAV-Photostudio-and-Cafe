@@ -28,7 +28,7 @@ test('thermal booking text fits the shared 32-column POS receipt width and conta
   expect(content).toContain('SESSION TIME');
   expect(content).toContain('TOTAL AMOUNT');
   expect(content).toContain('PAYMENT AMOUNT');
-  expect(content).toContain('PAID TO DATE');
+  expect(content).toContain('DOWN PAYMENT PAID');
   expect(content).toContain('BALANCE DUE');
   expect(content).toContain('PAYMENT STATUS');
   expect(content).toContain('PAYMENT METHOD');

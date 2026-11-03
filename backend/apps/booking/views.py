@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Case, IntegerField, Prefetch, Value, When
+from django.db.models import Case, IntegerField, Prefetch, Sum, Value, When
 from rest_framework import generics, permissions, status, filters, views
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -28,6 +28,7 @@ from booking.serializers import (
     WalkInBookingCreateSerializer,
     BookingReviewSerializer,
     StudioUnavailableDateSerializer,
+    validate_booking_payment_amount,
 )
 from booking.availability import (
     ACTIVE_BOOKING_STATUSES,
@@ -636,6 +637,25 @@ class BookingDetailUpdateView(generics.RetrieveUpdateDestroyAPIView):
 
             serializer = self.get_serializer(booking, data=request.data, partial=True)
             serializer.is_valid(raise_exception=True)
+            if status_changed and new_status in {'CONFIRMED_DP', 'CONFIRMED', 'COMPLETED'}:
+                verified_total = Payment.objects.filter(
+                    payment_type=Payment.BOOKING, booking_id=booking.pk, status__in=['APPROVED', 'PAID'],
+                ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+                if verified_total < Decimal('200.00'):
+                    raise ValidationError({'status': 'A verified down payment of at least PHP 200.00 is required to confirm this booking.'})
+            if 'package' in serializer.validated_data:
+                proposed_package = serializer.validated_data['package']
+                proposed_total = Decimal(str(proposed_package.price or 0))
+                for item in booking.items or []:
+                    try:
+                        proposed_total += Decimal(str(item.get('price') or 0)) * Decimal(str(item.get('quantity') or 0))
+                    except (AttributeError, TypeError, ValueError, InvalidOperation):
+                        continue
+                reserved_payments = Payment.objects.filter(
+                    payment_type=Payment.BOOKING, booking_id=booking.pk,
+                ).exclude(status='REJECTED').aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+                if reserved_payments > proposed_total:
+                    raise ValidationError({'package': 'The new booking total cannot be less than submitted payments.'})
             if status_changed and previous_status not in ACTIVE_BOOKING_STATUSES and new_status in ACTIVE_BOOKING_STATUSES:
                 if not is_slot_available(
                     serializer.validated_data.get('package', booking.package).id,
@@ -882,6 +902,7 @@ class BookingPaymentListCreateView(generics.ListCreateAPIView):
                 booking = Booking.objects.select_for_update().get(pk=serializer.validated_data['booking'].id)
                 if booking.status in {'CANCELLED', 'COMPLETED'}:
                     raise ValidationError({'booking': 'A payment reference cannot be submitted for a cancelled or completed booking.'})
+                validate_booking_payment_amount(booking, serializer.validated_data['amount'])
                 payment = serializer.save(
                     booking=booking,
                     payment_type=Payment.BOOKING,
@@ -1051,6 +1072,8 @@ class BookingPaymentVerifyView(generics.UpdateAPIView):
             return Response({'detail': 'This booking is cancelled or completed. Payment verification cannot change it.'}, status=status.HTTP_409_CONFLICT)
 
         previous_status = payment.status
+        if new_status == 'APPROVED':
+            validate_booking_payment_amount(booking, payment.amount, exclude_payment_id=payment.pk)
         payment.status = new_status
         payment.verified_by = request.user
         payment.verified_at = timezone.now()

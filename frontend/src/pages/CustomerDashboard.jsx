@@ -209,8 +209,8 @@ const createIdempotencyKey = (prefix) => {
   return `${prefix}-${random}`;
 };
 
-const DOWN_PAYMENT_RATE = 0.5;
-const calculateDownPayment = (price) => Number(price || 0) * DOWN_PAYMENT_RATE;
+const MINIMUM_DOWN_PAYMENT = 200;
+const calculateDownPayment = () => MINIMUM_DOWN_PAYMENT;
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
 const isValidPhone = (value) => String(value || '').replace(/[^\d+]/g, '').replace(/^\+/, '').length >= 7;
 const isValidPaymentReference = (value) => /^[A-Za-z0-9\- ]{6,100}$/.test(String(value || '').trim());
@@ -1260,6 +1260,10 @@ export default function CustomerDashboard() {
     }
     if (!Number.isFinite(paidAmount) || paidAmount < requiredDownPayment) {
       alert(`Amount paid must be at least ${formatPeso(requiredDownPayment)}.`);
+      return;
+    }
+    if (paidAmount > totalCart) {
+      alert('Payment amount cannot exceed the total booking amount.');
       return;
     }
     if (paymentReferenceStatus.checking && !paymentRequestStartedRef.current) {
@@ -2412,6 +2416,9 @@ export default function CustomerDashboard() {
                                 <p className="text-[11px] text-espresso/55 leading-relaxed">
                                   Enter the payment reference number, amount, date, and time shown by your payment provider. Staff will verify the reference before confirming the booking.
                                 </p>
+                                <p className="text-[11px] font-bold text-espresso/70 leading-relaxed">
+                                  A minimum down payment of ₱200 is required to confirm your booking. The remaining balance is payable separately.
+                                </p>
                               </div>
 
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2434,6 +2441,7 @@ export default function CustomerDashboard() {
                                   label="Amount Paid"
                                   type="number"
                                   min={requiredDownPayment}
+                                  max={totalCart}
                                   step="0.01"
                                   value={paymentAmount}
                                   onChange={e => setPaymentAmount(e.target.value)}

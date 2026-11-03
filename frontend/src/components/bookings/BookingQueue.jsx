@@ -12,6 +12,7 @@ const ACTIVE_STATUSES = new Set(['PENDING', 'CONFIRMED', 'CONFIRMED_DP']);
 const timeKey = booking => `${booking.scheduled_time || ''}`.slice(0, 8);
 const scheduleKey = booking => `${booking.scheduled_date || ''} ${timeKey(booking)} ${String(booking.id).padStart(12, '0')}`;
 const customerName = booking => booking.customer_name || booking.contact_name || `${booking.customer?.first_name || ''} ${booking.customer?.last_name || ''}`.trim() || booking.customer?.username || 'Customer';
+const peso = value => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const paymentSummary = booking => {
   const payments = Array.isArray(booking.payments) ? booking.payments : [];
   return payments.length ? payments.map(payment => String(payment.status || 'Pending').replace(/_/g, ' ')).join(', ') : 'No payment submitted';
@@ -29,6 +30,12 @@ const groupBookings = (bookings, today) => {
 
 function BookingCard({ booking, busyAction, onComplete, onCancel, onDelete }) {
   const actionInProgress = Boolean(busyAction);
+  const itemsTotal = (Array.isArray(booking.items) ? booking.items : []).reduce((total, item) => total + Number(item.price || 0) * Number(item.quantity || 0), 0);
+  const totalAmount = Number(booking.total_amount ?? (Number(booking.package_details?.price || 0) + itemsTotal));
+  const amountPaid = Number(booking.amount_paid ?? (Array.isArray(booking.payments) ? booking.payments : [])
+    .filter(payment => ['APPROVED', 'PAID'].includes(payment.status))
+    .reduce((total, payment) => total + Number(payment.amount || 0), 0));
+  const remainingBalance = Number(booking.remaining_balance ?? Math.max(totalAmount - amountPaid, 0));
   return (
     <article className="rounded-2xl border border-espresso/10 bg-cream/40 p-4 text-xs sm:p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -64,6 +71,11 @@ function BookingCard({ booking, busyAction, onComplete, onCancel, onDelete }) {
           </div>
         )}
       </div>
+      <dl className="mt-3 grid grid-cols-3 gap-2 rounded-xl border border-espresso/[0.06] bg-white/75 p-3">
+        <div><dt className="text-[9px] font-black uppercase tracking-wider text-espresso/45">Total Amount</dt><dd className="mt-1 font-black text-espresso">{peso(totalAmount)}</dd></div>
+        <div><dt className="text-[9px] font-black uppercase tracking-wider text-espresso/45">Down Payment Paid</dt><dd className="mt-1 font-black text-gold-dark">{peso(amountPaid)}</dd></div>
+        <div><dt className="text-[9px] font-black uppercase tracking-wider text-espresso/45">Remaining Balance</dt><dd className="mt-1 font-black text-espresso">{peso(remainingBalance)}</dd></div>
+      </dl>
       {onDelete && <button type="button" disabled={actionInProgress} onClick={() => onDelete(booking)} className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Delete booking ${booking.id}`}><Trash2 className="h-3.5 w-3.5" /> Delete booking</button>}
       {booking.status === 'CANCELLED' && booking.cancellation_reason && (
         <p className="mt-3 border-t border-espresso/10 pt-3 text-espresso/65"><span className="font-black">Cancellation reason:</span> {booking.cancellation_reason}</p>

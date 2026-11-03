@@ -76,6 +76,27 @@ class WalkInBookingApiTests(TestCase):
         self.assertEqual(payment.verified_by_id, self.staff.id)
         self.assertEqual(response.data['payments'][0]['reference_number'], 'GCASH-REF-1001')
 
+    def test_walk_in_records_minimum_down_payment_and_rejects_underpayment_or_overpayment(self):
+        response = self.client.post('/api/bookings/walk-in/', self.payload(
+            idempotency_key='walk-in-minimum-dp', payment_method='CASH', payment_amount='200.00',
+        ), format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['total_amount'], Decimal('1000.00'))
+        self.assertEqual(response.data['amount_paid'], Decimal('200.00'))
+        self.assertEqual(response.data['remaining_balance'], Decimal('800.00'))
+
+        underpaid = self.client.post('/api/bookings/walk-in/', self.payload(
+            scheduled_time='10:00:00', idempotency_key='walk-in-under-minimum',
+            payment_method='CASH', payment_amount='199.99',
+        ), format='json')
+        overpaid = self.client.post('/api/bookings/walk-in/', self.payload(
+            scheduled_time='11:00:00', idempotency_key='walk-in-over-total',
+            payment_method='CASH', payment_amount='1000.01',
+        ), format='json')
+        self.assertEqual(underpaid.status_code, 400)
+        self.assertEqual(overpaid.status_code, 400)
+        self.assertEqual(Booking.objects.count(), 1)
+
     def test_walk_in_without_payment_remains_pending_and_full_payment_has_no_balance(self):
         unpaid = self.client.post('/api/bookings/walk-in/', self.payload(
             idempotency_key='walk-in-unpaid-001',

@@ -223,7 +223,7 @@ export const buildBookingReceiptText = (receipt, business = RECEIPT_BUSINESS, co
     ...center(sentenceCase(receipt?.paymentStatus || 'not recorded')),
     ...pair('TOTAL AMOUNT', money(receipt?.totalAmount)),
     ...pair('PAYMENT AMOUNT', money(receipt?.currentPaymentAmount ?? receipt?.amountPaid)),
-    ...pair('PAID TO DATE', money(receipt?.amountPaid)),
+    ...pair('DOWN PAYMENT PAID', money(receipt?.amountPaid)),
     ...pair('BALANCE DUE', money(receipt?.remainingBalance)),
     ...pair('PAYMENT METHOD', receipt?.paymentMethod || 'Not recorded'),
     ...(receipt?.paymentReference ? pair('PAYMENT REF', receipt.paymentReference) : []),

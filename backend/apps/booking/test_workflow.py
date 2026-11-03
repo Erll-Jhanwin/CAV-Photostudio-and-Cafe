@@ -57,6 +57,13 @@ class WorkflowFixtures:
         self.assertEqual(response.status_code, 201, response.data)
         return Payment.objects.get(pk=response.data['id'])
 
+    def verify_minimum_down_payment(self, booking):
+        payment = self.pay(booking, amount='200.00', reference_number='REF-MIN-200')
+        self.client.force_authenticate(self.staff)
+        response = self.client.patch(f'/api/bookings/payments/{payment.id}/verify/', {'status': 'APPROVED'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        return payment
+
 
 @override_settings(EMAIL_DELIVERY_ENABLED=False, SMS_DELIVERY_ENABLED=False, PUSH_DELIVERY_ENABLED=False)
 class BookingLifecycleTests(WorkflowFixtures, TestCase):
@@ -157,6 +164,54 @@ class BookingLifecycleTests(WorkflowFixtures, TestCase):
             self.assertIn(field, response.data)
         self.assertFalse(Payment.objects.exists())
 
+    def test_minimum_payment_verified_balance_and_overpayment_validation(self):
+        booking = self.book()
+        too_small = self.client.post('/api/bookings/payments/', {
+            'booking': booking.id, 'amount': '199.99', 'reference_number': 'REF-SMALL-01',
+        }, format='json')
+        self.assertEqual(too_small.status_code, 400, too_small.data)
+        self.assertFalse(Payment.objects.filter(booking=booking).exists())
+
+        first = self.client.post('/api/bookings/payments/', {
+            'booking': booking.id, 'amount': '200.00', 'reference_number': 'REF-MIN-0001',
+        }, format='json')
+        self.assertEqual(first.status_code, 201, first.data)
+        self.client.force_authenticate(self.staff)
+        approved = self.client.patch(f"/api/bookings/payments/{first.data['id']}/verify/", {'status': 'APPROVED'}, format='json')
+        self.assertEqual(approved.status_code, 200, approved.data)
+        self.assertEqual(approved.data['booking_details']['total_amount'], Decimal('1000.00'))
+        self.assertEqual(approved.data['booking_details']['amount_paid'], Decimal('200.00'))
+        self.assertEqual(approved.data['booking_details']['remaining_balance'], Decimal('800.00'))
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, 'CONFIRMED_DP')
+
+        self.client.force_authenticate(self.customer)
+        overpayment = self.client.post('/api/bookings/payments/', {
+            'booking': booking.id, 'amount': '800.01', 'reference_number': 'REF-OVER-0001',
+        }, format='json')
+        self.assertEqual(overpayment.status_code, 400, overpayment.data)
+
+        final_payment = self.client.post('/api/bookings/payments/', {
+            'booking': booking.id, 'amount': '800.00', 'reference_number': 'REF-FINAL-001',
+        }, format='json')
+        self.assertEqual(final_payment.status_code, 201, final_payment.data)
+        self.client.force_authenticate(self.staff)
+        final_approved = self.client.patch(
+            f"/api/bookings/payments/{final_payment.data['id']}/verify/", {'status': 'APPROVED'}, format='json',
+        )
+        self.assertEqual(final_approved.status_code, 200, final_approved.data)
+        self.assertEqual(final_approved.data['booking_details']['amount_paid'], Decimal('1000.00'))
+        self.assertEqual(final_approved.data['booking_details']['remaining_balance'], Decimal('0.00'))
+
+    def test_staff_cannot_confirm_booking_without_verified_minimum_payment(self):
+        booking = self.book()
+        self.client.force_authenticate(self.staff)
+        response = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'CONFIRMED'}, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('status', response.data)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, 'PENDING')
+
     def test_duplicate_customer_contact_is_not_misreported_as_schedule_conflict(self):
         get_user_model().objects.create_user(username='contact-owner', email='taken@example.test', phone_number='09987654321')
         for fields, expected in [({'email': 'taken@example.test'}, 'email'), ({'phone_number': '+63 9987654321'}, 'phone_number')]:
@@ -192,6 +247,7 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
         reminder = BookingEmail.objects.get(booking=booking, event_type=BookingEmail.EVENT_REMINDER)
         self.assertEqual(reminder.scheduled_for, booking.starts_at - timedelta(hours=24))
 
+        self.verify_minimum_down_payment(booking)
         self.client.force_authenticate(self.staff)
         approved = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'CONFIRMED'}, format='json')
         self.assertEqual(approved.status_code, 200, approved.data)
@@ -291,6 +347,7 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
     )
     def test_completed_booking_email_delivers_through_django_and_keeps_survey_template(self):
         booking = self.book()
+        self.verify_minimum_down_payment(booking)
         self.client.force_authenticate(self.staff)
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'COMPLETED'}, format='json')
@@ -314,6 +371,7 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
     )
     def test_completion_email_failure_keeps_booking_completed_and_outbox_retryable(self):
         booking = self.book()
+        self.verify_minimum_down_payment(booking)
         admin = get_user_model().objects.create_user(username='workflow-admin', role='ADMIN')
         self.client.force_authenticate(admin)
         with patch('users.email_delivery.send_transactional_email', side_effect=EmailDeliveryError('SMTP email delivery failed.')) as sender:
@@ -341,6 +399,15 @@ class BookingEmailLifecycleTests(WorkflowFixtures, TestCase):
     def test_existing_booking_notifications_do_not_duplicate_outbox_emails(self):
         with self.captureOnCommitCallbacks(execute=True):
             booking = self.book()
+        Payment.objects.create(
+            payment_type=Payment.BOOKING,
+            booking=booking,
+            amount='200.00',
+            method='CASH',
+            status='APPROVED',
+            verified_by=self.staff,
+            verified_at=timezone.now(),
+        )
         self.client.force_authenticate(self.staff)
         with self.captureOnCommitCallbacks(execute=True):
             self.assertEqual(self.client.patch(f'/api/bookings/{booking.id}/', {'status': 'CONFIRMED'}, format='json').status_code, 200)

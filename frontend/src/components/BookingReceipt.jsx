@@ -15,7 +15,8 @@ const formatPaymentStatus = value => {
 export const bookingReceiptFromPayment = payment => {
   const details = payment?.booking_details || {};
   const totalAmount = Number(details.total_amount ?? details.package_price ?? 0);
-  const amountPaid = Number(details.amount_paid ?? payment?.amount ?? 0);
+  const paymentVerified = ['APPROVED', 'PAID'].includes(payment?.status);
+  const amountPaid = Number(details.amount_paid ?? (paymentVerified ? payment?.amount : 0));
   return {
     bookingId: payment?.booking || details.id,
     customerName: details.customer_name,
@@ -73,7 +74,7 @@ export function BookingReceiptDocument({ receipt, copyLabel, business = RECEIPT_
       <section className="space-y-1 py-2 text-[8px]">
         <ReceiptRow label="Total amount" value={peso(receipt.totalAmount)} strong />
         <ReceiptRow label="Payment amount" value={peso(receipt.currentPaymentAmount ?? receipt.amountPaid)} />
-        <ReceiptRow label="Amount paid to date" value={peso(receipt.amountPaid)} strong />
+        <ReceiptRow label="Down Payment Paid" value={peso(receipt.amountPaid)} strong />
         <ReceiptRow label="Remaining balance" value={peso(receipt.remainingBalance)} strong />
         <ReceiptRow label="Payment status" value={paymentStatus} />
         <ReceiptRow label="Payment method" value={textValue(receipt.paymentMethod)} />
