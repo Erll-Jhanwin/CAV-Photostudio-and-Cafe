@@ -70,6 +70,21 @@ const inventoryStatuses = [
 
 const getInventoryStatusMeta = (status) => inventoryStatuses.find(item => item.key === status) || inventoryStatuses[0];
 
+const getPosProductImageSrcSet = (imageUrl) => {
+  try {
+    const source = new URL(imageUrl);
+    if (source.hostname !== 'images.unsplash.com') return undefined;
+    return [240, 400, 640].map(width => {
+      const variant = new URL(source);
+      variant.searchParams.set('auto', 'format');
+      variant.searchParams.set('w', String(width));
+      return `${variant.toString()} ${width}w`;
+    }).join(', ');
+  } catch {
+    return undefined;
+  }
+};
+
 const todayValue = () => getManilaDateInputValue();
 const createIdempotencyKey = (prefix) => {
   const random = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -1803,7 +1818,12 @@ export default function StaffDashboard() {
                         {prod.image_url ? (
                           <img
                             src={prod.image_url}
+                            srcSet={getPosProductImageSrcSet(prod.image_url)}
+                            sizes="(max-width: 640px) 42vw, (max-width: 1024px) 30vw, 18vw"
                             alt={prod.name}
+                            loading={i < 4 ? 'eager' : 'lazy'}
+                            fetchPriority={i === 0 ? 'high' : 'auto'}
+                            decoding="async"
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
                           />

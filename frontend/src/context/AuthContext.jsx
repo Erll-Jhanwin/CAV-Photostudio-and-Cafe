@@ -162,7 +162,16 @@ export const AuthProvider = ({ children }) => {
       return { success: true, user: userData, created: response.data.created };
     } catch (error) {
       console.error('Google login request failed.');
-      const message = error.response?.data?.detail || getApiErrorMessage(error, 'Google authentication failed.');
+      const responseData = error.response?.data || {};
+      const messageValue = value => (Array.isArray(value) ? value : [value])
+        .filter(item => typeof item === 'string' || typeof item === 'number')
+        .map(item => String(item).trim())
+        .filter(Boolean)
+        .join(' ');
+      const message = messageValue(responseData.detail)
+        || messageValue(responseData.phone_number)
+        || messageValue(responseData.privacy_consent)
+        || getApiErrorMessage(error, 'Google authentication failed.');
       return { success: false, error: message, errors: error.response?.data || {} };
     } finally {
       loginInFlightRef.current = false;

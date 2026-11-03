@@ -9,10 +9,7 @@ import {
   Star, ThumbsUp, ThumbsDown, Minus, ClipboardList, Search
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, BarChart, Bar
-} from 'recharts';
+import DeferredChart from '../components/DeferredChart';
 import { Button, IconButton } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
 import { StatusBadge } from '../components/ui/Badge';
@@ -633,6 +630,8 @@ export default function AdminDashboard() {
   const pendingAdminTabRefreshRef = useRef(new Set());
   const pendingAdminTabRefreshAtRef = useRef(new Map());
   const forecastFetchSeqRef = useRef(0);
+  const forecastLoadRequestedRef = useRef(false);
+  const forecastTriggerRef = useRef(null);
   const endOfDayDetailsRequestRef = useRef(0);
   const salesChartInteractionElementRef = useRef(null);
   const salesChartInteractionRef = useRef(null);
@@ -700,6 +699,7 @@ export default function AdminDashboard() {
   }, [bookingCalendarMonth]);
 
   const loadForecast = useCallback(async ({ force = false } = {}) => {
+    forecastLoadRequestedRef.current = true;
     const requestSeq = forecastFetchSeqRef.current + 1;
     forecastFetchSeqRef.current = requestSeq;
     setForecastLoading(true);
@@ -764,23 +764,25 @@ export default function AdminDashboard() {
   }, [user, navigate, activeTab, fetchData]);
 
   useEffect(() => {
-    if (!user || user.role !== 'ADMIN' || !initialDataReady) return undefined;
-    let cancelled = false;
-    let idleId;
-    const timerId = window.setTimeout(() => {
-      if (cancelled) return;
-      if (typeof window.requestIdleCallback === 'function') {
-        idleId = window.requestIdleCallback(() => { if (!cancelled) void loadForecast(); }, { timeout: 2500 });
-      } else {
-        void loadForecast();
-      }
-    }, 0);
+    if (!user || user.role !== 'ADMIN' || activeTab !== 'analytics' || !initialDataReady
+      || forecastLoadRequestedRef.current) return undefined;
+    const target = forecastTriggerRef.current;
+    if (!target) return undefined;
+    if (typeof IntersectionObserver === 'undefined') {
+      void loadForecast();
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return;
+      observer.disconnect();
+      if (!forecastLoadRequestedRef.current) void loadForecast();
+    }, { rootMargin: '0px 0px 120px 0px' });
+    observer.observe(target);
     return () => {
-      cancelled = true;
-      window.clearTimeout(timerId);
-      if (idleId !== undefined && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleId);
+      observer.disconnect();
     };
-  }, [user, initialDataReady, loadForecast]);
+  }, [user, activeTab, initialDataReady, loadForecast]);
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') return;
@@ -1929,14 +1931,18 @@ export default function AdminDashboard() {
                         {analyticsDataAvailable ? <div className="grid grid-cols-[120px_1fr] gap-4 items-center">
                           <div className="h-[120px]">
                             <DashboardChartBoundary resetKey={JSON.stringify(statusData)}>
-                              <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                  <Pie data={statusData} dataKey="value" nameKey="label" innerRadius={36} outerRadius={54} paddingAngle={3}>
-                                    {statusData.map(s => <Cell key={s.label} fill={s.color} />)}
-                                  </Pie>
-                                  <Tooltip />
-                                </PieChart>
-                              </ResponsiveContainer>
+                              <DeferredChart fallback={<div className="h-full w-full rounded-xl bg-cream/20" aria-hidden="true" />}>
+                                {({ ResponsiveContainer, PieChart, Pie, Cell, Tooltip }) => (
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                      <Pie data={statusData} dataKey="value" nameKey="label" innerRadius={36} outerRadius={54} paddingAngle={3}>
+                                        {statusData.map(s => <Cell key={s.label} fill={s.color} />)}
+                                      </Pie>
+                                      <Tooltip />
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                )}
+                              </DeferredChart>
                             </DashboardChartBoundary>
                           </div>
                           <div className="space-y-2.5">
@@ -1954,7 +1960,7 @@ export default function AdminDashboard() {
 
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div ref={forecastTriggerRef} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {[
                   {
                     label: 'Next 7 Days',
@@ -2087,18 +2093,22 @@ export default function AdminDashboard() {
                             style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
                           >
                             <DashboardChartBoundary resetKey={`${forecastView}:${visibleSalesChartData.length}:${visibleSeries.actual}:${visibleSeries.forecast}:${visibleSeries.combined}`}>
-                              <ResponsiveContainer width="100%" height="100%">
-                                <ComposedChart data={visibleSalesChartData} margin={{ top: 12, right: 20, left: 12, bottom: 5 }}>
-                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
-                                  <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} minTickGap={22} interval="preserveStartEnd" tickFormatter={formatForecastDate} />
-                                  <YAxis domain={salesYAxisDomain} allowDataOverflow stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} width={95} tickFormatter={formatCurrency} />
-                                  <Tooltip content={<SalesForecastTooltip />} />
-                                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                                  {visibleSeries.actual && <Line type="monotone" dataKey="actual_sales" name="Actual Sales" stroke="#2E1A11" strokeWidth={3} dot={false} connectNulls={false} />}
-                                  {visibleSeries.forecast && <Line type="monotone" dataKey="forecast_sales" name="ML Forecast" stroke="#D4AF37" strokeWidth={3} strokeDasharray="7 5" dot={{ r: 3, fill: '#D4AF37' }} connectNulls={false} />}
-                                  {visibleSeries.combined && <Line type="monotone" dataKey="combined_sales" name="Combined Actual + Forecast" stroke="#3B82F6" strokeWidth={2.5} dot={false} connectNulls />}
-                                </ComposedChart>
-                              </ResponsiveContainer>
+                              <DeferredChart fallback={<div className="h-full w-full rounded-xl bg-cream/20" aria-hidden="true" />}>
+                                {({ ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line }) => (
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <ComposedChart data={visibleSalesChartData} margin={{ top: 12, right: 20, left: 12, bottom: 5 }}>
+                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F5ECE1" />
+                                      <XAxis dataKey="date" stroke="#2E1A11" fontSize={10} tickLine={false} minTickGap={22} interval="preserveStartEnd" tickFormatter={formatForecastDate} />
+                                      <YAxis domain={salesYAxisDomain} allowDataOverflow stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} width={95} tickFormatter={formatCurrency} />
+                                      <Tooltip content={<SalesForecastTooltip />} />
+                                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                                      {visibleSeries.actual && <Line type="monotone" dataKey="actual_sales" name="Actual Sales" stroke="#2E1A11" strokeWidth={3} dot={false} connectNulls={false} />}
+                                      {visibleSeries.forecast && <Line type="monotone" dataKey="forecast_sales" name="ML Forecast" stroke="#D4AF37" strokeWidth={3} strokeDasharray="7 5" dot={{ r: 3, fill: '#D4AF37' }} connectNulls={false} />}
+                                      {visibleSeries.combined && <Line type="monotone" dataKey="combined_sales" name="Combined Actual + Forecast" stroke="#3B82F6" strokeWidth={2.5} dot={false} connectNulls />}
+                                    </ComposedChart>
+                                  </ResponsiveContainer>
+                                )}
+                              </DeferredChart>
                             </DashboardChartBoundary>
                           </div>
                         </div>
@@ -2148,15 +2158,19 @@ export default function AdminDashboard() {
                     <div className="h-[320px] w-full">
                       {productForecastSummary.length > 0 ? (
                         <DashboardChartBoundary resetKey={JSON.stringify(productForecastSummary)}>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={productForecastSummary.slice(0, 20)} layout="vertical" margin={{ top: 4, right: 20, left: 12, bottom: 4 }}>
-                              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#F5ECE1" />
-                              <XAxis type="number" stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `PHP ${Math.round(Number(value || 0) / 1000)}k`} />
-                              <YAxis type="category" dataKey="product_name" width={150} stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} />
-                              <Tooltip formatter={(value) => [formatCurrency(value), 'Predicted sales']} />
-                              <Bar dataKey="predicted_sales" name="Predicted sales" fill="#D4AF37" radius={[0, 7, 7, 0]} />
-                            </BarChart>
-                          </ResponsiveContainer>
+                          <DeferredChart fallback={<div className="h-full w-full rounded-xl bg-cream/20" aria-hidden="true" />}>
+                            {({ ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar }) => (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={productForecastSummary.slice(0, 20)} layout="vertical" margin={{ top: 4, right: 20, left: 12, bottom: 4 }}>
+                                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#F5ECE1" />
+                                  <XAxis type="number" stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `PHP ${Math.round(Number(value || 0) / 1000)}k`} />
+                                  <YAxis type="category" dataKey="product_name" width={150} stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} />
+                                  <Tooltip formatter={(value) => [formatCurrency(value), 'Predicted sales']} />
+                                  <Bar dataKey="predicted_sales" name="Predicted sales" fill="#D4AF37" radius={[0, 7, 7, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            )}
+                          </DeferredChart>
                         </DashboardChartBoundary>
                       ) : (
                         <EmptyState icon={ShoppingBag} title="No product forecast data" description="The sales CSV does not contain parseable product history yet." />

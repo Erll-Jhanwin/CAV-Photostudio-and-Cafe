@@ -11,7 +11,7 @@ services:
       - key: REACT_APP_API_BASE_URL
         value: same-origin
       - key: REACT_APP_GOOGLE_CLIENT_ID
-        value: 22100729214-a9qrjd5vlvad0crt754f236968rrb3m8.apps.googleusercontent.com
+        value: 635314141753-g4d9rh5htnp8gafch1jop2d453n2i9f9.apps.googleusercontent.com
       - key: REACT_APP_RECAPTCHA_SITE_KEY
         sync: false
     routes:

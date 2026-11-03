@@ -34,7 +34,7 @@ import {
 
 // OAuth client IDs identify an app; unlike a client secret they are safe in a
 // native bundle. Appflow builds do not receive the ignored frontend/.env file.
-const NATIVE_GOOGLE_WEB_CLIENT_ID = '22100729214-a9qrjd5vlvad0crt754f236968rrb3m8.apps.googleusercontent.com';
+const NATIVE_GOOGLE_WEB_CLIENT_ID = '635314141753-g4d9rh5htnp8gafch1jop2d453n2i9f9.apps.googleusercontent.com';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -80,7 +80,11 @@ export default function LoginPage() {
   const [forgotErrors, setForgotErrors] = useState({});
   const [googleReady, setGoogleReady] = useState(!Capacitor.isNativePlatform());
   const [googleInitError, setGoogleInitError] = useState('');
+  const [googleCompletionPending, setGoogleCompletionPending] = useState(false);
+  const [googleRegistrationRequired, setGoogleRegistrationRequired] = useState(false);
   const googleButtonRef = useRef(null);
+  const googleRequestInFlightRef = useRef(false);
+  const pendingGoogleCredentialRef = useRef('');
   const isNativeApp = Capacitor.isNativePlatform();
   const googleClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID
     || (isNativeApp ? NATIVE_GOOGLE_WEB_CLIENT_ID : '');
@@ -165,7 +169,35 @@ export default function LoginPage() {
     window.alert(`${displayName} logged in successfully.`);
   };
 
+  const keepGoogleProfileForCompletion = useCallback((credential, errors) => {
+    const googleProfile = errors.google_profile || {};
+    const fieldMessage = value => (Array.isArray(value) ? value : [value])
+      .filter(item => typeof item === 'string' || typeof item === 'number')
+      .map(item => String(item).trim())
+      .filter(Boolean)
+      .join(' ');
+    pendingGoogleCredentialRef.current = credential;
+    setGoogleCompletionPending(true);
+    setGoogleRegistrationRequired(Boolean(errors.google_registration_required));
+    setIsRegister(true);
+    setRegisterStep('details');
+    setForm(current => ({
+      ...current,
+      email: current.email || googleProfile.email || '',
+      firstName: current.firstName || googleProfile.first_name || '',
+      lastName: current.lastName || googleProfile.last_name || '',
+      phone: current.phone || googleProfile.phone_number || '',
+    }));
+    setFormErrors({
+      phone: fieldMessage(errors.phone_number),
+      privacyConsent: fieldMessage(errors.privacy_consent),
+    });
+    setError('');
+    setSuccess('Google verified your account. Add or correct your mobile number below to continue.');
+  }, []);
+
   const completeGoogleLogin = useCallback(async (credential) => {
+    if (googleRequestInFlightRef.current) return;
     if (!credential) {
       setError('Google did not return a sign-in token. Please try again.');
       return;
@@ -174,67 +206,78 @@ export default function LoginPage() {
     if (!captchaToken) return;
     setError('');
     setSuccess('');
+    googleRequestInFlightRef.current = true;
     setLoading(true);
-    const res = await loginWithGoogle(credential, isRegister ? form.phone : '', {
-      privacy_consent: isRegister ? registrationConsent : false,
-      recaptcha_token: captchaToken,
-    });
-    resetRecaptcha();
-    setLoading(false);
-    if (res.pendingVerification) {
-      setIsRegister(true);
-      setRegisterStep('otp');
-      setRegistrationToken(res.registration_token || '');
-      setRegistrationContactHint(res.contact_hint || 'your mobile number');
-      setRegistrationOtp('');
-      setRegistrationResendCooldown(res.resend_cooldown_seconds || 60);
-      setRegistrationOtpExpiresMinutes(res.expires_in_minutes || 10);
-      setRegistrationConsent(false);
-      setSuccess(`We sent an SMS verification code to ${res.contact_hint || 'your mobile number'}. Enter it to finish creating your account.`);
-      setFormErrors({});
-    } else if (res.mfaRequired) {
-      const contactHint = String(res.contact_hint || 'your registered mobile number');
-      setAdminMfaStep(true);
-      setAdminMfaToken(res.mfa_token || '');
-      setAdminMfaContactHint(contactHint);
-      setAdminMfaOtp('');
-      setAdminMfaProvider('google');
-      setAdminMfaGoogleCredential(credential);
-      setAdminMfaResendCooldown(res.resend_cooldown_seconds || 60);
-      setAdminMfaOtpExpiresMinutes(res.expires_in_minutes || 10);
-      setSuccess(`Admin SMS verification code sent to ${contactHint}.`);
-      setFormErrors({});
-    } else if (res.success) {
-      showLoginSuccess(res.user);
-      navigateAfterAuth(res.user);
-    } else {
-      if (res.errors?.privacy_consent) {
+    try {
+      const res = await loginWithGoogle(credential, isRegister ? form.phone : '', {
+        privacy_consent: isRegister ? registrationConsent : false,
+        recaptcha_token: captchaToken,
+      });
+      resetRecaptcha();
+      if (res.pendingVerification) {
+        pendingGoogleCredentialRef.current = '';
+        setGoogleCompletionPending(false);
         setIsRegister(true);
-        setRegisterStep('details');
-        const googleProfile = res.errors.google_profile || {};
-        setForm(current => ({
-          ...current,
-          email: current.email || googleProfile.email || '',
-          firstName: current.firstName || googleProfile.first_name || '',
-          lastName: current.lastName || googleProfile.last_name || '',
-        }));
-        setFormErrors({ privacyConsent: Array.isArray(res.errors.privacy_consent) ? res.errors.privacy_consent.join(' ') : res.errors.privacy_consent });
-        setError('Accept the Privacy Notice, then choose Google again to create your account.');
-      } else if (res.errors?.phone_number) {
-        setIsRegister(true);
-        setRegisterStep('details');
-        const googleProfile = res.errors.google_profile || {};
-        setForm(current => ({
-          ...current,
-          email: current.email || googleProfile.email || '',
-          firstName: current.firstName || googleProfile.first_name || '',
-          lastName: current.lastName || googleProfile.last_name || '',
-        }));
-        setFormErrors({ phone: Array.isArray(res.errors.phone_number) ? res.errors.phone_number.join(' ') : res.errors.phone_number });
+        setRegisterStep('otp');
+        setRegistrationToken(res.registration_token || '');
+        setRegistrationContactHint(res.contact_hint || 'your mobile number');
+        setRegistrationOtp('');
+        setRegistrationResendCooldown(res.resend_cooldown_seconds || 60);
+        setRegistrationOtpExpiresMinutes(res.expires_in_minutes || 10);
+        setRegistrationConsent(false);
+        setSuccess(`We sent an SMS verification code to ${res.contact_hint || 'your mobile number'}. Enter it to finish creating your account.`);
+        setFormErrors({});
+      } else if (res.mfaRequired) {
+        const contactHint = String(res.contact_hint || 'your registered mobile number');
+        setAdminMfaStep(true);
+        setAdminMfaToken(res.mfa_token || '');
+        setAdminMfaContactHint(contactHint);
+        setAdminMfaOtp('');
+        setAdminMfaProvider('google');
+        setAdminMfaGoogleCredential(credential);
+        setAdminMfaResendCooldown(res.resend_cooldown_seconds || 60);
+        setAdminMfaOtpExpiresMinutes(res.expires_in_minutes || 10);
+        setSuccess(`Admin SMS verification code sent to ${contactHint}.`);
+        setFormErrors({});
+      } else if (res.success) {
+        pendingGoogleCredentialRef.current = '';
+        setGoogleCompletionPending(false);
+        setGoogleRegistrationRequired(false);
+        showLoginSuccess(res.user);
+        navigateAfterAuth(res.user);
+      } else {
+        if (res.errors?.phone_number || res.errors?.privacy_consent) {
+          keepGoogleProfileForCompletion(credential, res.errors);
+        } else if (googleCompletionPending && /expired|could not verify|invalid google credential/i.test(res.error || '')) {
+          pendingGoogleCredentialRef.current = '';
+          setGoogleCompletionPending(false);
+          setGoogleRegistrationRequired(false);
+          setError('Your Google sign-in expired or could not be verified. Choose Google again to continue.');
+        } else {
+          setError(res.error);
+        }
       }
-      setError(res.error);
+    } finally {
+      googleRequestInFlightRef.current = false;
+      setLoading(false);
     }
-  }, [form.phone, getRecaptchaToken, isRegister, loginWithGoogle, navigateAfterAuth, registrationConsent, resetRecaptcha]);
+  }, [form.phone, getRecaptchaToken, googleCompletionPending, isRegister, keepGoogleProfileForCompletion, loginWithGoogle, navigateAfterAuth, registrationConsent, resetRecaptcha]);
+
+  const handleGoogleCompletionSubmit = async event => {
+    event.preventDefault();
+    const phoneError = getPhilippineMobileError(form.phone);
+    const privacyError = googleRegistrationRequired && !registrationConsent
+      ? 'Accept the Privacy Notice and service data processing to create your account.'
+      : '';
+    setFormErrors({ phone: phoneError, privacyConsent: privacyError });
+    if (phoneError || privacyError) return;
+    if (!pendingGoogleCredentialRef.current) {
+      setError('Your verified Google sign-in expired. Choose Google again to continue.');
+      setGoogleCompletionPending(false);
+      return;
+    }
+    await completeGoogleLogin(pendingGoogleCredentialRef.current);
+  };
 
   useEffect(() => {
     if (!googleClientId) return undefined;
@@ -305,89 +348,32 @@ export default function LoginPage() {
   }, [completeGoogleLogin, googleClientId, isNativeApp, isRegister]);
 
   const handleNativeGoogleLogin = async () => {
-    if (!googleReady || loading) return;
-    const captchaToken = getRecaptchaToken();
-    if (!captchaToken) return;
+    if (!googleReady || loading || googleRequestInFlightRef.current) return;
     setError('');
     setSuccess('');
+    googleRequestInFlightRef.current = true;
     setLoading(true);
+    let credential = '';
     try {
       const response = await SocialLogin.login({
         provider: 'google',
         options: { scopes: ['profile', 'email'] },
       });
-      const credential = response.provider === 'google' && response.result.responseType === 'online'
+      credential = response.provider === 'google' && response.result.responseType === 'online'
         ? response.result.idToken
         : null;
       if (!credential) {
         setError('Google did not return a sign-in token. Please try again.');
-        return;
-      }
-      const res = await loginWithGoogle(credential, isRegister ? form.phone : '', {
-        privacy_consent: isRegister ? registrationConsent : false,
-        recaptcha_token: captchaToken,
-      });
-      resetRecaptcha();
-      if (res.pendingVerification) {
-        setIsRegister(true);
-        setRegisterStep('otp');
-        setRegistrationToken(res.registration_token || '');
-        setRegistrationContactHint(res.contact_hint || 'your mobile number');
-        setRegistrationOtp('');
-        setRegistrationConsent(false);
-        setRegistrationResendCooldown(res.resend_cooldown_seconds || 60);
-        setRegistrationOtpExpiresMinutes(res.expires_in_minutes || 10);
-        setSuccess(`We sent an SMS verification code to ${res.contact_hint || 'your mobile number'}. Enter it to finish creating your account.`);
-        setFormErrors({});
-      } else if (res.success) {
-        showLoginSuccess(res.user);
-        navigateAfterAuth(res.user);
-      } else if (res.mfaRequired) {
-        const contactHint = String(res.contact_hint || 'your registered mobile number');
-        setAdminMfaStep(true);
-        setAdminMfaToken(res.mfa_token || '');
-        setAdminMfaContactHint(contactHint);
-        setAdminMfaOtp('');
-        setAdminMfaProvider('google');
-        setAdminMfaGoogleCredential(credential);
-        setAdminMfaResendCooldown(res.resend_cooldown_seconds || 60);
-        setAdminMfaOtpExpiresMinutes(res.expires_in_minutes || 10);
-        setSuccess(`Admin SMS verification code sent to ${contactHint}.`);
-        setFormErrors({});
-      } else {
-        if (res.errors?.privacy_consent) {
-          setIsRegister(true);
-          setRegisterStep('details');
-          const googleProfile = res.errors.google_profile || {};
-          setForm(current => ({
-            ...current,
-            email: current.email || googleProfile.email || '',
-            firstName: current.firstName || googleProfile.first_name || '',
-            lastName: current.lastName || googleProfile.last_name || '',
-          }));
-          setFormErrors({ privacyConsent: Array.isArray(res.errors.privacy_consent) ? res.errors.privacy_consent.join(' ') : res.errors.privacy_consent });
-          setError('Accept the Privacy Notice, then choose Google again to create your account.');
-        } else if (res.errors?.phone_number) {
-          setIsRegister(true);
-          setRegisterStep('details');
-          const googleProfile = res.errors.google_profile || {};
-          setForm(current => ({
-            ...current,
-            email: current.email || googleProfile.email || '',
-            firstName: current.firstName || googleProfile.first_name || '',
-            lastName: current.lastName || googleProfile.last_name || '',
-          }));
-          setFormErrors({ phone: Array.isArray(res.errors.phone_number) ? res.errors.phone_number.join(' ') : res.errors.phone_number });
-        }
-        setError(res.error);
       }
     } catch {
       resetRecaptcha();
       console.error('Native Google login failed.');
       setError('Google sign-in was cancelled or could not be completed. Please try again.');
     } finally {
+      googleRequestInFlightRef.current = false;
       setLoading(false);
     }
+    if (credential) await completeGoogleLogin(credential);
   };
 
   const handleLoginSubmit = async (e) => {
@@ -692,6 +678,9 @@ export default function LoginPage() {
   };
 
   const resetRegistrationFlow = () => {
+    pendingGoogleCredentialRef.current = '';
+    setGoogleCompletionPending(false);
+    setGoogleRegistrationRequired(false);
     setRegisterStep('details');
     setRegistrationToken('');
     setRegistrationContactHint('');
@@ -836,7 +825,7 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {!showForgotPassword && (
+              {!showForgotPassword && !googleCompletionPending && (
                 <div className="space-y-3">
                   {googleClientId ? (
                     isNativeApp ? (
@@ -1029,8 +1018,58 @@ export default function LoginPage() {
                   </div>
                 </form>
               ) : (
-                <form onSubmit={isRegister ? handleRegisterSubmit : handleLoginSubmit} className={isRegister ? 'space-y-3' : 'space-y-4'} noValidate>
-                  {isRegister && registerStep === 'otp' ? (
+                <form onSubmit={googleCompletionPending ? handleGoogleCompletionSubmit : isRegister ? handleRegisterSubmit : handleLoginSubmit} className={isRegister ? 'space-y-3' : 'space-y-4'} noValidate>
+                  {googleCompletionPending ? (
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-gold/20 bg-gold/5 p-4">
+                        <p className="text-sm font-bold text-espresso">Google account verified</p>
+                        <p className="mt-1 text-xs leading-relaxed text-espresso/60">{form.email} is verified. Your Google sign-in is saved while you finish this step.</p>
+                      </div>
+                      <Input
+                        label="Mobile number"
+                        icon={Phone}
+                        type="tel"
+                        inputMode="tel"
+                        required
+                        value={form.phone}
+                        onChange={update('phone')}
+                        placeholder="09171234567"
+                        error={formErrors.phone}
+                      />
+                      <p className="-mt-3 text-[11px] leading-snug text-espresso/55">Enter a Philippine mobile number, e.g., 09171234567.</p>
+                      {googleRegistrationRequired && (
+                        <>
+                          <label className="flex items-start gap-3 text-xs leading-5 text-espresso/72">
+                            <input
+                              type="checkbox"
+                              checked={registrationConsent}
+                              onChange={(event) => {
+                                setRegistrationConsent(event.target.checked);
+                                setFormErrors(current => ({ ...current, privacyConsent: '' }));
+                              }}
+                              className="mt-1 h-4 w-4 rounded border-espresso/30 text-gold focus:ring-gold"
+                            />
+                            <span>I agree to the <Link to="/privacy-policy" className="font-bold text-gold-dark underline">Privacy Notice</Link> and service data processing.</span>
+                          </label>
+                          {formErrors.privacyConsent && <p role="alert" className="-mt-2 text-xs font-semibold text-red-700">{formErrors.privacyConsent}</p>}
+                        </>
+                      )}
+                      <RecaptchaChallenge
+                        onTokenChange={handleRecaptchaToken}
+                        resetKey={recaptchaResetKey}
+                      />
+                      <Button
+                        type="submit"
+                        variant="gold"
+                        size="lg"
+                        loading={loading}
+                        disabled={loading || !form.phone.trim() || (googleRegistrationRequired && !registrationConsent)}
+                        className="w-full"
+                      >
+                        Continue
+                      </Button>
+                    </div>
+                  ) : isRegister && registerStep === 'otp' ? (
                     <div className="space-y-4">
                       <div className="flex items-center gap-3 rounded-2xl border border-gold/20 bg-gold/5 p-4">
                         <CheckCircle2 className="h-6 w-6 shrink-0 text-gold-dark" />
@@ -1265,24 +1304,26 @@ export default function LoginPage() {
                     </>
                   )}
 
-                  <Button
-                    type="submit"
-                    variant="gold"
-                    size="lg"
-                    loading={loading}
-                    disabled={loading || (isRegister ? !isRegisterValid : !isLoginValid)}
-                    className="mt-1 w-full"
-                  >
-                    {isRegister
-                      ? (registerStep === 'otp' ? 'Verify & Create Account' : 'Send Verification Code')
-                      : adminMfaStep
-                        ? 'Verify Admin Access'
-                        : 'Enter My Dashboard'}
-                  </Button>
+                  {!googleCompletionPending && (
+                    <Button
+                      type="submit"
+                      variant="gold"
+                      size="lg"
+                      loading={loading}
+                      disabled={loading || (isRegister ? !isRegisterValid : !isLoginValid)}
+                      className="mt-1 w-full"
+                    >
+                      {isRegister
+                        ? (registerStep === 'otp' ? 'Verify & Create Account' : 'Send Verification Code')
+                        : adminMfaStep
+                          ? 'Verify Admin Access'
+                          : 'Enter My Dashboard'}
+                    </Button>
+                  )}
                 </form>
               )}
 
-              {!showForgotPassword && !adminMfaStep && (
+              {!showForgotPassword && !adminMfaStep && !googleCompletionPending && (
                 <div className="space-y-3 pt-1 text-center">
                   <button
                     onClick={() => { resetRegistrationFlow(); resetAdminMfaFlow(); setIsRegister(!isRegister); clearModeMessages(); }}

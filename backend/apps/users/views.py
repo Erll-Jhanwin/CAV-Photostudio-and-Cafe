@@ -1,4 +1,5 @@
 import hashlib
+import math
 import logging
 import time
 
@@ -731,10 +732,12 @@ class GoogleAuthView(views.APIView):
                 timeout=10,
             )
         except requests.RequestException:
+            logger.warning('Google ID token verification unavailable (reason=provider_request_failed).')
             return Response({"detail": "Google verification is temporarily unavailable. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         if verify_res.status_code != 200:
-            return Response({"detail": "Your Google sign-in expired or could not be verified. Choose Google again to retry."}, status=status.HTTP_401_UNAUTHORIZED)
+            logger.info('Google ID token rejected by Google (reason=invalid_signature_or_expired_or_wrong_token_type status=%s).', verify_res.status_code)
+            return Response({"detail": "Google could not verify this sign-in token. It may have expired; choose Google to request a fresh token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         try:
             profile = verify_res.json()
@@ -742,10 +745,38 @@ class GoogleAuthView(views.APIView):
             return Response({"detail": "Google verification returned an invalid response. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         if not isinstance(profile, dict):
             return Response({"detail": "Google verification returned an invalid response. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        if profile.get('aud') != settings.GOOGLE_CLIENT_ID or profile.get('iss') not in {
-            'accounts.google.com', 'https://accounts.google.com',
-        }:
-            return Response({"detail": "Google sign-in could not be verified for this app. Choose Google again to retry."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Google tokeninfo verifies the JWT signature with Google's keys and
+        # rejects expired tokens. Validate the returned ID-token claims again
+        # here so access tokens or incomplete tokeninfo responses cannot be
+        # mistaken for sign-in credentials. Never log the credential itself.
+        try:
+            expires_at = float(profile.get('exp'))
+        except (TypeError, ValueError):
+            expires_at = 0
+        audience = profile.get('aud')
+        issuer_valid = profile.get('iss') in {'accounts.google.com', 'https://accounts.google.com'}
+        audience_valid = audience == settings.GOOGLE_CLIENT_ID
+        expiration_valid = math.isfinite(expires_at) and expires_at > time.time()
+        token_type_valid = bool(profile.get('sub')) and bool(profile.get('email'))
+        if not (audience_valid and issuer_valid and expiration_valid and token_type_valid):
+            reasons = []
+            if not audience_valid:
+                reasons.append('audience_mismatch')
+            if not issuer_valid:
+                reasons.append('issuer_mismatch')
+            if not expiration_valid:
+                reasons.append('expired_or_missing_expiration')
+            if not token_type_valid:
+                reasons.append('not_an_id_token')
+            logger.warning('Google ID token claims rejected (reason=%s configured_audience=%s returned_audience=%s).', ','.join(reasons), settings.GOOGLE_CLIENT_ID, audience if isinstance(audience, str) else 'non_string')
+            if not audience_valid or not issuer_valid:
+                detail = 'Google sign-in is configured for a different app. Please contact support.'
+            elif not expiration_valid:
+                detail = 'Google sign-in expired. Choose Google to request a fresh sign-in token.'
+            else:
+                detail = 'Google returned a sign-in token without the required account identity. Choose Google again.'
+            return Response({"detail": detail}, status=status.HTTP_401_UNAUTHORIZED)
 
         email = str(profile.get('email') or '').strip().lower()
         if not email or profile.get('email_verified') not in (True, 'true', 'True', '1'):
@@ -763,16 +794,19 @@ class GoogleAuthView(views.APIView):
         def completion_error(field, message):
             return Response({
                 field: message,
+                'google_registration_required': not bool(user),
                 'google_profile': {
                     'email': email,
                     'first_name': given_name[:150],
                     'last_name': family_name[:150],
+                    'phone_number': str(user.phone_number or '') if user else '',
                     'profile_picture_url': google_picture_url[:500],
                 },
             }, status=status.HTTP_400_BAD_REQUEST)
 
         raw_phone_number = str(request.data.get('phone_number') or '').strip()
-        phone_number = ''
+        saved_phone_number = normalize_philippine_mobile_number(user.phone_number) if user and user.role == 'CUSTOMER' else ''
+        phone_number = saved_phone_number or ''
         if raw_phone_number:
             phone_number = normalize_philippine_mobile_number(raw_phone_number)
             if not phone_number:
@@ -780,9 +814,9 @@ class GoogleAuthView(views.APIView):
             if is_phone_number_taken(phone_number, user):
                 return completion_error('phone_number', 'That mobile number is already linked to another account. Use a different number or contact support.')
 
-        needs_phone = not user or (user.role == 'CUSTOMER' and not user.phone_number)
+        needs_phone = not user or (user.role == 'CUSTOMER' and not phone_number)
         if needs_phone and not phone_number:
-            return completion_error('phone_number', 'Add a valid Philippine mobile number to continue.')
+            return completion_error('phone_number', 'A valid Philippine mobile number is required.')
 
         challenge_matches = bool(user and admin_mfa_challenge_matches(request.data.get('mfa_token'), user))
         if not challenge_matches:
@@ -843,7 +877,7 @@ class GoogleAuthView(views.APIView):
         # A returning customer may have skipped the phone field before it became
         # required. Complete only that missing value; never replace an existing
         # phone number with a value supplied during a later sign-in.
-        if user.role == 'CUSTOMER' and not user.phone_number and phone_number:
+        if user.role == 'CUSTOMER' and phone_number and user.phone_number != phone_number:
             user.phone_number = phone_number
             user.save(update_fields=['phone_number'])
 

@@ -1845,7 +1845,7 @@ export default function CustomerDashboard() {
                           {/* Top Section: Service Cards */}
                           <div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              {services.map(svc => (
+                              {services.map((svc, serviceIndex) => (
                                 <button key={recordKey(svc, svc.name)}
                                   type="button"
                                   onClick={() => { 
@@ -1867,7 +1867,7 @@ export default function CustomerDashboard() {
                                   {/* Hero image */}
                                   <div className="relative w-full aspect-[4/3] bg-cream overflow-hidden shrink-0">
                                     {svc.image_url ? (
-                                      <img src={svc.image_url} alt={svc.name} style={{ objectPosition: svc.image_position || '50% 34%' }} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                      <img src={svc.image_url} srcSet={svc.image_src_set} sizes="(max-width: 640px) 90vw, 420px" alt={svc.name} loading={serviceIndex === 0 ? 'eager' : 'lazy'} fetchPriority={serviceIndex === 0 ? 'high' : 'auto'} decoding="async" style={{ objectPosition: svc.image_position || '50% 34%' }} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                         onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
                                     ) : null}
                                     <div className="w-full h-full flex items-center justify-center text-4xl text-espresso/20"

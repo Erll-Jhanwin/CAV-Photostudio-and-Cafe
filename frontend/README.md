@@ -4,7 +4,7 @@ This project was bootstrapped with [Create React App](https://github.com/faceboo
 
 ## Google Sign-In Setup
 
-Google Sign-In uses `REACT_APP_GOOGLE_CLIENT_ID` from `cav_env/CAV-Photostudio-and-Cafe-frontend.env`; the backend verifies it with `GOOGLE_CLIENT_ID` from `cav_env/CAV-Photostudio-and-Cafe-backend.env`. Keep the same Web application OAuth client ID in both exports. The frontend loader only passes approved public `REACT_APP_*` settings to Create React App. Never put backend credentials in the frontend export.
+Google Sign-In uses `REACT_APP_GOOGLE_CLIENT_ID` from `cav_env/CAV-Photostudio-and-Cafe-frontend.env`; the backend verifies it with `GOOGLE_CLIENT_ID` from `cav_env/CAV-Photostudio-and-Cafe-backend.env`. Both must be the same Web application OAuth client ID. The current frontend client is `635314141753-g4d9rh5htnp8gafch1jop2d453n2i9f9.apps.googleusercontent.com`; update the backend deployment's `GOOGLE_CLIENT_ID` to this value as well. The frontend loader only passes approved public `REACT_APP_*` settings to Create React App. Never put backend credentials in the frontend export.
 
 In Google Cloud Console, open APIs & Services > Credentials > your Web application OAuth client. Add every frontend URL you use under Authorized JavaScript origins:
 
@@ -12,7 +12,9 @@ In Google Cloud Console, open APIs & Services > Credentials > your Web applicati
 - `http://127.0.0.1:3000`
 - `http://localhost:3001`
 - `http://127.0.0.1:3001`
-- your deployed frontend origin, for example `https://your-frontend-domain.example`
+- `https://cav-photostudio-and-cafe-frontend.onrender.com`
+- `https://cavphotostudiocafe.com`
+- `https://www.cavphotostudiocafe.com`
 
 Origins must be scheme + host + optional port only. Do not include paths such as `/login`.
 

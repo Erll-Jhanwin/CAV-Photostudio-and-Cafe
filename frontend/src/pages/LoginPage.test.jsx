@@ -217,7 +217,7 @@ describe('Google registration', () => {
     mockLoginWithGoogle.mockReset();
   });
 
-  test('asks for a mobile number and consent, prepopulates verified Google details, then signs up', async () => {
+  test('keeps a verified Google registration active while the customer corrects a mobile number and accepts consent', async () => {
     let googleCallback;
     const originalClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
     const originalAlert = window.alert;
@@ -233,10 +233,10 @@ describe('Google registration', () => {
     };
     mockLoginWithGoogle
       .mockResolvedValueOnce({ success: false, error: 'Add a valid Philippine mobile number to continue.', errors: {
-        phone_number: 'Add a valid Philippine mobile number to continue.',
-        google_profile: { email: 'google@example.com', first_name: 'Google', last_name: 'Customer' },
+        phone_number: 'A valid Philippine mobile number is required.',
+        google_registration_required: true,
+        google_profile: { email: 'google@example.com', first_name: 'Google', last_name: 'Customer', phone_number: '' },
       } })
-      .mockResolvedValueOnce({ success: false, error: 'Accept the Privacy Notice, then choose Google again to create your account.', errors: { privacy_consent: 'Accept the privacy notice.' } })
       .mockResolvedValueOnce({ success: true, created: true, user: { id: 91, username: 'google.customer', email: 'google@example.com', role: 'CUSTOMER' } });
 
     try {
@@ -245,26 +245,23 @@ describe('Google registration', () => {
       await act(async () => { googleCallback({ credential: 'verified-google-id-token' }); });
 
       await screen.findByLabelText('Mobile number');
-      expect(screen.getAllByText('Add a valid Philippine mobile number to continue.')).toHaveLength(2);
-      expect(screen.getByLabelText('Mobile number')).toBeInTheDocument();
-      expect(screen.getByLabelText('Email')).toHaveValue('google@example.com');
-      expect(screen.getByLabelText('First Name')).toHaveValue('Google');
-      expect(screen.getByLabelText('Last Name')).toHaveValue('Customer');
-      fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '09171234567' } });
-
-      await waitFor(() => expect(window.google.accounts.id.initialize.mock.calls.length).toBeGreaterThan(1));
-      await act(async () => { googleCallback({ credential: 'verified-google-id-token' }); });
-      expect(await screen.findByText('Accept the Privacy Notice, then choose Google again to create your account.')).toBeInTheDocument();
-
+      expect(screen.getByText('Enter a Philippine mobile number, e.g., 09171234567.')).toBeInTheDocument();
+      expect(screen.getByText('A valid Philippine mobile number is required.')).toBeInTheDocument();
+      expect(screen.getByText('google@example.com is verified. Your Google sign-in is saved while you finish this step.')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '5550100' } });
+      expect(screen.getByLabelText('Mobile number')).toHaveValue('5550100');
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
       fireEvent.click(screen.getByRole('checkbox'));
-      await waitFor(() => expect(window.google.accounts.id.initialize.mock.calls.length).toBeGreaterThan(2));
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      expect(await screen.findByText('Enter a valid Philippine mobile number.')).toBeInTheDocument();
+      expect(mockLoginWithGoogle).toHaveBeenCalledTimes(1);
 
-      await act(async () => { googleCallback({ credential: 'verified-google-id-token' }); });
-
-      await waitFor(() => expect(mockLoginWithGoogle).toHaveBeenCalledTimes(3));
+      fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '+639171234567' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      await waitFor(() => expect(mockLoginWithGoogle).toHaveBeenCalledTimes(2));
       expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(1, 'verified-google-id-token', '', { privacy_consent: false, recaptcha_token: 'test-recaptcha-token' });
-      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(2, 'verified-google-id-token', '09171234567', { privacy_consent: false, recaptcha_token: 'test-recaptcha-token' });
-      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(3, 'verified-google-id-token', '09171234567', { privacy_consent: true, recaptcha_token: 'test-recaptcha-token' });
+      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(2, 'verified-google-id-token', '+639171234567', { privacy_consent: true, recaptcha_token: 'test-recaptcha-token' });
       expect(window.alert).toHaveBeenCalledWith('google.customer logged in successfully.');
     } finally {
       if (originalClientId === undefined) delete process.env.REACT_APP_GOOGLE_CLIENT_ID;

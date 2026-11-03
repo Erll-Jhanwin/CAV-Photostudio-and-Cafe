@@ -46,6 +46,20 @@ function GoogleMFAProbe() {
   );
 }
 
+function GooglePhoneErrorProbe() {
+  const { loginWithGoogle } = useAuth();
+  const [message, setMessage] = React.useState('');
+  return (
+    <div>
+      <span data-testid="google-phone-error">{message}</span>
+      <button type="button" onClick={async () => {
+        const response = await loginWithGoogle('google-id-token');
+        setMessage(response.error || 'no-error');
+      }}>Start Google sign-in</button>
+    </div>
+  );
+}
+
 const renderAuthProbe = () => render(
   <AuthProvider>
     <AuthProbe />
@@ -222,5 +236,27 @@ describe('AuthContext', () => {
       mfa_code: '123456',
     });
     expect(client.get).toHaveBeenCalledTimes(1);
+  });
+
+  test('Google phone validation uses the readable field message instead of stringifying google_profile', async () => {
+    client.get.mockRejectedValue({ response: { status: 401 } });
+    client.post.mockRejectedValue({
+      response: {
+        status: 400,
+        data: {
+          phone_number: 'Enter a Philippine mobile number, e.g., 09171234567.',
+          google_registration_required: true,
+          google_profile: { email: 'member@example.com', first_name: 'Member', last_name: 'One' },
+        },
+      },
+    });
+
+    render(<AuthProvider><GooglePhoneErrorProbe /></AuthProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Start Google sign-in' }));
+
+    await waitFor(() => expect(screen.getByTestId('google-phone-error')).toHaveTextContent(
+      'Enter a Philippine mobile number, e.g., 09171234567.',
+    ));
+    expect(screen.getByTestId('google-phone-error')).not.toHaveTextContent('[object Object]');
   });
 });

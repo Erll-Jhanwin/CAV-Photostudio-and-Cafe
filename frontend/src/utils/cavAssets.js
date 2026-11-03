@@ -147,10 +147,17 @@ export const getServiceImagePosition = (service = {}) => {
   return packageAssets.solo.servicePosition;
 };
 
+const getServiceImageSrcSet = (service = {}) => {
+  const source = getServiceImageUrl(service);
+  const variant = width => source.replace(/\.jpe?g$/i, `-${width}w.webp`);
+  return `${variant(480)} 480w, ${variant(960)} 960w`;
+};
+
 export const decorateServicesWithAssets = (services = []) => (
   (Array.isArray(services) ? services : []).filter(service => !isObsoleteService(service)).map(service => ({
     ...service,
     image_url: getServiceImageUrl(service),
+    image_src_set: getServiceImageSrcSet(service),
     image_position: getServiceImagePosition(service),
     packages: (service.packages || []).map(pkg => ({
       ...pkg,

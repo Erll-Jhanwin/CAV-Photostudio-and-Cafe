@@ -1,4 +1,5 @@
 import json
+import time
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.cache import cache
@@ -734,6 +735,7 @@ class GoogleAuthFlowTests(TestCase):
         self.client = APIClient()
         self.profile = {
             'aud': 'google-client-id', 'iss': 'https://accounts.google.com',
+            'sub': 'google-subject-123', 'exp': str(int(time.time()) + 3600),
             'email': 'verified.google@example.com', 'email_verified': 'true',
             'given_name': 'Google', 'family_name': 'Customer',
             'picture': 'https://lh3.googleusercontent.com/profile-picture',
@@ -754,11 +756,13 @@ class GoogleAuthFlowTests(TestCase):
             'email': self.profile['email'],
             'first_name': 'Google',
             'last_name': 'Customer',
+            'phone_number': '',
             'profile_picture_url': self.profile['picture'],
         })
+        self.assertTrue(missing_phone.data['google_registration_required'])
         self.assertFalse(get_user_model().objects.filter(email=self.profile['email']).exists())
 
-        response = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '+63 917 123 4567'})
+        response = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '+639171234567'})
         self.assertEqual(response.status_code, 200, response.data)
         self.assertTrue(response.data['created'])
         user = get_user_model().objects.get(email=self.profile['email'])
@@ -804,7 +808,7 @@ class GoogleAuthFlowTests(TestCase):
         self.assertEqual(invalid.status_code, 400)
         self.assertIn('phone_number', invalid.data)
         self.assertFalse(get_user_model().objects.filter(email__iexact=self.profile['email']).exists())
-        valid = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '+63 917 123 4567'})
+        valid = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '09171234567'})
         self.assertEqual(valid.status_code, 200, valid.data)
         self.assertEqual(get_user_model().objects.get(pk=valid.data['id']).phone_number, '639171234567')
 
@@ -835,6 +839,7 @@ class GoogleAuthFlowTests(TestCase):
         missing_phone = self.post_google(mocked_get)
         self.assertEqual(missing_phone.status_code, 400)
         self.assertIn('phone_number', missing_phone.data)
+        self.assertFalse(missing_phone.data['google_registration_required'])
         self.assertFalse(user.phone_number)
 
         response = self.post_google(mocked_get, {'phone_number': '09171234567'})
@@ -855,6 +860,33 @@ class GoogleAuthFlowTests(TestCase):
         self.assertEqual((user.first_name, user.phone_number, user.profile_picture_external_url), (
             'Edited', '639181234567', 'https://example.test/edited.png',
         ))
+
+    @patch('users.views.requests.get')
+    def test_returning_customer_reuses_valid_saved_phone_or_can_correct_invalid_one(self, mocked_get):
+        user = get_user_model().objects.create_user(
+            username='existing-google-legacy-phone', email=self.profile['email'],
+            password='ExistingPass123!', phone_number='09171234567',
+        )
+        reused = self.post_google(mocked_get)
+        self.assertEqual(reused.status_code, 200, reused.data)
+        user.refresh_from_db()
+        self.assertEqual(user.phone_number, '639171234567')
+        self.assertFalse(reused.data['created'])
+
+        user.phone_number = '5550100'
+        user.save(update_fields=['phone_number'])
+        missing = self.post_google(mocked_get)
+        self.assertEqual(missing.status_code, 400)
+        self.assertIn('Philippine mobile number', missing.data['phone_number'])
+        self.assertEqual(missing.data['google_profile']['phone_number'], '5550100')
+        self.assertFalse(missing.data['google_registration_required'])
+
+        corrected = self.post_google(mocked_get, {'phone_number': '+639171234567'})
+        self.assertEqual(corrected.status_code, 200, corrected.data)
+        self.assertEqual(corrected.data['id'], user.id)
+        user.refresh_from_db()
+        self.assertEqual(user.phone_number, '639171234567')
+        self.assertEqual(get_user_model().objects.filter(email__iexact=self.profile['email']).count(), 1)
 
     @patch('users.views.requests.get')
     def test_explicitly_removed_google_photo_is_not_restored_on_later_signin(self, mocked_get):
@@ -879,6 +911,29 @@ class GoogleAuthFlowTests(TestCase):
         response = self.post_google(mocked_get, {'privacy_consent': True}, profile=profile)
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['detail'], 'Google account email must be verified.')
+        self.assertFalse(get_user_model().objects.filter(email__iexact=self.profile['email']).exists())
+
+    @patch('users.views.requests.get')
+    def test_google_rejects_wrong_audience_issuer_expiration_and_access_token_claims(self, mocked_get):
+        invalid_profiles = [
+            ({**self.profile, 'aud': 'another-client'}, 'different app'),
+            ({**self.profile, 'iss': 'https://accounts.example.com'}, 'different app'),
+            ({**self.profile, 'exp': str(int(time.time()) - 1)}, 'expired'),
+            ({key: value for key, value in self.profile.items() if key != 'sub'}, 'required account identity'),
+        ]
+        for profile, expected_detail in invalid_profiles:
+            with self.subTest(expected_detail=expected_detail):
+                response = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '09171234567'}, profile)
+                self.assertEqual(response.status_code, 401)
+                self.assertIn(expected_detail, response.data['detail'])
+                self.assertFalse(get_user_model().objects.filter(email__iexact=self.profile['email']).exists())
+
+    @patch('users.views.requests.get')
+    def test_google_rejects_tokens_google_does_not_verify(self, mocked_get):
+        mocked_get.return_value = Mock(status_code=400)
+        response = self.client.post('/api/auth/google/', {'credential': 'invalid-signature-token'}, format='json')
+        self.assertEqual(response.status_code, 401)
+        self.assertIn('Google could not verify', response.data['detail'])
         self.assertFalse(get_user_model().objects.filter(email__iexact=self.profile['email']).exists())
 
 
