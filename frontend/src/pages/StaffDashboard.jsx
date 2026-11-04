@@ -1580,12 +1580,11 @@ export default function StaffDashboard() {
     { key: 'messages', label: 'Booking Messages', icon: MessageSquare, badge: unreadBookingMessages || undefined, active: activeTab === 'messages', onClick: () => setActiveTab('messages') },
     { key: 'payments', label: 'Payment Booking Verification', icon: CreditCard, active: activeTab === 'payments', onClick: () => setActiveTab('payments') },
     { key: 'inventory', label: 'Live Inventory', icon: Package, active: activeTab === 'inventory', onClick: () => setActiveTab('inventory') },
-    { key: 'catalog', label: 'Catalog & Purchasing', icon: ClipboardList, active: activeTab === 'catalog', onClick: () => setActiveTab('catalog') },
     { key: 'sales', label: 'Daily Sales Logs', icon: DollarSign, active: activeTab === 'sales', onClick: () => setActiveTab('sales') },
   ];
   const navItems = allNavItems;
 
-  const pageTitles = { pos: 'POS Terminal', bookings: 'Bookings', messages: 'Booking Messages', payments: 'Payment Booking Verification', inventory: 'Live Inventory', catalog: 'Catalog & Purchasing', sales: 'Daily Sales Logs' };
+  const pageTitles = { pos: 'POS Terminal', bookings: 'Bookings', messages: 'Booking Messages', payments: 'Payment Booking Verification', inventory: 'Live Inventory', sales: 'Daily Sales Logs' };
   const isCurrentTabLoading = !!loadingResources[activeTab];
   const toggleSort = (current, setter, key, column = {}) => {
     setter(current.key === key
