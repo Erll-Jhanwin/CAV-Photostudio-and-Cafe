@@ -64,6 +64,34 @@ class RecaptchaAuthTests(TestCase):
         self.assertIn('Complete the security check', response.data['detail'])
         mocked_verify.assert_not_called()
 
+    @override_settings(IPROG_SMS_API_TOKEN='test-token')
+    @patch('users.views.send_password_reset_otp')
+    @patch('users.views.requests.post')
+    def test_failed_captcha_blocks_admin_login_before_sms_challenge(self, mocked_verify, mocked_send):
+        admin = get_user_model().objects.create_user(
+            username='captcha-admin',
+            email='captcha-admin@example.com',
+            password='CaptchaAdmin123!',
+            phone_number='09171234567',
+            role='ADMIN',
+        )
+        mocked_verify.return_value = Mock(
+            status_code=200,
+            json=Mock(return_value={'success': False, 'error-codes': ['invalid-input-response']}),
+        )
+
+        response = self.client.post('/api/auth/login/', {
+            'username': admin.username,
+            'password': 'CaptchaAdmin123!',
+            'recaptcha_token': 'invalid-admin-captcha-token',
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('security check', response.data['detail'].lower())
+        self.assertNotIn(settings.AUTH_ACCESS_COOKIE_NAME, response.cookies)
+        mocked_verify.assert_called_once()
+        mocked_send.assert_not_called()
+
     @override_settings(RECAPTCHA_SECRET_KEY='')
     @patch('users.views.requests.post')
     def test_missing_secret_is_logged_without_logging_the_token(self, mocked_verify):
@@ -602,6 +630,7 @@ class AccountCrudTests(TestCase):
             'mfa_code': '000000',
         }, format='json')
         self.assertEqual(invalid_response.status_code, 400)
+        self.assertEqual(invalid_response.data['detail'], 'Invalid or expired admin verification code.')
         self.assertNotIn('cav_access', invalid_response.cookies)
 
         login_response = client.post('/api/auth/login/', {
@@ -644,6 +673,7 @@ class AccountCrudTests(TestCase):
 
         self.assertEqual(resend.status_code, 400)
         self.assertEqual(verify.status_code, 400)
+        self.assertEqual(verify.data['detail'], 'Invalid or expired admin verification code.')
         self.assertEqual(mocked_send.call_count, 1)
         mocked_verify.assert_not_called()
 

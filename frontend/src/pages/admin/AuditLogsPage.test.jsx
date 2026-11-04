@@ -55,7 +55,7 @@ test('uses wrapping grid tracks and constrained date inputs at responsive breakp
   expect(screen.getByRole('button', { name: 'Refresh audit logs' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Audit Logs' })).toBeInTheDocument();
   expect(screen.getByRole('columnheader', { name: 'Timestamp' })).toBeInTheDocument();
-  expect(screen.getByText(/Rows per page:/).parentElement).toHaveTextContent('25');
+  expect(screen.getByText(/Rows per page:/).parentElement).toHaveTextContent('20');
   expect(container.querySelector('table').parentElement).toHaveClass('h-full', 'overflow-x-auto');
 });
 
@@ -80,16 +80,16 @@ test('resets to page one when server-side filters change after pagination', asyn
   render(<AuditLogsPage />);
 
   await waitFor(() => expect(client.get).toHaveBeenLastCalledWith('/api/audit/logs/', expect.objectContaining({
-    params: expect.objectContaining({ page: 1, page_size: 25 }),
+    params: expect.objectContaining({ page: 1, page_size: 20 }),
   })));
   fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
   await waitFor(() => expect(client.get).toHaveBeenLastCalledWith('/api/audit/logs/', expect.objectContaining({
-    params: expect.objectContaining({ page: 2, page_size: 25 }),
+    params: expect.objectContaining({ page: 2, page_size: 20 }),
   })));
 
   fireEvent.change(screen.getByRole('combobox', { name: 'Filter by role' }), { target: { value: 'STAFF' } });
   await waitFor(() => expect(client.get).toHaveBeenLastCalledWith('/api/audit/logs/', expect.objectContaining({
-    params: expect.objectContaining({ role: 'STAFF', page: 1, page_size: 25 }),
+    params: expect.objectContaining({ role: 'STAFF', page: 1, page_size: 20 }),
   })));
 });
 

@@ -67,9 +67,9 @@ class ClientRuntimeErrorView(APIView):
 
 
 class AuditLogPagination(PageNumberPagination):
-    page_size = 25
+    page_size = 20
     page_size_query_param = 'page_size'
-    max_page_size = 100
+    max_page_size = 20
 
 
 class AuditLogListView(APIView):
@@ -115,6 +115,9 @@ class AuditLogListView(APIView):
                 return Response({'detail': 'End date must use YYYY-MM-DD format.'}, status=status.HTTP_400_BAD_REQUEST)
             records = records.filter(timestamp__date__lte=parsed_end)
 
+        # A stable secondary key prevents events with matching timestamps from
+        # moving between pages or appearing in an inconsistent order.
+        records = records.order_by('-timestamp', '-id')
         paginator = AuditLogPagination()
         page = paginator.paginate_queryset(records, request, view=self)
         results = [{

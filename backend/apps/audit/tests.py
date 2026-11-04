@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -77,6 +78,41 @@ class ClientRuntimeErrorViewTests(TestCase):
         filtered = self.client.get('/api/audit/logs/?module=bookings')
         self.assertEqual(filtered.data['count'], 2)
         self.assertTrue(all(row['role'] == 'ADMIN' for row in filtered.data['results']))
+
+    def test_audit_log_pages_are_capped_at_20_and_stable_for_equal_timestamps(self):
+        timestamp = timezone.now()
+        records = AuditLog.objects.bulk_create([
+            AuditLog(action='PAGE_TEST', description=f'Page event {index}', timestamp=timestamp)
+            for index in range(45)
+        ])
+        expected_ids = sorted((record.id for record in records), reverse=True)
+
+        first_page = self.client.get('/api/audit/logs/?page=1&page_size=100')
+        self.assertEqual(first_page.status_code, 200)
+        self.assertEqual(len(first_page.data['results']), 20)
+        self.assertLessEqual(len(first_page.data['results']), 20)
+        self.assertEqual([row['id'] for row in first_page.data['results']], expected_ids[:20])
+
+        second_page = self.client.get('/api/audit/logs/?page=2&page_size=100')
+        self.assertEqual(len(second_page.data['results']), 20)
+        self.assertEqual([row['id'] for row in second_page.data['results']], expected_ids[20:40])
+
+        previous_page = self.client.get('/api/audit/logs/?page=1&page_size=100')
+        self.assertEqual([row['id'] for row in previous_page.data['results']], expected_ids[:20])
+
+    def test_audit_search_and_filters_are_applied_before_the_page_slice(self):
+        for index in range(25):
+            AuditLog.objects.create(
+                action='MATCHING_ACTION' if index % 2 == 0 else 'OTHER_ACTION',
+                description=f'Matching text {index}' if index % 2 == 0 else f'Other text {index}',
+                actor_role='STAFF' if index % 2 == 0 else 'CUSTOMER',
+                module='bookings' if index % 2 == 0 else 'inventory',
+            )
+
+        response = self.client.get('/api/audit/logs/?search=Matching&role=STAFF&module=bookings&page=1&page_size=20')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 13)
+        self.assertEqual(len(response.data['results']), 13)
 
     def test_customer_cannot_read_audit_logs(self):
         customer = get_user_model().objects.create_user(username='audit-customer', password='CustomerPass123!', role='CUSTOMER')

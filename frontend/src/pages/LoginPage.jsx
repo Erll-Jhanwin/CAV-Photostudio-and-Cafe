@@ -387,7 +387,7 @@ export default function LoginPage() {
       : validateLoginForm({ ...form, username: submittedUsername, password: submittedPassword });
     setFormErrors(errors);
     if (Object.keys(errors).length) return;
-    const captchaToken = getRecaptchaToken();
+    const captchaToken = adminMfaStep ? '' : getRecaptchaToken();
     if (!adminMfaStep && !captchaToken) return;
     setLoading(true);
     const verification = adminMfaStep
@@ -399,6 +399,9 @@ export default function LoginPage() {
     resetRecaptcha();
     setLoading(false);
     if (res.mfaRequired) {
+      // The server only issues this challenge after reCAPTCHA and password
+      // verification succeeded. Start the SMS step without any CAPTCHA error.
+      setError('');
       const contactHint = String(res.contact_hint || '');
       if (res.mfa_method !== 'sms' || contactHint.includes('@')) {
         setAdminMfaStep(false);

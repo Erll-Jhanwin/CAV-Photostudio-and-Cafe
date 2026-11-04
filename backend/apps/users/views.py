@@ -390,9 +390,11 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.user
-        # Skip reCAPTCHA only for the same live admin challenge that was issued
-        # after CAPTCHA and password verification. Other login paths still run it.
-        if request.data.get('mfa_token') and not admin_mfa_challenge_matches(request.data.get('mfa_token'), user):
+        # Admin MFA challenges are issued only after CAPTCHA and password
+        # verification. Let the OTP check report invalid or expired challenges;
+        # requiring a second, one-use CAPTCHA would mask the OTP error. Other
+        # login paths still require CAPTCHA even if they send an mfa_token.
+        if request.data.get('mfa_token') and user.role != 'ADMIN':
             recaptcha_error = validate_recaptcha(request)
             if recaptcha_error:
                 return recaptcha_error
@@ -819,7 +821,11 @@ class GoogleAuthView(views.APIView):
             return completion_error('phone_number', 'A valid Philippine mobile number is required.')
 
         challenge_matches = bool(user and admin_mfa_challenge_matches(request.data.get('mfa_token'), user))
-        if not challenge_matches:
+        # An admin token means the initial Google login already passed CAPTCHA.
+        # Keep expired challenges on the OTP error path instead of asking for a
+        # second CAPTCHA. Everyone else still needs a fresh CAPTCHA here.
+        admin_mfa_submission = bool(user and user.role == 'ADMIN' and request.data.get('mfa_token'))
+        if not challenge_matches and not admin_mfa_submission:
             recaptcha_error = validate_recaptcha(request)
             if recaptcha_error:
                 return recaptcha_error

@@ -18,8 +18,8 @@ from django.utils import timezone
 from forecasting.models import SalesHistoryImport, SalesHistoryRecord
 
 
-DEFAULT_SOURCE_NAME = 'cav_daily_drink_sales_2023_to_2026'
-DEFAULT_CSV_FILENAME = 'CAV_Daily_Drink_Sales_2023_to_2026.csv'
+DEFAULT_SOURCE_NAME = 'cav_daily_drink_sales_2024_to_2026'
+DEFAULT_CSV_FILENAME = 'CAV_Daily_Drink_Sales_2024_to_2026.csv'
 EXCLUDED_STATUS_PATTERN = re.compile(r'cancel|void|refund|reject|failed|declined', re.IGNORECASE)
 
 

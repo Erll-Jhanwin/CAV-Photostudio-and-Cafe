@@ -172,6 +172,36 @@ describe('password authentication submissions', () => {
     await waitFor(() => expect(screen.getByTestId('recaptcha-widget')).toHaveAttribute('data-reset-key', '1'));
   });
 
+  test('admin SMS verification submits only the challenge and code, then shows the OTP error', async () => {
+    mockLogin
+      .mockResolvedValueOnce({
+        mfaRequired: true,
+        mfa_token: 'admin-mfa-token',
+        mfa_method: 'sms',
+        contact_hint: '*******4567',
+        resend_cooldown_seconds: 60,
+        expires_in_minutes: 10,
+      })
+      .mockResolvedValueOnce({ success: false, error: 'Invalid or expired admin verification code.' });
+    renderLogin();
+
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'AdminPass123!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
+    expect(await screen.findByText(/Admin SMS verification code sent/)).toBeInTheDocument();
+    expect(screen.queryByText('Complete the security check, then try again.')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('SMS one-time code'), { target: { value: '000000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify Admin Access' }));
+
+    expect(await screen.findByText('Invalid or expired admin verification code.')).toBeInTheDocument();
+    expect(mockLogin).toHaveBeenNthCalledWith(2, 'admin', 'AdminPass123!', {
+      mfa_token: 'admin-mfa-token',
+      mfa_code: '000000',
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   test('registration keeps privacy consent required and submits the reCAPTCHA token after consent', async () => {
     mockRegister.mockResolvedValue({
       success: true,

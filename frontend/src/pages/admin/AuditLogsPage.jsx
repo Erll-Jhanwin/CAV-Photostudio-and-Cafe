@@ -1,17 +1,17 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, RefreshCw, ClipboardList, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import client, { getApiErrorMessage } from '../../api/client';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Input, Select } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { formatManilaDateTime } from '../../utils/dateTime';
-import { calculateSalesRowsPerPage } from '../salesLogLayout';
 
 const sensitiveMetadataKey = /(password|passwd|otp|token|secret|authorization|cookie|credential|proof|file|image|base64|email|phone|mobile|address|ip_address|session|component_stack|stack|traceback|receipt|username|(^|_)name$)/i;
 const sensitiveMetadataValue = /(Bearer\s+\S+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/gi;
 const emailValue = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const phoneValue = /\+?\d[\d ()-]{7,}\d/g;
 const missingValue = 'Not recorded';
+const AUDIT_LOGS_PAGE_SIZE = 20;
 
 const sanitizeAuditDetail = (value, key = '', depth = 0) => {
   if (sensitiveMetadataKey.test(key)) return undefined;
@@ -172,64 +172,26 @@ export default function AuditLogsPage() {
   const [end, setEnd] = useState('');
   const [page, setPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [pageSize, setPageSize] = useState(25);
   const [payload, setPayload] = useState({ count: 0, results: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const tableAreaRef = useRef(null);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError('');
     const timer = window.setTimeout(() => {
-      client.get('/api/audit/logs/', { params: { search, role, module, action, kind, start, end, page, page_size: pageSize } })
+      client.get('/api/audit/logs/', { params: { search, role, module, action, kind, start, end, page, page_size: AUDIT_LOGS_PAGE_SIZE } })
         .then(response => { if (active) { setPayload(response.data); setError(''); } })
         .catch(err => { if (active) setError(getApiErrorMessage(err, 'Couldn’t load audit logs.')); })
         .finally(() => { if (active) setLoading(false); });
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [search, role, module, action, kind, start, end, page, pageSize, refreshKey]);
-
-  useLayoutEffect(() => {
-    const tableArea = tableAreaRef.current;
-    if (!tableArea || !tableArea.clientHeight) return undefined;
-
-    const measureRows = () => {
-      const availableHeight = tableArea.clientHeight;
-      if (!availableHeight) return;
-      const table = tableArea.querySelector('table');
-      const headerHeight = table?.querySelector('thead')?.getBoundingClientRect().height || 0;
-      const rowHeights = Array.from(table?.querySelectorAll('tbody tr:not([data-audit-state])') || [])
-        .map(row => row.getBoundingClientRect().height);
-      const nextPageSize = calculateSalesRowsPerPage({
-        availableHeight,
-        headerHeight,
-        rowHeights,
-        defaultRowHeight: 64,
-        maxRows: 100,
-      });
-      const nextPage = Math.min(
-        Math.floor(((Math.max(page, 1) - 1) * pageSize) / nextPageSize) + 1,
-        Math.max(1, Math.ceil((payload.count || 0) / nextPageSize)),
-      );
-      setPageSize(current => (current === nextPageSize ? current : nextPageSize));
-      setPage(current => (current === page ? nextPage : current));
-    };
-
-    measureRows();
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureRows) : null;
-    observer?.observe(tableArea);
-    window.addEventListener('resize', measureRows);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener('resize', measureRows);
-    };
-  }, [page, pageSize, payload.count, payload.results, refreshKey]);
+  }, [search, role, module, action, kind, start, end, page, refreshKey]);
 
   const setFilter = (setter) => (event) => { setter(event.target.value); setPage(1); };
-  const totalPages = Math.max(1, Math.ceil((payload.count || 0) / pageSize));
+  const totalPages = Math.max(1, Math.ceil((payload.count || 0) / AUDIT_LOGS_PAGE_SIZE));
   const clearFilters = () => { setSearch(''); setRole(''); setModule(''); setAction(''); setKind(''); setStart(''); setEnd(''); setPage(1); };
 
   return (
@@ -266,7 +228,7 @@ export default function AuditLogsPage() {
       <Card padding={false} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {error && <div role="alert" className="mx-4 mt-4 shrink-0 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{error}</div>}
         <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">
-          <div ref={tableAreaRef} className="h-full overflow-x-auto overflow-y-hidden scrollbar-thin">
+          <div className="h-full overflow-x-auto overflow-y-hidden scrollbar-thin">
             <table className="w-full min-w-[1050px] text-left text-xs">
               <thead className="sticky top-0 z-10 bg-cream text-[10px] uppercase tracking-wider text-espresso/55"><tr>
                 <th className="px-4 py-3">Timestamp</th><th className="px-4 py-3">Person</th><th className="px-4 py-3">Role</th>
@@ -306,7 +268,7 @@ export default function AuditLogsPage() {
           </div>
         </div>
         <div className="flex shrink-0 flex-col gap-3 border-t border-espresso/[0.06] px-4 py-3 text-xs text-espresso/60 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3"><span>Rows per page: <strong className="text-espresso">{pageSize}</strong></span><span>Page {page} of {totalPages}</span></div>
+          <div className="flex items-center gap-3"><span>Rows per page: <strong className="text-espresso">{AUDIT_LOGS_PAGE_SIZE}</strong></span><span>Page {page} of {totalPages}</span></div>
           <div className="flex gap-2"><button type="button" disabled={loading || page <= 1} onClick={() => setPage(value => value - 1)} className="rounded-lg border border-espresso/10 p-2 disabled:opacity-40" aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button><button type="button" disabled={loading || page >= totalPages} onClick={() => setPage(value => value + 1)} className="rounded-lg border border-espresso/10 p-2 disabled:opacity-40" aria-label="Next page"><ChevronRight className="h-4 w-4" /></button></div>
         </div>
       </Card>

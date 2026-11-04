@@ -11,12 +11,11 @@ from ml.sales_history_repository import DEFAULT_SOURCE_NAME, _decimal
 
 MODEL_VERSION = 'daily-sales-ols-synthetic-v1'
 DEFAULT_HORIZON_DAYS = 7
-DATASET_FILENAME = 'CAV_Three_Year_Synthetic_Sales-Daily sales.csv'
-REQUIRED_COLUMNS = ('Date', 'Sales (PHP)')
+DATASET_FILENAME = 'CAV_Daily_Drink_Sales_2024_to_2026.csv'
 
 
 def dataset_path():
-    return Path(__file__).resolve().parent / 'datasets' / DATASET_FILENAME
+    return Path(__file__).resolve().parents[2] / DATASET_FILENAME
 
 
 def load_daily_sales(path=None):
@@ -28,15 +27,22 @@ def load_daily_sales(path=None):
         raw = pd.read_csv(source, dtype=str, keep_default_na=False)
     except (OSError, UnicodeError, ValueError, pd.errors.ParserError) as exc:
         return {'status': 'invalid', 'detail': f'Could not read synthetic sales dataset: {exc}', 'values': [], 'dates': [], 'quality': {}}
-    missing_columns = [column for column in REQUIRED_COLUMNS if column not in raw.columns]
-    if missing_columns:
+    columns = {str(column).strip().casefold(): column for column in raw.columns}
+    date_column = next((columns[name] for name in ('date', 'date/time', 'datetime', 'timestamp') if name in columns), None)
+    sales_column = next((columns[name] for name in ('daily_sales_php_y', 'sales (php)', 'sales', 'revenue') if name in columns), None)
+    if not date_column or not sales_column:
+        missing_columns = []
+        if not date_column:
+            missing_columns.append('date')
+        if not sales_column:
+            missing_columns.append('sales/revenue')
         return {'status': 'invalid', 'detail': f"Dataset is missing required columns: {', '.join(missing_columns)}", 'values': [], 'dates': [], 'quality': {'columns': list(raw.columns)}}
 
     original_count = len(raw)
     raw = raw.drop_duplicates()
     exact_duplicates = original_count - len(raw)
-    dates = pd.to_datetime(raw['Date'].astype(str).str.strip(), format='mixed', errors='coerce')
-    sales = raw['Sales (PHP)'].map(_decimal)
+    dates = pd.to_datetime(raw[date_column].astype(str).str.strip(), format='mixed', errors='coerce')
+    sales = raw[sales_column].map(_decimal)
     valid_date = dates.notna()
     valid_sales = sales.map(lambda value: value is not None and math.isfinite(float(value)) and value >= 0)
     kept = valid_date & valid_sales
