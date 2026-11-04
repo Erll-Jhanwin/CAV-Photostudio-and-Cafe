@@ -864,8 +864,10 @@ export default function AdminDashboard() {
     return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
   };
 
-  const newStaffFormValid = !Object.keys(validateNewStaffForm()).length;
-  const editStaffFormValid = !Object.keys(validateEditStaffForm()).length;
+  const newStaffValidationErrors = validateNewStaffForm();
+  const editStaffValidationErrors = validateEditStaffForm();
+  const newStaffFormValid = !Object.keys(newStaffValidationErrors).length;
+  const editStaffFormValid = !Object.keys(editStaffValidationErrors).length;
   const faqFormValid = !Object.keys(validateFAQForm()).length;
 
   const handleCreateStaff = async (e) => {
@@ -883,7 +885,16 @@ export default function AdminDashboard() {
     if (!confirmed) return;
     try {
       setCreatingStaff(true);
-      const res = await client.post('/api/auth/users/', newAccountForm);
+      const payload = {
+        ...newAccountForm,
+        username: newAccountForm.username.trim(),
+        email: newAccountForm.email.trim().toLowerCase(),
+        first_name: newAccountForm.first_name.trim(),
+        last_name: newAccountForm.last_name.trim(),
+        phone_number: newAccountForm.phone_number.trim(),
+        address: newAccountForm.address.trim(),
+      };
+      const res = await client.post('/api/auth/users/', payload);
       setStaffList(current => normalizeRowsById([res.data, ...current], row => row?.username || row?.email));
       setNewAccountForm(emptyAccountForm());
       setNewStaffErrors({});
@@ -940,12 +951,12 @@ export default function AdminDashboard() {
     try {
       setStaffSaving(true);
       const payload = {
-        username: editStaffForm.username,
-        email: editStaffForm.email,
-        first_name: editStaffForm.first_name,
-        last_name: editStaffForm.last_name,
-        phone_number: editStaffForm.phone_number,
-        address: editStaffForm.address,
+        username: editStaffForm.username.trim(),
+        email: editStaffForm.email.trim().toLowerCase(),
+        first_name: editStaffForm.first_name.trim(),
+        last_name: editStaffForm.last_name.trim(),
+        phone_number: editStaffForm.phone_number.trim(),
+        address: editStaffForm.address.trim(),
         role: editStaffForm.role,
       };
       if (editStaffForm.password.trim()) {
@@ -2841,15 +2852,16 @@ export default function AdminDashboard() {
                 title="Add Account"
                 size="lg"
               >
-                  <form onSubmit={handleCreateStaff} className="space-y-4">
+                  <form onSubmit={handleCreateStaff} className="space-y-4" noValidate>
                     <Input
                       label="Username"
                       required
+                      maxLength={150}
                       value={newAccountForm.username}
                       onChange={e => { setNewAccountForm(current => ({ ...current, username: e.target.value })); setNewStaffErrors(current => ({ ...current, username: '' })); }}
                       placeholder="username"
                       disabled={creatingStaff}
-                      error={newStaffErrors.username}
+                      error={newStaffErrors.username || newStaffValidationErrors.username}
                     />
                     <Input
                       label="Password"
@@ -2859,7 +2871,7 @@ export default function AdminDashboard() {
                       onChange={e => { setNewAccountForm(current => ({ ...current, password: e.target.value })); setNewStaffErrors(current => ({ ...current, password: '' })); }}
                       placeholder="password"
                       disabled={creatingStaff}
-                      error={newStaffErrors.password}
+                      error={newStaffErrors.password || newStaffValidationErrors.password}
                     />
                     <PasswordStrength password={newAccountForm.password} />
                     <Select
@@ -2880,7 +2892,7 @@ export default function AdminDashboard() {
                         value={newAccountForm.first_name}
                         onChange={e => { setNewAccountForm(current => ({ ...current, first_name: e.target.value })); setNewStaffErrors(current => ({ ...current, first_name: '' })); }}
                         disabled={creatingStaff}
-                        error={newStaffErrors.first_name}
+                        error={newStaffErrors.first_name || newStaffValidationErrors.first_name}
                       />
                       <Input
                         label="Last Name"
@@ -2888,27 +2900,33 @@ export default function AdminDashboard() {
                         value={newAccountForm.last_name}
                         onChange={e => { setNewAccountForm(current => ({ ...current, last_name: e.target.value })); setNewStaffErrors(current => ({ ...current, last_name: '' })); }}
                         disabled={creatingStaff}
-                        error={newStaffErrors.last_name}
+                        error={newStaffErrors.last_name || newStaffValidationErrors.last_name}
                       />
                     </div>
                     <Input
                       label="Email"
                       type="email"
+                      autoComplete="email"
                       required={newAccountForm.role === 'CUSTOMER'}
                       value={newAccountForm.email}
                       onChange={e => { setNewAccountForm(current => ({ ...current, email: e.target.value })); setNewStaffErrors(current => ({ ...current, email: '' })); }}
                       placeholder="account@cav.com"
                       disabled={creatingStaff}
-                      error={newStaffErrors.email}
+                      error={newStaffErrors.email || newStaffValidationErrors.email}
                     />
                     <Input
                       label="Phone Number"
                       type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel-national"
+                      pattern="09[0-9]{9}"
+                      maxLength={32}
                       required={newAccountForm.role === 'CUSTOMER'}
                       value={newAccountForm.phone_number}
                       onChange={e => { setNewAccountForm(current => ({ ...current, phone_number: e.target.value })); setNewStaffErrors(current => ({ ...current, phone_number: '' })); }}
                       disabled={creatingStaff}
-                      error={newStaffErrors.phone_number}
+                      error={newStaffErrors.phone_number || newStaffValidationErrors.phone_number}
+                      placeholder="09876543122"
                     />
                     <Textarea
                       label="Address"
@@ -2917,7 +2935,7 @@ export default function AdminDashboard() {
                       value={newAccountForm.address}
                       onChange={e => { setNewAccountForm(current => ({ ...current, address: e.target.value })); setNewStaffErrors(current => ({ ...current, address: '' })); }}
                       disabled={creatingStaff}
-                      error={newStaffErrors.address}
+                      error={newStaffErrors.address || newStaffValidationErrors.address}
                     />
                     <Button type="submit" variant="primary" className="w-full" icon={Plus} loading={creatingStaff} disabled={creatingStaff || !newStaffFormValid}>
                       Create Account
@@ -3395,21 +3413,23 @@ export default function AdminDashboard() {
         title="Edit Account"
         size="lg"
       >
-        <form onSubmit={handleUpdateStaff} className="space-y-4">
+        <form onSubmit={handleUpdateStaff} className="space-y-4" noValidate>
           <Input
             label="Username"
             required
+            maxLength={150}
             value={editStaffForm.username}
             onChange={e => {
               setEditStaffForm(current => ({ ...current, username: e.target.value }));
               setEditStaffErrors(current => ({ ...current, username: '' }));
             }}
             disabled={staffSaving}
-            error={editStaffErrors.username}
+            error={editStaffErrors.username || editStaffValidationErrors.username}
           />
           <Input
             label="Email"
             type="email"
+            autoComplete="email"
             required={editStaffForm.role === 'CUSTOMER'}
             value={editStaffForm.email}
             onChange={e => {
@@ -3417,11 +3437,13 @@ export default function AdminDashboard() {
               setEditStaffErrors(current => ({ ...current, email: '' }));
             }}
             disabled={staffSaving}
-            error={editStaffErrors.email}
+            error={editStaffErrors.email || editStaffValidationErrors.email}
           />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="First Name"
+                      <Input
+                        label="First Name"
+              maxLength={150}
+                        maxLength={150}
               required={editStaffForm.role === 'CUSTOMER'}
               value={editStaffForm.first_name}
               onChange={e => {
@@ -3429,10 +3451,12 @@ export default function AdminDashboard() {
                 setEditStaffErrors(current => ({ ...current, first_name: '' }));
               }}
               disabled={staffSaving}
-              error={editStaffErrors.first_name}
+              error={editStaffErrors.first_name || editStaffValidationErrors.first_name}
             />
-            <Input
-              label="Last Name"
+                      <Input
+                        label="Last Name"
+              maxLength={150}
+                        maxLength={150}
               required={editStaffForm.role === 'CUSTOMER'}
               value={editStaffForm.last_name}
               onChange={e => {
@@ -3440,12 +3464,16 @@ export default function AdminDashboard() {
                 setEditStaffErrors(current => ({ ...current, last_name: '' }));
               }}
               disabled={staffSaving}
-              error={editStaffErrors.last_name}
+              error={editStaffErrors.last_name || editStaffValidationErrors.last_name}
             />
           </div>
           <Input
             label="Phone Number"
             type="tel"
+            inputMode="numeric"
+            autoComplete="tel-national"
+            pattern="09[0-9]{9}"
+            maxLength={32}
             required={editStaffForm.role === 'CUSTOMER'}
             value={editStaffForm.phone_number}
             onChange={e => {
@@ -3453,7 +3481,8 @@ export default function AdminDashboard() {
               setEditStaffErrors(current => ({ ...current, phone_number: '' }));
             }}
             disabled={staffSaving}
-            error={editStaffErrors.phone_number}
+            error={editStaffErrors.phone_number || editStaffValidationErrors.phone_number}
+            placeholder="09876543122"
           />
           <Textarea
             label="Address"
@@ -3465,7 +3494,7 @@ export default function AdminDashboard() {
               setEditStaffErrors(current => ({ ...current, address: '' }));
             }}
             disabled={staffSaving}
-            error={editStaffErrors.address}
+            error={editStaffErrors.address || editStaffValidationErrors.address}
           />
           <Input
             label="New Password"
@@ -3477,7 +3506,7 @@ export default function AdminDashboard() {
             }}
             placeholder="Leave blank to keep current password"
             disabled={staffSaving}
-            error={editStaffErrors.password}
+            error={editStaffErrors.password || editStaffValidationErrors.password}
           />
           {editStaffForm.password && <PasswordStrength password={editStaffForm.password} />}
           <Select

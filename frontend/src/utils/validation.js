@@ -19,36 +19,39 @@ export const COMMON_WEAK_PASSWORDS = new Set([
 
 export const isBlank = (value) => !String(value ?? '').trim();
 
-export const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+export const isValidEmail = (value) => {
+  const email = String(value ?? '').trim();
+  return email.length <= 254
+    && !email.includes('..')
+    && /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,63}$/i.test(email);
+};
 
 export const isValidPhone = (value) => {
-  const raw = String(value || '').trim();
+  const raw = String(value || '');
   if (!raw) return true;
-  return /^\+?[\d\s().-]{7,20}$/.test(raw) && raw.replace(/\D/g, '').length >= 7;
+  return /^09\d{9}$/.test(raw);
 };
 
 export const getRequiredError = (value, label) => (isBlank(value) ? `${label} is required.` : '');
 
 export const getEmailError = (value, { required = false, label = 'Email' } = {}) => {
   if (isBlank(value)) return required ? `${label} is required.` : '';
+  if (String(value).trim().length > 254) return `${label} must be 254 characters or fewer.`;
   return isValidEmail(value) ? '' : 'Enter a valid email address.';
 };
 
 export const getPhoneError = (value) => {
   if (isBlank(value)) return '';
-  return isValidPhone(value) ? '' : 'Enter a valid phone number.';
+  return isValidPhone(value) ? '' : 'Use 11 digits starting with 09 (example: 09876543122). Do not enter letters, spaces, or symbols.';
 };
 
 export const isValidPhilippineMobile = (value) => {
-  const compact = String(value || '').trim().replace(/[\s().-]/g, '').replace(/^\+/, '');
-  if (compact.startsWith('09') && compact.length === 11) return /^09\d{9}$/.test(compact);
-  if (compact.startsWith('9') && compact.length === 10) return /^9\d{9}$/.test(compact);
-  return /^639\d{9}$/.test(compact);
+  return /^09\d{9}$/.test(String(value || ''));
 };
 
 export const getPhilippineMobileError = (value) => {
-  if (isBlank(value)) return 'Registered mobile number is required.';
-  return isValidPhilippineMobile(value) ? '' : 'Enter a valid Philippine mobile number.';
+  if (isBlank(value)) return 'Mobile number is required.';
+  return isValidPhilippineMobile(value) ? '' : 'Use 11 digits starting with 09 (example: 09876543122). Do not enter letters, spaces, or symbols.';
 };
 
 export const getPasswordChecks = (password = '') => {

@@ -8,16 +8,15 @@ from django.core.validators import validate_email as django_validate_email
 from django.db import transaction
 from users.models import Customer
 from users.uploads import validate_profile_picture
-from users.phone_numbers import normalize_philippine_mobile_number
+from users.phone_numbers import normalize_philippine_mobile_number, validate_philippine_mobile_number
 
 User = get_user_model()
-PHONE_PATTERN = re.compile(r'^\+?[\d\s().-]{7,20}$')
 
 
 def validate_phone_number_format(value):
-    value = (value or '').strip()
-    if value and (not PHONE_PATTERN.match(value) or len(re.sub(r'\D', '', value)) < 7):
-        raise serializers.ValidationError('Enter a valid phone number.')
+    value = value or ''
+    if value and not validate_philippine_mobile_number(value):
+        raise serializers.ValidationError('Use 11 digits starting with 09 (example: 09876543122). Do not enter letters, spaces, or symbols.')
     return value
 
 
@@ -82,6 +81,7 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
         fields = ['points', 'birthdate', 'loyalty_tier', 'notes']
 
 class UserSerializer(serializers.ModelSerializer):
+    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True, trim_whitespace=False)
     customer_profile = CustomerProfileSerializer(read_only=True)
     profile_picture_url = serializers.SerializerMethodField()
     remove_profile_picture = serializers.BooleanField(write_only=True, required=False, default=False)
@@ -266,7 +266,7 @@ class RegisterSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     first_name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     last_name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
-    phone_number = serializers.CharField(required=True, allow_blank=False, trim_whitespace=True)
+    phone_number = serializers.CharField(required=True, allow_blank=False, trim_whitespace=False)
     address = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     privacy_consent = serializers.BooleanField(write_only=True, required=False, default=False)
 
@@ -281,20 +281,15 @@ class RegisterSerializer(serializers.Serializer):
         return validate_unique_email(value, required=True)
 
     def validate_phone_number(self, value):
-        normalized = normalize_philippine_mobile_number(value)
-        if not normalized:
-            raise serializers.ValidationError('Enter a valid Philippine mobile number.')
-        if is_phone_number_taken(normalized):
-            raise serializers.ValidationError('Phone number already exists.')
-        return normalized
+        return validate_unique_phone_number(value)
 
 class PasswordResetRequestSerializer(serializers.Serializer):
-    phone_number = serializers.CharField(max_length=20, trim_whitespace=True)
+    phone_number = serializers.CharField(max_length=20, trim_whitespace=False)
 
     def validate_phone_number(self, value):
-        normalized = normalize_philippine_mobile_number(value)
+        normalized = validate_philippine_mobile_number(value)
         if not normalized:
-            raise serializers.ValidationError('Enter a valid Philippine mobile number.')
+            raise serializers.ValidationError('Use 11 digits starting with 09 (example: 09876543122). Do not enter letters, spaces, or symbols.')
         return normalized
 
 
@@ -317,13 +312,13 @@ class AdminMFAResendSerializer(serializers.Serializer):
     mfa_token = serializers.CharField(min_length=32, max_length=128, trim_whitespace=True)
 
 class PasswordResetVerifySerializer(serializers.Serializer):
-    phone_number = serializers.CharField(max_length=20, trim_whitespace=True)
+    phone_number = serializers.CharField(max_length=20, trim_whitespace=False)
     otp = serializers.CharField(min_length=6, max_length=6, trim_whitespace=True)
 
     def validate_phone_number(self, value):
-        normalized = normalize_philippine_mobile_number(value)
+        normalized = validate_philippine_mobile_number(value)
         if not normalized:
-            raise serializers.ValidationError('Enter a valid Philippine mobile number.')
+            raise serializers.ValidationError('Use 11 digits starting with 09 (example: 09876543122). Do not enter letters, spaces, or symbols.')
         return normalized
 
     def validate_otp(self, value):
@@ -332,12 +327,12 @@ class PasswordResetVerifySerializer(serializers.Serializer):
         return value
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
-    phone_number = serializers.CharField(max_length=20, trim_whitespace=True)
+    phone_number = serializers.CharField(max_length=20, trim_whitespace=False)
     reset_token = serializers.CharField(min_length=32, max_length=128, trim_whitespace=True)
     new_password = serializers.CharField(write_only=True, trim_whitespace=False)
 
     def validate_phone_number(self, value):
-        normalized = normalize_philippine_mobile_number(value)
+        normalized = validate_philippine_mobile_number(value)
         if not normalized:
-            raise serializers.ValidationError('Enter a valid Philippine mobile number.')
+            raise serializers.ValidationError('Use 11 digits starting with 09 (example: 09876543122). Do not enter letters, spaces, or symbols.')
         return normalized

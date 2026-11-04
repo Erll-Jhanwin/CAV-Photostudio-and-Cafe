@@ -1,6 +1,7 @@
 import hashlib
 import math
 import logging
+import re
 import time
 
 from rest_framework import generics, permissions, status, views
@@ -37,7 +38,7 @@ from users.serializers import (
 from users.models import Customer, PasswordResetOTP, PrivacyConsent, PrivacyRequest, StaffAccessProfile
 from users.permissions import IsAdmin
 from users.sms_delivery import IProgSMSDeliveryError, send_password_reset_otp, verify_password_reset_otp
-from users.phone_numbers import normalize_philippine_mobile_number
+from users.phone_numbers import normalize_philippine_mobile_number, validate_philippine_mobile_number
 from audit.models import AuditLog
 from booking.models import Booking
 from inventory.models import InventoryEvent
@@ -480,9 +481,9 @@ class RegisterView(generics.CreateAPIView):
         data = serializer.validated_data
         if not data.get('privacy_consent'):
             return Response({'privacy_consent': 'Accept the privacy notice before creating an account.'}, status=status.HTTP_400_BAD_REQUEST)
-        phone_number = normalize_philippine_mobile_number(data.get('phone_number'))
+        phone_number = validate_philippine_mobile_number(data.get('phone_number'))
         contact_type = 'phone'
-        contact = phone_number
+        contact = normalize_philippine_mobile_number(phone_number)
         registration_token = secrets.token_urlsafe(32)
         pending = {
             'username': data['username'],
@@ -641,7 +642,7 @@ class RegistrationOTPVerifyView(views.APIView):
                     email=pending['email'],
                     first_name=pending['first_name'],
                     last_name=pending['last_name'],
-                    phone_number=normalize_philippine_mobile_number(pending['phone_number']) or pending['phone_number'],
+                    phone_number=validate_philippine_mobile_number(pending['phone_number']) or pending['phone_number'],
                     address=pending['address'],
                     role='CUSTOMER',
                     registration_method=registration_method,
@@ -806,11 +807,14 @@ class GoogleAuthView(views.APIView):
                 },
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        raw_phone_number = str(request.data.get('phone_number') or '').strip()
-        saved_phone_number = normalize_philippine_mobile_number(user.phone_number) if user and user.role == 'CUSTOMER' else ''
+        raw_phone_number = str(request.data.get('phone_number') or '')
+        saved_phone_number = (
+            validate_philippine_mobile_number(user.phone_number)
+            or (f"0{user.phone_number[2:]}" if user and re.fullmatch(r'639\d{9}', str(user.phone_number or '')) else '')
+        ) if user and user.role == 'CUSTOMER' else ''
         phone_number = saved_phone_number or ''
         if raw_phone_number:
-            phone_number = normalize_philippine_mobile_number(raw_phone_number)
+            phone_number = validate_philippine_mobile_number(raw_phone_number)
             if not phone_number:
                 return completion_error('phone_number', 'Enter a valid Philippine mobile number to continue.')
             if is_phone_number_taken(phone_number, user):
@@ -1398,12 +1402,13 @@ class ForgotPasswordView(views.APIView):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         phone_number = serializer.validated_data['phone_number']
+        sms_phone_number = normalize_philippine_mobile_number(phone_number)
 
         user = next(
             (
                 candidate
                 for candidate in User.objects.filter(is_active=True).exclude(phone_number='').only('id', 'email', 'username', 'phone_number')
-                if normalize_philippine_mobile_number(candidate.phone_number) == phone_number
+                if normalize_philippine_mobile_number(candidate.phone_number) == sms_phone_number
             ),
             None,
         )
@@ -1437,7 +1442,7 @@ class ForgotPasswordView(views.APIView):
         )
 
         try:
-            send_password_reset_otp(phone_number)
+            send_password_reset_otp(sms_phone_number)
         except IProgSMSDeliveryError as exc:
             logger.error('Password reset SMS delivery failed user_id=%s exception_type=%s.', user.id, type(exc).__name__)
             reset_otp.used_at = timezone.now()
@@ -1479,7 +1484,7 @@ class PasswordResetVerifyOTPView(views.APIView):
                 return Response({"detail": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
             try:
-                verified = verify_password_reset_otp(phone_number, otp)
+                verified = verify_password_reset_otp(normalize_philippine_mobile_number(phone_number), otp)
             except IProgSMSDeliveryError as exc:
                 logger.error('Password reset OTP verification failed at provider exception_type=%s.', type(exc).__name__)
                 return Response(

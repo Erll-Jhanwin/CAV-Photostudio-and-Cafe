@@ -7,6 +7,7 @@ import { Modal } from '../components/ui/Modal';
 import { getManilaDateInputValue } from '../utils/dateTime';
 import { BookingReceiptDocument, printBookingReceipt } from '../components/BookingReceipt';
 import { MINIMUM_BOOKING_DOWN_PAYMENT } from '../utils/bookingPayments';
+import { getEmailError, getPhilippineMobileError, getRequiredError } from '../utils/validation';
 
 const idempotencyKey = () => `walk-in-${window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`}`.slice(0, 100);
 const peso = value => `PHP ${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -22,6 +23,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
   const [notice, setNotice] = useState('');
   const [savedReceipt, setSavedReceipt] = useState(null);
   const [receiptCopy, setReceiptCopy] = useState('Customer Copy');
@@ -67,12 +69,23 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
     return () => { active = false; };
   }, [open, packageId, date]);
 
-  const setField = key => event => setForm(previous => ({ ...previous, [key]: event.target.value }));
+  const setField = key => event => {
+    const value = event.target.value;
+    setForm(previous => ({ ...previous, [key]: value }));
+    setFieldErrors(current => ({ ...current, [key]: '' }));
+  };
   const chooseService = event => { setServiceId(event.target.value); setPackageId(''); setTime(''); };
 
   const submit = async event => {
     event.preventDefault();
     if (inFlight.current || saving) return;
+    const nextFieldErrors = {
+      name: getRequiredError(form.name, 'Customer name'),
+      phone: getPhilippineMobileError(form.phone),
+      email: getEmailError(form.email),
+    };
+    setFieldErrors(nextFieldErrors);
+    if (Object.values(nextFieldErrors).some(Boolean)) return;
     if (form.paymentAmount !== '') {
       const paymentAmount = Number(form.paymentAmount);
       const totalAmount = Number(selectedPackage?.price || 0);
@@ -90,7 +103,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
     setError('');
     const payload = {
       package: Number(packageId), scheduled_date: date, scheduled_time: time,
-      customer_name: form.name.trim(), customer_email: form.email.trim(), customer_phone: form.phone.trim(),
+      customer_name: form.name.trim(), customer_email: form.email.trim().toLowerCase(), customer_phone: form.phone.trim(),
       notes: form.notes.trim(), idempotency_key: idempotencyKey(),
     };
     if (form.paymentAmount !== '') {
@@ -125,6 +138,13 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
       });
       onCreated?.(data);
     } catch (err) {
+      const data = err.response?.data || {};
+      setFieldErrors(current => ({
+        ...current,
+        name: data.customer_name?.[0] || data.customer_name || current.name,
+        email: data.customer_email?.[0] || data.customer_email || current.email,
+        phone: data.customer_phone?.[0] || data.customer_phone || current.phone,
+      }));
       setError(getApiErrorMessage(err, 'Couldn’t save this walk-in booking. Check availability and try again.'));
     } finally {
       inFlight.current = false;
@@ -134,7 +154,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
 
   const resetClose = () => {
     if (saving) return;
-    setError(''); setNotice(''); setSavedReceipt(null); setReceiptCopy('Customer Copy'); setPackageId(''); setTime(''); setForm({ name: '', email: '', phone: '', notes: '', paymentAmount: '', paymentMethod: 'CASH', paymentReference: '' });
+    setError(''); setFieldErrors({}); setNotice(''); setSavedReceipt(null); setReceiptCopy('Customer Copy'); setPackageId(''); setTime(''); setForm({ name: '', email: '', phone: '', notes: '', paymentAmount: '', paymentMethod: 'CASH', paymentReference: '' });
     onClose?.();
   };
 
@@ -159,7 +179,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
           <BookingReceiptDocument receipt={savedReceipt} copyLabel={receiptCopy} />
         </div>
       ) : (
-      <form onSubmit={submit} className="space-y-5">
+      <form onSubmit={submit} className="space-y-5" noValidate>
         <div className="flex items-start gap-3 rounded-2xl border border-gold/20 bg-gold/10 p-3 text-sm text-espresso">
           <UserPlus className="mt-0.5 h-4 w-4 shrink-0 text-gold-dark" />
           <p>This reservation is saved with the shared booking schedule and labeled <strong>Walk-in</strong>. No customer account is created.</p>
@@ -175,9 +195,9 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
         </div>
         {notice && <p role="status" className="text-xs font-semibold text-amber-800">{notice}</p>}
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Customer name" value={form.name} onChange={setField('name')} autoComplete="name" required maxLength={200} />
-          <Input label="Contact number" type="tel" value={form.phone} onChange={setField('phone')} autoComplete="tel" required maxLength={30} />
-          <Input label="Email (optional)" type="email" value={form.email} onChange={setField('email')} autoComplete="email" maxLength={254} />
+          <Input label="Customer name" value={form.name} onChange={setField('name')} autoComplete="name" required maxLength={200} error={fieldErrors.name} />
+          <Input label="Contact number" type="tel" inputMode="numeric" pattern="09[0-9]{9}" value={form.phone} onChange={setField('phone')} autoComplete="tel-national" required maxLength={32} placeholder="09876543122" error={fieldErrors.phone} />
+          <Input label="Email (optional)" type="email" value={form.email} onChange={setField('email')} autoComplete="email" error={fieldErrors.email} />
           <Input label="Payment amount (optional)" type="number" min={MINIMUM_BOOKING_DOWN_PAYMENT} max={selectedPackage?.price || undefined} step="0.01" value={form.paymentAmount} onChange={setField('paymentAmount')} placeholder="Leave blank if unpaid" />
         </div>
         {form.paymentAmount !== '' && <div className="grid gap-4 sm:grid-cols-2">
@@ -189,7 +209,7 @@ export default function WalkInBookingModal({ open, onClose, onCreated, printerNa
         {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         <div className="flex flex-col-reverse gap-2 border-t border-espresso/10 pt-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={resetClose} disabled={saving}>Cancel</Button>
-          <Button type="submit" icon={Check} loading={saving} disabled={!selectedPackage || !date || !time || loadingSlots || !form.name.trim() || !form.phone.trim()}>{saving ? 'Saving booking…' : 'Confirm Walk-in Booking'}</Button>
+          <Button type="submit" icon={Check} loading={saving} disabled={!selectedPackage || !date || !time || loadingSlots}>{saving ? 'Saving booking…' : 'Confirm Walk-in Booking'}</Button>
         </div>
       </form>
       )}

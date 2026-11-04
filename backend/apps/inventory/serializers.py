@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from rest_framework import serializers
+from users.phone_numbers import validate_philippine_mobile_number
 
 from inventory.models import Category, InventoryEvent, Product, Supplier
 
@@ -132,6 +133,8 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class SupplierSerializer(serializers.ModelSerializer):
+    phone = serializers.CharField(max_length=50, required=False, allow_blank=True, trim_whitespace=False)
+
     class Meta:
         model = Supplier
         fields = [
@@ -145,6 +148,17 @@ class SupplierSerializer(serializers.ModelSerializer):
         if not value:
             raise serializers.ValidationError('Supplier name is required.')
         return value
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+    def validate_phone(self, value):
+        if not value:
+            return value
+        normalized = validate_philippine_mobile_number(value)
+        if not normalized:
+            raise serializers.ValidationError('Use 11 digits starting with 09 (example: 09876543122). Do not enter letters, spaces, or symbols.')
+        return normalized
 
 
 class IngredientSerializer(serializers.ModelSerializer):

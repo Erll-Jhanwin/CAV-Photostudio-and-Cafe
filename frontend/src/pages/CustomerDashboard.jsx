@@ -15,7 +15,7 @@ import BookingConversationModal from '../components/bookings/BookingConversation
 import { ChatbotFaqPrompts, ChatbotMessageContent } from '../components/ui/ChatbotMessage';
 import { useStyledConfirm } from '../components/ui/StyledAlert';
 import { Avatar, getAvatarUrl } from '../components/ui/Avatar';
-import { getConfirmPasswordError, getPasswordError, getRequiredError } from '../utils/validation';
+import { getConfirmPasswordError, getEmailError, getPasswordError, getPhoneError, getRequiredError, isValidEmail, isValidPhilippineMobile } from '../utils/validation';
 import {
   normalizeBooking,
   normalizeBookings,
@@ -212,8 +212,7 @@ const createIdempotencyKey = (prefix) => {
 };
 
 const calculateDownPayment = () => MINIMUM_BOOKING_DOWN_PAYMENT;
-const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
-const isValidPhone = (value) => String(value || '').replace(/[^\d+]/g, '').replace(/^\+/, '').length >= 7;
+const isValidPhone = isValidPhilippineMobile;
 const isValidPaymentReference = (value) => /^[A-Za-z0-9\- ]{6,100}$/.test(String(value || '').trim());
 const formatStatusLabel = (status) => ({
   CONFIRMED_DP: 'Confirmed - Down Payment Received',
@@ -357,6 +356,7 @@ export default function CustomerDashboard() {
   const [profileUsername, setProfileUsername] = useState('');
   const [bookingEmail, setBookingEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [bookingContactErrors, setBookingContactErrors] = useState({});
   const [address, setAddress] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -394,6 +394,7 @@ export default function CustomerDashboard() {
   const [editDayAvailability, setEditDayAvailability] = useState(null);
   const [editSlotLoading, setEditSlotLoading] = useState(false);
   const [editError, setEditError] = useState('');
+  const [editFieldErrors, setEditFieldErrors] = useState({});
   const [editConfirmOpen, setEditConfirmOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [paymentReference, setPaymentReference] = useState('');
@@ -575,6 +576,7 @@ export default function CustomerDashboard() {
 
   const resetPendingBooking = () => {
     setPendingPaymentBookingId(null);
+    setBookingContactErrors({});
     bookingIdempotencyKeyRef.current = '';
     paymentIdempotencyKeyRef.current = '';
     bookingRequestStartedRef.current = false;
@@ -652,7 +654,7 @@ export default function CustomerDashboard() {
     }
     if (currentStep === 3) {
       const fullName = `${firstName} ${lastName}`.trim();
-      return fullName.length >= 2 && isValidEmail(bookingEmail) && isValidPhone(phone);
+      return firstName.trim().length >= 2 && lastName.trim().length >= 2 && isValidEmail(bookingEmail) && !!phone.trim() && isValidPhone(phone);
     }
     if (currentStep === 4) return true;
     return false;
@@ -663,15 +665,16 @@ export default function CustomerDashboard() {
       username: getRequiredError(profileUsername, 'Username'),
       firstName: firstName.trim() ? '' : 'First name is required.',
       lastName: lastName.trim() ? '' : 'Last name is required.',
-      email: isValidEmail(bookingEmail) ? '' : 'Enter a valid email address.',
-      phone: phone.trim() ? (isValidPhone(phone) ? '' : 'Enter a valid phone number.') : 'Phone number is required.',
+      email: getEmailError(bookingEmail, { required: true }),
+      phone: phone.trim() ? getPhoneError(phone) : 'Mobile number is required.',
       newPassword: newPassword ? getPasswordError(newPassword, 'New password') : '',
       newPasswordConfirm: newPassword ? getConfirmPasswordError(newPassword, newPasswordConfirm) : '',
     };
     return Object.fromEntries(Object.entries(errors).filter(([, value]) => value));
   };
 
-  const profileFormValid = !Object.keys(validateProfileForm()).length;
+  const profileValidationErrors = validateProfileForm();
+  const profileFormValid = !Object.keys(profileValidationErrors).length;
 
   useEffect(() => {
     if (chatOpen) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -902,8 +905,8 @@ export default function CustomerDashboard() {
       formData.append('username', profileUsername);
       formData.append('first_name', firstName);
       formData.append('last_name', lastName);
-      formData.append('email', bookingEmail);
-      formData.append('phone_number', phone);
+      formData.append('email', bookingEmail.trim());
+      formData.append('phone_number', phone.trim());
       formData.append('address', address);
       if (currentPassword) formData.append('current_password', currentPassword);
       if (newPassword) formData.append('new_password', newPassword);
@@ -1121,6 +1124,7 @@ export default function CustomerDashboard() {
     setEditMonth(month);
     setEditDayAvailability(null);
     setEditError('');
+    setEditFieldErrors({});
   };
 
   const closeEditBooking = (force = false) => {
@@ -1129,6 +1133,7 @@ export default function CustomerDashboard() {
     setEditForm(null);
     setEditDayAvailability(null);
     setEditError('');
+    setEditFieldErrors({});
     setEditConfirmOpen(false);
   };
 
@@ -1182,6 +1187,15 @@ export default function CustomerDashboard() {
 
   const submitEditBooking = async () => {
     if (!editingBooking || !editForm || editSaving) return;
+    const fieldErrors = {
+      first_name: editForm.first_name.trim() ? '' : 'First name is required.',
+      last_name: editForm.last_name.trim() ? '' : 'Last name is required.',
+      email: getEmailError(editForm.email, { required: true }),
+      phone_number: editForm.phone_number.trim() ? getPhoneError(editForm.phone_number) : 'Mobile number is required.',
+    };
+    const visibleFieldErrors = Object.fromEntries(Object.entries(fieldErrors).filter(([, value]) => value));
+    setEditFieldErrors(visibleFieldErrors);
+    if (Object.keys(visibleFieldErrors).length) return;
     if (!editForm.package || !editForm.scheduled_date || !editForm.scheduled_time) {
       setEditError('Select a package, date, and available time.');
       return;
@@ -1212,8 +1226,8 @@ export default function CustomerDashboard() {
         notes: editForm.notes,
         first_name: editForm.first_name,
         last_name: editForm.last_name,
-        email: editForm.email,
-        phone_number: editForm.phone_number,
+        email: editForm.email.trim(),
+        phone_number: editForm.phone_number.trim(),
         address: editForm.address,
         change_reason: editForm.change_reason,
       });
@@ -1230,6 +1244,13 @@ export default function CustomerDashboard() {
       alert('Booking updated.');
     } catch (err) {
       const errorData = err.response?.data || {};
+      setEditFieldErrors(current => ({
+        ...current,
+        first_name: errorData.first_name?.[0] || errorData.first_name || current.first_name,
+        last_name: errorData.last_name?.[0] || errorData.last_name || current.last_name,
+        email: errorData.email?.[0] || errorData.email || current.email,
+        phone_number: errorData.phone_number?.[0] || errorData.phone_number || current.phone_number,
+      }));
       setEditError(errorData.scheduled_time || errorData.detail || 'Couldn’t update booking.');
     } finally {
       setEditSaving(false);
@@ -1299,6 +1320,15 @@ export default function CustomerDashboard() {
       alert('This payment reference was already submitted. Enter a different one.');
       return;
     }
+    const contactErrors = {
+      firstName: firstName.trim() ? '' : 'First name is required.',
+      lastName: lastName.trim() ? '' : 'Last name is required.',
+      email: getEmailError(bookingEmail, { required: true }),
+      phone: phone.trim() ? getPhoneError(phone) : 'Mobile number is required.',
+    };
+    const visibleContactErrors = Object.fromEntries(Object.entries(contactErrors).filter(([, value]) => value));
+    setBookingContactErrors(visibleContactErrors);
+    if (Object.keys(visibleContactErrors).length) return;
     bookingSubmitInFlightRef.current = true;
     const confirmed = await confirm({
       title: 'Submit Booking',
@@ -1324,12 +1354,6 @@ export default function CustomerDashboard() {
       const duplicateReference = await checkPaymentReferenceDuplicate(paymentReference);
       if (duplicateReference) {
         alert('This payment reference was already submitted. Enter a different one.');
-        setPaymentSubmitting(false);
-        return;
-      }
-      const fullName = `${firstName} ${lastName}`.trim();
-      if (fullName.length < 2 || !isValidEmail(bookingEmail) || !isValidPhone(phone)) {
-        alert('Enter your full name, a valid email, and a valid contact number.');
         setPaymentSubmitting(false);
         return;
       }
@@ -1410,6 +1434,14 @@ export default function CustomerDashboard() {
       alert('Booking submitted.');
     } catch (err) {
       const errorMessage = formatApiError(err, 'We couldn’t complete your request. Try again.');
+      const responseData = err.response?.data || {};
+      setBookingContactErrors(current => ({
+        ...current,
+        firstName: responseData.first_name?.[0] || responseData.first_name || current.firstName,
+        lastName: responseData.last_name?.[0] || responseData.last_name || current.lastName,
+        email: responseData.email?.[0] || responseData.email || current.email,
+        phone: responseData.phone_number?.[0] || responseData.phone_number || current.phone,
+      }));
       if (bookingSavedForPayment && bookingId) {
         // The server may have committed the payment while the response was
         // lost. Read the booking's payments before asking the customer to retry.
@@ -2352,37 +2384,37 @@ export default function CustomerDashboard() {
                             <Input
                               label="Full Name"
                               required
+                              maxLength={301}
                               value={customerFullName}
-                              onChange={(e) => handleCustomerFullNameChange(e.target.value)}
+                              onChange={(e) => { handleCustomerFullNameChange(e.target.value); setBookingContactErrors(current => ({ ...current, firstName: '', lastName: '' })); }}
                               placeholder="Juan Dela Cruz"
+                              error={bookingContactErrors.firstName || bookingContactErrors.lastName || (!firstName.trim() || !lastName.trim() ? 'Enter your first and last name.' : '')}
                             />
-                            {customerFullName && customerFullName.length < 2 && (
-                              <p className="text-[11px] font-bold text-red-600">Enter your full name.</p>
-                            )}
 
                             <Input
                               label="Email Address"
                               type="email"
+                              autoComplete="email"
                               required
                               value={bookingEmail}
-                              onChange={(e) => setBookingEmail(e.target.value)}
+                              onChange={(e) => { setBookingEmail(e.target.value); setBookingContactErrors(current => ({ ...current, email: '' })); }}
                               placeholder="customer@example.com"
+                              error={bookingContactErrors.email || getEmailError(bookingEmail, { required: true })}
                             />
-                            {bookingEmail && !isValidEmail(bookingEmail) && (
-                              <p className="text-[11px] font-bold text-red-600">Enter a valid email address.</p>
-                            )}
 
                             <Input
                               label="Contact Number"
                               type="tel"
+                              inputMode="numeric"
+                              autoComplete="tel-national"
+                              pattern="09[0-9]{9}"
+                              maxLength={32}
                               required
                               value={phone}
-                              onChange={(e) => setPhone(e.target.value)}
-                              placeholder="09XXXXXXXXX"
+                              onChange={(e) => { setPhone(e.target.value); setBookingContactErrors(current => ({ ...current, phone: '' })); }}
+                              placeholder="09876543122"
+                              error={bookingContactErrors.phone || (phone.trim() ? getPhoneError(phone) : 'Mobile number is required.')}
                             />
-                            {phone && !isValidPhone(phone) && (
-                              <p className="text-[11px] font-bold text-red-600">Enter a valid contact number.</p>
-                            )}
 
                             <Input
                               label="Address"
@@ -2958,7 +2990,7 @@ export default function CustomerDashboard() {
                 <div className="flex min-h-0 flex-col md:col-span-7">
                   <Card className="min-h-0 md:flex md:flex-1 md:flex-col" padding={true}>
                     <CardHeader title="Personal Information" className="mb-4 shrink-0" />
-                    <form onSubmit={handleProfileUpdate} className="flex min-h-0 flex-col md:flex-1">
+                    <form onSubmit={handleProfileUpdate} className="flex min-h-0 flex-col md:flex-1" noValidate>
                       <div className="space-y-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-2 md:scrollbar-thin">
                       <div className="flex flex-col gap-4 rounded-2xl border border-espresso/[0.06] bg-cream/60 p-4 sm:flex-row sm:items-center">
                         <Avatar user={profileAvatarUser} size="xl" />
@@ -2991,46 +3023,54 @@ export default function CustomerDashboard() {
                       <Input
                         label="Username"
                         required
+                        maxLength={150}
                         value={profileUsername}
                         onChange={e => { setProfileUsername(e.target.value); setProfileErrors(current => ({ ...current, username: '' })); }}
                         disabled={profileSaving}
-                        error={profileErrors.username}
+                        error={profileErrors.username || profileValidationErrors.username}
                       />
                       <div className="grid grid-cols-2 gap-4">
                         <Input
                           label="First Name"
                           required
+                          maxLength={150}
                           value={firstName}
                           onChange={e => { setFirstName(e.target.value); setProfileErrors(current => ({ ...current, firstName: '' })); }}
                           disabled={profileSaving}
-                          error={profileErrors.firstName}
+                          error={profileErrors.firstName || profileValidationErrors.firstName}
                         />
                         <Input
                           label="Last Name"
                           required
+                          maxLength={150}
                           value={lastName}
                           onChange={e => { setLastName(e.target.value); setProfileErrors(current => ({ ...current, lastName: '' })); }}
                           disabled={profileSaving}
-                          error={profileErrors.lastName}
+                          error={profileErrors.lastName || profileValidationErrors.lastName}
                         />
                       </div>
                       <Input
                         label="Email Address"
                         type="email"
+                        autoComplete="email"
                         required
                         value={bookingEmail}
                         onChange={e => { setBookingEmail(e.target.value); setProfileErrors(current => ({ ...current, email: '' })); }}
                         disabled={profileSaving}
-                        error={profileErrors.email}
+                        error={profileErrors.email || profileValidationErrors.email}
                       />
                       <Input
                         label="Phone"
                         type="tel"
+                        inputMode="numeric"
+                        autoComplete="tel-national"
+                        pattern="09[0-9]{9}"
+                        maxLength={32}
                         required
                         value={phone}
                         onChange={e => { setPhone(e.target.value); setProfileErrors(current => ({ ...current, phone: '' })); }}
                         disabled={profileSaving}
-                        error={profileErrors.phone}
+                        error={profileErrors.phone || profileValidationErrors.phone}
                       />
                       <Textarea label="Address" value={address} onChange={e => setAddress(e.target.value)} rows={3} disabled={profileSaving} />
                       <div className="border-t border-espresso/[0.08] pt-4">
@@ -3574,29 +3614,44 @@ export default function CustomerDashboard() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Input
                       label="First Name"
+                      required
+                      maxLength={150}
                       value={editForm.first_name}
-                      onChange={(e) => setEditForm(current => ({ ...current, first_name: e.target.value }))}
+                      onChange={(e) => { setEditForm(current => ({ ...current, first_name: e.target.value })); setEditFieldErrors(current => ({ ...current, first_name: '' })); }}
                       disabled={editSaving}
+                      error={editFieldErrors.first_name || getRequiredError(editForm.first_name, 'First name')}
                     />
                     <Input
                       label="Last Name"
+                      required
+                      maxLength={150}
                       value={editForm.last_name}
-                      onChange={(e) => setEditForm(current => ({ ...current, last_name: e.target.value }))}
+                      onChange={(e) => { setEditForm(current => ({ ...current, last_name: e.target.value })); setEditFieldErrors(current => ({ ...current, last_name: '' })); }}
                       disabled={editSaving}
+                      error={editFieldErrors.last_name || getRequiredError(editForm.last_name, 'Last name')}
                     />
                   </div>
                   <Input
                     label="Email"
                     type="email"
+                    required
                     value={editForm.email}
-                    onChange={(e) => setEditForm(current => ({ ...current, email: e.target.value }))}
+                    onChange={(e) => { setEditForm(current => ({ ...current, email: e.target.value })); setEditFieldErrors(current => ({ ...current, email: '' })); }}
                     disabled={editSaving}
+                    error={editFieldErrors.email || getEmailError(editForm.email, { required: true })}
                   />
                   <Input
                     label="Phone Number"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel-national"
+                    pattern="09[0-9]{9}"
+                    maxLength={32}
+                    required
                     value={editForm.phone_number}
-                    onChange={(e) => setEditForm(current => ({ ...current, phone_number: e.target.value }))}
+                    onChange={(e) => { setEditForm(current => ({ ...current, phone_number: e.target.value })); setEditFieldErrors(current => ({ ...current, phone_number: '' })); }}
                     disabled={editSaving}
+                    error={editFieldErrors.phone_number || (editForm.phone_number.trim() ? getPhoneError(editForm.phone_number) : 'Mobile number is required.')}
                   />
                   <Textarea
                     label="Address"

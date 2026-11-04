@@ -64,7 +64,7 @@ describe('responsive authentication layout', () => {
     expect(loginPassword).toHaveAttribute('autocomplete', 'current-password');
     const forgotLink = screen.getByRole('button', { name: 'Forgot password?' });
     const loginRecaptcha = screen.getByTestId('recaptcha-widget');
-    const loginSubmit = screen.getByRole('button', { name: 'Enter My Dashboard' });
+    const loginSubmit = screen.getByRole('button', { name: 'Log in' });
     expect(appearsBefore(loginPassword, forgotLink)).toBe(true);
     expect(appearsBefore(forgotLink, loginRecaptcha)).toBe(true);
     expect(appearsBefore(loginRecaptcha, loginSubmit)).toBe(true);
@@ -104,7 +104,7 @@ describe('password authentication submissions', () => {
     // The mocked auth promise triggers state updates after the click.
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Enter My Dashboard' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
       await Promise.resolve();
     });
 
@@ -121,7 +121,7 @@ describe('password authentication submissions', () => {
     username.value = 'autofilled-member';
     password.value = 'AutofilledPassword#2026';
 
-    const submit = screen.getByRole('button', { name: 'Enter My Dashboard' });
+    const submit = screen.getByRole('button', { name: 'Log in' });
     expect(submit).toBeEnabled();
     fireEvent.click(submit);
 
@@ -145,7 +145,7 @@ describe('password authentication submissions', () => {
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'member' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'MemberPassword#2026' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Enter My Dashboard' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith(destination));
   });
@@ -161,7 +161,7 @@ describe('password authentication submissions', () => {
 
     // eslint-disable-next-line testing-library/no-unnecessary-act
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Enter My Dashboard' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
       await Promise.resolve();
     });
 
@@ -269,7 +269,7 @@ describe('Google registration', () => {
     mockLoginWithGoogle.mockReset();
   });
 
-  test('keeps a verified Google registration active while the customer corrects a mobile number and accepts consent', async () => {
+  test.each([['desktop', 1280], ['mobile', 390]])('keeps a verified Google registration active on %s while the customer corrects a mobile number and accepts consent', async (_device, viewportWidth) => {
     let googleCallback;
     const originalClientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
     const originalAlert = window.alert;
@@ -292,29 +292,31 @@ describe('Google registration', () => {
       .mockResolvedValueOnce({ success: true, created: true, user: { id: 91, username: 'google.customer', email: 'google@example.com', role: 'CUSTOMER' } });
 
     try {
+      window.innerWidth = viewportWidth;
+      window.dispatchEvent(new Event('resize'));
       renderLogin();
       await waitFor(() => expect(googleCallback).toBeDefined());
       await act(async () => { googleCallback({ credential: 'verified-google-id-token' }); });
 
       await screen.findByLabelText('Mobile number');
-      expect(screen.getByText('Enter a Philippine mobile number, e.g., 09171234567.')).toBeInTheDocument();
+      expect(screen.getByText('Use 11 digits starting with 09, e.g., 09876543122.')).toBeInTheDocument();
       expect(screen.getByText('A valid Philippine mobile number is required.')).toBeInTheDocument();
       expect(screen.getByText('google@example.com is verified. Your Google sign-in is saved while you finish this step.')).toBeInTheDocument();
       expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
-      fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '5550100' } });
-      expect(screen.getByLabelText('Mobile number')).toHaveValue('5550100');
+      fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '09876543abc' } });
+      expect(screen.getByLabelText('Mobile number')).toHaveValue('09876543abc');
       expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
       fireEvent.click(screen.getByRole('checkbox'));
       fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-      expect(await screen.findByText('Enter a valid Philippine mobile number.')).toBeInTheDocument();
+      expect(await screen.findByText('Use 11 digits starting with 09 (example: 09876543122). Do not enter letters, spaces, or symbols.')).toBeInTheDocument();
       expect(mockLoginWithGoogle).toHaveBeenCalledTimes(1);
 
-      fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '+639171234567' } });
+      fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '09876543122' } });
       fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
       await waitFor(() => expect(mockLoginWithGoogle).toHaveBeenCalledTimes(2));
       expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(1, 'verified-google-id-token', '', { privacy_consent: false, recaptcha_token: 'test-recaptcha-token' });
-      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(2, 'verified-google-id-token', '+639171234567', { privacy_consent: true, recaptcha_token: 'test-recaptcha-token' });
-      expect(window.alert).toHaveBeenCalledWith('google.customer logged in successfully.');
+      expect(mockLoginWithGoogle).toHaveBeenNthCalledWith(2, 'verified-google-id-token', '09876543122', { privacy_consent: true, recaptcha_token: 'test-recaptcha-token' });
+      expect(window.alert).toHaveBeenCalledWith('Welcome, google.customer.');
     } finally {
       if (originalClientId === undefined) delete process.env.REACT_APP_GOOGLE_CLIENT_ID;
       else process.env.REACT_APP_GOOGLE_CLIENT_ID = originalClientId;
@@ -352,7 +354,7 @@ describe('OTP resend flows', () => {
 
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'admin' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'AdminPass123!' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Enter My Dashboard' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }));
     expect(await screen.findByText(/Admin SMS verification code sent/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Resend code in 1s' })).toBeDisabled();
 

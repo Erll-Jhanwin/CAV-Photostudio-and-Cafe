@@ -240,14 +240,14 @@ class PasswordResetSMSTests(TestCase):
     @patch('users.views.send_password_reset_otp')
     def test_registered_user_receives_a_generic_sms_reset_response(self, mocked_send):
         response = self.client.post('/api/auth/forgot-password/', {
-            'phone_number': '0917 123 4567',
+            'phone_number': '09171234567',
         }, format='json')
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('If this mobile number matches an account', response.data['detail'])
         mocked_send.assert_called_once_with('639171234567')
         reset = PasswordResetOTP.objects.get(user=self.user)
-        self.assertEqual(reset.phone_number, '639171234567')
+        self.assertEqual(reset.phone_number, '09171234567')
         self.assertEqual(reset.otp_hash, '')
         self.assertEqual(response.data['resend_cooldown_seconds'], 60)
 
@@ -302,7 +302,7 @@ class PasswordResetSMSTests(TestCase):
     def test_otp_verification_and_password_reset_are_one_time(self, mocked_send, mocked_verify):
         self.client.post('/api/auth/forgot-password/', {'phone_number': '09171234567'}, format='json')
         verify_response = self.client.post('/api/auth/forgot-password/verify/', {
-            'phone_number': '+63 917 123 4567',
+            'phone_number': '09171234567',
             'otp': '123456',
         }, format='json')
         self.assertEqual(verify_response.status_code, 200)
@@ -310,7 +310,7 @@ class PasswordResetSMSTests(TestCase):
         mocked_verify.assert_called_once_with('639171234567', '123456')
 
         confirm_response = self.client.post('/api/auth/forgot-password/confirm/', {
-            'phone_number': '639171234567',
+            'phone_number': '09171234567',
             'reset_token': reset_token,
             'new_password': 'NewSecurePass123!',
         }, format='json')
@@ -323,7 +323,7 @@ class PasswordResetSMSTests(TestCase):
 
         cache.clear()
         reused_response = self.client.post('/api/auth/forgot-password/confirm/', {
-            'phone_number': '639171234567',
+            'phone_number': '09171234567',
             'reset_token': reset_token,
             'new_password': 'AnotherSecurePass123!',
         }, format='json')
@@ -792,13 +792,13 @@ class GoogleAuthFlowTests(TestCase):
         self.assertTrue(missing_phone.data['google_registration_required'])
         self.assertFalse(get_user_model().objects.filter(email=self.profile['email']).exists())
 
-        response = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '+639171234567'})
+        response = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '09171234567'})
         self.assertEqual(response.status_code, 200, response.data)
         self.assertTrue(response.data['created'])
         user = get_user_model().objects.get(email=self.profile['email'])
         self.assertEqual((user.first_name, user.last_name), ('Google', 'Customer'))
         self.assertEqual(user.profile_picture_external_url, self.profile['picture'])
-        self.assertEqual(user.phone_number, '639171234567')
+        self.assertEqual(user.phone_number, '09171234567')
         self.assertEqual(user.registration_method, 'GOOGLE')
         self.assertFalse(user.has_usable_password())
         self.assertEqual(Customer.objects.filter(user=user).count(), 1)
@@ -813,7 +813,7 @@ class GoogleAuthFlowTests(TestCase):
         self.assertEqual(refreshed_profile.status_code, 200)
         self.assertEqual(refreshed_profile.data['email'], self.profile['email'])
         self.assertEqual(refreshed_profile.data['first_name'], 'Google')
-        self.assertEqual(refreshed_profile.data['phone_number'], '639171234567')
+        self.assertEqual(refreshed_profile.data['phone_number'], '09171234567')
         self.assertEqual(refreshed_profile.data['profile_picture_url'], self.profile['picture'])
 
     @patch('users.views.requests.get')
@@ -840,7 +840,7 @@ class GoogleAuthFlowTests(TestCase):
         self.assertFalse(get_user_model().objects.filter(email__iexact=self.profile['email']).exists())
         valid = self.post_google(mocked_get, {'privacy_consent': True, 'phone_number': '09171234567'})
         self.assertEqual(valid.status_code, 200, valid.data)
-        self.assertEqual(get_user_model().objects.get(pk=valid.data['id']).phone_number, '639171234567')
+        self.assertEqual(get_user_model().objects.get(pk=valid.data['id']).phone_number, '09171234567')
 
     @patch('users.views.requests.get')
     def test_verified_google_email_signs_into_existing_account_without_overwriting_profile(self, mocked_get):
@@ -856,7 +856,7 @@ class GoogleAuthFlowTests(TestCase):
         self.assertEqual(response.data['id'], user.id)
         user.refresh_from_db()
         self.assertEqual((user.first_name, user.last_name), ('Existing', 'Profile'))
-        self.assertEqual(user.phone_number, '639171234567')
+        self.assertEqual(user.phone_number, '09171234567')
         self.assertEqual(user.profile_picture_external_url, 'https://example.test/custom-avatar.png')
         self.assertEqual(get_user_model().objects.filter(email__iexact=self.profile['email']).count(), 1)
 
@@ -875,7 +875,7 @@ class GoogleAuthFlowTests(TestCase):
         response = self.post_google(mocked_get, {'phone_number': '09171234567'})
         self.assertEqual(response.status_code, 200, response.data)
         user.refresh_from_db()
-        self.assertEqual(user.phone_number, '639171234567')
+        self.assertEqual(user.phone_number, '09171234567')
         self.assertEqual((user.first_name, user.last_name), ('Google', 'Customer'))
         self.assertEqual(user.profile_picture_external_url, self.profile['picture'])
 
@@ -888,7 +888,7 @@ class GoogleAuthFlowTests(TestCase):
         self.assertEqual(repeated.status_code, 200, repeated.data)
         user.refresh_from_db()
         self.assertEqual((user.first_name, user.phone_number, user.profile_picture_external_url), (
-            'Edited', '639181234567', 'https://example.test/edited.png',
+            'Edited', '09181234567', 'https://example.test/edited.png',
         ))
 
     @patch('users.views.requests.get')
@@ -900,7 +900,7 @@ class GoogleAuthFlowTests(TestCase):
         reused = self.post_google(mocked_get)
         self.assertEqual(reused.status_code, 200, reused.data)
         user.refresh_from_db()
-        self.assertEqual(user.phone_number, '639171234567')
+        self.assertEqual(user.phone_number, '09171234567')
         self.assertFalse(reused.data['created'])
 
         user.phone_number = '5550100'
@@ -911,11 +911,11 @@ class GoogleAuthFlowTests(TestCase):
         self.assertEqual(missing.data['google_profile']['phone_number'], '5550100')
         self.assertFalse(missing.data['google_registration_required'])
 
-        corrected = self.post_google(mocked_get, {'phone_number': '+639171234567'})
+        corrected = self.post_google(mocked_get, {'phone_number': '09171234567'})
         self.assertEqual(corrected.status_code, 200, corrected.data)
         self.assertEqual(corrected.data['id'], user.id)
         user.refresh_from_db()
-        self.assertEqual(user.phone_number, '639171234567')
+        self.assertEqual(user.phone_number, '09171234567')
         self.assertEqual(get_user_model().objects.filter(email__iexact=self.profile['email']).count(), 1)
 
     @patch('users.views.requests.get')

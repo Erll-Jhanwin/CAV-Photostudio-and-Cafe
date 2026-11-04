@@ -9,7 +9,7 @@ from booking.models import Service, Package, Booking, BookingConversation, Booki
 from booking.availability import is_slot_available
 from payment.models import Payment
 from users.serializers import UserSerializer, validate_unique_email, validate_unique_phone_number
-from users.phone_numbers import normalize_philippine_mobile_number
+from users.phone_numbers import validate_philippine_mobile_number
 from users.uploads import receipt_upload_path, validate_receipt_upload
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class WalkInBookingCreateSerializer(serializers.Serializer):
     scheduled_time = serializers.TimeField()
     customer_name = serializers.CharField(max_length=200)
     customer_email = serializers.EmailField(max_length=254, required=False, allow_blank=True)
-    customer_phone = serializers.CharField(max_length=30)
+    customer_phone = serializers.CharField(max_length=30, trim_whitespace=False)
     notes = serializers.CharField(required=False, allow_blank=True, max_length=2000)
     idempotency_key = serializers.CharField(max_length=100, required=False, allow_blank=True)
     payment_method = serializers.ChoiceField(choices=Payment.METHOD_CHOICES, required=False)
@@ -92,10 +92,13 @@ class WalkInBookingCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError('Customer name is required.')
         return value
 
+    def validate_customer_email(self, value):
+        return value.strip().lower()
+
     def validate_customer_phone(self, value):
-        value = value.strip()
-        if len(''.join(ch for ch in value if ch.isdigit())) < 7:
-            raise serializers.ValidationError('Enter a valid contact number.')
+        value = validate_philippine_mobile_number(value)
+        if not value:
+            raise serializers.ValidationError('Use 11 digits starting with 09 (example: 09876543122). Do not enter letters, spaces, or symbols.')
         return value
 
     def validate_scheduled_time(self, value):
@@ -436,7 +439,7 @@ class BookingSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(max_length=150, write_only=True, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150, write_only=True, required=False, allow_blank=True)
     email = serializers.EmailField(max_length=254, write_only=True, required=False, allow_blank=True)
-    phone_number = serializers.CharField(max_length=20, write_only=True, required=False, allow_blank=True)
+    phone_number = serializers.CharField(max_length=20, write_only=True, required=False, allow_blank=True, trim_whitespace=False)
     address = serializers.CharField(write_only=True, required=False, allow_blank=True)
     idempotency_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
@@ -495,15 +498,16 @@ class BookingSerializer(serializers.ModelSerializer):
     def validate_email(self, value):
         customer = self.instance.customer if self.instance and self.instance.customer_id else (self.context['request'].user if not self.instance else None)
         if self.instance and self.instance.is_walk_in:
-            return value
+            return value.strip().lower()
         return validate_unique_email(value, customer, required=True)
 
     def validate_phone_number(self, value):
         customer = self.instance.customer if self.instance and self.instance.customer_id else (self.context['request'].user if not self.instance else None)
-        if not normalize_philippine_mobile_number(value):
-            raise serializers.ValidationError('Enter a valid Philippine mobile number (09xxxxxxxxx or +639xxxxxxxxx).')
         if self.instance and self.instance.is_walk_in:
-            return value
+            normalized = validate_philippine_mobile_number(value)
+            if not normalized:
+                raise serializers.ValidationError('Use 11 digits starting with 09 (example: 09876543122). Do not enter letters, spaces, or symbols.')
+            return normalized
         return validate_unique_phone_number(value, customer)
 
     def validate(self, attrs):

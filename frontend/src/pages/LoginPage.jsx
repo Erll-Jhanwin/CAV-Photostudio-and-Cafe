@@ -152,10 +152,12 @@ export default function LoginPage() {
   const isLoginValid = adminMfaStep
     ? adminMfaToken && adminMfaOtp.length === 6
     : !isBlank(form.username) && !isBlank(form.password);
+  const registerValidationErrors = validateRegisterForm();
+  const forgotValidationErrors = validateForgotForm();
   const isRegisterValid = registerStep === 'otp'
     ? registrationOtp.length === 6 && registrationConsent
-    : !Object.keys(validateRegisterForm()).length && registrationConsent;
-  const isForgotValid = !Object.keys(validateForgotForm()).length;
+    : !Object.keys(registerValidationErrors).length && registrationConsent;
+  const isForgotValid = !Object.keys(forgotValidationErrors).length;
 
   const navigateAfterAuth = useCallback((authUser) => {
     if (redirect === 'book') { navigate('/customer'); return; }
@@ -474,9 +476,9 @@ export default function LoginPage() {
     if (!captchaToken) return;
     setLoading(true);
     const regData = {
-      username: form.username, password: form.password, email: form.email,
-      first_name: form.firstName, last_name: form.lastName,
-      phone_number: form.phone, address: form.address,
+      username: form.username.trim(), password: form.password, email: form.email.trim().toLowerCase(),
+      first_name: form.firstName.trim(), last_name: form.lastName.trim(),
+      phone_number: form.phone.trim(), address: form.address.trim(),
       privacy_consent: registrationConsent,
       recaptcha_token: captchaToken,
     };
@@ -552,7 +554,7 @@ export default function LoginPage() {
 
     try {
       if (forgotStep === 'phone') {
-        const res = await client.post('/api/auth/forgot-password/', { phone_number: forgotPhone });
+        const res = await client.post('/api/auth/forgot-password/', { phone_number: forgotPhone.trim() });
         setForgotResult({ detail: res.data?.detail || 'If this mobile number matches an account and a new code can be issued, check your SMS. For privacy, account status is not confirmed here.' });
         setForgotResendCooldown(res.data?.resend_cooldown_seconds || 60);
         setForgotOtpExpiresMinutes(res.data?.expires_in_minutes || 10);
@@ -562,7 +564,7 @@ export default function LoginPage() {
 
       if (forgotStep === 'otp') {
         const res = await client.post('/api/auth/forgot-password/verify/', {
-          phone_number: forgotPhone,
+          phone_number: forgotPhone.trim(),
           otp: forgotOtp,
         });
         setForgotResetToken(res.data?.reset_token || '');
@@ -572,7 +574,7 @@ export default function LoginPage() {
       }
 
       const res = await client.post('/api/auth/forgot-password/confirm/', {
-        phone_number: forgotPhone,
+        phone_number: forgotPhone.trim(),
         reset_token: forgotResetToken,
         new_password: forgotPassword,
       });
@@ -641,7 +643,7 @@ export default function LoginPage() {
     setForgotLoading(true);
     setForgotResult(null);
     try {
-      const res = await client.post('/api/auth/forgot-password/', { phone_number: forgotPhone });
+      const res = await client.post('/api/auth/forgot-password/', { phone_number: forgotPhone.trim() });
       setForgotOtp('');
       setForgotResetToken('');
       setForgotResult({ detail: res.data?.detail || 'If this mobile number matches an account and a new code can be issued, check your SMS. For privacy, account status is not confirmed here.' });
@@ -907,15 +909,18 @@ export default function LoginPage() {
                       label="Registered Mobile Number"
                       icon={Phone}
                       type="tel"
-                      inputMode="tel"
+                      inputMode="numeric"
+                      autoComplete="tel-national"
+                      pattern="09[0-9]{9}"
+                      maxLength={32}
                       required
                       value={forgotPhone}
                       onChange={(e) => {
                         setForgotPhone(e.target.value);
                         setForgotErrors(current => ({ ...current, phone: '' }));
                       }}
-                      placeholder="0917 123 4567"
-                      error={forgotErrors.phone}
+                      placeholder="09876543122"
+                      error={forgotErrors.phone || forgotValidationErrors.phone}
                     />
                   )}
 
@@ -972,7 +977,7 @@ export default function LoginPage() {
                           setForgotErrors(current => ({ ...current, password: '', passwordConfirm: '' }));
                         }}
                         placeholder="Enter a new password"
-                        error={forgotErrors.password}
+                        error={forgotErrors.password || forgotValidationErrors.password}
                         suffix={
                           <button
                             type="button"
@@ -996,7 +1001,7 @@ export default function LoginPage() {
                           setForgotErrors(current => ({ ...current, passwordConfirm: '' }));
                         }}
                         placeholder="Re-enter new password"
-                        error={forgotErrors.passwordConfirm}
+                        error={forgotErrors.passwordConfirm || forgotValidationErrors.passwordConfirm}
                       />
                       <PasswordStrength password={forgotPassword} />
                       <button
@@ -1035,14 +1040,17 @@ export default function LoginPage() {
                         label="Mobile number"
                         icon={Phone}
                         type="tel"
-                        inputMode="tel"
+                        inputMode="numeric"
+                        autoComplete="tel-national"
+                        pattern="09[0-9]{9}"
+                        maxLength={32}
                         required
                         value={form.phone}
                         onChange={update('phone')}
-                        placeholder="09171234567"
-                        error={formErrors.phone}
+                        placeholder="09876543122"
+                        error={formErrors.phone || getPhilippineMobileError(form.phone)}
                       />
-                      <p className="-mt-3 text-[11px] leading-snug text-espresso/55">Enter a Philippine mobile number, e.g., 09171234567.</p>
+                      <p className="-mt-3 text-[11px] leading-snug text-espresso/55">Use 11 digits starting with 09, e.g., 09876543122.</p>
                       {googleRegistrationRequired && (
                         <>
                           <label className="flex items-start gap-3 text-xs leading-5 text-espresso/72">
@@ -1179,7 +1187,7 @@ export default function LoginPage() {
                         value={form.username}
                         onChange={update('username')}
                         placeholder="Enter username"
-                        error={formErrors.username}
+                        error={formErrors.username || (isRegister ? registerValidationErrors.username : '')}
                       />
 
                       {isRegister && (
@@ -1188,11 +1196,12 @@ export default function LoginPage() {
                             label="Email"
                             icon={Mail}
                             type="email"
+                            autoComplete="email"
                             required
                             value={form.email}
                             onChange={update('email')}
                             placeholder="name@example.com"
-                            error={formErrors.email}
+                            error={formErrors.email || registerValidationErrors.email}
                           />
                           <div className="grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2">
                             <Input
@@ -1212,10 +1221,14 @@ export default function LoginPage() {
                             <Input
                               label="Mobile number"
                               type="tel"
+                              inputMode="numeric"
+                              autoComplete="tel-national"
+                              maxLength={32}
+                              pattern="09[0-9]{9}"
                               value={form.phone}
                               onChange={update('phone')}
-                              placeholder="+63 917 123 4567"
-                              error={formErrors.phone}
+                              placeholder="09876543122"
+                              error={formErrors.phone || registerValidationErrors.phone}
                             />
                             <p className="text-[10px] leading-snug text-espresso/50">A valid Philippine mobile number is required to finish account setup.</p>
                           </div>
@@ -1242,7 +1255,7 @@ export default function LoginPage() {
                         value={form.password}
                         onChange={update('password')}
                         placeholder="Enter password"
-                        error={formErrors.password}
+                              error={formErrors.password || registerValidationErrors.password}
                         suffix={
                           <button
                             type="button"
@@ -1266,7 +1279,7 @@ export default function LoginPage() {
                             value={form.passwordConfirm}
                             onChange={update('passwordConfirm')}
                             placeholder="Re-enter password"
-                            error={formErrors.passwordConfirm}
+                              error={formErrors.passwordConfirm || registerValidationErrors.passwordConfirm}
                           />
                         </>
                       )}

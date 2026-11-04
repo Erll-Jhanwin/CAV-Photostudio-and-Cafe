@@ -36,6 +36,7 @@ import useBookingMessagesUnreadCount from '../components/bookings/useBookingMess
 import { startVisiblePolling } from '../utils/visiblePolling';
 import { MINIMUM_BOOKING_DOWN_PAYMENT } from '../utils/bookingPayments';
 import { getPosProductImage } from '../utils/posProductImages';
+import { getEmailError, getPhoneError } from '../utils/validation';
 
 export function StaffSkeleton() {
   return (
@@ -1423,14 +1424,23 @@ export default function StaffDashboard() {
     if (supplierSaving) return;
     const errors = {};
     if (!supplierForm.name.trim()) errors.name = 'Supplier name is required.';
-    if (supplierForm.email && !/^\S+@\S+\.\S+$/.test(supplierForm.email)) errors.email = 'Enter a valid email address.';
+    if (supplierForm.email && getEmailError(supplierForm.email)) errors.email = getEmailError(supplierForm.email);
+    if (supplierForm.phone && getPhoneError(supplierForm.phone)) errors.phone = getPhoneError(supplierForm.phone);
     setSupplierErrors(errors);
     if (Object.keys(errors).length) return;
     try {
       setSupplierSaving(true);
+      const payload = {
+        ...supplierForm,
+        name: supplierForm.name.trim(),
+        contact_person: supplierForm.contact_person.trim(),
+        email: supplierForm.email.trim().toLowerCase(),
+        phone: supplierForm.phone.trim(),
+        address: supplierForm.address.trim(),
+      };
       const request = editingSupplier
-        ? client.patch(`/api/inventory/suppliers/${editingSupplier.id}/`, supplierForm)
-        : client.post('/api/inventory/suppliers/', supplierForm);
+        ? client.patch(`/api/inventory/suppliers/${editingSupplier.id}/`, payload)
+        : client.post('/api/inventory/suppliers/', payload);
       await request;
       setSupplierModalOpen(false);
       await reloadCatalogWorkspace();
@@ -2882,13 +2892,13 @@ export default function StaffDashboard() {
 
       {/* Supplier Modal */}
       <Modal open={supplierModalOpen} onClose={() => { if (!supplierSaving) setSupplierModalOpen(false); }} title={editingSupplier ? 'Edit Supplier' : 'Add Supplier'} size="lg">
-        <form onSubmit={handleSupplierSubmit} className="space-y-4">
+        <form onSubmit={handleSupplierSubmit} className="space-y-4" noValidate>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Input label="Supplier Name" required value={supplierForm.name} onChange={e => setSupplierForm(current => ({ ...current, name: e.target.value }))} error={supplierErrors.name} />
-            <Input label="Contact Person" value={supplierForm.contact_person} onChange={e => setSupplierForm(current => ({ ...current, contact_person: e.target.value }))} error={supplierErrors.contact_person} />
-            <Input label="Email" type="email" value={supplierForm.email} onChange={e => setSupplierForm(current => ({ ...current, email: e.target.value }))} error={supplierErrors.email} />
-            <Input label="Phone" value={supplierForm.phone} onChange={e => setSupplierForm(current => ({ ...current, phone: e.target.value }))} error={supplierErrors.phone} />
-            <div className="md:col-span-2"><Input label="Address" value={supplierForm.address} onChange={e => setSupplierForm(current => ({ ...current, address: e.target.value }))} error={supplierErrors.address} /></div>
+            <Input label="Supplier Name" required maxLength={150} value={supplierForm.name} onChange={e => setSupplierForm(current => ({ ...current, name: e.target.value }))} error={supplierErrors.name} />
+            <Input label="Contact Person" maxLength={150} value={supplierForm.contact_person} onChange={e => setSupplierForm(current => ({ ...current, contact_person: e.target.value }))} error={supplierErrors.contact_person} />
+            <Input label="Email" type="email" autoComplete="email" value={supplierForm.email} onChange={e => { setSupplierForm(current => ({ ...current, email: e.target.value })); setSupplierErrors(current => ({ ...current, email: getEmailError(e.target.value) })); }} error={supplierErrors.email || getEmailError(supplierForm.email)} />
+            <Input label="Phone" type="tel" inputMode="numeric" autoComplete="tel-national" pattern="09[0-9]{9}" maxLength={32} placeholder="09876543122" value={supplierForm.phone} onChange={e => { setSupplierForm(current => ({ ...current, phone: e.target.value })); setSupplierErrors(current => ({ ...current, phone: getPhoneError(e.target.value) })); }} error={supplierErrors.phone || getPhoneError(supplierForm.phone)} />
+            <div className="md:col-span-2"><Input label="Address" maxLength={255} value={supplierForm.address} onChange={e => setSupplierForm(current => ({ ...current, address: e.target.value }))} error={supplierErrors.address} /></div>
           </div>
           {editingSupplier && <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-espresso/10 bg-cream/50 px-4 py-3 text-xs font-bold text-espresso"><input type="checkbox" checked={supplierForm.is_active} onChange={e => setSupplierForm(current => ({ ...current, is_active: e.target.checked }))} className="h-4 w-4 accent-espresso" /> Active supplier</label>}
           <div className="flex gap-2 border-t border-espresso/[0.06] pt-4"><Button type="submit" variant="primary" className="flex-1" loading={supplierSaving}>Save Supplier</Button><Button type="button" variant="outline" onClick={() => setSupplierModalOpen(false)} disabled={supplierSaving}>Close</Button></div>
