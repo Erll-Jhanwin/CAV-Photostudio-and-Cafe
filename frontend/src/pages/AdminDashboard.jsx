@@ -1616,7 +1616,6 @@ export default function AdminDashboard() {
     : null;
   const backtestAvailable = forecastAccuracy !== null && forecastMetrics.holdout_days > 0;
   const salesModel = asRecord(forecast?.model);
-  const productForecastSummary = asArray(forecast?.product_forecast_summary);
   const forecastQualityMessage = forecast?.data_sufficiency?.message || 'No model evaluation is available.';
   const topProducts = asArray(analytics?.top_selling_products);
   const topPackages = asArray(analytics?.top_booked_packages);
@@ -2178,35 +2177,6 @@ export default function AdminDashboard() {
                       ) : (forecast || forecastError) ? (
                         <EmptyState icon={BarChart2} title={salesChartStartDate || salesChartEndDate ? 'No sales in selected date range' : 'No sales or forecast data'} description="Adjust the date filters or reset the graph view to inspect available sales." />
                       ) : null}
-                    </div>
-                  </div>
-                </Card>
-              </div>
-
-              <div className="animate-in-up">
-                <Card className="rounded-[24px]" padding={false}>
-                  <div className="p-5 md:p-6">
-                    <CardHeader title="Product Forecast" subtitle={`Next 7 days · ${productForecastSummary.length ? 'sales allocated from transaction totals by item quantity' : 'No parsed product history available'}`} className="mb-4" />
-                    <div className="h-[320px] w-full">
-                      {productForecastSummary.length > 0 ? (
-                        <DashboardChartBoundary resetKey={JSON.stringify(productForecastSummary)}>
-                          <DeferredChart fallback={<div className="h-full w-full rounded-xl bg-cream/20" aria-hidden="true" />}>
-                            {({ ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar }) => (
-                              <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={productForecastSummary.slice(0, 20)} layout="vertical" margin={{ top: 4, right: 20, left: 12, bottom: 4 }}>
-                                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#F5ECE1" />
-                                  <XAxis type="number" stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => `PHP ${Math.round(Number(value || 0) / 1000)}k`} />
-                                  <YAxis type="category" dataKey="product_name" width={150} stroke="#2E1A11" fontSize={10} tickLine={false} axisLine={false} />
-                                  <Tooltip formatter={(value) => [formatCurrency(value), 'Predicted sales']} />
-                                  <Bar dataKey="predicted_sales" name="Predicted sales" fill="#D4AF37" radius={[0, 7, 7, 0]} />
-                                </BarChart>
-                              </ResponsiveContainer>
-                            )}
-                          </DeferredChart>
-                        </DashboardChartBoundary>
-                      ) : (
-                        <EmptyState icon={ShoppingBag} title="No product forecast data" description="The sales CSV does not contain parseable product history yet." />
-                      )}
                     </div>
                   </div>
                 </Card>
